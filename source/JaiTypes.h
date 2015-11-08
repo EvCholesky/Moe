@@ -1,0 +1,224 @@
+#pragma once
+
+// copyright (C) 2015 Evan Christensen
+
+#include "EwcArray.h"
+#include "EwcString.h"
+
+namespace EWC
+{
+	class CSymbolTable;
+
+enum TINK 
+{
+    TINK_Integer,
+    TINK_Float,
+    TINK_Bool,			// no specialized type info
+    TINK_String,		// no specialized type info
+    TINK_Pointer,
+    TINK_Procedure,
+    TINK_Void,			// no specialized type info
+    TINK_Struct,
+    TINK_Array,
+    TINK_Null,			// no specialized type info
+    TINK_Any,			// no specialized type info
+    TINK_Enum,
+	TINK_ForwardDecl,	// Type info added for resolving pointers to self during the type-check phase.
+	TINK_Literal,		// literal that hasn't been resolved to a specific type yet
+
+	EWC_MAX_MIN_NIL(TINK)
+};
+
+struct STypeInfo	// tag = tin
+{
+			STypeInfo(const char * pChzName, TINK tink)
+			:m_tink(tink)
+			,m_strName(pChzName)
+			,m_pSymtab(nullptr)
+				{ ; }
+
+    TINK			m_tink;
+	CString			m_strName;
+	CSymbolTable *	m_pSymtab;
+};
+
+template <typename T>
+T PTinRtiCast(STypeInfo * pTin)
+{
+	if (pTin && pTin->m_tink == SStripPointer<T>::Type::s_tink)
+		return (T)pTin;
+	return nullptr;
+}
+
+template <typename T>
+T PTinDerivedCast(STypeInfo * pTin)
+{
+	EWC_ASSERT(pTin && pTin->m_tink == SStripPointer<T>::Type::s_tink, "illegal type info derived cast");
+	return (T)pTin;
+}
+
+struct STypeInfoInteger : public STypeInfo // tag = tinint
+{
+	static const TINK s_tink = TINK_Integer;
+
+			STypeInfoInteger(const char * pChzName, U32 cBit, bool fSigned)
+			:STypeInfo(pChzName, s_tink)
+			,m_cBit(cBit)
+			,m_fSigned(fSigned)
+				{ ; }
+
+	U32		m_cBit;
+	bool	m_fSigned;
+};
+
+struct STypeInfoFloat : public STypeInfo	// tag = tinfloat
+{
+	static const TINK s_tink = TINK_Float;
+
+			STypeInfoFloat(const char * pChzName, U32 cBit)
+			:STypeInfo(pChzName, s_tink)
+			,m_cBit(cBit)
+				{ ; }
+
+	U32		m_cBit;
+};
+
+struct STypeInfoPointer : public STypeInfo	// tag = tinptr
+{
+	static const TINK s_tink = TINK_Pointer;
+
+						STypeInfoPointer()
+						:STypeInfo("", s_tink)
+						,m_pTinPointedTo(nullptr)
+						,m_soaPacking(-1)
+							{ ; }
+
+	STypeInfo *			m_pTinPointedTo;
+	I32					m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
+};
+
+struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
+{
+	static const TINK s_tink = TINK_Procedure;
+
+						STypeInfoProcedure(const char * pChzName)
+						:STypeInfo(pChzName, s_tink)
+						,m_arypTinParams()
+						,m_arypTinReturns()
+							{ ; }
+
+	CAry<STypeInfo *>	m_arypTinParams;
+	CAry<STypeInfo *>	m_arypTinReturns;
+
+	// BB - need names for named argument matching?
+};
+
+struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
+{
+	static const TINK s_tink = TINK_ForwardDecl;
+						STypeInfoForwardDecl(CAlloc * pAlloc, const char * pChzName)
+						:STypeInfo(pChzName, s_tink)
+						,m_arypTinReferences(pAlloc)
+							{ ; }
+
+	CDynAry<STypeInfo *>	m_arypTinReferences;
+};
+
+struct STypeInfoLiteral : public STypeInfo // tag = tinlit
+{
+	static const TINK s_tink = TINK_Literal;
+						STypeInfoLiteral()
+						:STypeInfo("", s_tink)
+						,m_stval()
+							{ ; }
+
+	CSTValue		m_stval;
+};
+
+enum FMEMB
+{
+    FMEMB_Constant = 0x1,
+    FMEMB_Imported = 0x2,
+
+	FMEMB_None = 0,
+	FMEMB_All = 3,
+};
+
+EWC_DEFINE_GRF(GRFMEMB, FMEMB, U32);
+
+struct STypeStructMember	// tag = typememb
+{
+					STypeStructMember()
+					:m_strName()
+					,m_pTin(nullptr)
+					,m_cBOffset(0)
+					,m_grfmemb(FMEMB_None)
+						{ ;}
+
+	CString			m_strName;
+	STypeInfo *		m_pTin;
+	I64				m_cBOffset;	
+    
+	GRFMEMB			m_grfmemb;
+};
+
+struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
+{
+	static const TINK s_tink = TINK_Struct;
+
+								STypeInfoStruct(const char * pChzName)
+								:STypeInfo(pChzName, s_tink)
+								,m_aryTypememb()
+									{ ; }
+	
+	CAry<STypeStructMember>		m_aryTypememb;
+};
+
+enum ARYK
+{
+    ARYK_Fixed,
+    ARYK_Static,
+    ARYK_Dynamic,
+};
+
+struct STypeInfoArray : public STypeInfo	// tag = tinary
+{
+	static const TINK s_tink = TINK_Enum;
+
+					STypeInfoArray()
+					:STypeInfo("", s_tink)
+					,m_pTin(nullptr)
+					,m_soaPacking(-1)
+					,m_c(0)
+					,m_aryk(ARYK_Fixed)
+					{ ; }
+
+	STypeInfo *		m_pTin;
+	I32				m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
+	I64				m_c;
+	ARYK			m_aryk;
+};
+
+struct STypeInfoEnum : public STypeInfo	// tag = tinenum
+{
+	static const TINK s_tink = TINK_Enum;
+
+						STypeInfoEnum(const char * pChzName)
+						:STypeInfo(pChzName, s_tink)
+						,m_pTinInternal(nullptr)
+						,m_valueMin(0)
+						,m_valueLast(0)
+						,m_tinstructProduced(pChzName)
+							{ ; }
+						~STypeInfoEnum();
+
+	STypeInfo *			m_pTinInternal;
+	U64					m_valueMin;		// BB - won't handle signed 64-bit enums properly, need to replace with union
+	U64					m_valueLast;	// BB - won't handle signed 64-bit enums properly, need to replace with union
+	STypeInfoStruct 	m_tinstructProduced;
+};
+
+void DeleteTypeInfo(CAlloc * pAlloc, STypeInfo * pTin);
+
+
+} //namespace EWC

@@ -1,0 +1,45 @@
+
+
+Build up a symbol table at each new stack frame
+	symbols can be 
+		variable name -> instance
+		struct type name -> type decl
+		function name -> function decl
+
+	is this true? currently the symbol table only has instance names and we have a seperate type table
+	.... buuut, we have one table for unknown types (both instances and types)
+
+We can end the parse phase with a list of unknown symbols 
+	(not their types, if b is a known undefined type a.b.c's type is unknown)
+
+Should we do any type inference in the parse phase? (my current answer is no, the only stuff we need coming out of parse is a list of unknown types and symbols)
+- revised answer is parse phase emits a tree of symbol names (and whatever type info we could figure out? dunno) but no unknown symbols,  
+
+Do type symbols collide with instance symbols? I think so... for example
+
+SFoo :: struct { blah : int };
+
+{
+	SFoo : int;	
+	error : SFoo; // this should complain that it's not a type, but an instance
+}
+
+
+DONE:
+ [x] Move allocated TypeInfos into one array for ownership
+
+TODO:
+ [ ] Remove PARK enum
+ [ ] constant types (recognize constants, ensure constants for array sizes)
+ [ ] switch to 64Bit
+ [ ] rename project
+ [ ] move compiler out of EWC
+ [ ] consolidate error tracking/printing into one place.
+ 	[ ] add error messages to the lexer
+ [ ] handle nonlinear type checking within top level scopes (within functions/structs)
+
+Unsupported features:
+[ ] multiple return types (not parsed)
+[ ] SOA packing 
+[ ] Nested structs
+[ ] Defer
