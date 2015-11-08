@@ -83,53 +83,6 @@ const char * PChzFromLitk(LITK litk)
 	return s_mpLitkPChz[litk];
 }
 
-PRECEDE Precede(PARK park)
-{
-	switch (park)
-	{
-	case PARK_LParen:	return PRECEDE_Paren;
-	case PARK_Mul:
-	case PARK_Div:		
-	case PARK_Mod:		return PRECEDE_MulDivMod;
-	case PARK_Add:
-	case PARK_Sub:		return PRECEDE_AddSub;
-	case PARK_Negate:	return PRECEDE_Unary;
-	default	: return PRECEDE_Nil;
-	}
-}
-
-PARK ParkFromJtok(JTOK jtok, LITK litk, PARK parkPrev)
-{
-	switch(jtok)
-	{
-	case '*': return PARK_Mul;
-	case '/': return PARK_Div;
-	case '%': return PARK_Mod;
-	case '+': return PARK_Add;
-	case '-': 
-		{
-			bool fPrevWasOperand = (parkPrev >= PARK_OperandMin) & (parkPrev < PARK_OperandMax);
-			return fPrevWasOperand ? PARK_Sub : PARK_Negate;
-		}
-	case '(': return PARK_LParen;
-	case ')': return PARK_RParen;
-	case JTOK_Identifier:		return PARK_Identifier;
-	case JTOK_Literal:
-		{
-			switch (litk)
-			{
-			case LITK_Int:		return PARK_IntLiteral;
-			case LITK_Float:	return PARK_FloatLiteral;
-			case LITK_Char:		return PARK_CharLiteral;
-			case LITK_String:	return PARK_StringLiteral;
-			default:			return PARK_Error;
-			}
-		};
-	default: return PARK_Error;
-	}
-}
-
-
 void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChz, ...)
 {
 	printf("%s(%d) error:", pJlex->m_pChzFilename, NLine(pJlex));
@@ -1492,125 +1445,6 @@ void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalE
 		}
 	}
 }
-void ApplyOperatorShuntingYard(CParseContext * pParctx, CSTNode * pStnodTop)
-{
-	PARK parkTop = pStnodTop->m_park;
-	bool fIsBinaryOperator = (parkTop >= PARK_BinaryOperatorMin) & (parkTop < PARK_BinaryOperatorMax);
-	int cOperands = (fIsBinaryOperator) ? 2 : 1;
-
-	EWC_ASSERT((int)pParctx->m_arypStnodOperand.C() >= cOperands, "operand underflow");
-
-	CSTNode * apStnod[2];
-	for (int iOperand = 0; iOperand < cOperands; ++iOperand)
-	{
-		apStnod[cOperands - 1 - iOperand] = *pParctx->m_arypStnodOperand.PLast();
-		pParctx->m_arypStnodOperand.PopLast();
-	}
-
-	for (int iOperand = 0; iOperand < cOperands; ++iOperand)
-	{
-		pStnodTop->IAppendChild(apStnod[iOperand]);
-	}
-
-	pParctx->m_arypStnodOperator.PopLast();
-	pParctx->m_arypStnodOperand.Append(pStnodTop);
-}
-
-CSTNode * PStnodParseShuntingYard(
-	CParseContext * pParctx,
-	SJaiLexer * pJlex,
-	const char * pChzSource,
-	const char *pChzSourceEnd)
-{
-	PARK parkPrev = PARK_Nil;
-	while (JtokNextToken(pJlex)) 
-	{
-		EWC_ASSERT(pJlex->m_jtok != JTOK_ParseError, "shunting yard error");
-
-		// skip semicolons for testing
-		if (pJlex->m_jtok == JTOK(';'))
-			continue;
-
-		PARK park = ParkFromJtok(JTOK(pJlex->m_jtok), pJlex->m_litty.m_litk, parkPrev);
-		parkPrev = park;
-		CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
-
-		pStnod->m_jtok = JTOK(pJlex->m_jtok);
-		pStnod->m_park = park;
-
-		bool fIsOperator = (park >= PARK_OperatorMin) & (park < PARK_OperatorMax);
-		bool fIsOperand = (park >= PARK_OperandMin) & (park < PARK_OperandMax);
-		if (fIsOperand)
-		{
-			if (park == PARK_RParen)
-			{
-				CSTNode * pStnodTop = *pParctx->m_arypStnodOperator.PLast();
-
-				while ((*pParctx->m_arypStnodOperator.PLast())->m_park != PARK_LParen)
-				{
-					pStnodTop = *pParctx->m_arypStnodOperator.PLast();
-					ApplyOperatorShuntingYard(pParctx, pStnodTop);
-				}
-
-				// discard the parens
-				CSTNode * pStnodLParen = *pParctx->m_arypStnodOperator.PLast();
-				pParctx->m_arypStnodOperator.PopLast();
-				pParctx->m_pAlloc->EWC_DELETE(pStnodLParen);
-				pParctx->m_pAlloc->EWC_DELETE(pStnod);
-			}
-			else
-			{
-				CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
-				pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
-				pStval->m_g = pJlex->m_g;
-				pStval->m_n = pJlex->m_n;
-				pStval->m_rword = RWORD_Nil;
-				pStnod->m_pStval = pStval;
-
-				pParctx->m_arypStnodOperand.Append(pStnod);
-			}
-		}
-		else if (fIsOperator)
-		{
-			if (pParctx->m_arypStnodOperator.C() > 0)
-			{
-				CSTNode * pStnodTop = *pParctx->m_arypStnodOperator.PLast();
-				PARK parkTop = pStnodTop->m_park;
-				PRECEDE precedeThis = Precede(park);
-				PRECEDE precedeTop = Precede(parkTop);
-
-				// unary operators only pop unary operators: to support a^-b vs -a^b
-				bool fThisIsUnary = (park >= PARK_UnaryOperatorMin) & (park < PARK_UnaryOperatorMax);
-				bool fTopIsUnary = (parkTop >= PARK_UnaryOperatorMin) & (parkTop < PARK_UnaryOperatorMax);
-				bool fCanPop = (fThisIsUnary == false) | fTopIsUnary;
-				
-				if ((precedeTop >= precedeThis) & (precedeThis != PRECEDE_Paren) & fCanPop)
-				{
-					ApplyOperatorShuntingYard(pParctx, pStnodTop);
-				}
-			}
-
-			pParctx->m_arypStnodOperator.Append(pStnod);
-		}
-		else
-		{
-			pStnod->m_park = PARK_Error;
-		}
-	}
-
-	while (pParctx->m_arypStnodOperator.C() > 0)
-	{
-		CSTNode * pStnodTop = *pParctx->m_arypStnodOperator.PLast();
-		ApplyOperatorShuntingYard(pParctx, pStnodTop);
-	}
-
-	EWC_ASSERT(pParctx->m_arypStnodOperator.C() == 0, "left over operator with no operands?");
-	EWC_ASSERT(pParctx->m_arypStnodOperand.C() == 1, "Too many left over operands, malformed input?");
-
-	CSTNode * pStnod = *pParctx->m_arypStnodOperand.PLast();
-	return pStnod;
-}
-
 
 
 void PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab)
@@ -1965,7 +1799,6 @@ void DeleteTypeInfo(CAlloc * pAlloc, STypeInfo * pTin)
 
 CSTNode::CSTNode(CAlloc * pAlloc)
 :m_jtok(JTOK_Nil)
-,m_park(PARK_Nil)
 ,m_termk(TERMK_Nil)
 ,m_strees(STREES_Parsed)
 ,m_pStval(nullptr)
@@ -2085,71 +1918,50 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, TERMK termk, char * pCh, char * pChEnd
 
 size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 {
-	if (pStnod->m_termk == TERMK_Nil)
+	switch (pStnod->m_termk)
 	{
-		switch(pStnod->m_park)
+	case TERMK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "@%s", pStnod->m_pStval->m_str.PChz());
+	case TERMK_ReservedWord:		return CChCopy(PChzFromRword(pStnod->m_pStval->m_rword), pCh, pChEnd - pCh); 
+	case TERMK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
+	case TERMK_Literal:				
 		{
-		case PARK_Identifier:		return CChFormat(pCh, pChEnd-pCh, "@%s", pStnod->m_pStval->m_str.PChz());
-		case PARK_StringLiteral:	return CChFormat(pCh, pChEnd-pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
-		case PARK_CharLiteral:		return CChFormat(pCh, pChEnd-pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
-		case PARK_IntLiteral:		return CChFormat(pCh, pChEnd-pCh, "%d", pStnod->m_pStval->m_n);
-		case PARK_FloatLiteral:		return CChFormat(pCh, pChEnd-pCh, "%f", pStnod->m_pStval->m_g);
-		case PARK_Mul:				return CChCopy("*", pCh, pChEnd-pCh);
-		case PARK_Div: 				return CChCopy("/", pCh, pChEnd-pCh);
-		case PARK_Mod:				return CChCopy("%", pCh, pChEnd-pCh);
-		case PARK_Add:				return CChCopy("+", pCh, pChEnd-pCh);
-		case PARK_Sub:				return CChCopy("-", pCh, pChEnd-pCh);
-		case PARK_Negate:			return CChCopy("unary[-]", pCh, pChEnd-pCh);
-		default: 					return CChCopy("error", pCh, pChEnd-pCh);
-		}
-	}
-	else
-	{
-		switch (pStnod->m_termk)
-		{
-		case TERMK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "@%s", pStnod->m_pStval->m_str.PChz());
-		case TERMK_ReservedWord:		return CChCopy(PChzFromRword(pStnod->m_pStval->m_rword), pCh, pChEnd - pCh); 
-		case TERMK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
-		case TERMK_Literal:				
+			switch (pStnod->m_pStval->m_litty.m_litk)
 			{
-				switch (pStnod->m_pStval->m_litty.m_litk)
-				{
-				case LITK_String:	return CChFormat(pCh, pChEnd-pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
-				case LITK_Char:		return CChFormat(pCh, pChEnd-pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
-				case LITK_Int:		return CChFormat(pCh, pChEnd-pCh, "%d", pStnod->m_pStval->m_n);
-				case LITK_Float:	return CChFormat(pCh, pChEnd-pCh, "%f", pStnod->m_pStval->m_g);
-				case LITK_Bool:		return CChFormat(pCh, pChEnd-pCh, "%s", (pStnod->m_pStval->m_n) ? "true" : "false");
-				default: 
-					EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok)); 
-					return 0;
-				}
+			case LITK_String:	return CChFormat(pCh, pChEnd-pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
+			case LITK_Char:		return CChFormat(pCh, pChEnd-pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
+			case LITK_Int:		return CChFormat(pCh, pChEnd-pCh, "%d", pStnod->m_pStval->m_n);
+			case LITK_Float:	return CChFormat(pCh, pChEnd-pCh, "%f", pStnod->m_pStval->m_g);
+			case LITK_Bool:		return CChFormat(pCh, pChEnd-pCh, "%s", (pStnod->m_pStval->m_n) ? "true" : "false");
+			default: 
+				EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok)); 
+				return 0;
 			}
-		case TERMK_AdditiveOp:			return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_MultiplicativeOp:	return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_ShiftOp:				return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_EqualityOp:			return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_RelationalOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_BitwiseAndOrOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_LogicalAndOrOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_UnaryOp:				return CChFormat(pCh, pChEnd-pCh, "unary[%s]", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_AssignmentOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_ArrayElement:		return CChCopy("elem", pCh, pChEnd - pCh);
-		case TERMK_MemberLookup:		return CChCopy("member", pCh, pChEnd - pCh);
-		case TERMK_ArgumentCall:		return CChCopy("args", pCh, pChEnd - pCh);
-		case TERMK_List:				return CChCopy("{}", pCh, pChEnd - pCh);
-		case TERMK_ParameterList:		return CChCopy("params", pCh, pChEnd - pCh);
-		case TERMK_ArrayDecl:			return CChFormat(pCh, pChEnd - pCh, "[%s]", PChzFromJtok(pStnod->m_jtok));
-		case TERMK_If:					return CChCopy("if", pCh, pChEnd - pCh);
-		case TERMK_Else:				return CChCopy("else", pCh, pChEnd - pCh);
-		case TERMK_Reference:			return CChCopy("ptr", pCh, pChEnd - pCh);
-		case TERMK_Decl:				return CChCopy("decl", pCh, pChEnd - pCh);
-		case TERMK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
-		case TERMK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
-		case TERMK_StructDefinition:	return CChCopy("struct", pCh, pChEnd - pCh);
-		case TERMK_EnumConstant:		return CChCopy("enumConst", pCh, pChEnd - pCh);
-		case TERMK_Error:
-		default:						return CChCopy("error", pCh, pChEnd-pCh);
 		}
+	case TERMK_AdditiveOp:			return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_MultiplicativeOp:	return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_ShiftOp:				return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_EqualityOp:			return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_RelationalOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_BitwiseAndOrOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_LogicalAndOrOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_UnaryOp:				return CChFormat(pCh, pChEnd-pCh, "unary[%s]", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_AssignmentOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_ArrayElement:		return CChCopy("elem", pCh, pChEnd - pCh);
+	case TERMK_MemberLookup:		return CChCopy("member", pCh, pChEnd - pCh);
+	case TERMK_ArgumentCall:		return CChCopy("args", pCh, pChEnd - pCh);
+	case TERMK_List:				return CChCopy("{}", pCh, pChEnd - pCh);
+	case TERMK_ParameterList:		return CChCopy("params", pCh, pChEnd - pCh);
+	case TERMK_ArrayDecl:			return CChFormat(pCh, pChEnd - pCh, "[%s]", PChzFromJtok(pStnod->m_jtok));
+	case TERMK_If:					return CChCopy("if", pCh, pChEnd - pCh);
+	case TERMK_Else:				return CChCopy("else", pCh, pChEnd - pCh);
+	case TERMK_Reference:			return CChCopy("ptr", pCh, pChEnd - pCh);
+	case TERMK_Decl:				return CChCopy("decl", pCh, pChEnd - pCh);
+	case TERMK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
+	case TERMK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
+	case TERMK_StructDefinition:	return CChCopy("struct", pCh, pChEnd - pCh);
+	case TERMK_EnumConstant:		return CChCopy("enumConst", pCh, pChEnd - pCh);
+	case TERMK_Error:
+	default:						return CChCopy("error", pCh, pChEnd-pCh);
 	}
 }
 
@@ -2179,13 +1991,9 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 
 size_t CSTNode::CChWriteDebugString(char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr)
 {
-	bool fIsOperator = (m_park >= PARK_OperatorMin) & (m_park < PARK_OperatorMax);
-	bool fIsOperand = (m_park >= PARK_OperandMin) & (m_park < PARK_OperandMax);
-	if (m_park == PARK_Nil)
-	{
-		fIsOperand = (m_termk == TERMK_Identifier) | (m_termk == TERMK_Literal);
-		fIsOperator = !fIsOperand;
-	}
+	bool fIsOperand = (m_termk == TERMK_Identifier) | (m_termk == TERMK_Literal);
+	bool fIsOperator = !fIsOperand;
+
 	if (fIsOperator)
 	{
 		size_t cChMax = pChEnd - pCh;
@@ -2232,37 +2040,6 @@ void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChMax
 			*pCh++ = (ipStnod+1 == pWork->m_arypStnodEntry.C()) ? '\0' : ' ';
 		}
 	}
-}
-
-void AssertParseMatchShuntingYard(CWorkspace * pWork, const char * pChzIn, const char * pChzOut)
-{
-#ifdef EWC_TRACK_ALLOCATION
-	U8 aBAltrac[1024 * 100];
-	CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
-
-	CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
-	pWork->m_pAlloc->SetAltrac(pAltrac);
-#endif
-
-	SJaiLexer jlex;
-	BeginWorkspace(pWork);
-	BeginParse(pWork, &jlex, pChzIn);
-	CSTNode * pStnod = PStnodParseShuntingYard(pWork->m_pParctx, &jlex, pChzIn, &pChzIn[CCh(pChzIn)]);
-
-	EWC_ASSERT(pStnod);
-	pWork->m_arypStnodEntry.Append(pStnod);
-
-	char aCh[1024];
-	pStnod->CChWriteDebugString(aCh, EWC_PMAC(aCh));
-
-	EWC_ASSERT(FAreSame(aCh, pChzOut), "parse debug string doesn't match expected value");
-	EndParse(pWork, &jlex);
-	EndWorkspace(pWork);
-
-#ifdef EWC_TRACK_ALLOCATION
-	DeleteAltrac(&allocAltrac, pAltrac);
-	pWork->m_pAlloc->SetAltrac(nullptr);
-#endif
 }
 
 void AssertParseMatchTailRecurse(
@@ -2350,23 +2127,19 @@ void TestParse()
 
 	const char * pChzIn1 =	"x + 3*5;";
 	const char * pChzOut1 = "(+ @x (* 3 5))";
-	AssertParseMatchShuntingYard(&work, pChzIn1, pChzOut1);
 	AssertParseMatchTailRecurse(&work, pChzIn1, pChzOut1);
 
 	const char * pChzIn2 =	"(ugh + foo) / ((x + 3)*5);";
 	const char * pChzOut2 = "(/ (+ @ugh @foo) (* (+ @x 3) 5))";
-	AssertParseMatchShuntingYard(&work, pChzIn2, pChzOut2);
 	AssertParseMatchTailRecurse(&work, pChzIn2, pChzOut2);
 
 	EWC_ASSERT(32/8/2 == 2, "ack");
 	pChzIn2  = "ugh/foo/guh/ack;";
 	pChzOut2 = "(/ (/ (/ @ugh @foo) @guh) @ack)";
-//	AssertParseMatchShuntingYard(&work, pChzIn2, pChzOut2);
 	AssertParseMatchTailRecurse(&work, pChzIn2, pChzOut2);
 
 	const char * pChzIn3 =	"(5 + -x) * -(3 / foo);";
 	const char * pChzOut3 = "(* (+ 5 (unary[-] @x)) (unary[-] (/ 3 @foo)))";
-	AssertParseMatchShuntingYard(&work, pChzIn3, pChzOut3);
 	AssertParseMatchTailRecurse(&work, pChzIn3, pChzOut3);
 
 	const char * pChzIn4 =	"ick * ack * -(3 / foo);";

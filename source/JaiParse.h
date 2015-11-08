@@ -39,50 +39,6 @@ namespace EWC
 		U64					m_n;
 	};
 
-	enum PARK // PARse Kind
-	{
-		PARK_Error,
-
-		PARK_OperandMin,
-		PARK_Identifier             = PARK_OperandMin,
-		PARK_ReservedWord,
-		PARK_StringLiteral,
-		PARK_CharLiteral,
-		PARK_IntLiteral,
-		PARK_FloatLiteral,
-		PARK_RParen,
-		PARK_OperandMax,
-
-		PARK_LParen,
-		PARK_Mul,
-		PARK_Div,
-		PARK_Mod,
-		PARK_Add,
-		PARK_Sub,
-
-		PARK_Positive,
-		PARK_Negate,
-		PARK_AddressOf,
-		PARK_Dereference,
-		PARK_BitwiseNot,
-		PARK_LogicalNot,
-		PARK_Increment,
-		PARK_Decrement,
-
-		PARK_BinaryOperatorMin		= PARK_Mul,
-		PARK_BinaryOperatorMax		= PARK_Sub + 1,
-
-		PARK_UnaryOperatorMin		= PARK_Positive, 
-		PARK_UnaryOperatorMax		= PARK_Decrement + 1,
-
-		PARK_OperatorMin			= PARK_LParen,
-		PARK_OperatorMax			= PARK_UnaryOperatorMax,
-
-		PARK_Max					= PARK_OperatorMax,
-		PARK_Min = 0,
-		PARK_Nil = -1,
-	};
-
 	enum TERMK // TERMinal Kind
 	{
 		TERMK_Error,
@@ -121,18 +77,6 @@ namespace EWC
 		TERMK_Max,
 		TERMK_Min = 0,
 		TERMK_Nil = -1,
-	};
-
-	enum PRECEDE
-	{
-		PRECEDE_Paren,
-		PRECEDE_AddSub,
-		PRECEDE_MulDivMod,
-		PRECEDE_Unary,
-
-		PRECEDE_Max,
-		PRECEDE_Min = 0,
-		PRECEDE_Nil = -1,
 	};
 
 
@@ -234,7 +178,6 @@ namespace EWC
 								{ return iStnod >= 0 ? m_arypStnodChild[iStnod] : nullptr; }
 
 		JTOK				m_jtok;
-		PARK				m_park;
 		TERMK				m_termk;
 		STREES				m_strees;
 
@@ -401,16 +344,12 @@ namespace EWC
 	public:
 							CParseContext(CAlloc * pAlloc)
 							:m_pAlloc(pAlloc)
-							,m_arypStnodOperator(pAlloc)
-							,m_arypStnodOperand(pAlloc)
 							,m_pSymtab(nullptr)
 							,m_cError(0)
 							,m_grfsymlook(FSYMLOOK_Default)
 								{ ; }
 
 		CAlloc * 			m_pAlloc;
-		CDynAry<CSTNode *>	m_arypStnodOperator;	// shunting yard stack
-		CDynAry<CSTNode *>	m_arypStnodOperand;		// shunting yard stack
 		CSymbolTable *		m_pSymtab;
 		int					m_cError;
 		GRFSYMLOOK			m_grfsymlook;
@@ -424,7 +363,6 @@ namespace EWC
 	CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
 
-	CSTNode * PStnodParseShuntingYard(CParseContext * pParctx, const char * pChzSource, const char *pChzSourceEnd);
 	void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalEntries = false);
 
 	void TestParse();

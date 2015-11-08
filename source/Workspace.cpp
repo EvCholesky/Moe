@@ -71,8 +71,6 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn)
 
 	// force our stacks to have zero allocated memory before we take our prev cbFree measurement
 	pWork->m_arypStnodEntry.Clear();
-	pParctx->m_arypStnodOperator.Clear();	
-	pParctx->m_arypStnodOperand.Clear();
 
 	PushSymbolTable(pParctx, pWork->m_pSymtab);
 }
