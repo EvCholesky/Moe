@@ -29,9 +29,9 @@ CSTNode * PStnodParseStatement(CParseContext * pParctx, SJaiLexer * pJlex);
 CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex);
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex);
 
-const char * PChzFromTermk(TERMK termk)
+const char * PChzFromPark(PARK park)
 {
-	static const char * s_mpTermkPChz[] =
+	static const char * s_mpParkPChz[] =
 	{
 		"Error",
 		"Identifier",
@@ -49,7 +49,6 @@ const char * PChzFromTermk(TERMK termk)
 		"Unary Operator",
 		"Uninitializer",
 
-		// non-terminals (...need to rename TERMK)
 		"Array Element",		// [array, index]
 		"Member Lookup",		// [struct, child]
 		"Argument Call",		// [procedure, arg0, arg1, ...]
@@ -65,14 +64,14 @@ const char * PChzFromTermk(TERMK termk)
 		"Struct Definition",
 		"Enum Constant",
 	};
-	EWC_CASSERT(EWC_DIM(s_mpTermkPChz) == TERMK_Max, "missing TERMK string");
-	if (termk == TERMK_Nil)
+	EWC_CASSERT(EWC_DIM(s_mpParkPChz) == PARK_Max, "missing PARK string");
+	if (park == PARK_Nil)
 		return "Nil";
 
-	if ((termk < TERMK_Nil) | (termk >= TERMK_Max))
-		return "Unknown TERMK";
+	if ((park < PARK_Nil) | (park >= PARK_Max))
+		return "Unknown PARK";
 
-	return s_mpTermkPChz[termk];
+	return s_mpParkPChz[park];
 }
 
 const char * PChzFromLitk(LITK litk)
@@ -133,7 +132,7 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 	pStnod->m_jtok = JTOK(pJlex->m_jtok);
-	pStnod->m_termk = TERMK_Identifier;
+	pStnod->m_park = PARK_Identifier;
 
 	CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 	pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
@@ -161,7 +160,7 @@ CSTNode * PStnodParseReservedWord(CParseContext * pParctx, SJaiLexer * pJlex, RW
 	CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 	pStnod->m_jtok = JTOK(pJlex->m_jtok);
-	pStnod->m_termk = TERMK_ReservedWord;
+	pStnod->m_park = PARK_ReservedWord;
 
 	CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 	pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
@@ -220,7 +219,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 						CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 						pStnod->m_jtok = JTOK(pJlex->m_jtok);
-						pStnod->m_termk = TERMK_Literal;
+						pStnod->m_park = PARK_Literal;
 
 						CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 						pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
@@ -246,7 +245,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 				CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 				pStnod->m_jtok = JTOK(pJlex->m_jtok);
-				pStnod->m_termk = TERMK_Literal;
+				pStnod->m_park = PARK_Literal;
 
 				CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 				pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
@@ -289,7 +288,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 				CSTNode * pStnodArray = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodArray->m_jtok = JTOK(pJlex->m_jtok);
-				pStnodArray->m_termk = TERMK_ArrayElement;
+				pStnodArray->m_park = PARK_ArrayElement;
 				pStnodArray->IAppendChild(pStnod);
 
 				CSTNode * pStnodElement = PStnodParseExpression(pParctx, pJlex);
@@ -304,7 +303,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 				CSTNode * pStnodArgList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodArgList->m_jtok = JTOK(pJlex->m_jtok);
-				pStnodArgList->m_termk = TERMK_ArgumentCall;
+				pStnodArgList->m_park = PARK_ArgumentCall;
 				pStnodArgList->IAppendChild(pStnod);
 
 				// parsing this with LogicalAndOrExpression even though ISO c uses assignmentExpression
@@ -336,7 +335,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 				{
 					CSTNode * pStnodMember = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 					pStnodMember->m_jtok = jtokPrev;
-					pStnodMember->m_termk = TERMK_MemberLookup;
+					pStnodMember->m_park = PARK_MemberLookup;
 					pStnodMember->IAppendChild(pStnod);
 					pStnodMember->IAppendChild(pStnodIdent);
 					pStnod = pStnodMember;
@@ -379,7 +378,7 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 
 			CSTNode * pStnodUnary = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 			pStnodUnary->m_jtok = jtokPrev;
-			pStnodUnary->m_termk = TERMK_UnaryOp;
+			pStnodUnary->m_park = PARK_UnaryOp;
 			pStnodUnary->IAppendChild(pStnodExp);
 
 			return pStnodUnary;
@@ -392,7 +391,7 @@ CSTNode * PStnodHandleExpressionRHS(
 	CParseContext * pParctx,
 	SJaiLexer * pJlex,
 	JTOK jtokExpression,
-	TERMK termkExpression,
+	PARK parkExpression,
 	CSTNode * pStnodLhs,
 	CSTNode * pStnodRhs)
 {
@@ -409,7 +408,7 @@ CSTNode * PStnodHandleExpressionRHS(
 
 	CSTNode * pStnodExp = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 	pStnodExp->m_jtok = jtokExpression;
-	pStnodExp->m_termk = termkExpression;
+	pStnodExp->m_park = parkExpression;
 	pStnodExp->IAppendChild(pStnodLhs);
 	pStnodExp->IAppendChild(pStnodRhs);
 	return pStnodExp;
@@ -433,7 +432,7 @@ CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SJaiLexer
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseUnaryExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_MultiplicativeOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_MultiplicativeOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -457,7 +456,7 @@ CSTNode * PStnodParseAdditiveExpression(CParseContext * pParctx, SJaiLexer * pJl
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseMultiplicativeExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_AdditiveOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_AdditiveOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -481,7 +480,7 @@ CSTNode * PStnodParseShiftExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseAdditiveExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_ShiftOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_ShiftOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -507,7 +506,7 @@ CSTNode * PStnodParseRelationalExpression(CParseContext * pParctx, SJaiLexer * p
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseShiftExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_RelationalOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_RelationalOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -531,7 +530,7 @@ CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SJaiLexer * pJl
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseRelationalExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_EqualityOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_EqualityOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -559,7 +558,7 @@ CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SJaiLexer *
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseEqualityExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_BitwiseAndOrOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_BitwiseAndOrOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -583,7 +582,7 @@ CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SJaiLexer *
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseBitwiseAndOrExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_LogicalAndOrOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_LogicalAndOrOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -614,7 +613,7 @@ CSTNode * PStnodParseAssignmentExpression(CParseContext * pParctx, SJaiLexer * p
 				JtokNextToken(pJlex); // consume operator
 
 				CSTNode * pStnodExp = PStnodParseLogicalAndOrExpression(pParctx, pJlex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, TERMK_AssignmentOp, pStnod, pStnodExp);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, jtokPrev, PARK_AssignmentOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -638,7 +637,7 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 		CSTNode * pStnodArray = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 		pStnodArray->m_jtok = JTOK(' ');
-		pStnodArray->m_termk = TERMK_ArrayDecl;
+		pStnodArray->m_park = PARK_ArrayDecl;
 		
 		STypeInfoArray * pTinary = EWC_NEW(pParctx->m_pAlloc, STypeInfoArray) STypeInfoArray();
 		pParctx->m_pSymtab->m_arypTinManaged.Append(pTinary);
@@ -675,7 +674,7 @@ CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 		CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 		pStnod->m_jtok = JTOK('*');
-		pStnod->m_termk = TERMK_Reference;
+		pStnod->m_park = PARK_Reference;
 
 	// Not doing nested pointer check, ParseTypeSpecifier will handle it
 	//CSTNode * pStnodNested = PStnodParsePointerDecl(pParctx, pJlex);
@@ -754,7 +753,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnod;
 }
 
-CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, TERMK termkContext)
+CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK parkContext)
 {
 	if (pJlex->m_jtok != JTOK_Identifier)
 		return nullptr;
@@ -772,7 +771,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, TERMK
 	CSTNode * pStnodDecl = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 	pStnodDecl->m_jtok = JTOK_Nil;
-	pStnodDecl->m_termk = TERMK_Decl;
+	pStnodDecl->m_park = PARK_Decl;
 
 	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
 	pStnodDecl->m_pStdecl = pStdecl;
@@ -804,7 +803,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, TERMK
 			JtokNextToken(pJlex);
 			if (pJlex->m_jtok == JTOK_TripleMinus)
 			{
-				if (termkContext == TERMK_ParameterList)
+				if (parkContext == PARK_ParameterList)
 				{
 					ParseError(pParctx, pJlex, "--- uninitializer not allowed in parameter lists");
 				}
@@ -812,7 +811,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, TERMK
 				{
 					pStnodInit = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 					pStnodInit->m_jtok = JTOK_TripleMinus;
-					pStnodInit->m_termk = TERMK_Uninitializer;
+					pStnodInit->m_park = PARK_Uninitializer;
 
 					if (!pStnodType)
 					{
@@ -854,7 +853,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, TERMK
 
 CSTNode * PStnodParseDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	CSTNode * pStnod = PStnodParseParameter(pParctx, pJlex, TERMK_Decl);
+	CSTNode * pStnod = PStnodParseParameter(pParctx, pJlex, PARK_Decl);
 	if (!pStnod)
 		return nullptr;
 
@@ -887,7 +886,7 @@ CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
 			{
 				pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodList->m_jtok = JTOK('{');
-				pStnodList->m_termk = TERMK_List;
+				pStnodList->m_park = PARK_List;
 				pStnodList->IAppendChild(pStnodReturn);
 				pStnodReturn = pStnodList;
 			}
@@ -899,21 +898,21 @@ CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
 
 CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pJlex, TERMK_ParameterList);
+	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList);
 	if (!pStnodParam)
 		return nullptr;
 
 	CSTNode * pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 	pStnodList->m_jtok = JTOK_Nil;
-	pStnodList->m_termk = TERMK_ParameterList;
+	pStnodList->m_park = PARK_ParameterList;
 	pStnodList->IAppendChild(pStnodParam);
 
 	while (pJlex->m_jtok == JTOK(','))
 	{
 		JtokNextToken(pJlex);
 
-		pStnodParam = PStnodParseParameter(pParctx, pJlex, TERMK_ParameterList);
+		pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList);
 		if (!pStnodParam)
 		{
 			ParseError(pParctx, pJlex, "Expected parameter before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
@@ -933,7 +932,7 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 
 	CSTNode * pStnodConstant = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 	pStnodConstant->m_jtok = JTOK_Nil;
-	pStnodConstant->m_termk = TERMK_EnumConstant;
+	pStnodConstant->m_park = PARK_EnumConstant;
 
 	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
 	pStnodConstant->m_pStdecl = pStdecl;
@@ -953,7 +952,7 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnodConstant;
 }
 
-int CChildrenInList(CSTNode * pStnod, CSTNode **& ppStnodChildren, TERMK termkList)
+int CChildrenInList(CSTNode * pStnod, CSTNode **& ppStnodChildren, PARK parkkList)
 {
 	if (!pStnod)
 	{
@@ -961,7 +960,7 @@ int CChildrenInList(CSTNode * pStnod, CSTNode **& ppStnodChildren, TERMK termkLi
 		return 0;
 	}
 
-	if (pStnod->m_termk != termkList)
+	if (pStnod->m_park != parkkList)
 	{
 		// assume the list of one was collapsed down
 		ppStnodChildren = &pStnod;
@@ -993,7 +992,7 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex
 			{
 				pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodList->m_jtok = JTOK('{');
-				pStnodList->m_termk = TERMK_List;
+				pStnodList->m_park = PARK_List;
 				pStnodList->IAppendChild(pStnodReturn);
 				pStnodReturn = pStnodList;
 			}
@@ -1030,7 +1029,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				CSTNode * pStnodFunc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodFunc->m_jtok = JTOK_Nil;
-				pStnodFunc->m_termk = TERMK_ProcedureDefinition;
+				pStnodFunc->m_park = PARK_ProcedureDefinition;
 
 				CSTProcedure * pStproc = EWC_NEW(pParctx->m_pAlloc, CSTProcedure) CSTProcedure();
 				pStnodFunc->m_pStproc = pStproc;
@@ -1071,8 +1070,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				// type info procedure
 
 				CSTNode ** ppStnodParams;
-				int cStnodParams = CChildrenInList(pStnodParams, ppStnodParams, TERMK_ParameterList);
-				//int cStnodReturns = CChildrenInList(pStnodReturns, ppStnodReturns, TERMK_Uhhhh);
+				int cStnodParams = CChildrenInList(pStnodParams, ppStnodParams, PARK_ParameterList);
+				//int cStnodReturns = CChildrenInList(pStnodReturns, ppStnodReturns, PARK_Uhhhh);
 				CSTNode ** ppStnodReturns = &pStnodReturns;
 				int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
 
@@ -1093,7 +1092,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				for ( ; ppStnodParams != ppStnodParamMax; ++ppStnodParams)
 				{
 					CSTNode * pStnodParam = *ppStnodParams;
-					if (EWC_FVERIFY(pStnodParam->m_termk == TERMK_Decl, "Expected decl"))
+					if (EWC_FVERIFY(pStnodParam->m_park == PARK_Decl, "Expected decl"))
 					{
 						pTinproc->m_arypTinParams.Append(pStnodParam->m_pTin);
 					}
@@ -1116,7 +1115,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				JtokNextToken(pJlex);
 				CSTNode * pStnodEnum = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodEnum->m_jtok = JTOK_Nil;
-				pStnodEnum->m_termk = TERMK_EnumDefinition;
+				pStnodEnum->m_park = PARK_EnumDefinition;
 
 				CSTEnum * pStenum = EWC_NEW(pParctx->m_pAlloc, CSTEnum) CSTEnum();
 				pStnodEnum->m_pStenum = pStenum;
@@ -1147,7 +1146,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				const CString & strName = pStnodIdent->m_pStval->m_str;
 				CSTNode ** ppStnodMember;
-				int cTypememb = CChildrenInList(pStnodConstantList, ppStnodMember, TERMK_List);
+				int cTypememb = CChildrenInList(pStnodConstantList, ppStnodMember, PARK_List);
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeStructMember)) + 
 								cTypememb * sizeof(STypeStructMember);
 				U8 * pB = (U8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
@@ -1164,7 +1163,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				{
 					STypeStructMember * pTypememb = pTinenum->m_tinstructProduced.m_aryTypememb.AppendNew();
 					CSTNode * pStnodMember = *ppStnodMember;
-					EWC_ASSERT(pStnodMember->m_termk == TERMK_EnumConstant, "Expected enum constant");
+					EWC_ASSERT(pStnodMember->m_park == PARK_EnumConstant, "Expected enum constant");
 
 					if (EWC_FVERIFY(pStnodMember->m_pStdecl, "enum constant without decl info"))
 					{
@@ -1183,7 +1182,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				CSTNode * pStnodStruct = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodStruct->m_jtok = JTOK_Nil;
-				pStnodStruct->m_termk = TERMK_StructDefinition;
+				pStnodStruct->m_park = PARK_StructDefinition;
 				pStnodStruct->IAppendChild(pStnodIdent);
 
 				CSymbolTable * pSymtabStruct = EWC_NEW(pParctx->m_pAlloc, CSymbolTable) CSymbolTable(pParctx->m_pAlloc);
@@ -1203,7 +1202,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				// type info struct
 				CSTNode ** ppStnodMember;
-				int cTypememb = CChildrenInList(pStnodDeclList, ppStnodMember, TERMK_List);
+				int cTypememb = CChildrenInList(pStnodDeclList, ppStnodMember, PARK_List);
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
 								cTypememb * sizeof(STypeStructMember);
 				U8 * pB = (U8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
@@ -1220,7 +1219,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				{
 					STypeStructMember * pTypememb = pTinstruct->m_aryTypememb.AppendNew();
 					CSTNode * pStnodMember = *ppStnodMember;
-					EWC_ASSERT(pStnodMember->m_termk == TERMK_Decl, "Expected decl");
+					EWC_ASSERT(pStnodMember->m_park == PARK_Decl, "Expected decl");
 
 					pTypememb->m_strName = pStnodMember->m_pStdecl->StrIdentifier(pStnodMember);
 					pTypememb->m_pTin = pStnodMember->m_pTin;
@@ -1255,7 +1254,7 @@ CSTNode * PStnodParseExpressionStatement(CParseContext * pParctx, SJaiLexer * pJ
 		CSTNode * pStnodEmpty = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
 		pStnodEmpty->m_jtok = JTOK(pJlex->m_jtok);
-		pStnodEmpty->m_termk = TERMK_Nop;
+		pStnodEmpty->m_park = PARK_Nop;
 
 		JtokNextToken(pJlex);
 		return pStnodEmpty;
@@ -1294,7 +1293,7 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 				{
 					pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 					pStnodList->m_jtok = JTOK('{');
-					pStnodList->m_termk = TERMK_List;
+					pStnodList->m_park = PARK_List;
 					pStnodList->IAppendChild(pStnodReturn);
 					pStnodReturn = pStnodList;
 				}
@@ -1443,17 +1442,17 @@ void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalE
 		pWork->m_arypStnodEntry.Append(pStnod);
 		if (!fAllowIllegalEntries)
 		{
-			bool fIsDecl = pStnod->m_termk == TERMK_Decl;
-			bool fIsDefinition = (pStnod->m_termk == TERMK_ProcedureDefinition) | 
-								(pStnod->m_termk == TERMK_EnumDefinition) | 
-								(pStnod->m_termk == TERMK_StructDefinition);
+			bool fIsDecl = pStnod->m_park == PARK_Decl;
+			bool fIsDefinition = (pStnod->m_park == PARK_ProcedureDefinition) | 
+								(pStnod->m_park == PARK_EnumDefinition) | 
+								(pStnod->m_park == PARK_StructDefinition);
 			if (!fIsDecl | fIsDefinition)
 			{
 				ParseError(
 					pParctx,
 					pJlex,
 					"Unexpected statement at global scope '%s'",
-					PChzFromTermk(pStnod->m_termk));
+					PChzFromPark(pStnod->m_park));
 			}
 		}
 	}
@@ -1812,7 +1811,7 @@ void DeleteTypeInfo(CAlloc * pAlloc, STypeInfo * pTin)
 
 CSTNode::CSTNode(CAlloc * pAlloc)
 :m_jtok(JTOK_Nil)
-,m_termk(TERMK_Nil)
+,m_park(PARK_Nil)
 ,m_strees(STREES_Parsed)
 ,m_pStval(nullptr)
 ,m_pStdecl(nullptr)
@@ -1863,13 +1862,13 @@ CSTNode::~CSTNode()
 }
 
 
-size_t CChPrintTypeInfo(STypeInfo * pTin, TERMK termk, char * pCh, char * pChEnd)
+size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 {
 	if (pTin == nullptr)
 	{
-		switch (termk)
+		switch (park)
 		{
-		case TERMK_List:	return CChCopy("{}", pCh, pChEnd-pCh);
+		case PARK_List:		return CChCopy("{}", pCh, pChEnd-pCh);
 		default:			return CChCopy("???", pCh, pChEnd-pCh);
 		}
 	}
@@ -1881,7 +1880,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, TERMK termk, char * pCh, char * pChEnd
 			STypeInfoPointer * pTinptr = (STypeInfoPointer*)pTin;
 			char * pChWork = pCh;
 			pChWork += CChCopy("*", pChWork, pChEnd-pChWork);
-			pChWork += CChPrintTypeInfo(pTinptr->m_pTinPointedTo, termk, pChWork, pChEnd);
+			pChWork += CChPrintTypeInfo(pTinptr->m_pTinPointedTo, park, pChWork, pChEnd);
 			return pChWork - pCh;
 		}break;
 	case TINK_Array:
@@ -1931,49 +1930,49 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, TERMK termk, char * pCh, char * pChEnd
 
 size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 {
-	switch (pStnod->m_termk)
+	switch (pStnod->m_park)
 	{
-	case TERMK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "@%s", pStnod->m_pStval->m_str.PChz());
-	case TERMK_ReservedWord:		return CChCopy(PChzFromRword(pStnod->m_pStval->m_rword), pCh, pChEnd - pCh); 
-	case TERMK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
-	case TERMK_Literal:				
+	case PARK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "@%s", pStnod->m_pStval->m_str.PChz());
+	case PARK_ReservedWord:			return CChCopy(PChzFromRword(pStnod->m_pStval->m_rword), pCh, pChEnd - pCh); 
+	case PARK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
+	case PARK_Literal:				
 		{
 			switch (pStnod->m_pStval->m_litty.m_litk)
 			{
-			case LITK_String:	return CChFormat(pCh, pChEnd-pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
-			case LITK_Char:		return CChFormat(pCh, pChEnd-pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
-			case LITK_Int:		return CChFormat(pCh, pChEnd-pCh, "%d", pStnod->m_pStval->m_n);
-			case LITK_Float:	return CChFormat(pCh, pChEnd-pCh, "%f", pStnod->m_pStval->m_g);
-			case LITK_Bool:		return CChFormat(pCh, pChEnd-pCh, "%s", (pStnod->m_pStval->m_n) ? "true" : "false");
+			case LITK_String:		return CChFormat(pCh, pChEnd-pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
+			case LITK_Char:			return CChFormat(pCh, pChEnd-pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
+			case LITK_Int:			return CChFormat(pCh, pChEnd-pCh, "%d", pStnod->m_pStval->m_n);
+			case LITK_Float:		return CChFormat(pCh, pChEnd-pCh, "%f", pStnod->m_pStval->m_g);
+			case LITK_Bool:			return CChFormat(pCh, pChEnd-pCh, "%s", (pStnod->m_pStval->m_n) ? "true" : "false");
 			default: 
 				EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok)); 
 				return 0;
 			}
 		}
-	case TERMK_AdditiveOp:			return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_MultiplicativeOp:	return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_ShiftOp:				return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_EqualityOp:			return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_RelationalOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_BitwiseAndOrOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_LogicalAndOrOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_UnaryOp:				return CChFormat(pCh, pChEnd-pCh, "unary[%s]", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_AssignmentOp:		return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_ArrayElement:		return CChCopy("elem", pCh, pChEnd - pCh);
-	case TERMK_MemberLookup:		return CChCopy("member", pCh, pChEnd - pCh);
-	case TERMK_ArgumentCall:		return CChCopy("args", pCh, pChEnd - pCh);
-	case TERMK_List:				return CChCopy("{}", pCh, pChEnd - pCh);
-	case TERMK_ParameterList:		return CChCopy("params", pCh, pChEnd - pCh);
-	case TERMK_ArrayDecl:			return CChFormat(pCh, pChEnd - pCh, "[%s]", PChzFromJtok(pStnod->m_jtok));
-	case TERMK_If:					return CChCopy("if", pCh, pChEnd - pCh);
-	case TERMK_Else:				return CChCopy("else", pCh, pChEnd - pCh);
-	case TERMK_Reference:			return CChCopy("ptr", pCh, pChEnd - pCh);
-	case TERMK_Decl:				return CChCopy("decl", pCh, pChEnd - pCh);
-	case TERMK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
-	case TERMK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
-	case TERMK_StructDefinition:	return CChCopy("struct", pCh, pChEnd - pCh);
-	case TERMK_EnumConstant:		return CChCopy("enumConst", pCh, pChEnd - pCh);
-	case TERMK_Error:
+	case PARK_AdditiveOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_MultiplicativeOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_ShiftOp:			    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_EqualityOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_RelationalOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_BitwiseAndOrOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_LogicalAndOrOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_UnaryOp:			    return CChFormat(pCh, pChEnd-pCh, "unary[%s]", PChzFromJtok(pStnod->m_jtok));
+	case PARK_AssignmentOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
+	case PARK_ArrayElement:		    return CChCopy("elem", pCh, pChEnd - pCh);
+	case PARK_MemberLookup:		    return CChCopy("member", pCh, pChEnd - pCh);
+	case PARK_ArgumentCall:		    return CChCopy("args", pCh, pChEnd - pCh);
+	case PARK_List:				    return CChCopy("{}", pCh, pChEnd - pCh);
+	case PARK_ParameterList:	    return CChCopy("params", pCh, pChEnd - pCh);
+	case PARK_ArrayDecl:		    return CChFormat(pCh, pChEnd - pCh, "[%s]", PChzFromJtok(pStnod->m_jtok));
+	case PARK_If:				    return CChCopy("if", pCh, pChEnd - pCh);
+	case PARK_Else:				    return CChCopy("else", pCh, pChEnd - pCh);
+	case PARK_Reference:			return CChCopy("ptr", pCh, pChEnd - pCh);
+	case PARK_Decl:					return CChCopy("decl", pCh, pChEnd - pCh);
+	case PARK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
+	case PARK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
+	case PARK_StructDefinition:		return CChCopy("struct", pCh, pChEnd - pCh);
+	case PARK_EnumConstant:			return CChCopy("enumConst", pCh, pChEnd - pCh);
+	case PARK_Error:
 	default:						return CChCopy("error", pCh, pChEnd-pCh);
 	}
 }
@@ -1996,7 +1995,7 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 
 	if (grfdbgstr.FIsSet(FDBGSTR_Type))
 	{
-		pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_termk, pChWork, pChEnd);
+		pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_park, pChWork, pChEnd);
 		grfdbgstr.Clear(FDBGSTR_Type);
 	}
 	return pChWork - pCh;
@@ -2004,7 +2003,7 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 
 size_t CSTNode::CChWriteDebugString(char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr)
 {
-	bool fIsOperand = (m_termk == TERMK_Identifier) | (m_termk == TERMK_Literal);
+	bool fIsOperand = (m_park == PARK_Identifier) | (m_park == PARK_Literal);
 	bool fIsOperator = !fIsOperand;
 
 	if (fIsOperator)

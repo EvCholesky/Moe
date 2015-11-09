@@ -113,7 +113,7 @@ void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCh
 
 CString StrFromIdentifier(CSTNode * pStnod)
 {
-	if (EWC_FVERIFY(pStnod->m_termk == TERMK_Identifier, "expected identifier") && 
+	if (EWC_FVERIFY(pStnod->m_park == PARK_Identifier, "expected identifier") && 
 		EWC_FVERIFY(pStnod->m_pStval, "identifier encountered without string value"))
 	{
 		return pStnod->m_pStval->m_str;
@@ -131,23 +131,23 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 	CSTNode * pStnodIt = pStnod;
 	while (pStnodIt)
 	{
-		switch (pStnodIt->m_termk)
+		switch (pStnodIt->m_park)
 		{
-			case TERMK_Identifier:
+			case PARK_Identifier:
 			{
 				if (!EWC_FVERIFY(pStnod->m_pStval, "identifier without value string detected"))
 					break;
 				pCh += CChCopy(pStnod->m_pStval->m_str.PChz(), pCh, pChEnd - pCh); 
 			}break;
-			case TERMK_Reference:
+			case PARK_Reference:
 				pCh += CChCopy("* ", pCh, pChEnd - pCh); 
 				break;
-			case TERMK_ArrayDecl:
+			case PARK_ArrayDecl:
 				// BB - should follow the [], [..], [c] convention
 				pCh += CChCopy("[] ", pCh, pChEnd - pCh); 
 				break;
 			default:
-				pCh += CChCopy("<BadTermk> ", pCh, pChEnd - pCh); 
+				pCh += CChCopy("<BadPark> ", pCh, pChEnd - pCh); 
 				break;
 		}
 	}
@@ -174,7 +174,7 @@ STypeInfo * PTinFromTypeSpecification(CSymbolTable * pSymtab, CSTNode * pStnod, 
 	CSTNode * pStnodIt = pStnod;
 	while (pStnodIt)
 	{
-		if (pStnodIt->m_termk == TERMK_Identifier)
+		if (pStnodIt->m_park == PARK_Identifier)
 		{
 			if (!EWC_FVERIFY(pStnodIt->m_pStval, "identifier without value string detected"))
 				break;
@@ -195,8 +195,8 @@ STypeInfo * PTinFromTypeSpecification(CSymbolTable * pSymtab, CSTNode * pStnod, 
 		}
 		else
 		{
-			fAllowForwardDecl |= pStnodIt->m_termk == TERMK_Reference;
-			EWC_ASSERT(pStnodIt->m_termk == TERMK_Reference || pStnodIt->m_termk == TERMK_ArrayDecl);
+			fAllowForwardDecl |= pStnodIt->m_park == PARK_Reference;
+			EWC_ASSERT(pStnodIt->m_park == PARK_Reference || pStnodIt->m_park == PARK_ArrayDecl);
 			EWC_ASSERT(pStnodIt->CStnodChild() == 1);
 			pStnodIt = pStnodIt->PStnodChild(0);
 		}
@@ -210,7 +210,7 @@ STypeInfo * PTinFromTypeSpecification(CSymbolTable * pSymtab, CSTNode * pStnod, 
 	STypeInfo * pTinPrev = nullptr;
 	while (pStnodIt)
 	{
-		if (pStnodIt->m_termk == TERMK_Reference)
+		if (pStnodIt->m_park == PARK_Reference)
 		{
 			STypeInfoPointer * pTinptr = EWC_NEW(pAlloc, STypeInfoPointer) STypeInfoPointer();
 			pSymtab->AddManagedTin(pTinptr);
@@ -223,7 +223,7 @@ STypeInfo * PTinFromTypeSpecification(CSymbolTable * pSymtab, CSTNode * pStnod, 
 			EWC_ASSERT(pStnodIt->CStnodChild() == 1);
 			pStnodIt = pStnodIt->PStnodChild(0);
 		}
-		else if (pStnodIt->m_termk == TERMK_ArrayDecl)
+		else if (pStnodIt->m_park == PARK_ArrayDecl)
 		{
 			EWC_ASSERT(false, "not handling arrays in typecheck yet");
 			//STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
@@ -234,7 +234,7 @@ STypeInfo * PTinFromTypeSpecification(CSymbolTable * pSymtab, CSTNode * pStnod, 
 
 			// if this is a pointer an array of an unknown type, the array is the unknown. I guess that's TBD
 		}
-		if (pStnodIt->m_termk == TERMK_Identifier)
+		if (pStnodIt->m_park == PARK_Identifier)
 		{
 			if (pTinFinal->m_tink == TINK_ForwardDecl &&
 				EWC_FVERIFY(pTinPrev != nullptr, "how did we get here without a prev type info?"))
@@ -255,7 +255,7 @@ CString StrFromTypeInfo(STypeInfo * pTin)
 {
 	char aCh[1024];
 
-	CChPrintTypeInfo(pTin, TERMK_Nil, aCh, EWC_PMAC(aCh));
+	CChPrintTypeInfo(pTin, PARK_Nil, aCh, EWC_PMAC(aCh));
 	return CString(aCh);
 }
 
@@ -442,9 +442,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 		STypeCheckStackEntry * pTcsentTop = paryTcsent->PLast();
 		CSTNode * pStnod = pTcsentTop->m_pStnod;
 
-		switch (pStnod->m_termk)
+		switch (pStnod->m_park)
 		{
-			case TERMK_ProcedureDefinition:
+			case PARK_ProcedureDefinition:
 			{
 				CSTProcedure * pStproc = pStnod->m_pStproc;
 				if (!EWC_FVERIFY(pStproc, "missing procedure parse data"))
@@ -499,17 +499,17 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 				}
 			}break;
-			case TERMK_EnumDefinition:
+			case PARK_EnumDefinition:
 			{
 				EWC_ASSERT(false, "WIP Enum typeCheck not finished");
 				return TCRET_StoppingError;
 			}break;
-			case TERMK_EnumConstant:
+			case PARK_EnumConstant:
 			{
 				EWC_ASSERT(false, "WIP Enum typeCheck not finished");
 				return TCRET_StoppingError;
 			}break;
-			case TERMK_StructDefinition:
+			case PARK_StructDefinition:
 			{
 				// Note: there isn't struct value data, layout is just children[identifierName, DeclList]
 				SSymbol * pSymStruct = nullptr;
@@ -545,7 +545,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 			}break;
 
-			case TERMK_Identifier:
+			case PARK_Identifier:
 			{
 				// Note: we're only expecting to get here for identifiers within statements.
 				//  Identifiers for function names, declaration names and types, should do their own type checking.
@@ -563,7 +563,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 
 					CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
-					if (pStnodDefinition->m_termk == TERMK_Decl)
+					if (pStnodDefinition->m_park == PARK_Decl)
 					{
 						if (pStnodDefinition->m_strees >= STREES_TypeChecked)
 						{
@@ -609,8 +609,8 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				pStnod->m_strees = STREES_TypeChecked;
 			}break;
 
-			case TERMK_ParameterList:
-			case TERMK_List:
+			case PARK_ParameterList:
+			case PARK_List:
 			{
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 				{
@@ -620,7 +620,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
-			case TERMK_Decl:
+			case PARK_Decl:
 			{
 				CSTDecl * pStdecl = pStnod->m_pStdecl;
 				EWC_ASSERT(pStdecl, "missing decl parse data");
@@ -725,7 +725,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					PopTcsent(pTcfram);
 				}
 			}break;
-			case TERMK_Literal:
+			case PARK_Literal:
 			{
 				if (EWC_FVERIFY(pStnod->m_pTin == nullptr, "STypeInfoLiteral should be constructed during type checking"))
 				{
@@ -744,7 +744,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				PopTcsent(pTcfram);
 			}break;
 
-			case TERMK_AssignmentOp:
+			case PARK_AssignmentOp:
 			{
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 				{
@@ -824,13 +824,13 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
-			case TERMK_AdditiveOp:
-			case TERMK_MultiplicativeOp:
-			case TERMK_ShiftOp:
-			case TERMK_BitwiseAndOrOp:
-			case TERMK_RelationalOp:
-			case TERMK_EqualityOp:
-			case TERMK_LogicalAndOrOp:
+			case PARK_AdditiveOp:
+			case PARK_MultiplicativeOp:
+			case PARK_ShiftOp:
+			case PARK_BitwiseAndOrOp:
+			case PARK_RelationalOp:
+			case PARK_EqualityOp:
+			case PARK_LogicalAndOrOp:
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 				{
 					if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to binary ops"))
@@ -868,10 +868,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								}
 							}
 
-							TERMK termk = pStnod->m_termk;
-							bool fIsLogicalOp = (termk == TERMK_RelationalOp) | 
-												(termk == TERMK_EqualityOp) | 
-												(termk == TERMK_LogicalAndOrOp);
+							PARK park = pStnod->m_park;
+							bool fIsLogicalOp = (park == PARK_RelationalOp) | 
+												(park == PARK_EqualityOp) | 
+												(park == PARK_LogicalAndOrOp);
 
 							pStnod->m_pTin = (fIsLogicalOp) ? pSymtab->PTinLookup("bool") : pTinUpcast;
 						}

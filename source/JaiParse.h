@@ -53,44 +53,44 @@ namespace EWC
 		U64					m_n;
 	};
 
-	enum TERMK // TERMinal Kind
+	enum PARK // PARse Kind
 	{
-		TERMK_Error,
-		TERMK_Identifier,
-		TERMK_ReservedWord,
-		TERMK_Nop,
-		TERMK_Literal,
-		TERMK_AdditiveOp,
-		TERMK_MultiplicativeOp,
-		TERMK_ShiftOp,
-		TERMK_EqualityOp,
-		TERMK_RelationalOp,
-		TERMK_BitwiseAndOrOp,
-		TERMK_LogicalAndOrOp,
-		TERMK_AssignmentOp,
-		TERMK_UnaryOp,
-		TERMK_Uninitializer,
+		PARK_Error,
+		PARK_Identifier,
+		PARK_ReservedWord,
+		PARK_Nop,
+		PARK_Literal,
+		PARK_AdditiveOp,
+		PARK_MultiplicativeOp,
+		PARK_ShiftOp,
+		PARK_EqualityOp,
+		PARK_RelationalOp,
+		PARK_BitwiseAndOrOp,
+		PARK_LogicalAndOrOp,
+		PARK_AssignmentOp,
+		PARK_UnaryOp,
+		PARK_Uninitializer,
 
-		// non-terminals (...need to rename TERMK)
-		TERMK_ArrayElement,		// [array, index]
-		TERMK_MemberLookup,		// [struct, child]
-		TERMK_ArgumentCall,		// [procedure, arg0, arg1, ...]
-		TERMK_List,
-		TERMK_ParameterList,
-		TERMK_ArrayDecl,
-		TERMK_If,
-		TERMK_Else,
+		// non-terminals
+		PARK_ArrayElement,		// [array, index]
+		PARK_MemberLookup,		// [struct, child]
+		PARK_ArgumentCall,		// [procedure, arg0, arg1, ...]
+		PARK_List,
+		PARK_ParameterList,
+		PARK_ArrayDecl,
+		PARK_If,
+		PARK_Else,
 
-		TERMK_Reference,
-		TERMK_Decl,
-		TERMK_ProcedureDefinition,
-		TERMK_EnumDefinition,
-		TERMK_StructDefinition,
-		TERMK_EnumConstant,
+		PARK_Reference,
+		PARK_Decl,
+		PARK_ProcedureDefinition,
+		PARK_EnumDefinition,
+		PARK_StructDefinition,
+		PARK_EnumConstant,
 		
-		TERMK_Max,
-		TERMK_Min = 0,
-		TERMK_Nil = -1,
+		PARK_Max,
+		PARK_Min = 0,
+		PARK_Nil = -1,
 	};
 
 
@@ -192,7 +192,7 @@ namespace EWC
 								{ return iStnod >= 0 ? m_arypStnodChild[iStnod] : nullptr; }
 
 		JTOK				m_jtok;
-		TERMK				m_termk;
+		PARK				m_park;
 		STREES				m_strees;
 
 		CSTValue *			m_pStval;
@@ -205,7 +205,7 @@ namespace EWC
 		CDynAry<CSTNode *>	m_arypStnodChild;
 	};
 
-	size_t CChPrintTypeInfo(STypeInfo * pTin, TERMK termk, char * pCh, char * pChEnd);
+	size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd);
 	void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
 
 
