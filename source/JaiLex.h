@@ -107,7 +107,7 @@ enum FLIT // LITeral Flags
 
 enum LITK
 {
-	LITK_Int,			// int with unassigned type
+	LITK_Integer,			// int with unassigned type
 	LITK_Float,
 	LITK_Char,
 	LITK_String,

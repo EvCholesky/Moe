@@ -486,7 +486,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 					#endif
 					if (pChzNext == pChz+2)
 						return JtokSetTokinf(pJlex, JTOK_ParseError, pChz-2, pChz-1);
-					return JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Int, pChz, pChzNext);
+					return JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Integer, pChz, pChzNext);
 				}
 			}
 
@@ -541,7 +541,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 		    pJlex->m_n = n;
 		    #endif
 
-		    return JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Int, pChz, pChzNext);
+		    return JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Integer, pChz, pChzNext);
 		 }
 		 goto single_char;
 	}
@@ -663,7 +663,7 @@ void AssertMatches(
 			EWC_ASSERT(jlex.m_litty.m_litsize == LITSIZE_Nil && jlex.m_litty.m_litsign == LITSIGN_Nil, "errant literal type");
 		}
 
-		bool fIsIntLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litty.m_litk == LITK_Int;
+		bool fIsIntLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litty.m_litk == LITK_Integer;
 		if (aN && fIsIntLiteral)
 		{
 			EWC_ASSERT(jlex.m_n == aN[iJtok], "integer literal value doesn't match expected"); 
@@ -737,10 +737,10 @@ void TestLexing()
 								JTOK_Literal, JTOK_Literal,
 								JTOK_Nil };
 	const SLiteralType s_aLitty[] = {	SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
-										SLiteralType(LITK_Int, LITSIGN_Unsigned, LITSIZE_8), SLiteralType(),
+										SLiteralType(LITK_Integer, LITSIGN_Unsigned, LITSIZE_8), SLiteralType(),
 										SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_64), SLiteralType(),
-										SLiteralType(), SLiteralType(LITK_Int, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
-										SLiteralType(LITK_Int, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
+										SLiteralType(), SLiteralType(LITK_Integer, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
+										SLiteralType(LITK_Integer, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
 										SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_Nil), 
 										SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_Nil),
 									};

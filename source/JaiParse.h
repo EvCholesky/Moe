@@ -39,17 +39,22 @@ public:
 						CSTValue()
 						:m_litty()
 						,m_str()
+						,m_nUnsigned(0)
 						,m_rword(RWORD_Nil)
-						,m_g(0.0f)
-						,m_n(0)
+						,m_tfnSigned(TFN_Nil)
 							{ ; }
 
 	SLiteralType		m_litty;
 
 	EWC::CString		m_str;
+	union
+	{
+		F64					m_g;
+		u64					m_nUnsigned;
+		s64					m_nSigned;
+	};
 	RWORD				m_rword;
-	F64					m_g;
-	u64					m_n;
+	TFN					m_tfnSigned;
 };
 
 enum PARK // PARse Kind

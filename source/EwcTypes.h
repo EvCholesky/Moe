@@ -56,7 +56,12 @@ typedef double F64;
 
 typedef u32 HV; // Hash Value
 
-
+enum TFN
+{
+	TFN_False,
+	TFN_True,
+	TFN_Nil = -1,
+};
 
 namespace EWC
 {

@@ -307,9 +307,14 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 	const SLiteralType & litty = stval.m_litty;
 	switch (litty.m_litk)
 	{
-	case LITK_Int:
+	case LITK_Integer:
 		{
-			if (stval.m_n >= LLONG_MAX)		return pSymtab->PTinLookup("u64");
+			TFN tfnSigned = stval.m_tfnSigned;
+			if ((tfnSigned != TFN_True) & (stval.m_nUnsigned >= LLONG_MAX))
+			{
+				tfnSigned = TFN_False;
+			}
+			if (tfnSigned == TFN_False)		return pSymtab->PTinLookup("u64");
 			else							return pSymtab->PTinLookup("s64");
 		}
 	case LITK_Float:	return pSymtab->PTinLookup("float");
@@ -339,13 +344,27 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 
 	switch (litty.m_litk)
 	{
-	case LITK_Int:
+	case LITK_Integer:
 		{
-			if (stval.m_n < SCHAR_MAX)		return pSymtab->PTinLookup("s8");
-			if (stval.m_n < SHRT_MAX)		return pSymtab->PTinLookup("s16");
-			if (stval.m_n < INT_MAX)		return pSymtab->PTinLookup("s32");
-			if (stval.m_n < LLONG_MAX)		return pSymtab->PTinLookup("s64");
-			else							return pSymtab->PTinLookup("u64");
+			TFN tfnSigned = stval.m_tfnSigned;
+			if ((tfnSigned != TFN_True) & (stval.m_nUnsigned >= LLONG_MAX))
+			{
+				tfnSigned = TFN_False;
+			}
+			if (tfnSigned == TFN_False)
+			{
+				if (stval.m_nUnsigned < UCHAR_MAX)		return pSymtab->PTinLookup("u8");
+				if (stval.m_nUnsigned < USHRT_MAX)		return pSymtab->PTinLookup("u16");
+				if (stval.m_nUnsigned < UINT_MAX)		return pSymtab->PTinLookup("u32");
+				else									return pSymtab->PTinLookup("u64");
+			}
+			else
+			{
+				if ((stval.m_nSigned < SCHAR_MAX) & (stval.m_nSigned > SCHAR_MIN))	return pSymtab->PTinLookup("s8");
+				if ((stval.m_nSigned < SHRT_MAX) & (stval.m_nSigned > SHRT_MIN))	return pSymtab->PTinLookup("s16");
+				if ((stval.m_nSigned < INT_MAX) & (stval.m_nSigned > INT_MIN))		return pSymtab->PTinLookup("s32");
+				else																return pSymtab->PTinLookup("s64");
+			}
 		}
 	case LITK_Float:	return pSymtab->PTinLookup("float");
 	case LITK_Char:		return pSymtab->PTinLookup("char");
@@ -436,6 +455,10 @@ bool FIsValidLhs(const CSTNode * pStnod)
 
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
+	int i = 2;
+	i = - + 2;
+	int b = ~i;
+
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
 	while (paryTcsent->C())
 	{
@@ -947,14 +970,24 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							case JTOK('+'):
 							case JTOK('-'):
 							{
-
 								TINK tinkOperand = pTinOperand->m_tink;
 								bool fIsInteger = tinkOperand == TINK_Integer;
+								bool fIsFloat = tinkOperand == TINK_Float;
+								if (tinkOperand == TINK_Literal && pStnodOperand->m_pStval)
+								{
+									LITK litk = pStnodOperand->m_pStval->m_litty.m_litk;
+									fIsInteger |= litk == LITK_Integer;
+									fIsFloat |= litk == LITK_Float;
+								}
+
 								bool fIsValidPtrOp =	((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & 
 														(tinkOperand == TINK_Pointer);
-								bool fIsValidFloatOp =  ((jtok == JTOK('+')) | (jtok == JTOK('-'))) & 
-														(tinkOperand == TINK_Float);
+								bool fIsValidFloatOp =  ((jtok == JTOK('+')) | (jtok == JTOK('-'))) & fIsFloat;
 								bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp;
+
+								// BB - we should be checking for negating a signed literal here, but we can't really
+								//  do operations on literals until we know the resolved type
+								//  (Otherwise ~1 will always resolve to a u64)
 
 								pStnod->m_pTin = pTinOperand;
 								if (!fIsSupported)

@@ -137,8 +137,6 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 
 	CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 	pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
-	pStval->m_g = pJlex->m_g;
-	pStval->m_n = pJlex->m_n;
 	pStval->m_rword = RWORD_Nil;
 	pStnod->m_pStval = pStval;
 
@@ -165,8 +163,6 @@ CSTNode * PStnodParseReservedWord(CParseContext * pParctx, SJaiLexer * pJlex, RW
 
 	CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 	pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
-	pStval->m_g = pJlex->m_g;
-	pStval->m_n = pJlex->m_n;
 	pStval->m_rword = rwordLookup;
 	pStnod->m_pStval = pStval;
 
@@ -224,8 +220,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 						CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 						pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
-						pStval->m_g = pJlex->m_g;
-						pStval->m_n = (rword == RWORD_True) ? 1 : 0;
+						pStval->m_nUnsigned = (rword == RWORD_True) ? 1 : 0;
 						pStval->m_rword = rword;
 						pStnod->m_pTin = nullptr;
 
@@ -240,8 +235,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 			}
 		case JTOK_Literal:
 			{
-				// NOTE - doesn't treat negative constants as literals, need to support constant folding for this to
-				//  happen. I could hack it, but would need to handle cases like -(1) 
+				// NOTE - Negative literals don't exist until the type checking phase folds in the unary '-' operator
 
 				CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 
@@ -250,9 +244,15 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 				CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 				pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
-				pStval->m_g = pJlex->m_g;
-				pStval->m_n = pJlex->m_n;
-				pStval->m_rword = RWORD_Nil;
+
+				if (pJlex->m_litty.m_litk == LITK_Float)
+				{
+					pStval->m_g = pJlex->m_g;
+				}
+				else
+				{
+					pStval->m_nUnsigned = pJlex->m_n;
+				}
 				pStval->m_litty = pJlex->m_litty;
 
 				pStnod->m_pStval = pStval;
@@ -1942,9 +1942,11 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 			{
 			case LITK_String:		return CChFormat(pCh, pChEnd-pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
 			case LITK_Char:			return CChFormat(pCh, pChEnd-pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
-			case LITK_Int:			return CChFormat(pCh, pChEnd-pCh, "%d", pStnod->m_pStval->m_n);
+			case LITK_Integer:		return CChFormat(pCh, pChEnd-pCh, "%d", (pStnod->m_pStval->m_nSigned) ? 
+																				pStnod->m_pStval->m_nSigned : 
+																				pStnod->m_pStval->m_nUnsigned);
 			case LITK_Float:		return CChFormat(pCh, pChEnd-pCh, "%f", pStnod->m_pStval->m_g);
-			case LITK_Bool:			return CChFormat(pCh, pChEnd-pCh, "%s", (pStnod->m_pStval->m_n) ? "true" : "false");
+			case LITK_Bool:			return CChFormat(pCh, pChEnd-pCh, "%s", (pStnod->m_pStval->m_nUnsigned) ? "true" : "false");
 			default: 
 				EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok)); 
 				return 0;
