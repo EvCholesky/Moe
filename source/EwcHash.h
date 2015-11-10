@@ -69,7 +69,7 @@ public:
 		SEntry *							m_pEntry;
 	};
 
-				CHash(CAlloc * pAlloc, U32 cCapacityStarting = 32)
+				CHash(CAlloc * pAlloc, u32 cCapacityStarting = 32)
 				:m_pAlloc(pAlloc)
 				,m_aEntry(nullptr)
 				,m_cUsed(0)
@@ -86,7 +86,7 @@ public:
 				~CHash()
 					{ Clear(0); }
 
-	void		SetAlloc(CAlloc * pAlloc, U32 cCapacityStarting = 32)
+	void		SetAlloc(CAlloc * pAlloc, u32 cCapacityStarting = 32)
 					{
 						m_pAlloc = pAlloc;
 						Grow(cCapacityStarting);
@@ -97,10 +97,10 @@ public:
 						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
 
 						EWC_ASSERT(FIsPowerOfTwo(m_cCapacity), "cCapacity should be a power of two");
-						U32 mask = m_cCapacity - 1;
-						U32 iEntry = hv & mask;
+						u32 mask = m_cCapacity - 1;
+						u32 iEntry = hv & mask;
 
-						U32 cProbes = 0;
+						u32 cProbes = 0;
 						while (cProbes < m_cCapacity)
 						{
 							SEntry & entry = m_aEntry[iEntry];
@@ -120,7 +120,7 @@ public:
 						return nullptr;
 					}
 
-	void		Clear(U32 cCapacityNew = 32)
+	void		Clear(u32 cCapacityNew = 32)
 					{
 						SEntry * pEntryEnd = &m_aEntry[m_cCapacity];
 						for (SEntry * pEntry = m_aEntry; pEntry != pEntryEnd; ++pEntry)
@@ -143,10 +143,10 @@ public:
 						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
 
 						EWC_ASSERT(FIsPowerOfTwo(m_cCapacity), "cCapacity should be a power of two");
-						U32 mask = m_cCapacity - 1;
-						U32 iEntry = hv & mask;
+						u32 mask = m_cCapacity - 1;
+						u32 iEntry = hv & mask;
 
-						U32 cProbes = 0;
+						u32 cProbes = 0;
 						while (cProbes < m_cCapacity)
 						{
 							SEntry & entry = m_aEntry[iEntry];
@@ -173,11 +173,11 @@ public:
 	FINS		FinsEnsureKey(K key, V ** ppValue = nullptr)
 					{
 						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
-						U32 mask = m_cCapacity - 1;
-						U32 iEntry = hv & mask;
+						u32 mask = m_cCapacity - 1;
+						u32 iEntry = hv & mask;
 						SEntry * pEntryAvailable = nullptr;
 
-						U32 cProbes = 0;	
+						u32 cProbes = 0;	
 						for(; cProbes < m_cCapacity; ++cProbes) // prevent infinite looping
 						{
 							SEntry & entry = m_aEntry[iEntry];
@@ -211,8 +211,8 @@ public:
 
 							if (m_cUsed * 100 >= m_cCapacity * LOAD_FACTOR_PERCENT)
 							{
-								I32 cUsedPrev = m_cUsed;
-								I32 cCapacityPrev = m_cCapacity;
+								s32 cUsedPrev = m_cUsed;
+								s32 cCapacityPrev = m_cCapacity;
 								Grow(m_cCapacity * 2);
 
 								if (ppValue)
@@ -235,11 +235,11 @@ public:
 	FINS		FinsEnsureKeyAndValue(K key, V value)
 					{
 						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
-						U32 mask = m_cCapacity - 1;
-						U32 iEntry = hv & mask;
+						u32 mask = m_cCapacity - 1;
+						u32 iEntry = hv & mask;
 						SEntry * pEntryAvailable = nullptr;
 
-						for(U32 cProbes = 0; cProbes < m_cCapacity; ++cProbes) // prevent infinite looping
+						for(u32 cProbes = 0; cProbes < m_cCapacity; ++cProbes) // prevent infinite looping
 						{
 							SEntry & entry = m_aEntry[iEntry];
 							if (entry.m_hv == hv)
@@ -284,16 +284,16 @@ public:
 
 						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
 						HV hvDebug = hv + 1;
-						U32 mask = m_cCapacity - 1;
-						U32 iEntry = hv & mask;
-						U32 iEntryStart = iEntry;;
+						u32 mask = m_cCapacity - 1;
+						u32 iEntry = hv & mask;
+						u32 iEntryStart = iEntry;;
 								
 						if (!EWC_FVERIFY((m_cUsed+1+cDeleted) * 100 < m_cCapacity * LOAD_FACTOR_PERCENT, "Debug insertion will cause rehash"))
 							return FINS_Error;
 
 						for (int iDeleted = 0; iDeleted < cDeleted; ++iDeleted)
 						{
-							for(U32 cProbes = 0; 1; ++cProbes) // prevent infinite looping
+							for(u32 cProbes = 0; 1; ++cProbes) // prevent infinite looping
 							{
 								if (cProbes >= m_cCapacity)
 								{
@@ -315,7 +315,7 @@ public:
 
 						FINS finsReturn = FinsEnsureKeyAndValue(key, value);
 
-						U32 iEntryEnd = iEntry;
+						u32 iEntryEnd = iEntry;
 						for (iEntry = iEntryStart; iEntry != iEntryEnd; ++iEntry)
 						{
 							SEntry & entry = m_aEntry[iEntry];
@@ -326,7 +326,7 @@ public:
 						return finsReturn;
 					}
 
-	void		Grow(U32 cCapacityNew)
+	void		Grow(u32 cCapacityNew)
 					{
 						EWC_ASSERT(FIsPowerOfTwo(cCapacityNew), "invalid CHash capacity");
 
@@ -343,9 +343,9 @@ public:
 						m_cCapacity = cCapacityNew;
 					}
 
-	void		Rehash(SEntry * aEntryOld, U32 cCapacityOld, SEntry * aEntryNew, U32 cCapacityNew)
+	void		Rehash(SEntry * aEntryOld, u32 cCapacityOld, SEntry * aEntryNew, u32 cCapacityNew)
 					{
-						U32 mask = cCapacityNew - 1;
+						u32 mask = cCapacityNew - 1;
 						SEntry * pEntryEnd = &aEntryOld[cCapacityOld];
 						for (SEntry * pEntryOld = aEntryOld; pEntryOld != pEntryEnd; ++pEntryOld)
 						{
@@ -353,8 +353,8 @@ public:
 							if ((pEntryOld->m_hv == kHvUnused)|(pEntryOld->m_hv == kHvDeleted))
 								continue;
 
-							U32 cProbes = 0;
-							U32 iEntryNew = pEntryOld->m_hv & mask;
+							u32 cProbes = 0;
+							u32 iEntryNew = pEntryOld->m_hv & mask;
 							for( ; cProbes < cCapacityNew; ++cProbes) // prevent infinite looping
 							{
 								SEntry & entryNew = aEntryNew[iEntryNew];
@@ -380,9 +380,9 @@ public:
 
 	CAlloc *	PAlloc()
 					{ return m_pAlloc; } 
-	U32			C()
+	u32			C()
 					{ return m_cUsed; }
-	U32			CCapacity()
+	u32			CCapacity()
 					{ return m_cCapacity; }
 
 protected:
@@ -405,8 +405,8 @@ protected:
 
 	CAlloc *	m_pAlloc;
 	SEntry *	m_aEntry;
-	U32			m_cUsed;
-	U32			m_cCapacity;
+	u32			m_cUsed;
+	u32			m_cCapacity;
 };
 } // namespace EWC
 

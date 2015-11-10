@@ -39,14 +39,14 @@ namespace FastHash
 	#endif
 	*/
 
-	EWC_FORCE_INLINE U16 NGet16bits ( const void * p )
+	EWC_FORCE_INLINE u16 NGet16bits ( const void * p )
 	{
-	  return *(const U16*)p;
+	  return *(const u16*)p;
 	}
 
-	U32 NSuperFastHash (const char * pB, size_t cB) 
+	u32 NSuperFastHash (const char * pB, size_t cB) 
 	{
-		U32 hash = 0, tmp;
+		u32 hash = 0, tmp;
 		int cBRemain;
 
 		if (cB <= 0 || pB == nullptr) return 0;
@@ -60,7 +60,7 @@ namespace FastHash
 			hash  += NGet16bits (pB);
 			tmp    = (NGet16bits (pB+2) << 11) ^ hash;
 			hash   = (hash << 16) ^ tmp;
-			pB  += 2*sizeof(U16);
+			pB  += 2*sizeof(u16);
 			hash  += hash >> 11;
 		}
 
@@ -70,7 +70,7 @@ namespace FastHash
 		case 3:
 			hash += NGet16bits (pB);
 			hash ^= hash << 16;
-			hash ^= pB[sizeof(U16)] << 18;
+			hash ^= pB[sizeof(u16)] << 18;
 			hash += hash >> 11;
 			break;
 		case 2:
@@ -95,24 +95,24 @@ namespace FastHash
 		return hash;
 	}
 
-	EWC_FORCE_INLINE U16 NGet16bitsLower ( const void * p )
+	EWC_FORCE_INLINE u16 NGet16bitsLower ( const void * p )
 	{
 		union Bits
 		{
-			U16		m_u16;
+			u16		m_u16;
 			char	m_aC[2];
 		};
 
 		Bits bits;
-		bits.m_u16 = *(const U16*)p;
+		bits.m_u16 = *(const u16*)p;
 		bits.m_aC[0] = tolower(bits.m_aC[0]);
 		bits.m_aC[1] = tolower(bits.m_aC[1]);
 		return bits.m_u16;
 	}
 
-	U32 NSuperFastHashLower (const char * pB, size_t cB) 
+	u32 NSuperFastHashLower (const char * pB, size_t cB) 
 	{
-		U32 hash = 0, tmp;
+		u32 hash = 0, tmp;
 		int cBRemain;
 
 		if (cB <= 0 || pB == nullptr) 
@@ -127,7 +127,7 @@ namespace FastHash
 			hash  += NGet16bitsLower (pB);
 			tmp    = (NGet16bitsLower (pB+2) << 11) ^ hash;
 			hash   = (hash << 16) ^ tmp;
-			pB  += 2*sizeof(U16);
+			pB  += 2*sizeof(u16);
 			hash  += hash >> 11;
 		}
 
@@ -137,7 +137,7 @@ namespace FastHash
 		case 3:
 			hash += NGet16bitsLower (pB);
 			hash ^= hash << 16;
-			hash ^= tolower(pB[sizeof(U16)]) << 18;
+			hash ^= tolower(pB[sizeof(u16)]) << 18;
 			hash += hash >> 11;
 			break;
 		case 2:
@@ -211,8 +211,8 @@ public:
 	struct Entry
 	{
 		char *	m_pChz;
-		U16		m_cRef;
-		U16		m_cB;
+		u16		m_cRef;
+		u16		m_cB;
 	};
 
 	CAlloc * 			m_pAlloc;

@@ -178,7 +178,7 @@ STypeInfo * PTinForFloat(CSymbolTable * pSymtab, F64 gMin, F64 gLast)
 	return nullptr;
 }
 
-STypeInfo * PTinForInt(CSymbolTable * pSymtab, U64 uMin, U64 nLast)
+STypeInfo * PTinForInt(CSymbolTable * pSymtab, u64 uMin, u64 nLast)
 {
 	return nullptr;
 }
@@ -1078,7 +1078,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 				cBAlloc = cBAlloc +	(cStnodParams + cStnodReturns) * sizeof(STypeInfo *);
 
-				U8 * pB = (U8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
+				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
 				const CString & strName = pStnodIdent->m_pStval->m_str;
 				STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName.PChz());
@@ -1149,7 +1149,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				int cTypememb = CChildrenInList(pStnodConstantList, ppStnodMember, PARK_List);
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeStructMember)) + 
 								cTypememb * sizeof(STypeStructMember);
-				U8 * pB = (U8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
+				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
 				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strName.PChz());
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
@@ -1205,7 +1205,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				int cTypememb = CChildrenInList(pStnodDeclList, ppStnodMember, PARK_List);
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
 								cTypememb * sizeof(STypeStructMember);
-				U8 * pB = (U8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
+				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
 				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strName.PChz());
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
@@ -1521,13 +1521,13 @@ void AddBuiltInType(CSymbolTable * pSymtab, const CString & strName, TINK tink)
 	pSymtab->AddNamedType(nullptr, nullptr, pTin);
 }
 
-void AddBuiltInInteger(CSymbolTable * pSymtab, const CString & strName, U32 cBit, bool fSigned)
+void AddBuiltInInteger(CSymbolTable * pSymtab, const CString & strName, u32 cBit, bool fSigned)
 {
 	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strName.PChz(), cBit, fSigned);
 	pSymtab->AddNamedType(nullptr, nullptr, pTinint);
 }
 
-void AddBuiltInFloat(CSymbolTable * pSymtab, const CString & strName, U32 cBit)
+void AddBuiltInFloat(CSymbolTable * pSymtab, const CString & strName, u32 cBit)
 {
 	STypeInfoFloat * pTinfloat = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(strName.PChz(), cBit);
 	pSymtab->AddNamedType(nullptr, nullptr, pTinfloat);
@@ -2063,7 +2063,7 @@ void AssertParseMatchTailRecurse(
 {
 
 #ifdef EWC_TRACK_ALLOCATION
-	U8 aBAltrac[1024 * 100];
+	u8 aBAltrac[1024 * 100];
 	CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
 
 	CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
@@ -2126,12 +2126,12 @@ void AssertParseMatchTailRecurse(
 
 void TestParse()
 {
-	U8 aBString[1024 * 100];
+	u8 aBString[1024 * 100];
 	CAlloc allocString(aBString, sizeof(aBString));
 
 	StaticInitStrings(&allocString);
 
-	U8 aB[1024 * 100];
+	u8 aB[1024 * 100];
 	CAlloc alloc(aB, sizeof(aB));
 
 	SErrorManager errman;

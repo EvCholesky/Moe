@@ -40,15 +40,15 @@
 namespace EWC
 {
 
-typedef int8_t I8;
-typedef int16_t I16;
-typedef int32_t I32;
-typedef int64_t I64;
+typedef int8_t s8;
+typedef int16_t s16;
+typedef int32_t s32;
+typedef int64_t s64;
 
-typedef uint8_t U8;
-typedef uint16_t U16;
-typedef uint32_t U32;
-typedef uint64_t U64;
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
 
 typedef wchar_t WChar; // tag = wch
 
@@ -103,7 +103,7 @@ struct Simd4 { Simd x, y, z, w; };
 #define EWC_MAX_MIN_NIL(ENUM_NAME) ENUM_NAME##_Max, ENUM_NAME##_Min = 0, ENUM_NAME##_Nil = -1 \
 	EWC_ENUM_UTILS(ENUM_NAME)
 
-inline void AssertHandler( const char* pChzFile, U32 line, const char* pChzCondition, const char* pChzMessage = 0, ...);
+inline void AssertHandler( const char* pChzFile, u32 line, const char* pChzCondition, const char* pChzMessage = 0, ...);
 
 #define EWC_VERIFY( PREDICATE, ... ) \
 	do { if (!(PREDICATE)) { \
@@ -151,12 +151,12 @@ do { if (PREDICATE) \
 
 void DoNothing();
 
-inline I32 I32Coerce(I64 n)		{ I32 nRet = (I32)n;	EWC_ASSERT((I32)nRet == n, "I32Coerce failure"); return nRet; }
-inline I16 I16Coerce(I32 n)		{ I16 nRet = (I16)n;	EWC_ASSERT((I32)nRet == n, "I16Coerce failure"); return nRet; }
-inline I8 I8Coerce(I32 n)		{ I8 nRet = (I8)n;		EWC_ASSERT((I32)nRet == n, "I8Coerce failure");  return nRet; }
-inline U32 U32Coerce(U64 n)		{ U32 nRet = (U32)n;	EWC_ASSERT((U32)nRet == n, "u32Coerce failure"); return nRet; }
-inline U16 U16Coerce(U32 n)		{ U16 nRet = (U16)n;	EWC_ASSERT((U32)nRet == n, "u16Coerce failure"); return nRet; }
-inline U8 U8Coerce(U32 n)		{ U8 nRet = (U8)n;		EWC_ASSERT((U32)nRet == n, "u8Coerce failure");  return nRet; }
+inline s32 S32Coerce(s64 n)		{ s32 nRet = (s32)n;	EWC_ASSERT((s32)nRet == n, "S32Coerce failure"); return nRet; }
+inline s16 S16Coerce(s32 n)		{ s16 nRet = (s16)n;	EWC_ASSERT((s32)nRet == n, "S16Coerce failure"); return nRet; }
+inline s8 S8Coerce(s32 n)		{ s8 nRet = (s8)n;		EWC_ASSERT((s32)nRet == n, "S8Coerce failure");  return nRet; }
+inline u32 U32Coerce(u64 n)		{ u32 nRet = (u32)n;	EWC_ASSERT((u32)nRet == n, "u32Coerce failure"); return nRet; }
+inline u16 U16Coerce(u32 n)		{ u16 nRet = (u16)n;	EWC_ASSERT((u32)nRet == n, "u16Coerce failure"); return nRet; }
+inline u8 U8Coerce(u32 n)		{ u8 nRet = (u8)n;		EWC_ASSERT((u32)nRet == n, "u8Coerce failure");  return nRet; }
  
 // type traits
 template <typename T> struct SStripConst				{ typedef T Type;	enum { F_STRIPPED= false }; };
@@ -175,20 +175,20 @@ template <typename T> struct SIsPointer					{ enum { V = false }; };
 template <typename T> struct SIsPointer<T&>				{ enum { V = true }; };
 
 template <typename T> struct SIsSignedInt				{ enum { V = false }; };
-template <> struct SIsSignedInt<I8>						{ enum { V = true }; };
-template <> struct SIsSignedInt<I16>					{ enum { V = true }; };
-template <> struct SIsSignedInt<I32>					{ enum { V = true }; };
-template <> struct SIsSignedInt<I64>					{ enum { V = true }; };
+template <> struct SIsSignedInt<s8>						{ enum { V = true }; };
+template <> struct SIsSignedInt<s16>					{ enum { V = true }; };
+template <> struct SIsSignedInt<s32>					{ enum { V = true }; };
+template <> struct SIsSignedInt<s64>					{ enum { V = true }; };
 
 // templates to allocate a c-style block with proper alignment that doesn't run constructors
 
-struct EWC_ALIGN(16)	SAlignedQword  					{ U8 m_a[16]; };
+struct EWC_ALIGN(16)	SAlignedQword  					{ u8 m_a[16]; };
 template <int ALIGNMENT> struct SAlignedBlock			{ SAlignedBlock() {EWC_CASSERT(sizeof(*this), "unknown alignment in SAlignedBlock");}  };
-template <> struct SAlignedBlock<0>						{ U8 m_b; };
-template <> struct SAlignedBlock<1>						{ U8 m_b1; };
-template <> struct SAlignedBlock<2>						{ U16 m_b2; };
-template <> struct SAlignedBlock<4>						{ U32 m_b4; };
-template <> struct SAlignedBlock<8>						{ U64 m_b8; };
+template <> struct SAlignedBlock<0>						{ u8 m_b; };
+template <> struct SAlignedBlock<1>						{ u8 m_b1; };
+template <> struct SAlignedBlock<2>						{ u16 m_b2; };
+template <> struct SAlignedBlock<4>						{ u32 m_b4; };
+template <> struct SAlignedBlock<8>						{ u64 m_b8; };
 template <> struct SAlignedBlock<16>					{ SAlignedQword m_b16; };
 
 template <int CB, int ALIGNMENT>
@@ -204,7 +204,7 @@ struct SAlignedBytes // tag=alby
 template <typename SOURCE_TYPE, typename TARGET_TYPE>
 struct SCanConvert
 {
-	typedef U8 FalseType;
+	typedef u8 FalseType;
 	struct TrueType { FalseType a[2]; };
 	static TrueType		TestFunction(TARGET_TYPE);
 	static FalseType	TestFunction(...);
@@ -214,10 +214,10 @@ struct SCanConvert
 };
 
 template <typename T> struct SIsUnsignedInt						{ enum { V = false }; };
-template <> struct SIsUnsignedInt<U8>							{ enum { V = true }; };
-template <> struct SIsUnsignedInt<U16>							{ enum { V = true }; };
-template <> struct SIsUnsignedInt<U32>							{ enum { V = true }; };
-template <> struct SIsUnsignedInt<U64>							{ enum { V = true }; };
+template <> struct SIsUnsignedInt<u8>							{ enum { V = true }; };
+template <> struct SIsUnsignedInt<u16>							{ enum { V = true }; };
+template <> struct SIsUnsignedInt<u32>							{ enum { V = true }; };
+template <> struct SIsUnsignedInt<u64>							{ enum { V = true }; };
  
 template <typename T> struct SIsInt								{ enum { V  = SIsSignedInt<T>::V  || SIsUnsignedInt<T>::V  }; };
 
@@ -354,7 +354,7 @@ template <typename T> void DestructN(T * p, size_t c)						{ SDestructSelector<T
 
 // Memory functions
 
-void	FillAB(U8 b, void * pDest, size_t cB);
+void	FillAB(u8 b, void * pDest, size_t cB);
 void	ZeroAB(void * pDest, size_t cB);
 void	CopyAB(const void * pSource, void * pDest, size_t cB);
 bool	FAreSameAB(const void * aB0, void * aB1, size_t cB);
@@ -392,7 +392,7 @@ inline Syst SystMax(Syst systA, Syst systB) 					{ return ewcMax(systA, systB); 
 // reflect types
 
 class CClassType;
-typedef U32 TID;
+typedef u32 TID;
 extern TID TID_Nil;
 
 // Allocator
@@ -544,7 +544,7 @@ struct NAME                                                                     
 	typedef STORAGE StorageType;	                                                                                    \
 	NAME():m_raw(FENUM##_None)			{ EWC_CASSERT((STORAGE)FENUM##_All == FENUM##_All, "storage class overflow"); } \
 	NAME(FENUM raw):m_raw(raw)			{ ; }                                                                           \
-	NAME(U32 raw):m_raw(raw)			{ EWC_ASSERT(m_raw == raw, "GRF overflow"); }                                   \
+	NAME(u32 raw):m_raw(raw)			{ EWC_ASSERT(m_raw == raw, "GRF overflow"); }                                   \
                                                                                                                         \
 	bool		operator==(const NAME & other) const			{ return m_raw == other.m_raw; }                        \
 	bool		operator==(FENUM other) const					{ return m_raw == other; }                              \
@@ -558,8 +558,8 @@ struct NAME                                                                     
                                                                                                                         \
 	NAME		operator|=(const NAME & other)					{ m_raw |= other.m_raw; return *this;}                  \
 	NAME		operator&=(const NAME & other)					{ m_raw &= other.m_raw; return *this; }                 \
-	NAME		operator>>(I32 cBit) const						{ return this->m_raw >> cBit; }                         \
-	NAME		operator<<(I32 cBit) const						{ return this->m_raw << cBit; }                         \
+	NAME		operator>>(s32 cBit) const						{ return this->m_raw >> cBit; }                         \
+	NAME		operator<<(s32 cBit) const						{ return this->m_raw << cBit; }                         \
                                                                                                                         \
 	bool		FIsSet(STORAGE flags) const						{ return (m_raw & flags) == flags; }                    \
 	bool		FIsSet(NAME other) const						{ return (m_raw & other.m_raw) == other.m_raw; }        \
@@ -630,7 +630,7 @@ inline void * PVAlign(void * pV, size_t cBAlign)
 	size_t cBMasked = cBAlign - 1;
 	uintptr_t upB = reinterpret_cast<uintptr_t>(pV);
 	upB = ( (upB + cBMasked) & ~cBMasked);
-	return reinterpret_cast<U8 *>(upB);
+	return reinterpret_cast<u8 *>(upB);
 }
 
 inline size_t CBAlign(size_t size, size_t cBAlign)
@@ -653,11 +653,11 @@ public:
 				,m_cBMax(0)
 					{ ; }
 
-	void		SetArray(void * aB, I32 cBMax)
+	void		SetArray(void * aB, s32 cBMax)
 					{
 						EWC_ASSERT(m_cB == 0, "initializing buffer with active allocations");
-						m_aB = static_cast<U8 *>(PVAlign(aB, 16));
-						m_cBMax = cBMax - (m_aB - static_cast<U8 *>(aB));
+						m_aB = static_cast<u8 *>(PVAlign(aB, 16));
+						m_cBMax = cBMax - (m_aB - static_cast<u8 *>(aB));
 
 						m_iB = 0;
 						m_cB = 0;
@@ -688,14 +688,14 @@ public:
 
 						size_t cBTemp = m_cB;
 						size_t iBStart = (m_iB + m_cB ) % m_cBMax;
-						U8 * pBStart = &m_aB[iBStart];
-						U8 * pBMin = pBStart;
+						u8 * pBStart = &m_aB[iBStart];
+						u8 * pBMin = pBStart;
 
-						pBMin = static_cast<U8 *>(PVAlign(pBMin, cBPrefixAlign));
+						pBMin = static_cast<u8 *>(PVAlign(pBMin, cBPrefixAlign));
 						pBMin += cBPrefix;
-						pBMin = static_cast<U8 *>(PVAlign(pBMin, cBAlign));
-						U8 * pBMax = pBMin + cB;
-						U8 * pBOldest = &m_aB[m_iB];
+						pBMin = static_cast<u8 *>(PVAlign(pBMin, cBAlign));
+						u8 * pBMax = pBMin + cB;
+						u8 * pBOldest = &m_aB[m_iB];
 
 						if (pBMax > &m_aB[m_cBMax])
 						{
@@ -706,7 +706,7 @@ public:
 							cBTemp += m_cBMax - iBStart;
 							pBStart = m_aB;
 							pBMin = &m_aB[cBPrefix];
-							pBMin = static_cast<U8 *>(PVAlign(pBMin, cBAlign));
+							pBMin = static_cast<u8 *>(PVAlign(pBMin, cBAlign));
 
 							pBMax = &pBMin[cB];
 						}
@@ -738,7 +738,7 @@ public:
 						m_pBFence = nullptr;
 					}
 
-	void		FreeToPB(U8 * pB)
+	void		FreeToPB(u8 * pB)
 					{
 						EWC_ASSERT(pB, "bad argument");
 						size_t cbPrev = m_cB;
@@ -771,8 +771,8 @@ public:
 	bool		FCheckFence(void * pVMin, void * pVMax) const
 					{ return (m_pBFence == nullptr) | (m_pBFence <= pVMin) | (m_pBFence >= pVMax); }
 
-	U8 *	m_aB;
-	U8 * 	m_pBFence;		
+	u8 *	m_aB;
+	u8 * 	m_pBFence;		
 	size_t	m_iB;		// index of the first allocated byte in the ring (least recent)
 	size_t	m_cB;
 	size_t	m_cBMax;
@@ -786,12 +786,12 @@ public:
 class CBlockRingBuffer // tag = bring
 {
 public:
-	static const U32 s_nExpectedStub = 0xBEEFBEEF;
+	static const u32 s_nExpectedStub = 0xBEEFBEEF;
 	
 	struct SHeader // tag = head
 	{
 #if DEBUG_BLOCK_RING_BUFFER
-		U32		m_debugStub;
+		u32		m_debugStub;
 		void	SetupStub()		
 					{ m_debugStub = s_nExpectedStub; }
 		bool	FIsValid()
@@ -831,7 +831,7 @@ public:
 				,m_ring()
 					{ ; }
 
-	void		SetArray(void * aB, I32 cBMax)
+	void		SetArray(void * aB, s32 cBMax)
 					{ m_ring.SetArray(aB, cBMax); }
 
 	CIterator	Iter()
@@ -904,7 +904,7 @@ public:
 							else
 							{
 								m_pHeadFirst = m_pHeadFirst->m_pHeadNext;
-								m_ring.FreeToPB(reinterpret_cast<U8 *>(m_pHeadFirst));
+								m_ring.FreeToPB(reinterpret_cast<u8 *>(m_pHeadFirst));
 							}
 						}
 					}
@@ -953,9 +953,9 @@ public:
 	T m_index;
 };
 
-typedef STypedIndex<I16, INDEXROSTER>		IRoster;	// prefix = ii
-typedef STypedIndex<I16, INDEXINST>			IInstance;	// prefix = i
-typedef STypedIndex<I16, INDEXCLASS>		IClass;		// prefix = ic
+typedef STypedIndex<s16, INDEXROSTER>		IRoster;	// prefix = ii
+typedef STypedIndex<s16, INDEXINST>			IInstance;	// prefix = i
+typedef STypedIndex<s16, INDEXCLASS>		IClass;		// prefix = ic
 
 
 
@@ -969,13 +969,13 @@ struct SRosterHandle // tag = rohan
 	bool	FIsValid()
 				{ return m_iType >= 0; }
 
-	I16		m_iType;
-	U16		m_iLifetime;	// lifetime index (to differentiate reuses of a roster instance)
+	s16		m_iType;
+	u16		m_iLifetime;	// lifetime index (to differentiate reuses of a roster instance)
 };
 
 
 
-typedef U32 HV; // Hash Value
+typedef u32 HV; // Hash Value
 
 template <typename T>
 HV HvExtract(const T & t)
@@ -1044,7 +1044,7 @@ enum FEDGES // edges state flags
 
 };
 
-EWC_DEFINE_GRF(GRFEDGES, FEDGES, U8);                                                                            \
+EWC_DEFINE_GRF(GRFEDGES, FEDGES, u8);                                                                            \
 
 inline bool FIsEdgesDown(EDGES edges)	{ return edges >= EDGES_Hold; }
 
@@ -1227,7 +1227,7 @@ void CAlloc::TrackFree(size_t cB, const char * pChzFile, int cLine)
 	m_pAltrac->TrackFree(cB, pChzFile, cLine);
 }
 
-void AssertHandler(const char* pChzFile, U32 line, const char* pChzCondition, const char* pChzMessage, ... )
+void AssertHandler(const char* pChzFile, u32 line, const char* pChzCondition, const char* pChzMessage, ... )
 {
 	printf("Assertion failed: \"%s\" at %s:%u\n", pChzCondition, pChzFile, line);
 
@@ -1240,7 +1240,7 @@ void AssertHandler(const char* pChzFile, U32 line, const char* pChzCondition, co
 	}
 }
 
-void FillAB(U8 b, void * pDest, size_t cB)
+void FillAB(u8 b, void * pDest, size_t cB)
 {
 	memset(pDest, b, cB);
 }

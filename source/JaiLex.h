@@ -158,7 +158,7 @@ struct SLiteralType	// litty
 	LITSIZE	m_litsize;
 };
 
-EWC_DEFINE_GRF(GRFLIT, FLIT, U16);
+EWC_DEFINE_GRF(GRFLIT, FLIT, u16);
 
 struct SJaiLexer // tag = jlex
 {
@@ -167,7 +167,7 @@ struct SJaiLexer // tag = jlex
    const char *		m_pChEof;
    const char *		m_pChParse;
    char *			m_aChStorage;
-   I32				m_cChStorage;
+   s32				m_cChStorage;
 
    // lexer parse location for error messages
    const char *		m_pChzFilename;
@@ -175,11 +175,11 @@ struct SJaiLexer // tag = jlex
    const char *		m_pChEnd;
 
    // current token info
-   U32				m_jtok;		// lexer->token is the token ID, which is unicode code point for a single-char token, 
+   u32				m_jtok;		// lexer->token is the token ID, which is unicode code point for a single-char token, 
 								// < 0 for an error, > 256 for multichar or eof
    RWORD			m_rword;
    F64				m_g;
-   U64				m_n;
+   u64				m_n;
    SLiteralType		m_litty;
    char *			m_pChString;
    size_t			m_cChString;
@@ -189,8 +189,8 @@ struct SJaiLexer // tag = jlex
 struct SLexerLocation // tag = lexloc
 {
 	CString	m_strFilename;
-	I32		m_iLine;
-	I32		m_iCh;
+	s32		m_iLine;
+	s32		m_iCh;
 };
 
 void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, int cChStorage);

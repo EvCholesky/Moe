@@ -20,7 +20,7 @@
 
 namespace FastHash
 {
-	EWC::U32 NSuperFastHashLower (const char * data, size_t len);
+	EWC::u32 NSuperFastHashLower (const char * data, size_t len);
 }
 
 namespace EWC
@@ -28,7 +28,7 @@ namespace EWC
 	class CStringTable;
 
 
-inline U32		HvFromPchz(const char * pChz, size_t cB = 0)
+inline u32		HvFromPchz(const char * pChz, size_t cB = 0)
 					{
 						if (!pChz)
 							return 0;
@@ -38,12 +38,12 @@ inline U32		HvFromPchz(const char * pChz, size_t cB = 0)
 						return FastHash::NSuperFastHashLower(pChz, cB);
 					}
 
-inline U32		HvFromAB(const void * aB, size_t cB)
+inline u32		HvFromAB(const void * aB, size_t cB)
 					{
 						return FastHash::NSuperFastHashLower((const char *)aB, cB);
 					}
 
-inline U32		HvFromP(void * pV)
+inline u32		HvFromP(void * pV)
 					{
 						return HvFromAB(&pV, sizeof(pV));
 					}

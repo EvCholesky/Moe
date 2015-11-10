@@ -74,13 +74,13 @@ struct STypeInfoInteger : public STypeInfo // tag = tinint
 {
 	static const TINK s_tink = TINK_Integer;
 
-			STypeInfoInteger(const char * pChzName, U32 cBit, bool fSigned)
+			STypeInfoInteger(const char * pChzName, u32 cBit, bool fSigned)
 			:STypeInfo(pChzName, s_tink)
 			,m_cBit(cBit)
 			,m_fSigned(fSigned)
 				{ ; }
 
-	U32		m_cBit;
+	u32		m_cBit;
 	bool	m_fSigned;
 };
 
@@ -88,12 +88,12 @@ struct STypeInfoFloat : public STypeInfo	// tag = tinfloat
 {
 	static const TINK s_tink = TINK_Float;
 
-			STypeInfoFloat(const char * pChzName, U32 cBit)
+			STypeInfoFloat(const char * pChzName, u32 cBit)
 			:STypeInfo(pChzName, s_tink)
 			,m_cBit(cBit)
 				{ ; }
 
-	U32		m_cBit;
+	u32		m_cBit;
 };
 
 struct STypeInfoPointer : public STypeInfo	// tag = tinptr
@@ -107,7 +107,7 @@ struct STypeInfoPointer : public STypeInfo	// tag = tinptr
 							{ ; }
 
 	STypeInfo *			m_pTinPointedTo;
-	I32					m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
+	s32					m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
 };
 
 struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
@@ -157,7 +157,7 @@ enum FMEMB
 	FMEMB_All = 3,
 };
 
-EWC_DEFINE_GRF(GRFMEMB, FMEMB, U32);
+EWC_DEFINE_GRF(GRFMEMB, FMEMB, u32);
 
 struct STypeStructMember	// tag = typememb
 {
@@ -170,7 +170,7 @@ struct STypeStructMember	// tag = typememb
 
 	CString			m_strName;
 	STypeInfo *		m_pTin;
-	I64				m_cBOffset;	
+	s64				m_cBOffset;	
     
 	GRFMEMB			m_grfmemb;
 };
@@ -207,8 +207,8 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 					{ ; }
 
 	STypeInfo *		m_pTin;
-	I32				m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
-	I64				m_c;
+	s32				m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
+	s64				m_c;
 	ARYK			m_aryk;
 };
 
@@ -226,8 +226,8 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 						~STypeInfoEnum();
 
 	STypeInfo *			m_pTinInternal;
-	U64					m_valueMin;		// BB - won't handle signed 64-bit enums properly, need to replace with union
-	U64					m_valueLast;	// BB - won't handle signed 64-bit enums properly, need to replace with union
+	u64					m_valueMin;		// BB - won't handle signed 64-bit enums properly, need to replace with union
+	u64					m_valueLast;	// BB - won't handle signed 64-bit enums properly, need to replace with union
 	STypeInfoStruct 	m_tinstructProduced;
 };
 

@@ -37,13 +37,13 @@ static int JtokSetTokinf(SJaiLexer * pJlex, JTOK jtok, const char * pChStart, co
 	return 1;
 }
 
-RWORD RwordFromHv(U32 hv)
+RWORD RwordFromHv(u32 hv)
 {
 	// BB - Should switch to hash?
 
 	#define RW(x)
 	#define STR(x) HvFromPchz(#x)
-	U32 s_aHv[] =
+	u32 s_aHv[] =
 	{
 		RESERVED_WORD_LIST
 	};
@@ -306,7 +306,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 			if (  ((*pChz >= 'a') & (*pChz <= 'z'))
 				| ((*pChz >= 'A') & (*pChz <= 'Z'))
 				| (*pChz == '_') 
-				| (U8(*pChz) >= 128))    // >= 128 is UTF8 char
+				| (u8(*pChz) >= 128))    // >= 128 is UTF8 char
 			{
 				int iCh = 0;
 				pJlex->m_pChString = pJlex->m_aChStorage;
@@ -321,11 +321,11 @@ int JtokNextToken(SJaiLexer * pJlex)
 						| ((pChz[iCh] >= 'A') & (pChz[iCh] <= 'Z'))
 						| ((pChz[iCh] >= '0') & (pChz[iCh] <= '9')) // allow digits in middle of identifier
 						| (pChz[iCh] == '_')
-						| (U8(pChz[iCh]) >= 128));
+						| (u8(pChz[iCh]) >= 128));
 				pJlex->m_pChString[iCh] = 0;
 				pJlex->m_cChString = iCh;
 
-				U32 Hv = HvFromPchz(pChz, iCh);
+				u32 Hv = HvFromPchz(pChz, iCh);
 				RWORD rword = RwordFromHv(Hv);
 				pJlex->m_rword = rword;
 

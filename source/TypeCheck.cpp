@@ -1005,7 +1005,7 @@ void RelocateTcfram(
 {
 	EWC_ASSERT((*parypTcframOld)[pTcfram->m_ipTcframQueue] == pTcfram, "bookkeeping error");
 
-	I32 cOld = (I32)parypTcframOld->C() - 1; 
+	s32 cOld = (s32)parypTcframOld->C() - 1; 
 	int ipTcfram = pTcfram->m_ipTcframQueue;
 	if (cOld != ipTcfram)
 	{
@@ -1018,7 +1018,7 @@ void RelocateTcfram(
 
 	if (parypTcframNew)
 	{
-		pTcfram->m_ipTcframQueue = (I32)parypTcframNew->C();
+		pTcfram->m_ipTcframQueue = (s32)parypTcframNew->C();
 		parypTcframNew->Append(pTcfram);
 	}
 }
@@ -1030,7 +1030,7 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	if (!pUntype)
 		return;
 
-	int cTcframDependent = (I32)pUntype->m_aryiTcframDependent.C();
+	int cTcframDependent = (s32)pUntype->m_aryiTcframDependent.C();
 	EWC_ASSERT(cTcframDependent > 0, "unknown type not cleaned up (empty dependent array)");
 
 	for (int iTcfram = 0; iTcfram < cTcframDependent; ++iTcfram)
@@ -1047,7 +1047,7 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 
 void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CSTNode *> * parypStnodEntry)
 {
-	STypeCheckWorkspace * pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, (I32)parypStnodEntry->C());
+	STypeCheckWorkspace * pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, (s32)parypStnodEntry->C());
 
 	CSTNode ** ppStnodMax = parypStnodEntry->PMac();
 	int ipTcfram = 0;
@@ -1139,12 +1139,12 @@ void AssertTestTypeCheck(
 
 void TestTypeCheck()
 {
-	U8 aBString[1024 * 100];
+	u8 aBString[1024 * 100];
 	CAlloc allocString(aBString, sizeof(aBString));
 
 	StaticInitStrings(&allocString);
 
-	U8 aB[1024 * 100];
+	u8 aB[1024 * 100];
 	CAlloc alloc(aB, sizeof(aB));
 
 	SErrorManager errman;

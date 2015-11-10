@@ -55,20 +55,20 @@ public:
 				,m_cMax(0)
 					{ ; }
 
-				CAry(T * a, I32 c, I32 cMax)
+				CAry(T * a, s32 c, s32 cMax)
 				:m_a(a)
 				,m_c(c)
 				,m_cMax(cMax)
 					{ ; }
 
-	void		SetArray(T * a, I32 c, I32 cMax)
+	void		SetArray(T * a, s32 c, s32 cMax)
 				{
 					EWC_ASSERT((m_a == nullptr) | (a == nullptr), "overwriting nonzero buffer, leaking memory");
 					m_a    = a;
 					m_c    = c;
 					m_cMax = cMax;
 				}
-	void		AllocArray(CAlloc * pAlloc, I32 cMax)
+	void		AllocArray(CAlloc * pAlloc, s32 cMax)
 				{
 					EWC_ASSERT(m_a == nullptr, "overwriting nonzero buffer, leaking memory");
 
@@ -100,9 +100,9 @@ public:
 							return &m_a[m_c-1];
 						return nullptr;
 					}
-	I32			IFromP(const T * pT) const
+	s32			IFromP(const T * pT) const
 					{ 
-						I32 iT = ((uintptr_t)pT - (uintptr_t)m_a) / sizeof(T); 
+						s32 iT = ((uintptr_t)pT - (uintptr_t)m_a) / sizeof(T); 
 						EWC_ASSERT((iT >= 0) & (iT < m_c), "pointer not contained within array bounds");
 						return iT; 
 					}
@@ -122,7 +122,7 @@ public:
 						CopyConstruct(retValue, t);
 					}
 
-	void		AppendFill(I32 c, const Type t)
+	void		AppendFill(s32 c, const Type t)
 					{
 						EWC_ASSERT(m_c + c <= m_cMax, "fixed array overflow");
 						CopyConstructN(m_a, c, t);
@@ -148,8 +148,8 @@ public:
 	void		Swap(CAry<T> * paryTOther)
 					{
 						T * m_aTemp    = m_a;
-						I32 m_cTemp    = m_c;
-						I32 m_cMaxTemp = m_cMax;
+						s32 m_cTemp    = m_c;
+						s32 m_cMaxTemp = m_cMax;
 
 						m_a    = paryTOther->m_a;
 						m_c    = paryTOther->m_c;
@@ -174,7 +174,7 @@ class CDynAry : public CAry<T> //tag=ary
 public:
 	typedef T Type;
 
-				CDynAry(CAlloc * pAlloc, I32 cMaxStarting = 16)
+				CDynAry(CAlloc * pAlloc, s32 cMaxStarting = 16)
 				:CAry<T>(nullptr, 0, 0)
 					{ SetAlloc(pAlloc, cMaxStarting); }
 
@@ -201,7 +201,7 @@ public:
 						CopyConstruct(retValue, t);
 					}
 
-	void		AppendFill(I32 c, const Type t)
+	void		AppendFill(s32 c, const Type t)
 					{
 						EnsureSize(m_c + c);
 						CopyConstructN(m_a, c, t);
@@ -242,7 +242,7 @@ public:
 
 						// BB - doesn't destruct the object until it resizes!
 
-						I32 cResize = (m_c < 8) ? 0 : m_cMax / 2;
+						s32 cResize = (m_c < 8) ? 0 : m_cMax / 2;
 						if(m_c < cResize)
 							Resize(cResize);
 					}
@@ -255,7 +255,7 @@ public:
 							if (iT != m_c)
 								m_a[iT] = m_a[m_c];
 
-							I32 cResize = (m_c < 8) ? 0 : m_cMax / 2;
+							s32 cResize = (m_c < 8) ? 0 : m_cMax / 2;
 							if(m_c <= cResize)
 								Resize(cResize);
 						}
@@ -277,7 +277,7 @@ public:
 	void		Resize(size_t cMax)
 					{
 						size_t cNewMax = cMax;
-						EWC_ASSERT(cNewMax == static_cast<I32>(cNewMax), "size overflow in CDynAry");
+						EWC_ASSERT(cNewMax == static_cast<s32>(cNewMax), "size overflow in CDynAry");
 						if (cNewMax == m_cMax)
 							return;
 
@@ -332,7 +332,7 @@ public:
 						CopyConstruct(retValue, t);
 					}
 
-	void		AppendFill(I32 c, const Type t)
+	void		AppendFill(s32 c, const Type t)
 					{
 						EWC_ASSERT(m_c < m_cMax, "CFixAry overflow");
 						CopyConstructN(m_a, c, t);

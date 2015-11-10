@@ -50,7 +50,7 @@ namespace EWC
 		CString				m_str;
 		RWORD				m_rword;
 		F64					m_g;
-		U64					m_n;
+		u64					m_n;
 	};
 
 	enum PARK // PARse Kind
@@ -164,7 +164,7 @@ namespace EWC
 		FDBGSTR_None = 0x0,
 		FDBGSTR_All = 0x3,
 	};
-	EWC_DEFINE_GRF(GRFDBGSTR, FDBGSTR, U32);
+	EWC_DEFINE_GRF(GRFDBGSTR, FDBGSTR, u32);
 
 	class CSTNode // tag = stnod
 	{
@@ -218,7 +218,7 @@ namespace EWC
 
 		FSYM_All			= 0x3,
 	};
-	EWC_DEFINE_GRF(GRFSYM, FSYM, U32);
+	EWC_DEFINE_GRF(GRFSYM, FSYM, u32);
 
 	enum FSYMLOOK	// SYMbol LOOKup flags
 	{
@@ -230,7 +230,7 @@ namespace EWC
 		FSYMLOOK_Default	= FSYMLOOK_Local | FSYMLOOK_Ancestors,
 	};
 
-	EWC_DEFINE_GRF(GRFSYMLOOK, FSYMLOOK, U32);
+	EWC_DEFINE_GRF(GRFSYMLOOK, FSYMLOOK, u32);
 
 	struct SSymbol	// tag = sym
 	{
@@ -332,7 +332,7 @@ namespace EWC
 		FDEP_All			= 0x7,
 	};
 
-	EWC_DEFINE_GRF(GRFDEP, FDEP, U16);
+	EWC_DEFINE_GRF(GRFDEP, FDEP, u16);
 
 	struct SDependencyFrame;
 	struct SPartialType	// party
