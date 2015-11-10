@@ -413,12 +413,12 @@ bool FCanImplicitCast(STypeInfo * pTinFrom, STypeInfo * pTinTo)
 			// BB - this could be more forgiving... allow signed/unsigned conversions if a higher cBit
 			return (pTinintTo->m_cBit >= pTinintFrom->m_cBit) & (pTinintTo->m_fSigned == pTinintFrom->m_fSigned);
 		}
-		if (pTinFrom->m_tink == TINK_Pointer)
-		{
-			if (pTinTo->m_tink == TINK_Bool)
-				return true;
-		}
 		return pTinFrom == pTinTo;
+	}
+	else if (pTinFrom->m_tink == TINK_Pointer)
+	{
+		if (pTinTo->m_tink == TINK_Bool)
+			return true;
 	}
 	return false;
 }
@@ -831,6 +831,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 			case PARK_RelationalOp:
 			case PARK_EqualityOp:
 			case PARK_LogicalAndOrOp:
+			{
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 				{
 					if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to binary ops"))
@@ -849,11 +850,11 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								// this needs to be explicitly handled, create a new literal with the result
 								EWC_ASSERT(false, "TODO: support binary ops on two literals");
 							}
-							else 
+							else
 							{
 								STypeInfo * pTinUpcastLhs = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodLhs, pTinRhs);
 								STypeInfo * pTinUpcastRhs = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodRhs, pTinLhs);
-								pTinUpcast = PTinFindUpcast( pTcwork, pSymtab, pTinUpcastRhs, pTinUpcastLhs);
+								pTinUpcast = PTinFindUpcast(pTcwork, pSymtab, pTinUpcastRhs, pTinUpcastLhs);
 								if (!pTinUpcast)
 								{
 									CString strLhs = StrFromTypeInfo(pTinLhs);
@@ -861,7 +862,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 									EmitError(
 										pTcwork,
 										pStnod,
-										"%s operator not defined for %s and %s", 
+										"%s operator not defined for %s and %s",
 										PChzFromJtok(pStnod->m_jtok),
 										strLhs.PChz(),
 										strRhs.PChz());
@@ -869,9 +870,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							}
 
 							PARK park = pStnod->m_park;
-							bool fIsLogicalOp = (park == PARK_RelationalOp) | 
-												(park == PARK_EqualityOp) | 
-												(park == PARK_LogicalAndOrOp);
+							bool fIsLogicalOp = (park == PARK_RelationalOp) |
+								(park == PARK_EqualityOp) |
+								(park == PARK_LogicalAndOrOp);
 
 							pStnod->m_pTin = (fIsLogicalOp) ? pSymtab->PTinLookup("bool") : pTinUpcast;
 						}
@@ -882,7 +883,107 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
-				break;
+			}break;
+		case PARK_UnaryOp:
+			{
+				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
+				{
+					if (EWC_FVERIFY(pStnod->CStnodChild() == 1, "expected one operand to unary operations"))
+					{
+						CSTNode * pStnodOperand = pStnod->PStnodChild(0);
+						STypeInfo * pTinOperand = pStnodOperand->m_pTin;
+
+						JTOK jtok = pStnod->m_jtok;
+						switch (jtok)
+						{
+							case JTOK('&'):		// dereference
+							{
+								if (pTinOperand->m_tink != TINK_Pointer)
+								{
+									CString strOp = StrFromTypeInfo(pTinOperand);
+									EmitError(pTcwork, pStnod, "Cannot dereference type %s", strOp.PChz());
+									return TCRET_StoppingError;
+								}
+								else
+								{
+									STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTinOperand;
+									pStnod->m_pTin = pTinptr->m_pTinPointedTo;
+								}
+							}break;
+							case JTOK('*'):		// add reference
+							{
+								bool FCanTakeReference = pTinOperand->m_tink != TINK_Literal;
+								if (!FCanTakeReference)
+								{
+									CString strOp = StrFromTypeInfo(pTinOperand);
+									EmitError(pTcwork, pStnod, "Cannot take reference of type %s", strOp.PChz());
+									return TCRET_StoppingError;
+								}
+
+								CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+								STypeInfoPointer * pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
+								pTinptr->m_pTinPointedTo = pTinOperand;
+								pSymtab->AddManagedTin(pTinptr);
+								pStnod->m_pTin = pTinptr;
+							}break;
+
+							case JTOK('!'):
+							{
+								STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinLookup("bool");
+								if (!EWC_FVERIFY(pTinBool, "missing bool type"))
+									return TCRET_StoppingError;
+								if (!FCanImplicitCast(pTinOperand, pTinBool))
+								{
+									CString strOp = StrFromTypeInfo(pTinOperand);
+									EmitError(pTcwork, pStnod, "Cannot convert type %s to bool", strOp.PChz());
+								}
+
+								pStnod->m_pTin = pTinBool;
+							}break;
+
+							case JTOK('~'):
+							case JTOK_PlusPlus:
+							case JTOK_MinusMinus:
+							case JTOK('+'):
+							case JTOK('-'):
+							{
+
+								TINK tinkOperand = pTinOperand->m_tink;
+								bool fIsInteger = tinkOperand == TINK_Integer;
+								bool fIsValidPtrOp =	((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & 
+														(tinkOperand == TINK_Pointer);
+								bool fIsValidFloatOp =  ((jtok == JTOK('+')) | (jtok == JTOK('-'))) & 
+														(tinkOperand == TINK_Float);
+								bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp;
+
+								pStnod->m_pTin = pTinOperand;
+								if (!fIsSupported)
+								{
+									CString strOp = StrFromTypeInfo(pTinOperand);
+									EmitError(pTcwork, pStnod, "invalid unary operator for type %s", strOp.PChz());
+								}
+								else
+								{
+									if (jtok == JTOK('-') && tinkOperand == TINK_Integer)
+									{
+										STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinOperand;
+										if (!pTinint->m_fSigned)
+										{
+											CString strOp = StrFromTypeInfo(pTinOperand);
+											EmitError(pTcwork, pStnod, "negate operand not valid for unsigned type %s", strOp.PChz());
+										}
+									}
+								}
+							}break;
+						}
+					}
+
+					pStnod->m_strees = STREES_TypeChecked;
+					PopTcsent(pTcfram);
+					break;
+				}
+				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+			}break;
 		}
 	}
 
@@ -1083,6 +1184,14 @@ void TestTypeCheck()
 
 	pChzIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i; }";
 	pChzOut = "({} (s8 ??? s8) (s32 ??? s32) (s32 s32 (s32 s8 s32)) (s32 s32 (s32 s32 s8)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn =	"{ n:s8; pN:=*n; n2:=&pN; }";
+	pChzOut = "({} (s8 ??? s8) (*s8 ??? (*s8 s8)) (s8 ??? (s8 *s8)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn =	"{ n:s64; pN:*s8; fN := !pN; ++n; --n;}";
+	pChzOut = "({} (s64 ??? s64) (*s8 ??? (*s8 s8)) (bool ??? (bool *s8)) (s64 s64) (s64 s64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	StaticShutdownStrings(&allocString);

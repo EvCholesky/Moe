@@ -27,19 +27,18 @@ SFoo :: struct { blah : int };
 
 DONE:
  [x] Move allocated TypeInfos into one array for ownership
+ [x] Remove PARK enum
 
 TODO:
- [ ] Remove PARK enum
  [ ] constant types (recognize constants, ensure constants for array sizes)
- [ ] switch to 64Bit
- [ ] rename project
  [ ] move compiler out of EWC
  [ ] consolidate error tracking/printing into one place.
  	[ ] add error messages to the lexer
  [ ] handle nonlinear type checking within top level scopes (within functions/structs)
+ [ ] handle collapsing arithmetic ops (binary and unary) for literals
 
 Unsupported features:
 [ ] multiple return types (not parsed)
-[ ] SOA packing 
+[ ] SOA packing
 [ ] Nested structs
 [ ] Defer
