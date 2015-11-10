@@ -18,9 +18,7 @@
 #include "EwcArray.h"
 #include "EwcString.h"
 
-namespace EWC
-{
-	class CSymbolTable;
+class CSymbolTable;
 
 enum TINK 
 {
@@ -42,6 +40,8 @@ enum TINK
 	EWC_MAX_MIN_NIL(TINK)
 };
 
+
+
 struct STypeInfo	// tag = tin
 {
 			STypeInfo(const char * pChzName, TINK tink)
@@ -51,7 +51,7 @@ struct STypeInfo	// tag = tin
 				{ ; }
 
     TINK			m_tink;
-	CString			m_strName;
+	EWC::CString	m_strName;
 	CSymbolTable *	m_pSymtab;
 };
 
@@ -120,8 +120,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 						,m_arypTinReturns()
 							{ ; }
 
-	CAry<STypeInfo *>	m_arypTinParams;
-	CAry<STypeInfo *>	m_arypTinReturns;
+	EWC::CAry<STypeInfo *>	m_arypTinParams;
+	EWC::CAry<STypeInfo *>	m_arypTinReturns;
 
 	// BB - need names for named argument matching?
 };
@@ -129,12 +129,12 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 {
 	static const TINK s_tink = TINK_ForwardDecl;
-						STypeInfoForwardDecl(CAlloc * pAlloc, const char * pChzName)
+						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const char * pChzName)
 						:STypeInfo(pChzName, s_tink)
 						,m_arypTinReferences(pAlloc)
 							{ ; }
 
-	CDynAry<STypeInfo *>	m_arypTinReferences;
+	EWC::CDynAry<STypeInfo *>	m_arypTinReferences;
 };
 
 struct STypeInfoLiteral : public STypeInfo // tag = tinlit
@@ -168,7 +168,7 @@ struct STypeStructMember	// tag = typememb
 					,m_grfmemb(FMEMB_None)
 						{ ;}
 
-	CString			m_strName;
+	EWC::CString	m_strName;
 	STypeInfo *		m_pTin;
 	s64				m_cBOffset;	
     
@@ -184,7 +184,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 								,m_aryTypememb()
 									{ ; }
 	
-	CAry<STypeStructMember>		m_aryTypememb;
+	EWC::CAry<STypeStructMember>	m_aryTypememb;
 };
 
 enum ARYK
@@ -231,7 +231,4 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 	STypeInfoStruct 	m_tinstructProduced;
 };
 
-void DeleteTypeInfo(CAlloc * pAlloc, STypeInfo * pTin);
-
-
-} //namespace EWC
+void DeleteTypeInfo(EWC::CAlloc * pAlloc, STypeInfo * pTin);

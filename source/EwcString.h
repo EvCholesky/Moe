@@ -20,7 +20,7 @@
 
 namespace FastHash
 {
-	EWC::u32 NSuperFastHashLower (const char * data, size_t len);
+	u32 NSuperFastHashLower (const char * data, size_t len);
 }
 
 namespace EWC

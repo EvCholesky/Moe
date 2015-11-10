@@ -17,15 +17,10 @@
 #include "EwcString.h"
 #include "EwcTypes.h"
 
-namespace EWC
-{
 
 
 static int JtokSetTokinf(SJaiLexer * pJlex, JTOK jtok, const char * pChStart, const char * pChEnd)
 {
-	if (jtok == JTOK_ParseError)
-		DoNothing();
-
 	pJlex->m_jtok = jtok;
 	pJlex->m_pChBegin = pChStart;
 	pJlex->m_pChEnd = pChEnd;
@@ -42,7 +37,7 @@ RWORD RwordFromHv(u32 hv)
 	// BB - Should switch to hash?
 
 	#define RW(x)
-	#define STR(x) HvFromPchz(#x)
+	#define STR(x) EWC::HvFromPchz(#x)
 	u32 s_aHv[] =
 	{
 		RESERVED_WORD_LIST
@@ -325,7 +320,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 				pJlex->m_pChString[iCh] = 0;
 				pJlex->m_cChString = iCh;
 
-				u32 Hv = HvFromPchz(pChz, iCh);
+				u32 Hv = EWC::HvFromPchz(pChz, iCh);
 				RWORD rword = RwordFromHv(Hv);
 				pJlex->m_rword = rword;
 
@@ -642,7 +637,7 @@ void AssertMatches(
 {
 	SJaiLexer jlex;
 	char aChStorage[1024 * 8];
-	InitJaiLexer(&jlex, pChzInput, &pChzInput[CCh(pChzInput)], aChStorage, EWC_DIM(aChStorage));
+	InitJaiLexer(&jlex, pChzInput, &pChzInput[EWC::CCh(pChzInput)], aChStorage, EWC_DIM(aChStorage));
 	
 	int iJtok = 0;
 	const JTOK * pJtok = aJtok;
@@ -660,10 +655,10 @@ void AssertMatches(
 		if (apChz && jlex.m_jtok == JTOK_Identifier || fIsStringLiteral)
 		{
 			EWC_ASSERT(
-				CCh(apChz[iJtok]) == jlex.m_cChString, 
+				EWC::CCh(apChz[iJtok]) == jlex.m_cChString, 
 				"lexed string length doesn't match expected value");
 			EWC_ASSERT(
-				FAreSame(apChz[iJtok], jlex.m_pChString, jlex.m_cChString), 
+				EWC::FAreSame(apChz[iJtok], jlex.m_pChString, jlex.m_cChString), 
 				"lexed string doesn't match expected value");
 			EWC_ASSERT(jlex.m_litty.m_litsize == LITSIZE_Nil && jlex.m_litty.m_litsign == LITSIGN_Nil, "errant literal type");
 		}
@@ -785,5 +780,3 @@ void TestLexing()
 {
 }
 #endif // JLEX_TEST
-
-} // namespace EWC

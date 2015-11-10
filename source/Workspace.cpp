@@ -35,7 +35,7 @@ void EmitError(SErrorManager * pErrman, SLexerLocation * pLexloc, const char * p
 	}
 }
 
-void EmitError(CWorkspace * pWork, EWC::SLexerLocation * pLexloc, const char * pChz, ...)
+void EmitError(CWorkspace * pWork, SLexerLocation * pLexloc, const char * pChz, ...)
 {
 	printf("%s(%d) error:", pLexloc->m_strFilename.PChz(), pLexloc->m_iLine);
 	++pWork->m_pErrman->m_cError;

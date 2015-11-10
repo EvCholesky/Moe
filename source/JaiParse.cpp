@@ -19,8 +19,9 @@
 #include <cstdarg>
 #include <stdio.h>
 
-namespace EWC
-{
+
+
+using namespace EWC;
 
 CSTNode * PStnodParseExpression(CParseContext * pParctx, SJaiLexer * pJlex);
 CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SJaiLexer * pJlex);
@@ -2213,5 +2214,3 @@ void TestParse()
 
 	StaticShutdownStrings(&allocString);
 }
-
-} // namespace EWC

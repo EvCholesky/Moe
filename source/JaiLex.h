@@ -18,9 +18,6 @@
 #include "EwcTypes.h"
 #include "EwcString.h"
 
-namespace EWC
-{
-
 enum JTOK
 {
 	// don't define single char tokens (they are just ascii codepoints)
@@ -188,9 +185,9 @@ struct SJaiLexer // tag = jlex
 
 struct SLexerLocation // tag = lexloc
 {
-	CString	m_strFilename;
-	s32		m_iLine;
-	s32		m_iCh;
+	EWC::CString	m_strFilename;
+	s32				m_iLine;
+	s32				m_iCh;
 };
 
 void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, int cChStorage);
@@ -203,5 +200,3 @@ inline int NLine(const SJaiLexer * pJlex)
 	{ return -1; }
 
 void TestLexing();
-
-} // namespace EWC

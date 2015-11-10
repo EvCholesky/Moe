@@ -37,8 +37,7 @@
 #define STBM_DEBUGCHECK
 #include "stb_malloc.h"
 
-namespace EWC
-{
+
 
 typedef int8_t s8;
 typedef int16_t s16;
@@ -54,6 +53,13 @@ typedef wchar_t WChar; // tag = wch
 
 typedef float F32;
 typedef double F64;
+
+typedef u32 HV; // Hash Value
+
+
+
+namespace EWC
+{
 
 typedef __m128 Simd;
 typedef __m128i SimdI;
@@ -975,7 +981,6 @@ struct SRosterHandle // tag = rohan
 
 
 
-typedef u32 HV; // Hash Value
 
 template <typename T>
 HV HvExtract(const T & t)

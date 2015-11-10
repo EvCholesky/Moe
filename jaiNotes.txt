@@ -28,10 +28,10 @@ SFoo :: struct { blah : int };
 DONE:
  [x] Move allocated TypeInfos into one array for ownership
  [x] Remove PARK enum
+ [x] move compiler out of EWC
 
 TODO:
  [ ] constant types (recognize constants, ensure constants for array sizes)
- [ ] move compiler out of EWC
  [ ] consolidate error tracking/printing into one place.
  	[ ] add error messages to the lexer
  [ ] handle nonlinear type checking within top level scopes (within functions/structs)
