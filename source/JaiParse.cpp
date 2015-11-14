@@ -302,10 +302,17 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 			{				// ( ArgumentExpressionList )
 				JtokNextToken(pJlex); // consume '('
 
+				if (pStnod->m_park == PARK_Identifier)
+				{
+					// clear out the identifier's type info
+					pStnod->m_pTin = nullptr;
+				}
+
 				CSTNode * pStnodArgList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
 				pStnodArgList->m_jtok = JTOK(pJlex->m_jtok);
-				pStnodArgList->m_park = PARK_ArgumentCall;
+				pStnodArgList->m_park = PARK_ProcedureCall;
 				pStnodArgList->IAppendChild(pStnod);
+				pStnod = pStnodArgList;
 
 				// parsing this with LogicalAndOrExpression even though ISO c uses assignmentExpression
 				//  need to change this if we expect assignments to return the assigned value (x := a = b; )
@@ -1028,16 +1035,16 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 			{
 				JtokNextToken(pJlex);
 
-				CSTNode * pStnodFunc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
-				pStnodFunc->m_jtok = JTOK_Nil;
-				pStnodFunc->m_park = PARK_ProcedureDefinition;
+				CSTNode * pStnodProc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc);
+				pStnodProc->m_jtok = JTOK_Nil;
+				pStnodProc->m_park = PARK_ProcedureDefinition;
 
 				CSTProcedure * pStproc = EWC_NEW(pParctx->m_pAlloc, CSTProcedure) CSTProcedure();
-				pStnodFunc->m_pStproc = pStproc;
-				pStproc->m_iStnodProcName = pStnodFunc->IAppendChild(pStnodIdent);
+				pStnodProc->m_pStproc = pStproc;
+				pStproc->m_iStnodProcName = pStnodProc->IAppendChild(pStnodIdent);
 
 				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pJlex);
-				pStproc->m_iStnodParameterList = pStnodFunc->IAppendChild(pStnodParams);
+				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 				Expect(pParctx, pJlex, JTOK(')'));
 
 				CSTNode * pStnodReturns = nullptr;
@@ -1048,7 +1055,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					// TODO : handle multiple return types
 
 					pStnodReturns = PStnodParseTypeSpecifier(pParctx, pJlex);
-					pStproc->m_iStnodReturnType = pStnodFunc->IAppendChild(pStnodReturns);
+					pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 				}
 
 				CSymbolTable * pSymtabProc = EWC_NEW(pParctx->m_pAlloc, CSymbolTable) CSymbolTable(pParctx->m_pAlloc);
@@ -1057,7 +1064,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					PushSymbolTable(pParctx, pSymtabProc);
 
 					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex);
-					pStproc->m_iStnodBody = pStnodFunc->IAppendChild(pStnodBody);
+					pStproc->m_iStnodBody = pStnodProc->IAppendChild(pStnodBody);
 					
 					CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
 					EWC_ASSERT(pSymtabProc == pSymtabPop, "CSymbol table push/pop mismatch (proc)");
@@ -1088,6 +1095,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pTinproc->m_arypTinParams.SetArray(ppTin, 0, cStnodParams);
 				pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
 				pTinproc->m_pSymtab = pSymtabProc;
+				pStnodProc->m_pTin = pTinproc;
 
 				CSTNode ** ppStnodParamMax = &ppStnodParams[cStnodParams];
 				for ( ; ppStnodParams != ppStnodParamMax; ++ppStnodParams)
@@ -1105,9 +1113,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					pTinproc->m_arypTinReturns.Append((*ppStnodReturns)->m_pTin);
 				}
 
-				pParctx->m_pSymtab->AddNamedType(pParctx, pJlex, pTinproc);
 
-				return pStnodFunc;
+				CSymbolTable * pSymtab = pParctx->m_pSymtab;
+				SSymbol * pSymProc = pSymtab->PSymEnsure(pStnodIdent->m_pStval->m_str, pStnodProc);
+				pSymProc->m_pTin = pTinproc;
+
+				pSymtab->AddNamedType(pParctx, pJlex, pTinproc);
+
+				return pStnodProc;
 			}
 
 			RWORD rword = RwordLookup(pJlex);
@@ -1543,13 +1556,13 @@ void CSymbolTable::AddBuiltInSymbols()
 	AddBuiltInInteger(this, "u8", 8, false);
 	AddBuiltInInteger(this, "u16", 16, false);
 	AddBuiltInInteger(this, "u32", 32, false);
-	AddBuiltInInteger(this, "uint", 32, false);
+	AddBuiltInInteger(this, "uint", 64, false);
 	AddBuiltInInteger(this, "u64", 64, false);
 
 	AddBuiltInInteger(this, "s8", 8, true);
 	AddBuiltInInteger(this, "s16", 16, true);
 	AddBuiltInInteger(this, "s32", 32, true);
-	AddBuiltInInteger(this, "int", 32, true);
+	AddBuiltInInteger(this, "int", 64, true);
 	AddBuiltInInteger(this, "s64", 64, true);
 
 	AddBuiltInFloat(this, "float", 32);
@@ -1869,8 +1882,10 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 	{
 		switch (park)
 		{
-		case PARK_List:		return CChCopy("{}", pCh, pChEnd-pCh);
-		default:			return CChCopy("???", pCh, pChEnd-pCh);
+		case PARK_List:				return CChCopy("{}", pCh, pChEnd-pCh);
+		case PARK_Identifier:		return CChCopy("Ident", pCh, pChEnd-pCh);
+		case PARK_ParameterList:	return CChCopy("Params", pCh, pChEnd-pCh);
+		default:					return CChCopy("???", pCh, pChEnd-pCh);
 		}
 	}
 
@@ -1914,8 +1929,12 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 			pChWork += CChCopy("Literal", pChWork, pChEnd-pChWork);
 			return pChWork - pCh;
 		}
+    case TINK_Procedure:
+		{
+			STypeInfoProcedure * pTinproc = (STypeInfoProcedure *)pTin;
+			return CChFormat(pCh, pChEnd-pCh, "%s()", pTin->m_strName.PChz());
+		}break;
 	case TINK_Integer:		// fall through ...
-    case TINK_Procedure:	// fall through ...
     case TINK_Float:		// fall through ...
     case TINK_Bool:			// fall through ...
     case TINK_String:		// fall through ...
@@ -1963,7 +1982,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_AssignmentOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
 	case PARK_ArrayElement:		    return CChCopy("elem", pCh, pChEnd - pCh);
 	case PARK_MemberLookup:		    return CChCopy("member", pCh, pChEnd - pCh);
-	case PARK_ArgumentCall:		    return CChCopy("args", pCh, pChEnd - pCh);
+	case PARK_ProcedureCall:		return CChCopy("procCall", pCh, pChEnd - pCh);
 	case PARK_List:				    return CChCopy("{}", pCh, pChEnd - pCh);
 	case PARK_ParameterList:	    return CChCopy("params", pCh, pChEnd - pCh);
 	case PARK_ArrayDecl:		    return CChFormat(pCh, pChEnd - pCh, "[%s]", PChzFromJtok(pStnod->m_jtok));
@@ -1998,7 +2017,14 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 
 	if (grfdbgstr.FIsSet(FDBGSTR_Type))
 	{
-		pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_park, pChWork, pChEnd);
+		if (pStnod->m_park == PARK_Identifier && pStnod->m_pTin == nullptr)
+		{
+			pChWork += CChPrintStnodName(pStnod, pChWork, pChEnd);
+		}
+		else
+		{
+			pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_park, pChWork, pChEnd);
+		}
 		grfdbgstr.Clear(FDBGSTR_Type);
 	}
 	return pChWork - pCh;
@@ -2193,6 +2219,15 @@ void TestParse()
 	pChzIn9		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
 	pChzOut9	= "({} (func @AddNums (params (decl @a @int) (decl @b 1)) @int (return (+ @a @b)))"
 					" (decl @bah 3))";
+	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+
+	pChzIn9		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
+	pChzOut9	= "({} (func @AddNums (params (decl @a @int) (decl @b 1)) @int (return (+ @a @b)))"
+					" (procCall @AddNums 2 3))";
+	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+
+	pChzIn9		= "{ FooFunc(); n:=BarFunc(x+(ack)); }";
+	pChzOut9	= "({} (procCall @FooFunc) (decl @n (procCall @barFunc (+ @x @ack))))";
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ NopFunc :: () { guh := 2; } wha : * int; }";

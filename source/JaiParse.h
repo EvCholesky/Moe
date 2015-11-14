@@ -78,7 +78,7 @@ enum PARK // PARse Kind
 	// non-terminals
 	PARK_ArrayElement,		// [array, index]
 	PARK_MemberLookup,		// [struct, child]
-	PARK_ArgumentCall,		// [procedure, arg0, arg1, ...]
+	PARK_ProcedureCall,		// [procedure, arg0, arg1, ...]
 	PARK_List,
 	PARK_ParameterList,
 	PARK_ArrayDecl,
@@ -96,6 +96,8 @@ enum PARK // PARse Kind
 	PARK_Min = 0,
 	PARK_Nil = -1,
 };
+
+const char * PChzFromPark(PARK park);
 
 
 
@@ -155,6 +157,8 @@ public:
 enum STREES
 {
 	STREES_Parsed,
+	STREES_SignatureTypeChecked,	// function's signature has been type checked, but not it's body. it's enough to type check
+						//  proc calls, BB - Is this really necessary? should we just mark TypeChecked before we're done?
 	STREES_TypeChecked,
 
 	EWC_MAX_MIN_NIL(STREES)

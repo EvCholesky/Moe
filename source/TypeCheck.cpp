@@ -26,8 +26,9 @@ struct STypeCheckStackEntry // tag = tcsent
 {
 	int				m_nState;
 	CSTNode *		m_pStnod;
-	CSymbolTable *	m_pSymtab;		// BB - Could omit this pointer with careful handling of stack pops?
-									//  maybe swap out for fPushedStack?
+	CSymbolTable *	m_pSymtab;			// BB - Could omit this pointer with careful handling of stack pops?
+										//  maybe swap out for fPushedStack?
+	CSTNode *		m_pStnodProcedure;	// definition node for current procedure
 	GRFSYMLOOK		m_grfsymlook;
 };
 
@@ -294,7 +295,7 @@ enum TCRET
 {
 	TCRET_Complete,
 	TCRET_StoppingError,
-	TCRET_WaitingForTypeDefinition,
+	TCRET_WaitingForSymbolDefinition,
 };
 
 STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit)
@@ -314,8 +315,8 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 			{
 				tfnSigned = TFN_False;
 			}
-			if (tfnSigned == TFN_False)		return pSymtab->PTinLookup("u64");
-			else							return pSymtab->PTinLookup("s64");
+			if (tfnSigned == TFN_False)		return pSymtab->PTinLookup("uint");
+			else							return pSymtab->PTinLookup("int");
 		}
 	case LITK_Float:	return pSymtab->PTinLookup("float");
 	case LITK_Char:		return pSymtab->PTinLookup("char");
@@ -453,6 +454,16 @@ bool FIsValidLhs(const CSTNode * pStnod)
 	return (tink != TINK_Null) & (tink != TINK_Void) & (tink != TINK_Literal);
 }
 
+STypeInfo * PTinReturnFromStnodProcedure(CSTNode * pStnod)
+{
+	if (!EWC_FVERIFY(pStnod->m_park == PARK_ProcedureDefinition && pStnod->m_pStproc, "Bad procedure node"))
+		return nullptr;
+	CSTProcedure * pStproc = pStnod->m_pStproc;
+	if (pStproc->m_iStnodReturnType < 0)
+		return nullptr;
+	return pStnod->PStnodChild(pStproc->m_iStnodReturnType)->m_pTin;
+}
+
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	int i = 2;
@@ -473,26 +484,13 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				if (!EWC_FVERIFY(pStproc, "missing procedure parse data"))
 					return TCRET_StoppingError;
 
-				SSymbol * pSymProc = nullptr;
-				CString strProcName;
-				if (pStproc->m_iStnodProcName >= 0)
-				{
-					strProcName = StrFromIdentifier(pStnod->PStnodChild(pStproc->m_iStnodProcName));
-					if (!strProcName.FIsEmpty())
-					{
-						pSymProc = pTcsentTop->m_pSymtab->PSymLookup(strProcName, pTcsentTop->m_grfsymlook);
-					}
-				}
-
-				if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol"))
-					return TCRET_StoppingError;
-				if (!EWC_FVERIFY(pSymProc->m_pTin, "expected procedure type info to be created during parse"))
+				STypeInfoProcedure * pTinproc = (STypeInfoProcedure *)pStnod->m_pTin;
+				if (!EWC_FVERIFY(pTinproc && pTinproc->m_tink == TINK_Procedure, "missing procedure type info"))
 					return TCRET_StoppingError;
 
-				// Can't I just push a child per state?
 				switch(pTcsentTop->m_nState++)
 				{
-				case 0: 
+				case 0:
 					{	// type check the parameter list
 						if (pStproc->m_iStnodParameterList >= 0)
 						{
@@ -500,27 +498,166 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						}
 					}break;
 				case 1:
-					{	// type check the return list
-						if (pStproc->m_iStnodReturnType >= 0)
+					{
+						if (pStproc->m_iStnodParameterList >= 0)
 						{
+							CSTNode * pStnodParamList = pStnod->PStnodChild(pStproc->m_iStnodParameterList);
+
+							EWC_ASSERT(pTinproc->m_arypTinParams.C() == pStnodParamList->CStnodChild(), "parameter child mismatch");
+							for (int iStnodArg = 0; iStnodArg < pStnodParamList->CStnodChild(); ++iStnodArg)
+							{
+								pTinproc->m_arypTinParams[iStnodArg] = pStnodParamList->PStnodChild(iStnodArg)->m_pTin;
+							}
+						}
+
+						// type check the return list
+						if (pStnod->m_strees < STREES_SignatureTypeChecked)
+						{
+							if (pStproc->m_iStnodReturnType >= 0)
+							{
+								CSTNode * pStnodReturn = pStnod->PStnodChild(pStproc->m_iStnodReturnType);
+								STypeInfo * pTinReturn = PTinFromTypeSpecification(
+									pTcsentTop->m_pSymtab,
+									pStnodReturn,
+									pTcsentTop->m_grfsymlook,
+									nullptr);
+								if (!pTinReturn)
+								{
+									EmitError(pTcwork, pStnod, "failed to parse return type");
+								}
+								pStnodReturn->m_pTin = pTinReturn;
+							}
+							pStnod->m_strees = STREES_SignatureTypeChecked;
+
+							// find our symbol and resolve any pending unknown types
+
+							CSTNode * pStnodIdent = nullptr;
+							if (pStproc->m_iStnodProcName >= 0)
+							{
+								CString strProcName = StrFromIdentifier(pStnod->PStnodChild(pStproc->m_iStnodProcName));
+								pStnodIdent = pStnod->PStnodChildSafe(pStproc->m_iStnodProcName);
+							}
+
+							if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStval, "Procedure without identifier"))
+							{
+								SSymbol * pSymIdent = pTcsentTop->m_pSymtab->PSymLookup(
+																				pStnodIdent->m_pStval->m_str,
+																				pTcsentTop->m_grfsymlook);
+								OnTypeComplete(pTcwork, pSymIdent);
+							}
+						}
+
+						// type check the body list
+						if (pStproc->m_iStnodBody >= 0)
+						{
+							// BB - need to push child symbol table
 							PushTcsent(pTcfram, pStnod->PStnodChild(pStproc->m_iStnodBody));
+
+							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+							pTcsentPushed->m_pStnodProcedure = pStnod;
+							pTcsentPushed->m_pSymtab = pTinproc->m_pSymtab;
 						}
 					}break;
 				case 2:
-					{	// type check the body list
-						if (pStproc->m_iStnodBody >= 0)
-						{
-							PushTcsent(pTcfram, pStnod->PStnodChild(pStproc->m_iStnodBody));
-						}
-					}break;
-				case 3:
 					{
+						SSymbol * pSymProc = nullptr;
+						CString strProcName;
+						if (pStproc->m_iStnodProcName >= 0)
+						{
+							strProcName = StrFromIdentifier(pStnod->PStnodChild(pStproc->m_iStnodProcName));
+							if (!strProcName.FIsEmpty())
+							{
+								pSymProc = pTcsentTop->m_pSymtab->PSymLookup(strProcName, pTcsentTop->m_grfsymlook);
+							}
+						}
+
+						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol"))
+							return TCRET_StoppingError;
+						if (!EWC_FVERIFY(pSymProc->m_pTin, "expected procedure type info to be created during parse"))
+							return TCRET_StoppingError;
+
 						PopTcsent(pTcfram);
 
 						pStnod->m_strees = STREES_TypeChecked;
 						OnTypeComplete(pTcwork, pSymProc);
-					}
+					}break;
 				}
+			}break;
+			case PARK_ProcedureCall:
+			{
+				//BB - this expects the argument list to be preceded by an identifier, we're not handling calling
+				// procedures by pointer yet.
+
+				if (pTcsentTop->m_nState == 0)
+				{
+					// skip type checking the identifier
+					++pTcsentTop->m_nState;
+				}
+
+				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
+				{
+					CSTNode * pStnodIdent = pStnod->PStnodChild(0);
+
+					SSymbol * pSymProc = nullptr;
+					CString strProcName = StrFromIdentifier(pStnodIdent);
+					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+					if (!strProcName.FIsEmpty())
+					{
+						pSymProc = pSymtab->PSymLookup(strProcName, pTcsentTop->m_grfsymlook);
+					}
+
+					if (!EWC_FVERIFY(pSymProc && pSymProc->m_pStnodDefinition, "unknown procedure in type check"))
+						return TCRET_StoppingError;
+
+					CSTNode * pStnodDefinition = pSymProc->m_pStnodDefinition;
+					if (pStnodDefinition->m_strees < STREES_SignatureTypeChecked)
+					{
+						// wait for this procedure's signature to be type checked.
+						SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymProc);
+						pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
+						return TCRET_WaitingForSymbolDefinition;
+					}
+
+					STypeInfoProcedure * pTinproc = (STypeInfoProcedure *)pStnodDefinition->m_pTin;
+					if (!EWC_FVERIFY(pTinproc && pTinproc->m_tink == TINK_Procedure, "bad procedure type info"))
+						return TCRET_StoppingError;
+
+					for (int iStnodArg = 1; iStnodArg < pStnod->CStnodChild(); ++iStnodArg)
+					{
+						CSTNode * pStnodArg = pStnod->PStnodChild(iStnodArg);
+						STypeInfo * pTinCall = pStnodArg->m_pTin;
+						STypeInfo * pTinParam = pTinproc->m_arypTinParams[iStnodArg - 1];
+						if (!EWC_FVERIFY(pTinParam, "unknown parameter type"))
+							continue;
+
+						pTinCall = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodArg, pTinParam);
+						if (!FCanImplicitCast(pTinCall, pTinParam))
+						{
+							//BB - need fullyQualifiedTypenames
+							CString strTinCall = StrFromTypeInfo(pTinCall);
+							CString strTinParam = StrFromTypeInfo(pTinParam);
+							EmitError(pTcwork, pStnod, "no implicit conversion from  type %s to %s",
+								strTinCall.PChz(),
+								strTinParam.PChz());
+						}
+					}
+
+					STypeInfo * pTinReturn = nullptr;
+					CSTProcedure * pStproc = pStnodDefinition->m_pStproc;
+					if (EWC_FVERIFY(pStproc, "bad procedure return info"))
+					{
+						if (pStproc->m_iStnodReturnType >= 0)
+						{
+							pTinReturn = pStnodDefinition->PStnodChild(pStproc->m_iStnodReturnType)->m_pTin;
+						}
+					}
+
+					pStnod->m_pTin = pTinReturn;
+					pStnod->m_strees = STREES_TypeChecked;
+					PopTcsent(pTcfram);
+					break;
+				}
+				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
 			case PARK_EnumDefinition:
 			{
@@ -617,7 +754,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								// set up dependency for either the definition or the type...
 								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
 								pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
-								return TCRET_WaitingForTypeDefinition;
+								return TCRET_WaitingForSymbolDefinition;
 							}
 							pStnod->m_pTin = pTinDef;
 						}
@@ -693,7 +830,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								// wait for this type to be resolved.
 								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymType);
 								pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
-								return TCRET_WaitingForTypeDefinition;
+								return TCRET_WaitingForSymbolDefinition;
 							}
 						}
 					}
@@ -846,6 +983,68 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+			}break;
+			case PARK_ReservedWord:
+			{
+				if (EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
+				{
+					RWORD rword = pStnod->m_pStval->m_rword;
+					switch (rword)
+					{
+						case RWORD_Return:
+						{
+							if (pTcsentTop->m_nState >= pStnod->CStnodChild())
+							{
+								if (EWC_FVERIFY(pStnod->CStnodChild() == 1, "expected one operands to return operand"))
+								{
+									CSTNode * pStnodProc = pTcsentTop->m_pStnodProcedure;
+									if (!pStnodProc)
+									{
+										EmitError(pTcwork, pStnod, "Return statement encountered outside of a procedure");
+										return TCRET_StoppingError;
+									}
+
+									STypeInfo * pTinReturn = PTinReturnFromStnodProcedure(pStnodProc);
+									if (!pTinReturn)
+									{
+										EmitError(pTcwork, pStnod, "Unexpected return statement, procedure has void return type");
+										return TCRET_StoppingError;
+									}
+
+									CSTNode * pStnodRhs = pStnod->PStnodChild(0);
+									STypeInfo * pTinRhs = pStnodRhs->m_pTin;
+
+									STypeInfo * pTinRhsPromoted = PTinPromoteLiteralTightest(
+																	pTcwork,
+																	pTcsentTop->m_pSymtab,
+																	pStnodRhs,
+																	pTinReturn);
+									if (FCanImplicitCast(pTinRhsPromoted, pTinReturn))
+									{
+										pStnod->m_pTin = pTinReturn;
+									}
+									else
+									{
+										CString strLhs = StrFromTypeInfo(pTinReturn);
+										CString strRhs = StrFromTypeInfo(pTinRhs);
+										EmitError( pTcwork, pStnod,
+											"implicit cast from %s to %s is not allowed by return statement",
+											strRhs.PChz(),
+											strLhs.PChz());
+									}
+								}
+
+								pStnod->m_strees = STREES_TypeChecked;
+								PopTcsent(pTcfram);
+								break;
+							}
+							PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+						}break;
+					default:
+						EmitError(pTcwork, pStnod, "unhandled reserved word '%s' in type checker", PChzFromRword(rword));
+						return TCRET_StoppingError;
+					}
+				}
 			}break;
 			case PARK_AdditiveOp:
 			case PARK_MultiplicativeOp:
@@ -1095,6 +1294,7 @@ void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CSTNode *
 		pTcsent->m_nState = 0;
 		pTcsent->m_pStnod = *ppStnod;
 		pTcsent->m_pSymtab = pSymtabTop;
+		pTcsent->m_pStnodProcedure = nullptr;
 		pTcsent->m_grfsymlook = FSYMLOOK_Default;
 
 		pTcwork->m_arypTcframPending.Append(pTcfram);
@@ -1109,7 +1309,7 @@ void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CSTNode *
 		{
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);
 		}
-		else if (EWC_FVERIFY(tcret == TCRET_WaitingForTypeDefinition))
+		else if (EWC_FVERIFY(tcret == TCRET_WaitingForSymbolDefinition))
 		{
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, &pTcwork->m_arypTcframWaiting);
 		}
@@ -1184,47 +1384,64 @@ void TestTypeCheck()
 	CWorkspace work(&alloc, &errman);
 
 	const char * pChzIn =	"{ i:=5; foo:=i; g:=g_g; } g_g:=2.2;";
-	const char * pChzOut = "({} (s64 ??? s64) (s64 ??? s64) (float ??? float)) (float ??? float)";
+	const char * pChzOut = "({} (int @i int) (int @foo int) (float @g float)) (float @g_g float)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : float64 = 2.2;";
-	pChzOut = "({} (s8 ??? s8 IntLiteral) (s8 ??? s8) (s16 ??? s16 s8) (float64 ??? float64)) (float64 ??? float64 FloatLiteral)";
+	pChzOut = "({} (s8 @i s8 IntLiteral) (s8 @foo s8) (s16 @bar s16 s8) (float64 @g float64)) (float64 @g_g float64 FloatLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";
-	pChzOut = "({} (bool ??? bool) (bool ??? bool) (bool ??? bool)) (bool ??? bool BoolLiteral)";
+	pChzOut = "({} (bool @i bool) (bool @foo bool) (bool @g bool)) (bool @g_g bool BoolLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : string = \"huzzah\";";
-	pChzOut = "({} (string ??? string) (string ??? string) (string ??? string)) (string ??? string StringLiteral)";
+	pChzOut = "({} (string @i string) (string @foo string) (string @g string)) (string @g_g string StringLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ pN:* s8; pNInfer:=pN; pNTest:*s8=null;}";
-	pChzOut = "({} (*s8 ??? (*s8 s8)) (*s8 ??? *s8) (*s8 ??? (*s8 s8) NullLiteral))";
+	pChzOut = "({} (*s8 @pN (*s8 s8)) (*s8 @pNInfer *s8) (*s8 @pNTest (*s8 s8) NullLiteral))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ pN:** s8; pNInfer:=pN; pNTest:**s8=null;}";
-	pChzOut = "({} (**s8 ??? (**s8 (*s8 s8))) (**s8 ??? **s8) (**s8 ??? (**s8 (*s8 s8)) NullLiteral))";
+	pChzOut = "({} (**s8 @pN (**s8 (*s8 s8))) (**s8 @pNInfer **s8) (**s8 @pNTest (**s8 (*s8 s8)) NullLiteral))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; foo=6; i = foo; }";
-	pChzOut = "({} (s8 ??? s8 IntLiteral) (s8 ??? s8) (s8 s8 IntLiteral) (s8 s8 s8))";
+	pChzOut = "({} (s8 @i s8 IntLiteral) (s8 @foo s8) (s8 s8 IntLiteral) (s8 s8 s8))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; fBool:bool = foo==i; fBool = i<2; }";
-	pChzOut = "({} (s8 ??? s8 IntLiteral) (s8 ??? s8) (bool ??? bool (bool s8 s8)) (bool bool (bool s8 IntLiteral)))";
+	pChzOut = "({} (s8 @i s8 IntLiteral) (s8 @foo s8) (bool @fBool bool (bool s8 s8)) (bool bool (bool s8 IntLiteral)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i; }";
-	pChzOut = "({} (s8 ??? s8) (s32 ??? s32) (s32 s32 (s32 s8 s32)) (s32 s32 (s32 s32 s8)))";
+	pChzOut = "({} (s8 @i s8) (s32 @foo s32) (s32 s32 (s32 s8 s32)) (s32 s32 (s32 s32 s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s8; pN:=*n; n2:=&pN; }";
-	pChzOut = "({} (s8 ??? s8) (*s8 ??? (*s8 s8)) (s8 ??? (s8 *s8)))";
+	pChzOut = "({} (s8 @n s8) (*s8 @pN (*s8 s8)) (s8 @n2 (s8 *s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s64; pN:*s8; fN := !pN; ++n; --n;}";
-	pChzOut = "({} (s64 ??? s64) (*s8 ??? (*s8 s8)) (bool ??? (bool *s8)) (s64 s64) (s64 s64))";
+	pChzOut = "({} (s64 @n s64) (*s8 @pN (*s8 s8)) (bool @fN (bool *s8)) (s64 s64) (s64 s64))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";
+	//pChzOut	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int (return (+ @a @b)))";
+	pChzOut		= "(AddNums() @AddNums (Params (int @a int) (int @b int)) int (int (int int int)))"
+					" (int @n (int @AddNums IntLiteral IntLiteral))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
+	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) (int @n int)) (??? @NoReturn IntLiteral)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	
+	// reference loop test: doesn't work with local functions... it's unclear what kind of reference we need to the
+	//  local scope (does the local function need to be checked until the current pos?
+	pChzIn		= "Foo :: () -> int { g:=Bar();}    Bar :: () -> float { n:=Foo(); }";
+	pChzOut		= "(Foo() @Foo int (float @g (float @Bar)))"
+					" (Bar() @Bar float (int @n (int @Foo)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	StaticShutdownStrings(&allocString);
