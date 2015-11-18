@@ -242,7 +242,7 @@ public:
 
 						// BB - doesn't destruct the object until it resizes!
 
-						s32 cResize = (m_c < 8) ? 0 : m_cMax / 2;
+						size_t cResize = (m_c < 8) ? 0 : m_cMax / 2;
 						if(m_c < cResize)
 							Resize(cResize);
 					}

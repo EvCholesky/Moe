@@ -180,7 +180,7 @@ STypeInfo * PTinFromTypeSpecification(CSymbolTable * pSymtab, CSTNode * pStnod, 
 			if (!EWC_FVERIFY(pStnodIt->m_pStval, "identifier without value string detected"))
 				break;
 
-			pTinFinal = pSymtab->PTinLookup(pStnodIt->m_pStval->m_str, grfsymlook, ppSymType);
+			pTinFinal = pSymtab->PTinLookup(pStnodIt->m_pStval->m_str, pStnodIt->m_lexloc, grfsymlook, ppSymType);
 
 			if ((pTinFinal == nullptr) & fAllowForwardDecl)
 			{
@@ -315,13 +315,13 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 			{
 				tfnSigned = TFN_False;
 			}
-			if (tfnSigned == TFN_False)		return pSymtab->PTinLookup("uint");
-			else							return pSymtab->PTinLookup("int");
+			if (tfnSigned == TFN_False)		return pSymtab->PTinBuiltin("uint");
+			else							return pSymtab->PTinBuiltin("int");
 		}
-	case LITK_Float:	return pSymtab->PTinLookup("float");
-	case LITK_Char:		return pSymtab->PTinLookup("char");
-	case LITK_String:	return pSymtab->PTinLookup("string");
-	case LITK_Bool:		return pSymtab->PTinLookup("bool");
+	case LITK_Float:	return pSymtab->PTinBuiltin("float");
+	case LITK_Char:		return pSymtab->PTinBuiltin("char");
+	case LITK_String:	return pSymtab->PTinBuiltin("string");
+	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
 	case LITK_Null:
 		{
 			EmitError(pTcwork, pStnodLit, "Cannot infer type for null");
@@ -354,23 +354,23 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 			}
 			if (tfnSigned == TFN_False)
 			{
-				if (stval.m_nUnsigned < UCHAR_MAX)		return pSymtab->PTinLookup("u8");
-				if (stval.m_nUnsigned < USHRT_MAX)		return pSymtab->PTinLookup("u16");
-				if (stval.m_nUnsigned < UINT_MAX)		return pSymtab->PTinLookup("u32");
-				else									return pSymtab->PTinLookup("u64");
+				if (stval.m_nUnsigned < UCHAR_MAX)		return pSymtab->PTinBuiltin("u8");
+				if (stval.m_nUnsigned < USHRT_MAX)		return pSymtab->PTinBuiltin("u16");
+				if (stval.m_nUnsigned < UINT_MAX)		return pSymtab->PTinBuiltin("u32");
+				else									return pSymtab->PTinBuiltin("u64");
 			}
 			else
 			{
-				if ((stval.m_nSigned < SCHAR_MAX) & (stval.m_nSigned > SCHAR_MIN))	return pSymtab->PTinLookup("s8");
-				if ((stval.m_nSigned < SHRT_MAX) & (stval.m_nSigned > SHRT_MIN))	return pSymtab->PTinLookup("s16");
-				if ((stval.m_nSigned < INT_MAX) & (stval.m_nSigned > INT_MIN))		return pSymtab->PTinLookup("s32");
-				else																return pSymtab->PTinLookup("s64");
+				if ((stval.m_nSigned < SCHAR_MAX) & (stval.m_nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
+				if ((stval.m_nSigned < SHRT_MAX) & (stval.m_nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
+				if ((stval.m_nSigned < INT_MAX) & (stval.m_nSigned > INT_MIN))		return pSymtab->PTinBuiltin("s32");
+				else																return pSymtab->PTinBuiltin("s64");
 			}
 		}
-	case LITK_Float:	return pSymtab->PTinLookup("float");
-	case LITK_Char:		return pSymtab->PTinLookup("char");
-	case LITK_String:	return pSymtab->PTinLookup("string");
-	case LITK_Bool:		return pSymtab->PTinLookup("bool");
+	case LITK_Float:	return pSymtab->PTinBuiltin("float");
+	case LITK_Char:		return pSymtab->PTinBuiltin("char");
+	case LITK_String:	return pSymtab->PTinBuiltin("string");
+	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
 	case LITK_Null:		
 		{
 			if (pTinDest && pTinDest->m_tink == TINK_Pointer)
@@ -542,6 +542,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							{
 								SSymbol * pSymIdent = pTcsentTop->m_pSymtab->PSymLookup(
 																				pStnodIdent->m_pStval->m_str,
+																				pStnodIdent->m_lexloc, 
 																				pTcsentTop->m_grfsymlook);
 								OnTypeComplete(pTcwork, pSymIdent);
 							}
@@ -567,7 +568,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							strProcName = StrFromIdentifier(pStnod->PStnodChild(pStproc->m_iStnodProcName));
 							if (!strProcName.FIsEmpty())
 							{
-								pSymProc = pTcsentTop->m_pSymtab->PSymLookup(strProcName, pTcsentTop->m_grfsymlook);
+								pSymProc = pTcsentTop->m_pSymtab->PSymLookup(
+																	strProcName,
+																	pStnod->m_lexloc,
+																	pTcsentTop->m_grfsymlook);
 							}
 						}
 
@@ -603,7 +607,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					if (!strProcName.FIsEmpty())
 					{
-						pSymProc = pSymtab->PSymLookup(strProcName, pTcsentTop->m_grfsymlook);
+						pSymProc = pSymtab->PSymLookup(strProcName, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
 					}
 
 					if (!EWC_FVERIFY(pSymProc && pSymProc->m_pStnodDefinition, "unknown procedure in type check"))
@@ -679,7 +683,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					strStructName = StrFromIdentifier(pStnod->PStnodChild(0));
 					if (!strStructName.FIsEmpty())
 					{
-						pSymStruct = pTcsentTop->m_pSymtab->PSymLookup(strStructName, pTcsentTop->m_grfsymlook);
+						pSymStruct = pTcsentTop->m_pSymtab->PSymLookup(
+																strStructName,
+																pStnod->m_lexloc,
+																pTcsentTop->m_grfsymlook);
 					}
 				}
 
@@ -714,7 +721,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				if (EWC_FVERIFY(pStval, "identifier node with no value"))
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-					SSymbol * pSym = pSymtab->PSymLookup(pStval->m_str, pTcsentTop->m_grfsymlook);
+					SSymbol * pSym = pSymtab->PSymLookup(pStval->m_str, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
 					if (!pSym || !pSym->m_pStnodDefinition)
 					{
 						EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", pStval->m_str.PChz());
@@ -732,31 +739,12 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						}
 						else
 						{
-							// Try to find the name of the type, if we can find it we're good, but if there's 
-							// type inference the definition needs to be done with type checking
-
-							CSTDecl * pStdecl = pStnodDefinition->m_pStdecl;
-							STypeInfo * pTinDef = pStnodDefinition->m_pTin;
+							// set up dependency for either the definition or the type...
+							
 							SSymbol * pSymDepend = pSym;
-							if (!pTinDef && pStdecl && pStdecl->m_iStnodType >= 0)
-							{
-								CSTNode * pStnodType = pStnodDefinition->PStnodChild(pStdecl->m_iStnodType);
-
-								pTinDef = PTinFromTypeSpecification(
-											pSymtab,
-											pStnodType,
-											pTcsentTop->m_grfsymlook,
-											&pSymDepend);
-							}
-
-							if (!pTinDef)
-							{
-								// set up dependency for either the definition or the type...
-								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
-								pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
-								return TCRET_WaitingForSymbolDefinition;
-							}
-							pStnod->m_pTin = pTinDef;
+							SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
+							pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
+							return TCRET_WaitingForSymbolDefinition;
 						}
 					}
 					else
@@ -877,7 +865,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 					if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStval, "Declaration without identifier"))
 					{
-						SSymbol * pSymIdent = pSymtab->PSymLookup(pStnodIdent->m_pStval->m_str, pTcsentTop->m_grfsymlook);
+						SSymbol * pSymIdent = pSymtab->PSymLookup(
+														pStnodIdent->m_pStval->m_str,
+														pStnodIdent->m_lexloc,
+														pTcsentTop->m_grfsymlook);
 						OnTypeComplete(pTcwork, pSymIdent);
 					}
 
@@ -1096,7 +1087,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								(park == PARK_EqualityOp) |
 								(park == PARK_LogicalAndOrOp);
 
-							pStnod->m_pTin = (fIsLogicalOp) ? pSymtab->PTinLookup("bool") : pTinUpcast;
+							pStnod->m_pTin = (fIsLogicalOp) ? pSymtab->PTinBuiltin("bool") : pTinUpcast;
 						}
 					}
 
@@ -1151,7 +1142,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 							case JTOK('!'):
 							{
-								STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinLookup("bool");
+								STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinBuiltin("bool");
 								if (!EWC_FVERIFY(pTinBool, "missing bool type"))
 									return TCRET_StoppingError;
 								if (!FCanImplicitCast(pTinOperand, pTinBool))
@@ -1277,13 +1268,13 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	pTcwork->m_hashPSymUntype.Remove(pSym);
 }
 
-void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CSTNode *> * parypStnodEntry)
+void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CWorkspace::SEntry> * paryEntry)
 {
-	STypeCheckWorkspace * pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, (s32)parypStnodEntry->C());
+	STypeCheckWorkspace * pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, (s32)paryEntry->C());
 
-	CSTNode ** ppStnodMax = parypStnodEntry->PMac();
+	CWorkspace::SEntry * pEntryMax = paryEntry->PMac();
 	int ipTcfram = 0;
-	for (CSTNode ** ppStnod = parypStnodEntry->A(); ppStnod != ppStnodMax; ++ppStnod, ++ipTcfram)
+	for (CWorkspace::SEntry * pEntry = paryEntry->A(); pEntry != pEntryMax; ++pEntry, ++ipTcfram)
 	{
 		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
 		pTcfram->m_iTcfram = ipTcfram;
@@ -1292,8 +1283,8 @@ void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CSTNode *
 		pTcfram->m_aryTcsent.SetAlloc(pAlloc);
 		STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
 		pTcsent->m_nState = 0;
-		pTcsent->m_pStnod = *ppStnod;
-		pTcsent->m_pSymtab = pSymtabTop;
+		pTcsent->m_pStnod = pEntry->m_pStnod;
+		pTcsent->m_pSymtab = pEntry->m_pSymtab;
 		pTcsent->m_pStnodProcedure = nullptr;
 		pTcsent->m_grfsymlook = FSYMLOOK_Default;
 
@@ -1352,12 +1343,11 @@ void AssertTestTypeCheck(
 	pWork->m_pParctx->m_cError = 0;
 
 	ParseGlobalScope(pWork, &jlex, true);
-	EWC_ASSERT(pWork->m_arypStnodEntry.C() > 0);
-
+	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
 	EndParse(pWork, &jlex);
 
-	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_arypStnodEntry);
+	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry);
 
 	char aCh[1024];
 	char * pCh = aCh;
@@ -1439,9 +1429,20 @@ void TestTypeCheck()
 	
 	// reference loop test: doesn't work with local functions... it's unclear what kind of reference we need to the
 	//  local scope (does the local function need to be checked until the current pos?
-	pChzIn		= "Foo :: () -> int { g:=Bar();}    Bar :: () -> float { n:=Foo(); }";
-	pChzOut		= "(Foo() @Foo int (float @g (float @Bar)))"
-					" (Bar() @Bar float (int @n (int @Foo)))";
+	pChzIn		= "{ n:int=2; Foo :: () -> int { n2:=n; g:=Bar();}    Bar :: () -> float { n:=Foo(); } }";
+	pChzOut		=   "(Foo() @Foo int ({} (int @n2 int) (float @g (float @Bar))))"
+					" (Bar() @Bar float (int @n (int @Foo)))"
+					" (int @n int IntLiteral)" ;
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	// Doesn't work - need to move symtable allocation into compund statement
+	//pChzIn		= " { ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
+	//pChzOut		= " ({} (int @ovr int) ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float)) (int @n int))";
+	//AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	
+	pChzIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
+	pChzOut		=	"(Foo() @Foo ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float)))"
+					" ({} (int @ovr int) (int @n int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	StaticShutdownStrings(&allocString);

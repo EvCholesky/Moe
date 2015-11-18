@@ -13,6 +13,7 @@
 | COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR 
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
+#pragma once
 #include "EwcArray.h"
 
 namespace EWC
@@ -36,13 +37,21 @@ void EmitError(CWorkspace * pWork, SLexerLocation * pLexloc, const char * pChz, 
 class CWorkspace	// tag = work
 {
 public:
+	struct SEntry // tag = entry
+	{
+		CSTNode *				m_pStnod;
+		CSymbolTable *		 	m_pSymtab;	// symbol table for this entry, local symbols for lambdas 
+	};
 
 							CWorkspace(EWC::CAlloc * pAlloc, SErrorManager * pErrman);
 
+	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
+	CSymbolTable *			PSymtabNew();
+
 	EWC::CAlloc *					m_pAlloc;
 	CParseContext *					m_pParctx;
-	EWC::CDynAry<CSTNode *> 		m_arypStnodEntry;
-	CSymbolTable *					m_pSymtab;
+	EWC::CDynAry<SEntry> 			m_aryEntry;
+	CSymbolTable *					m_pSymtab;	// top level symbols
 
 	SErrorManager *					m_pErrman;
 	size_t							m_cbFreePrev;

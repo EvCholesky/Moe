@@ -185,9 +185,26 @@ struct SJaiLexer // tag = jlex
 
 struct SLexerLocation // tag = lexloc
 {
+					SLexerLocation()
+					:m_strFilename()
+					, m_dB(-1)
+						{ ; }
+
+	explicit		SLexerLocation(SJaiLexer * pJlex)
+					:m_strFilename(pJlex->m_pChzFilename)
+					,m_dB((s32)(pJlex->m_pChBegin - pJlex->m_pChInput))
+						{ ; }
+
+	bool			operator<(const SLexerLocation & lexlocRhs) const
+					{
+						if (m_strFilename.Hv() == lexlocRhs.m_strFilename.Hv())
+							return m_dB < lexlocRhs.m_dB;
+
+						return m_strFilename.Hv() < lexlocRhs.m_strFilename.Hv();
+					}
+
 	EWC::CString	m_strFilename;
-	s32				m_iLine;
-	s32				m_iCh;
+	s32				m_dB;
 };
 
 void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, int cChStorage);
@@ -195,6 +212,12 @@ int JtokNextToken(SJaiLexer * pJlex);
 RWORD RwordLookup(SJaiLexer * pJlex);
 const char * PChzFromJtok(JTOK jtok);
 const char * PChzFromRword(RWORD rword);
+
+inline void CalculateLinePosition(SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint)
+{
+	*piLine = -1;
+	*piCodepoint = -1;
+}
 
 inline int NLine(const SJaiLexer * pJlex)
 	{ return -1; }

@@ -164,6 +164,15 @@ enum STREES
 	EWC_MAX_MIN_NIL(STREES)
 };
 
+enum FSTNOD
+{
+	FSTNOD_EntryPoint	= 0x1,		// this should be inserted as a top level entry point, not in place (local function)
+
+	FSTNOD_None			= 0x0,
+	FSTNOD_All			= 0x1,
+};
+EWC_DEFINE_GRF(GRFSTNOD, FSTNOD, u8);
+
 enum FDBGSTR // DeBuG STRing Flags
 {
 	FDBGSTR_Name = 0x1,
@@ -177,13 +186,17 @@ EWC_DEFINE_GRF(GRFDBGSTR, FDBGSTR, u32);
 class CSTNode // tag = stnod
 {
 public:
-						CSTNode(EWC::CAlloc * pAlloc);
+						CSTNode(EWC::CAlloc * pAlloc, const SLexerLocation & lexloc);
 						~CSTNode();
 
 	int					IAppendChild(CSTNode * pStnodChild)
 							{ 
 								if (pStnodChild)
 								{
+									EWC_ASSERT(
+										!pStnodChild->m_grfstnod.FIsAnySet(FSTNOD_EntryPoint), 
+										"Node marked as EntryPoint being added as child");
+
 									m_arypStnodChild.Append(pStnodChild); 
 									return (int)m_arypStnodChild.C() - 1;
 								}
@@ -202,13 +215,14 @@ public:
 	JTOK					m_jtok;
 	PARK					m_park;
 	STREES					m_strees;
+	GRFSTNOD				m_grfstnod;
 
 	CSTValue *				m_pStval;
 	CSTDecl *				m_pStdecl;
 	CSTProcedure *			m_pStproc;
 	CSTEnum *				m_pStenum;
 	SLexerLocation			m_lexloc;
-	STypeInfo *				m_pTin;		// Type info structs are owned by the symbol table
+	STypeInfo *				m_pTin;	
 
 	EWC::CDynAry<CSTNode *>	m_arypStnodChild;
 };
@@ -252,38 +266,35 @@ struct SSymbol	// tag = sym
 	CSymbolTable *	m_pSymtab;	// should this be here? or in pTin?
 };
 
-struct SUnknownSymbol // tag = unksym
+enum FSYMTAB	// SYMbol LOOKup flags
 {
-							SUnknownSymbol(EWC::CAlloc * pAlloc)
-							:m_arypStnodRef(pAlloc)
-								{ ; }
+	FSYMTAB_Ordered		= 0x1, // symbols cannot be referenced before their lexical position
 
-	EWC::CString			m_strName;
-	EWC::CDynAry<CSTNode *>	m_arypStnodRef;
+	FSYMTAB_None		= 0x0,
+	FSYMTAB_All			= 0x1,
+	FSYMTAB_Default		= FSYMTAB_Ordered,
 };
 
-enum SYMTABK
-{
-	SYMTABK_Global,
-	SYMTABK_Struct,
-	SYMTABK_Procedure,	// procedure or nested procedure
+EWC_DEFINE_GRF(GRFSYMTAB, FSYMTAB, u8);
 
-	EWC_MAX_MIN_NIL(SYMTABK)
-};
-
-class CSymbolTable	// tag = symtab
+class CSymbolTable		// tag = symtab
 {
-public:
+protected:
+	friend class CWorkspace;
+
+							// protected constructor to force use of CWorkspace::PSymtabNew()
 							CSymbolTable(EWC::CAlloc * pAlloc)
 							:m_pAlloc(pAlloc)
 							,m_hashHvPSym(pAlloc)
-							,m_hashHvPUnksym(pAlloc)
 							,m_hashHvPTin(pAlloc)
 							,m_hashHvPTinfwd(pAlloc)
 							,m_arypTinManaged(pAlloc)
 							,m_pSymtabParent(nullptr)
+							,m_pSymtabNextManaged(nullptr)
+							,m_grfsymtab(FSYMTAB_Default)
 								{ ; }
 
+public:
 							~CSymbolTable();
 
 	void					AddBuiltInSymbols();
@@ -293,8 +304,16 @@ public:
 								int cB = -1,
 								GRFSYM grfsym = FSYM_None);
 
-	SSymbol *				PSymLookup(const EWC::CString & str, GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
-	STypeInfo *				PTinLookup(const EWC::CString & str, GRFSYMLOOK grfsymlook = FSYMLOOK_Default, SSymbol ** ppSym = nullptr);
+	SSymbol *				PSymLookup(
+								const EWC::CString & str,
+								const SLexerLocation & lexloc, 
+								GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
+	STypeInfo *				PTinLookup(
+								const EWC::CString & str,
+								const SLexerLocation & lexloc,
+								GRFSYMLOOK grfsymlook = FSYMLOOK_Default,
+								SSymbol ** ppSym = nullptr);
+	STypeInfo *				PTinBuiltin( const EWC::CString & str);
 	STypeInfoForwardDecl *	PTinfwdLookup(const EWC::CString & str, GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
 
 	STypeInfoForwardDecl *	PTinfwdBegin(const EWC::CString & str);
@@ -303,16 +322,13 @@ public:
 								STypeInfoForwardDecl * pTinfwd,
 								STypeInfo * pTinResolved);
 
-	void					AddUnknownSymbolReference(const EWC::CString & str, CSTNode * pStnodRef);
 	void					AddNamedType(CParseContext * pParctx, SJaiLexer * pJlex, STypeInfo * pTin);
 	void					AddManagedTin(STypeInfo * pTin);
+	void					AddManagedSymtab(CSymbolTable * pSymtab);
 
 	EWC::CAlloc *				m_pAlloc;
 	EWC::CHash<HV, SSymbol *>	m_hashHvPSym;		// All the symbols defined within this scope, a full lookup requires
 													//  walking up the parent list
-
-	EWC::CHash<HV, SUnknownSymbol *> 
-								m_hashHvPUnksym;	// All the symbols we encountered during parse that hadn't been defined
 	EWC::CHash<HV, STypeInfo *>
 								m_hashHvPTin;		// Declared types in this scope
 	EWC::CHash<HV, STypeInfoForwardDecl *>
@@ -320,69 +336,35 @@ public:
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.
 
 	CSymbolTable *				m_pSymtabParent;
+	SLexerLocation				m_lexlocParent;		// position that this table was defined relative to it's parent 
+
+	CSymbolTable *				m_pSymtabManager;		// top level symbol table - manages lifetime of all symbol 
+														//  tables. (null iff this table is the root)
+	CSymbolTable *				m_pSymtabNextManaged;	// next table in the global list
+	GRFSYMTAB					m_grfsymtab;
 };
 
-#ifdef UNUSED_DEPENDENCY_CRAP
-enum DPHASE
-{
-	DPHASE_Parse,			// first pass, do lazy type inference and track unknown symbols and partial types
-	DPHASE_TypeInference,
-	DPHASE_TypeCheck,		// check types and complete sizing
-
-	EWC_MAX_MIN_NIL(DPHASE)
-};
-
-enum FDEP
-{
-	FDEP_ChildNames		= 0x1,	// have names for the children, but has untyped
-	FDEP_ChildTypes		= 0x2,	// names for the children (including inferred types) 
-	FDEP_Sized			= 0x4,	// know the size and layout
-
-	FDEP_None			= 0x0,
-	FDEP_All			= 0x7,
-};
-
-EWC_DEFINE_GRF(GRFDEP, FDEP, u16);
-
-struct SDependencyFrame;
-struct SPartialType	// party
-{
-	EWC::CStringHash			m_shash;
-	GRFDEP						m_grfdep;
-	CDynAry<SDependencyFrame *>	m_arypDepf;
-};
-
-struct SDependencyFrame // tag = depf
-{
-	DPHASE						m_dphase;
-	SDependencyFrame *			m_pDepfNextDirty;
-	CSTNode *					m_pStnodEntry;	// entry point
-	GRFDEP						m_grfdepDirty;	// which dependency phases have changed (should be counts?)
-	CDynAry<SPartialType *>		m_arypParty;
-};
-#endif // UNUSED_DEPENDENCY_CRAP
 
 
 class CParseContext // tag = parctx
 {
 public:
-						CParseContext(EWC::CAlloc * pAlloc)
+						CParseContext(EWC::CAlloc * pAlloc, CWorkspace * pWork)
 						:m_pAlloc(pAlloc)
+						,m_pWork(pWork)
 						,m_pSymtab(nullptr)
 						,m_cError(0)
 						,m_grfsymlook(FSYMLOOK_Default)
 							{ ; }
 
 	EWC::CAlloc * 		m_pAlloc;
+	CWorkspace *		m_pWork;
 	CSymbolTable *		m_pSymtab;
 	int					m_cError;
 	GRFSYMLOOK			m_grfsymlook;
-
-	//SDependencyFrame *	m_pDepfDirtyList;	 // singly linked list of dirty frames
-	// map from dphase to arypDepf?
 };
 
-void			PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab);
+void			PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab, const SLexerLocation & lexloc);
 CSymbolTable *	PSymtabPop(CParseContext * pParctx);
 CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
