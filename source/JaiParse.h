@@ -223,6 +223,7 @@ public:
 	CSTEnum *				m_pStenum;
 	SLexerLocation			m_lexloc;
 	STypeInfo *				m_pTin;	
+	CSymbolTable *			m_pSymtab;
 
 	EWC::CDynAry<CSTNode *>	m_arypStnodChild;
 };
@@ -325,6 +326,8 @@ public:
 	void					AddNamedType(CParseContext * pParctx, SJaiLexer * pJlex, STypeInfo * pTin);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
+
+	void					PrintDump();
 
 	EWC::CAlloc *				m_pAlloc;
 	EWC::CHash<HV, SSymbol *>	m_hashHvPSym;		// All the symbols defined within this scope, a full lookup requires

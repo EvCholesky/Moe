@@ -47,12 +47,10 @@ struct STypeInfo	// tag = tin
 			STypeInfo(const char * pChzName, TINK tink)
 			:m_tink(tink)
 			,m_strName(pChzName)
-			,m_pSymtab(nullptr)
 				{ ; }
 
     TINK			m_tink;
 	EWC::CString	m_strName;
-	CSymbolTable *	m_pSymtab;
 };
 
 template <typename T>

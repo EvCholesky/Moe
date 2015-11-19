@@ -283,6 +283,7 @@ void PushTcsent(STypeCheckFrame * pTcfram, CSTNode * pStnod)
 	STypeCheckStackEntry * pTcsentPrev = pTcfram->m_aryTcsent.PLast();
 	STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
 	*pTcsent = *pTcsentPrev;
+
 	pTcsent->m_nState = 0;
 	pTcsent->m_pStnod = pStnod;
 }
@@ -551,12 +552,12 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						// type check the body list
 						if (pStproc->m_iStnodBody >= 0)
 						{
-							// BB - need to push child symbol table
-							PushTcsent(pTcfram, pStnod->PStnodChild(pStproc->m_iStnodBody));
+							CSTNode * pStnodBody = pStnod->PStnodChild(pStproc->m_iStnodBody);
+							PushTcsent(pTcfram, pStnodBody);
 
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_pStnodProcedure = pStnod;
-							pTcsentPushed->m_pSymtab = pTinproc->m_pSymtab;
+							pTcsentPushed->m_pSymtab = pStnodBody->m_pSymtab;
 						}
 					}break;
 				case 2:
@@ -575,7 +576,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							}
 						}
 
-						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol"))
+						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", strProcName.PChz()))
 							return TCRET_StoppingError;
 						if (!EWC_FVERIFY(pSymProc->m_pTin, "expected procedure type info to be created during parse"))
 							return TCRET_StoppingError;
@@ -767,6 +768,14 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+
+				if (pStnod->m_park == PARK_List)
+				{
+					STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+					EWC_ASSERT(pStnod->m_pSymtab, "null symbol table");
+					pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
+				}
+
 			}break;
 			case PARK_Decl:
 			{
@@ -1355,7 +1364,7 @@ void AssertTestTypeCheck(
 
 	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type);
 
-	EWC_ASSERT(FAreSame(aCh, pChzOut), "parse debug string doesn't match expected value");
+	EWC_ASSERT(FAreSame(aCh, pChzOut), "type check debug string doesn't match expected value");
 
 	EndWorkspace(pWork);
 }
@@ -1419,26 +1428,23 @@ void TestTypeCheck()
 
 	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";
 	//pChzOut	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int (return (+ @a @b)))";
-	pChzOut		= "(AddNums() @AddNums (Params (int @a int) (int @b int)) int (int (int int int)))"
+	pChzOut		= "(AddNums() @AddNums (Params (int @a int) (int @b int)) int ({} (int (int int int))))"
 					" (int @n (int @AddNums IntLiteral IntLiteral))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
-	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) (int @n int)) (??? @NoReturn IntLiteral)";
+	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) ({} (int @n int))) (??? @NoReturn IntLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
-	// reference loop test: doesn't work with local functions... it's unclear what kind of reference we need to the
-	//  local scope (does the local function need to be checked until the current pos?
-	pChzIn		= "{ n:int=2; Foo :: () -> int { n2:=n; g:=Bar();}    Bar :: () -> float { n:=Foo(); } }";
-	pChzOut		=   "(Foo() @Foo int ({} (int @n2 int) (float @g (float @Bar))))"
-					" (Bar() @Bar float (int @n (int @Foo)))"
-					" (int @n int IntLiteral)" ;
+	pChzIn		= " { n:int=2; Foo :: () -> int { n2:=n; g:=Bar();}    Bar :: () -> float { n:=Foo(); } }";
+	pChzOut		=	"(Foo() @Foo int ({} (int @n2 int) (float @g (float @Bar))))"
+					" (Bar() @Bar float ({} (int @n (int @Foo))))"
+					" ({} (int @n int IntLiteral))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	// Doesn't work - need to move symtable allocation into compund statement
-	//pChzIn		= " { ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	//pChzOut		= " ({} (int @ovr int) ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float)) (int @n int))";
-	//AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pChzIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
+	pChzOut		= "({} (int @ovr int) ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float)) (int @n int))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
 	pChzOut		=	"(Foo() @Foo ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float)))"

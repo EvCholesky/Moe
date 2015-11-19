@@ -27,7 +27,7 @@ CSTNode * PStnodParseExpression(CParseContext * pParctx, SJaiLexer * pJlex);
 CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SJaiLexer * pJlex);
 CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SJaiLexer * pJlex);
 CSTNode * PStnodParseStatement(CParseContext * pParctx, SJaiLexer * pJlex);
-CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex);
+CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtab);
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex);
 
 const char * PChzFromPark(PARK park)
@@ -1055,17 +1055,12 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 				}
 
+				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew();
 				if (pJlex->m_jtok == JTOK('{'))
 				{
-					SLexerLocation lexloc(pJlex);
-					PushSymbolTable(pParctx, pSymtabProc, lexloc);
-
-					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex);
+					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex, pSymtabProc);
 					pStproc->m_iStnodBody = pStnodProc->IAppendChild(pStnodBody);
-					
-					CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
-					EWC_ASSERT(pSymtabProc == pSymtabPop, "CSymbol table push/pop mismatch (proc)");
 				}
 
 				if (pStproc->m_iStnodBody == -1)
@@ -1092,7 +1087,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 																		EWC_ALIGN_OF(STypeInfo *));
 				pTinproc->m_arypTinParams.SetArray(ppTin, 0, cStnodParams);
 				pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
-				pTinproc->m_pSymtab = pSymtabProc;
 				pStnodProc->m_pTin = pTinproc;
 
 				CSTNode ** ppStnodParamMax = &ppStnodParams[cStnodParams];
@@ -1112,11 +1106,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				}
 
 
-				CSymbolTable * pSymtab = pParctx->m_pSymtab;
-				SSymbol * pSymProc = pSymtab->PSymEnsure(pStnodIdent->m_pStval->m_str, pStnodProc);
+				SSymbol * pSymProc = pSymtabParent->PSymEnsure(pStnodIdent->m_pStval->m_str, pStnodProc);
 				pSymProc->m_pTin = pTinproc;
 
-				pSymtab->AddManagedTin(pTinproc);
+				pSymtabParent->AddManagedTin(pTinproc);
 
 				return pStnodProc;
 			}
@@ -1145,6 +1138,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					JtokNextToken(pJlex);
 
 					PushSymbolTable(pParctx, pSymtabEnum, lexloc);
+					pStnodEnum->m_pSymtab = pSymtabEnum;
 
 					pStnodConstantList = PStnodParseEnumConstantList(pParctx, pJlex);
 					pStenum->m_iStnodConstantList = pStnodEnum->IAppendChild(pStnodConstantList);
@@ -1170,7 +1164,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 																		pB + sizeof(STypeInfoEnum), 
 																		EWC_ALIGN_OF(STypeStructMember));
 				pTinenum->m_tinstructProduced.m_aryTypememb.SetArray(aTypememb, 0, cTypememb);
-				pTinenum->m_pSymtab = pSymtabEnum;
 
 				CSTNode ** ppStnodMemberMax = &ppStnodMember[cTypememb];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
@@ -1202,6 +1195,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				SLexerLocation lexlocChild(pJlex);
 				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew();
 				PushSymbolTable(pParctx, pSymtabStruct, lexlocChild);
+				pStnodStruct->m_pSymtab = pSymtabStruct;
 
 				CSTNode * pStnodDeclList = PStnodParseMemberDeclList(pParctx, pJlex);
 
@@ -1227,7 +1221,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 																		pB + sizeof(STypeInfoStruct), 
 																		EWC_ALIGN_OF(STypeStructMember));
 				pTinstruct->m_aryTypememb.SetArray(aTypememb, 0, cTypememb);
-				pTinstruct->m_pSymtab = pSymtabStruct;
 
 				CSTNode ** ppStnodMemberMax = &ppStnodMember[cTypememb];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
@@ -1284,7 +1277,7 @@ CSTNode * PStnodParseExpressionStatement(CParseContext * pParctx, SJaiLexer * pJ
 	return pStnod;
 }
 
-CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtab)
 {
 	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodList = nullptr;
@@ -1292,6 +1285,12 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 	if (pJlex->m_jtok == JTOK('{'))
 	{
 		SLexerLocation lexloc(pJlex);
+
+		if (!pSymtab)
+		{
+			pSymtab = pParctx->m_pWork->PSymtabNew();
+		}
+		PushSymbolTable(pParctx, pSymtab, lexloc);
 		JtokNextToken(pJlex);
 
 		while (pJlex->m_jtok != JTOK('}'))
@@ -1302,29 +1301,32 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 
 			if (pStnod->m_grfstnod.FIsAnySet(FSTNOD_EntryPoint))
 			{
+				// Note - move the lexLoc for this entry to be the lexloc for the block so nested
+				//  functions appear at the beginning of the containing scope (yuck!)
+				pStnod->m_lexloc = lexloc;
+
 				pParctx->m_pWork->AppendEntry(pStnod, pParctx->m_pSymtab);
 			}
-			else if (pStnodReturn == nullptr)
-			{
-				pStnodReturn = pStnod;
-			}
-			else
+			else 
 			{
 				if (pStnodList == nullptr)
 				{
 					pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 					pStnodList->m_jtok = JTOK('{');
 					pStnodList->m_park = PARK_List;
-					pStnodList->IAppendChild(pStnodReturn);
-					pStnodReturn = pStnodList;
+					pStnodList->m_pSymtab = pSymtab;
 				}
+
+
 				pStnodList->IAppendChild(pStnod);
 			}
 		}
 
+		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+		EWC_ASSERT(pSymtab == pSymtabPop, "CSymbol table push/pop mismatch (list)");
 		Expect(pParctx, pJlex, JTOK('}'));
 	}
-	return pStnodReturn;
+	return pStnodList;
 }
 
 CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SJaiLexer * pJlex)
@@ -1432,7 +1434,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJl
 CSTNode * PStnodParseStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 {
 
-	CSTNode * pStnod = PStnodParseCompoundStatement(pParctx, pJlex);
+	CSTNode * pStnod = PStnodParseCompoundStatement(pParctx, pJlex, nullptr);
 	if (pStnod)
 		return pStnod;
 
@@ -1513,16 +1515,6 @@ CSymbolTable * PSymtabPop(CParseContext * pParctx)
 		pParctx->m_pSymtab = pSymtabPrev->m_pSymtabParent;
 	}
 	return pSymtabPrev;
-}
-
-CSymbolTable * PSymtabFromPTin(STypeInfo * pTin)
-{
-	switch(pTin->m_tink)
-	{
-		case TINK_Struct:	return ((STypeInfoStruct *)pTin)->m_pSymtab;
-		case TINK_Enum:		return ((STypeInfoEnum *)pTin)->m_pSymtab;
-		default:			return nullptr;
-	}
 }
 
 CSymbolTable::~CSymbolTable()
@@ -1622,7 +1614,7 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 		if (ppSym)
 		{
 			bool fIsOrdered = m_grfsymtab.FIsSet(FSYMTAB_Ordered);
-			if ((fIsOrdered == false) | ((*ppSym)->m_pStnodDefinition->m_lexloc < lexloc))
+			if ((fIsOrdered == false) | ((*ppSym)->m_pStnodDefinition->m_lexloc <= lexloc))
 			{
 				return *ppSym;
 			}
@@ -1638,7 +1630,7 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 		if (ppSym)
 		{
 			bool fIsOrdered = pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered);
-			if ((fIsOrdered == false) | ((*ppSym)->m_pStnodDefinition->m_lexloc < lexlocChild))
+			if ((fIsOrdered == false) | ((*ppSym)->m_pStnodDefinition->m_lexloc <= lexlocChild))
 			{
 				return *ppSym;
 			}
@@ -1808,6 +1800,25 @@ void CSymbolTable::AddNamedType(CParseContext * pParctx, SJaiLexer * pJlex, STyp
 	}
 }
 
+void CSymbolTable::PrintDump()
+{
+	printf("Symbols:\n");
+	EWC::CHash<HV, SSymbol *>::CIterator iter(&m_hashHvPSym);
+	while (SSymbol ** ppSym = iter.Next())
+	{
+		printf("%s, ",(*ppSym)->m_strName.PChz());
+	}
+
+	printf("\n\n");
+	if (m_pSymtabParent)
+	{
+		printf("parent: \n");
+		m_pSymtabParent->PrintDump();
+	}
+
+	printf("\n\n");
+}
+
 CString	CSTDecl::StrIdentifier(CSTNode * pStnod)
 {
 	if (m_iStnodIdentifier < 0)
@@ -1839,6 +1850,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_pStenum(nullptr)
 ,m_lexloc(lexLoc)
 ,m_pTin(nullptr)
+,m_pSymtab(nullptr)
 ,m_arypStnodChild(pAlloc)
 {
 }
@@ -2202,7 +2214,7 @@ void TestParse()
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
-	pChzOut9	= "(if (== @i (member (member @foo @bar) @fug)) (= @ick 3) (else (= @ick 7)))";
+	pChzOut9	= "({} (if (== @i (member (member @foo @bar) @fug)) (= @ick 3) (else (= @ick 7))))";
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ break; continue; return foo=\"test\"; }";
@@ -2210,13 +2222,13 @@ void TestParse()
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
-	pChzOut9	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int (return (+ @a @b)))"
-					" (decl @bah 3)";
+	pChzOut9	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
+					" ({} (decl @bah 3))";
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
-	pChzOut9	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int (return (+ @a @b)))"
-					" (procCall @AddNums 2 3)";
+	pChzOut9	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
+					" ({} (procCall @AddNums 2 3))";
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ FooFunc(); n:=BarFunc(x+(ack)); }";
@@ -2224,7 +2236,7 @@ void TestParse()
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ NopFunc :: () { guh := 2; } wha : * int; }";
-	pChzOut9	= "(func @NopFunc (decl @guh 2)) (decl @wha (ptr @int))";
+	pChzOut9	= "(func @NopFunc ({} (decl @guh 2))) ({} (decl @wha (ptr @int)))";
 	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
 
 	pChzIn9		= "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 }; a = 2; }";

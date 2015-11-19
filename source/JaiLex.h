@@ -195,12 +195,12 @@ struct SLexerLocation // tag = lexloc
 					,m_dB((s32)(pJlex->m_pChBegin - pJlex->m_pChInput))
 						{ ; }
 
-	bool			operator<(const SLexerLocation & lexlocRhs) const
+	bool			operator<=(const SLexerLocation & lexlocRhs) const
 					{
 						if (m_strFilename.Hv() == lexlocRhs.m_strFilename.Hv())
-							return m_dB < lexlocRhs.m_dB;
+							return m_dB <= lexlocRhs.m_dB;
 
-						return m_strFilename.Hv() < lexlocRhs.m_strFilename.Hv();
+						return m_strFilename.Hv() <= lexlocRhs.m_strFilename.Hv();
 					}
 
 	EWC::CString	m_strFilename;
