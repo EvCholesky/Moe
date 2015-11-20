@@ -142,6 +142,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="source\CodeGen.h" />
     <ClInclude Include="source\EwcArray.h" />
     <ClInclude Include="source\EwcHash.h" />
     <ClInclude Include="source\EwcString.h" />
@@ -155,6 +156,7 @@
     <ClInclude Include="source\Workspace.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="source\CodeGen.cpp" />
     <ClCompile Include="source\EwcString.cpp" />
     <ClCompile Include="source\JaiLex.cpp" />
     <ClCompile Include="source\JaiParse.cpp" />

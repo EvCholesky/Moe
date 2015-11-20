@@ -48,6 +48,9 @@
     <ClInclude Include="source\Workspace.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="source\CodeGen.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\EwcString.cpp">
@@ -66,6 +69,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\Workspace.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\CodeGen.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
