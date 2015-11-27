@@ -108,7 +108,7 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn)
 	CParseContext * pParctx = EWC_NEW(pAlloc, CParseContext) CParseContext(pAlloc, pWork);
 	pWork->m_pParctx = pParctx;
 
-	static const int cChStorage = 1024 * 8;
+	static const size_t cChStorage = 1024 * 8;
 	char * aChStorage = (char *)pAlloc->EWC_ALLOC(cChStorage, 4);
 	InitJaiLexer(pJlex, pChzIn, &pChzIn[CCh(pChzIn)], aChStorage, cChStorage);
 

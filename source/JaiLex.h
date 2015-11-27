@@ -164,7 +164,7 @@ struct SJaiLexer // tag = jlex
    const char *		m_pChEof;
    const char *		m_pChParse;
    char *			m_aChStorage;
-   s32				m_cChStorage;
+   u32				m_cChStorage;
 
    // lexer parse location for error messages
    const char *		m_pChzFilename;
@@ -207,7 +207,7 @@ struct SLexerLocation // tag = lexloc
 	s32				m_dB;
 };
 
-void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, int cChStorage);
+void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, u32 cChStorage);
 int JtokNextToken(SJaiLexer * pJlex);
 RWORD RwordLookup(SJaiLexer * pJlex);
 const char * PChzFromJtok(JTOK jtok);

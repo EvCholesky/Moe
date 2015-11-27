@@ -106,13 +106,13 @@ struct Simd4 { Simd x, y, z, w; };
 #define EWC_TWEAK static
 #endif
 
-#define EWC_ENUM_UTILS(ENUM_NAME)  }; \
+#define EWC_ENUM_UTILS(ENUM_NAME)  \
 	inline bool FIsValid(ENUM_NAME e) { return (e >= ENUM_NAME##_Min) & (e < ENUM_NAME##_Max); } \
-	inline ENUM_NAME VerifyValidElement(ENUM_NAME e) { if (EWC_FVERIFY(FIsValid(e), "array access with bad " #ENUM_NAME)) return e; return (ENUM_NAME)0; } \
-	enum ENUM_NAME##_Stub {
+	inline ENUM_NAME VerifyValidElement(ENUM_NAME e) { if (EWC_FVERIFY(FIsValid(e), "array access with bad " #ENUM_NAME)) return e; return (ENUM_NAME)0; }
 
 #define EWC_MAX_MIN_NIL(ENUM_NAME) ENUM_NAME##_Max, ENUM_NAME##_Min = 0, ENUM_NAME##_Nil = -1 \
-	EWC_ENUM_UTILS(ENUM_NAME)
+	}; EWC_ENUM_UTILS(ENUM_NAME) \
+	enum ENUM_NAME##_Stub {
 
 inline void AssertHandler( const char* pChzFile, u32 line, const char* pChzCondition, const char* pChzMessage = 0, ...);
 
@@ -161,11 +161,13 @@ do { if (PREDICATE) \
 } while (0)
 
 void DoNothing();
+static_assert(sizeof(s64) == 8, "wha");
+static_assert(sizeof(s32) == 4, "wha");
 
-inline s32 S32Coerce(s64 n)		{ s32 nRet = (s32)n;	EWC_ASSERT((s32)nRet == n, "S32Coerce failure"); return nRet; }
+inline s32 S32Coerce(s64 n)		{ s32 nRet = (s32)n;	EWC_ASSERT((s64)nRet == n, "S32Coerce failure"); return nRet; }
 inline s16 S16Coerce(s32 n)		{ s16 nRet = (s16)n;	EWC_ASSERT((s32)nRet == n, "S16Coerce failure"); return nRet; }
 inline s8 S8Coerce(s32 n)		{ s8 nRet = (s8)n;		EWC_ASSERT((s32)nRet == n, "S8Coerce failure");  return nRet; }
-inline u32 U32Coerce(u64 n)		{ u32 nRet = (u32)n;	EWC_ASSERT((u32)nRet == n, "u32Coerce failure"); return nRet; }
+inline u32 U32Coerce(u64 n)		{ u32 nRet = (u32)n;	EWC_ASSERT((u64)nRet == n, "u32Coerce failure"); return nRet; }
 inline u16 U16Coerce(u32 n)		{ u16 nRet = (u16)n;	EWC_ASSERT((u32)nRet == n, "u16Coerce failure"); return nRet; }
 inline u8 U8Coerce(u32 n)		{ u8 nRet = (u8)n;		EWC_ASSERT((u32)nRet == n, "u8Coerce failure");  return nRet; }
  

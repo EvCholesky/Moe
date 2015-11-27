@@ -303,7 +303,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 				| (*pChz == '_') 
 				| (u8(*pChz) >= 128))    // >= 128 is UTF8 char
 			{
-				int iCh = 0;
+				size_t iCh = 0;
 				pJlex->m_pChString = pJlex->m_aChStorage;
 				do 
 				{
@@ -547,7 +547,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 	}
 }
 
-void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, int cChStorage)
+void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, u32 cChStorage)
 {
 	pJlex->m_pChInput = pChInput;
 	pJlex->m_pChParse = pChInput;
