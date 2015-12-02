@@ -17,9 +17,11 @@
 #include "EwcTypes.h"
 #include "JaiParse.h"
 #include "JaiTypes.h"
+#include "Workspace.h"
+
+using namespace EWC;
 
 /*
-
 #include "llvm/Analysis/Passes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/MCJIT.h"
@@ -138,57 +140,25 @@ s8 CIRInstruction::CpValOpcodeMax()
 }
 
 
-/*
-..\..\..\Debug\lib\LLVMAnalysis.lib
-..\..\..\Debug\lib\LLVMAsmPrinter.lib
-..\..\..\Debug\lib\LLVMBitReader.lib
-..\..\..\Debug\lib\LLVMCodeGen.lib
-..\..\..\Debug\lib\LLVMCore.lib
-..\..\..\Debug\lib\LLVMMCDisassembler.lib
-..\..\..\Debug\lib\LLVMExecutionEngine.lib
-..\..\..\Debug\lib\LLVMInstCombine.lib
-..\..\..\Debug\lib\LLVMInstrumentation.lib
-..\..\..\Debug\lib\LLVMipa.lib
-..\..\..\Debug\lib\LLVMMC.lib
-..\..\..\Debug\lib\LLVMMCJIT.lib
-..\..\..\Debug\lib\LLVMObject.lib
-..\..\..\Debug\lib\LLVMMCParser.lib
-..\..\..\Debug\lib\LLVMProfileData.lib
-..\..\..\Debug\lib\LLVMRuntimeDyld.lib
-..\..\..\Debug\lib\LLVMScalarOpts.lib
-..\..\..\Debug\lib\LLVMSelectionDAG.lib
-..\..\..\Debug\lib\LLVMSupport.lib
-..\..\..\Debug\lib\LLVMTarget.lib
-..\..\..\Debug\lib\LLVMTransformUtils.lib
-..\..\..\Debug\lib\LLVMX86AsmPrinter.lib
-..\..\..\Debug\lib\LLVMX86AsmParser.lib
-..\..\..\Debug\lib\LLVMX86CodeGen.lib
-..\..\..\Debug\lib\LLVMX86Desc.lib
-..\..\..\Debug\lib\LLVMX86Disassembler.lib
-..\..\..\Debug\lib\LLVMX86Info.lib
-..\..\..\Debug\lib\LLVMX86Utils.lib
-*/
-//LLVMAnalysis.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMMCDisassembler.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMipa.lib;LLVMMC.lib;LLVMMCJIT.lib;LLVMObject.lib;LLVMMCParser.lib;LLVMProfileData.lib;LLVMRuntimeDyld.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86AsmPrinter.lib;LLVMX86AsmParser.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMX86Utils.lib 
-
 
 // Builder class Methods
 CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc)
-:m_pLbuilder(nullptr)
+:m_pLbuild(nullptr)
 ,m_pAlloc(pAlloc)
 ,m_inspt()
 ,m_pBlockRoot(nullptr)
+,m_pProc(nullptr)
 { 
 	llvm::LLVMContext * pLctx = &llvm::getGlobalContext();
-	m_pLbuilder = EWC_NEW(m_pAlloc, LlvmIRBuilder) LlvmIRBuilder(pLctx);
+	m_pLbuild = EWC_NEW(m_pAlloc, LlvmIRBuilder) LlvmIRBuilder(pLctx);
 }
 	
 CIRBuilder::~CIRBuilder()
 {
-	if (m_pLbuilder)
+	if (m_pLbuild)
 	{
-
-		m_pAlloc->EWC_DELETE(m_pLbuilder);
-		m_pLbuilder = nullptr;
+		m_pAlloc->EWC_DELETE(m_pLbuild);
+		m_pLbuild = nullptr;
 	}
 }
 
@@ -202,6 +172,77 @@ CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue
 	pInst->m_apValOperand[0] = pValLhs;
 	pInst->m_apValOperand[1] = pValRhs;
 
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_NAdd, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateFAdd(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_GAdd, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateFAdd(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_NSub, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateSub(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_GSub, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateFSub(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_NMul, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateMul(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_GMul, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateFMul(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	STypeInfoInteger * pTinint = (STypeInfoInteger *)pValLhs->m_pStnod->m_pTin;
+	bool fSigned = false;
+	if (!EWC_FVERIFY(pTinint->m_tink == TINK_Integer, "bad type in PInstCreateNDiv"))
+	{
+		fSigned = pTinint->m_fSigned;
+	}
+
+	CIRInstruction * pInst = PInstCreate(IROP_NDiv, pValLhs, pValRhs, "nDivTmp");
+	if (fSigned)
+	{
+		pInst->m_pLval = m_pLbuild->CreateSDiv(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	}
+	else
+	{
+		pInst->m_pLval = m_pLbuild->CreateUDiv(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	}
+
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_GDiv, pValLhs, pValRhs, "gDivTmp");
+	pInst->m_pLval = m_pLbuild->CreateFDiv(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
 	return pInst;
 }
 
@@ -245,39 +286,39 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 				{
 					switch (pTinOutput->m_tink)
 					{
-						case TINK_Integer:	pInstOp = pBuild->PInstCreate(IROP_NAdd, pValLhs, pValRhs, "nAddTmp"); break;
-						case TINK_Float:	pInstOp = pBuild->PInstCreate(IROP_GAdd, pValLhs, pValRhs, "gAddTmp"); break;
+						case TINK_Integer:	pInstOp = pBuild->PInstCreateNAdd(pValLhs, pValRhs, "nAddTmp"); break;
+						case TINK_Float:	pInstOp = pBuild->PInstCreateGAdd(pValLhs, pValRhs, "gAddTmp"); break;
 					}
 				}break;
 				case '-':
 				{
 					switch (pTinOutput->m_tink)
 					{
-						case TINK_Integer:	pInstOp = pBuild->PInstCreate(IROP_NSub, pValLhs, pValRhs, "nSubTmp"); break;
-						case TINK_Float:	pInstOp = pBuild->PInstCreate(IROP_GSub, pValLhs, pValRhs, "gSubTmp"); break;
+						case TINK_Integer:	pInstOp = pBuild->PInstCreateNSub(pValLhs, pValRhs, "nSubTmp"); break;
+						case TINK_Float:	pInstOp = pBuild->PInstCreateGSub(pValLhs, pValRhs, "gSubTmp"); break;
 					}
 				}break;
 				case '*':
 				{
 					switch (pTinOutput->m_tink)
 					{
-						case TINK_Integer:	pInstOp = pBuild->PInstCreate(IROP_NMul, pValLhs, pValRhs, "nMulTmp"); break;
-						case TINK_Float:	pInstOp = pBuild->PInstCreate(IROP_GMul, pValLhs, pValRhs, "gMulTmp"); break;
+						case TINK_Integer:	pInstOp = pBuild->PInstCreateNMul(pValLhs, pValRhs, "nMulTmp"); break;
+						case TINK_Float:	pInstOp = pBuild->PInstCreateGMul(pValLhs, pValRhs, "gMulTmp"); break;
 					}
 				}break;
 				case '/':
 				{
 					switch (pTinOutput->m_tink)
 					{
-						case TINK_Integer:	pInstOp = pBuild->PInstCreate(IROP_NDiv, pValLhs, pValRhs, "nDivTmp"); break;
-						case TINK_Float:	pInstOp = pBuild->PInstCreate(IROP_GDiv, pValLhs, pValRhs, "gDivTmp"); break;
+						case TINK_Integer:	pInstOp = pBuild->PInstCreateNDiv(pValLhs, pValRhs, "nDivTmp"); break;
+						case TINK_Float:	pInstOp = pBuild->PInstCreateGDiv(pValLhs, pValRhs, "gDivTmp"); break;
 					}
 				}break;
 				default: break;
 			}
 
 			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PChzFromJtok(pStnod->m_jtok));
-			pBuild->PBlockEnsure()->Append(pInstOp);
+			pBuild->PBlockEnsure("block")->Append(pInstOp);
 			return pInstOp;
 
 		}break;
@@ -285,12 +326,94 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 	return nullptr;
 }
 
-CIRBasicBlock * CIRBuilder::PBlockEnsure()
+CIRBasicBlock * CIRBuilder::PBlockEnsure(const char * pChzName)
 {
+	llvm::Function * pLfunc = (m_pProc) ? m_pProc->m_pLfunc : nullptr;
 	if (!m_pBlockRoot)
 	{
+		llvm::BasicBlock * pLblock = llvm::BasicBlock::Create(llvm::getGlobalContext(), pChzName, pLfunc);
+		m_pLbuild->SetInsertPoint(pLblock);
+
 		m_pBlockRoot = EWC_NEW(m_pAlloc, CIRBasicBlock) CIRBasicBlock(m_pAlloc);
 	}
 
 	return m_pBlockRoot;
+}
+
+void PerformCodeGen(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CWorkspace::SEntry> * paryEntry)
+{
+	CIRBuilder build(pAlloc);
+
+	CWorkspace::SEntry * pEntryMax = paryEntry->PMac();
+	int ipTcfram = 0;
+	for (CWorkspace::SEntry * pEntry = paryEntry->A(); pEntry != pEntryMax; ++pEntry, ++ipTcfram)
+	{
+		CSTNode * pStnod = pEntry->m_pStnod;
+		if (pStnod->m_park != PARK_ProcedureDefinition)
+		{
+			EWC_ASSERT(build.m_pProc == nullptr, "expected null procedure for entry point.");
+			CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure();
+			pEntry->m_pProc = pProc;
+			build.m_pProc = pProc;
+			pProc->m_pBlockEntry = build.PBlockEnsure("Proc");
+		}
+		else
+		{
+			EWC_ASSERT(false, "need to set up named procedure");
+		}
+
+		(void) PValGenerate(&build, pStnod);
+	}
+}
+
+void AssertTestCodeGen(
+	CWorkspace * pWork,
+	const char * pChzIn)
+	//const char * pChzOut)
+{
+	SJaiLexer jlex;
+	BeginWorkspace(pWork);
+	BeginParse(pWork, &jlex, pChzIn);
+
+	EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
+	pWork->m_pParctx->m_cError = 0;
+
+	ParseGlobalScope(pWork, &jlex, true);
+	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
+
+	EndParse(pWork, &jlex);
+
+	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry);
+	PerformCodeGen(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry);
+
+	char aCh[1024];
+	char * pCh = aCh;
+	char * pChMax = &aCh[EWC_DIM(aCh)];
+
+	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type);
+
+
+	//EWC_ASSERT(EWC::FAreSame(aCh, pChzOut), "type check debug string doesn't match expected value");
+
+	EndWorkspace(pWork);
+}
+
+void TestCodeGen()
+{
+	u8 aBString[1024 * 100];
+	CAlloc allocString(aBString, sizeof(aBString));
+
+	StaticInitStrings(&allocString);
+
+	u8 aB[1024 * 100];
+	CAlloc alloc(aB, sizeof(aB));
+
+	SErrorManager errman;
+	CWorkspace work(&alloc, &errman);
+
+	const char * pChzIn =	"{ i:=5 + 2 * 3; }";
+	//const char * pChzOut = "({} (int @i int) (int @foo int) (float @g float)) (float @g_g float)";
+	AssertTestCodeGen(&work, pChzIn);
+
+	StaticShutdownStrings(&allocString);
 }

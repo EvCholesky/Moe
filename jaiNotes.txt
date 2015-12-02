@@ -37,7 +37,7 @@ TODO:
  [ ] constant types (recognize constants, ensure constants for array sizes)
  [ ] consolidate error tracking/printing into one place.
  	[ ] add error messages to the lexer
- [ ] handle nonlinear type checking within top level scopes (within functions/structs)
+ [x] handle nonlinear type checking within top level scopes (within functions/structs)
  [ ] handle collapsing arithmetic ops (binary and unary) for literals
 
 Unsupported features:

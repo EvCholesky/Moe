@@ -1943,7 +1943,15 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		{
 			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
 			char * pChWork = pCh;
-			pChWork += CChCopy(PChzFromLitk(pTinlit->m_stval.m_litty.m_litk), pChWork, pChEnd-pChWork);
+			const SLiteralType & litty = pTinlit->m_stval.m_litty;
+			if ((litty.m_litk == LITK_Integer) & (litty.m_litsign != LITSIGN_Signed))
+			{
+				pChWork += CChCopy("Uint", pChWork, pChEnd - pChWork);
+			}
+			else
+			{
+				pChWork += CChCopy(PChzFromLitk(pTinlit->m_stval.m_litty.m_litk), pChWork, pChEnd - pChWork);
+			}
 			pChWork += CChCopy("Literal", pChWork, pChEnd-pChWork);
 			return pChWork - pCh;
 		}

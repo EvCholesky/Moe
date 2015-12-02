@@ -21,6 +21,7 @@ namespace EWC
 	class CAlloc;
 }
 
+class CIRProcedure;
 class CParseContext;
 class CSTNode;
 class CWorkspace;
@@ -41,6 +42,7 @@ public:
 	{
 		CSTNode *				m_pStnod;
 		CSymbolTable *		 	m_pSymtab;	// symbol table for this entry, local symbols for lambdas 
+		CIRProcedure *			m_pProc;
 	};
 
 							CWorkspace(EWC::CAlloc * pAlloc, SErrorManager * pErrman);
@@ -61,3 +63,6 @@ void BeginWorkspace(CWorkspace * pWork);
 void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn);
 void EndParse(CWorkspace * pWork, SJaiLexer * pJlex);
 void EndWorkspace(CWorkspace * pWork);
+
+void PerformTypeCheck(EWC::CAlloc * pAlloc, CSymbolTable * pSymtabTop, EWC::CAry<CWorkspace::SEntry> * paryEntry);
+

@@ -374,4 +374,3 @@ CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
 void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalEntries = false);
 
-void TestParse();

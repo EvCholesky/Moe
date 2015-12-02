@@ -19,8 +19,9 @@
 
 namespace llvm
 {
-	class Value;
 	class BasicBlock;
+	class Function;
+	class Value;
 }
 
 class CIRInstruction;
@@ -146,16 +147,6 @@ public:
 
 
 
-class CIRProcedure : public CIRValue
-{
-public:
-						CIRProcedure()
-						:CIRValue(VALK_ProcedureDefinition)
-							{ ; }
-};
-
-
-
 class CIRInstruction : public CIRValue	// tag = inst
 {
 public:
@@ -188,7 +179,18 @@ struct SInsertPoint		// tag = inspt
 	s32					m_iInst;
 };
 
+class CIRProcedure	: public CIRValue // tag = proc;
+{
+public:
+						CIRProcedure()
+						:CIRValue(VALK_ProcedureDefinition)
+						,m_pLfunc(nullptr)
+						,m_pBlockEntry(nullptr)
+							{ ; }
 
+	llvm::Function *	m_pLfunc;		// null if anonymous function
+	CIRBasicBlock *		m_pBlockEntry;	
+};
 
 class CIRBuilder		// tag = build
 {
@@ -196,10 +198,8 @@ public:
 						CIRBuilder(EWC::CAlloc * pAlloc);
 						~CIRBuilder();
 	
-	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRBasicBlock *		PBlockEnsure();
+	CIRBasicBlock *		PBlockEnsure(const char * pChzName);
 
-	/*
 	CIRInstruction *	PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
@@ -208,12 +208,16 @@ public:
 	CIRInstruction *	PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	*/
 
-	LlvmIRBuilder *		m_pLbuilder;
+	LlvmIRBuilder *		m_pLbuild;
 	EWC::CAlloc *		m_pAlloc;
 	SInsertPoint		m_inspt;
+
 	CIRBasicBlock *		m_pBlockRoot;
+	CIRProcedure *		m_pProc;
+
+private:
+	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 };
 
 CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod);

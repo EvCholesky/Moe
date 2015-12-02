@@ -13,6 +13,7 @@
 | COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR 
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
+#include "CodeGen.h"
 #include "JaiLex.h"
 #include "JaiParse.h"
 #include "Workspace.h"
@@ -75,6 +76,7 @@ void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 	SEntry * pEntry = m_aryEntry.AppendNew();
 	pEntry->m_pStnod = pStnod;
 	pEntry->m_pSymtab = pSymtab;
+	pEntry->m_pProc = nullptr;
 }
 
 CSymbolTable * CWorkspace::PSymtabNew()
@@ -154,6 +156,12 @@ void EndWorkspace(CWorkspace * pWork)
 		pAlloc->EWC_DELETE(pEntry->m_pStnod);
 		pEntry->m_pStnod = nullptr;
 		pEntry->m_pSymtab = nullptr;
+
+		if (pEntry->m_pProc)
+		{
+			pAlloc->EWC_DELETE(pEntry->m_pProc);
+			pEntry->m_pProc = nullptr;
+		}
 	}
 	pWork->m_aryEntry.Clear();
 

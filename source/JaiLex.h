@@ -95,15 +95,6 @@ enum JTOK
 #undef RW
 
 
-enum FLIT // LITeral Flags
-{
-	FLIT_None	= 0,	
-	FLIT_Signed	= 0x1,
-	FLIT_Byte	= 0x2,
-	FLIT_Short	= 0x4,
-	FLIT_Long	= 0x8,
-	FLIT_All	= 0xF
-};
 
 enum LITK
 {
@@ -154,8 +145,6 @@ struct SLiteralType	// litty
 	LITSIGN	m_litsign;
 	LITSIZE	m_litsize;
 };
-
-EWC_DEFINE_GRF(GRFLIT, FLIT, u16);
 
 struct SJaiLexer // tag = jlex
 {
@@ -221,5 +210,3 @@ inline void CalculateLinePosition(SLexerLocation * pLexloc, s32 * piLine, s32 * 
 
 inline int NLine(const SJaiLexer * pJlex)
 	{ return -1; }
-
-void TestLexing();
