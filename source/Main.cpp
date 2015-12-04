@@ -29,7 +29,7 @@ int main()
 	TestLexing();
 	TestParse();
 	TestTypeCheck();
-	//TestCodeGen();
+	TestCodeGen();
 
 	return 0;
 }

@@ -16,11 +16,14 @@
 #pragma once
 
 #include "EwcArray.h"
+#include "EwcHash.h"
 
 namespace llvm
 {
 	class BasicBlock;
+	class Constant;
 	class Function;
+	class Module;
 	class Value;
 }
 
@@ -78,13 +81,17 @@ EWC_ENUM_UTILS(VALK);
 		OP(Ret), \
 		OP_RANGE(TerminalOp, Ret), \
 		\
-		OP(NAdd), \
+		OP(SAdd), \
+		OP(UAdd), \
 		OP(GAdd), \
-		OP(NSub), \
+		OP(SSub), \
+		OP(USub), \
 		OP(GSub), \
-		OP(NMul), \
+		OP(SMul), \
+		OP(UMul), \
 		OP(GMul), \
-		OP(NDiv), \
+		OP(SDiv), \
+		OP(UDiv), \
 		OP(GDiv), \
 		OP_RANGE(BinaryOp, TerminalOpMax), \
 		\
@@ -129,6 +136,8 @@ class CIRValue		// tag = val
 {
 public:
 						CIRValue(VALK valk);
+	virtual				~CIRValue()
+							{ ; }
 
 	llvm::Value *		m_pLval;
 	CSTNode *			m_pStnod;
@@ -137,7 +146,7 @@ public:
 
 
 
-class CIRConstant : public CIRValue
+class CIRConstant : public CIRValue // tag = const
 {
 public:
 						CIRConstant()
@@ -152,14 +161,12 @@ class CIRInstruction : public CIRValue	// tag = inst
 public:
 						CIRInstruction(IROP irop)
 						:CIRValue(VALK_Instruction)
-						,m_pBlock(nullptr)
 						,m_cpValOperand(0)
 						,m_irop(irop)
 							{ ; }
 
-	s8					CpValOpcodeMax();
+	s8					CpValOperandMax();
 
-	CIRBasicBlock *		m_pBlock;
 	s8					m_cpValOperand;		// current opcode count
 	IROP				m_irop;
 
@@ -182,14 +189,22 @@ struct SInsertPoint		// tag = inspt
 class CIRProcedure	: public CIRValue // tag = proc;
 {
 public:
-						CIRProcedure()
+						CIRProcedure(EWC::CAlloc * pAlloc)
 						:CIRValue(VALK_ProcedureDefinition)
+						,m_pAlloc(pAlloc)
 						,m_pLfunc(nullptr)
 						,m_pBlockEntry(nullptr)
+						,m_arypValManaged(pAlloc)
 							{ ; }
 
+						~CIRProcedure();
+
+	EWC::CAlloc *		m_pAlloc;
 	llvm::Function *	m_pLfunc;		// null if anonymous function
 	CIRBasicBlock *		m_pBlockEntry;	
+
+	EWC::CDynAry<CIRValue *>
+						m_arypValManaged;
 };
 
 class CIRBuilder		// tag = build
@@ -198,23 +213,30 @@ public:
 						CIRBuilder(EWC::CAlloc * pAlloc);
 						~CIRBuilder();
 	
-	CIRBasicBlock *		PBlockEnsure(const char * pChzName);
+	void				PrintDump();
+	size_t				CChGenerateUniqueName(const char * pChzIn, char * pChzOut, size_t cChMax);
 
-	CIRInstruction *	PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRBasicBlock *		PBlockEnsure(const char * pChzName);
+	void				AddManagedVal(CIRValue * pVal);
+
+	CIRInstruction *	PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateNSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateNSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateNMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateNMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
-	LlvmIRBuilder *		m_pLbuild;
-	EWC::CAlloc *		m_pAlloc;
-	SInsertPoint		m_inspt;
+	llvm::Module *			m_pLmoduleCur;
+	LlvmIRBuilder *			m_pLbuild;
+	EWC::CAlloc *			m_pAlloc;
+	SInsertPoint			m_inspt;
 
-	CIRBasicBlock *		m_pBlockRoot;
-	CIRProcedure *		m_pProc;
+	CIRBasicBlock *			m_pBlockRoot;
+	CIRProcedure *			m_pProc;
+
+	EWC::CHash<HV, u32>		m_hashHvNUnique;	// map for generating unique strings
 
 private:
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
