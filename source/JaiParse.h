@@ -23,10 +23,12 @@
 
 
 
+class CIRValue;
 class CParseContext;
 class CSTNode;
 class CSymbolTable;
 class CWorkspace;
+struct SSymbol;
 struct STypeInfo;
 struct STypeInfoEnum;
 struct STypeInfoForwardDecl;
@@ -98,6 +100,7 @@ enum PARK // PARse Kind
 };
 
 const char * PChzFromPark(PARK park);
+EWC::CString StrFromIdentifier(CSTNode * pStnod);
 
 
 
@@ -224,6 +227,7 @@ public:
 	SLexerLocation			m_lexloc;
 	STypeInfo *				m_pTin;	
 	CSymbolTable *			m_pSymtab;
+	SSymbol *				m_pSym;
 
 	EWC::CDynAry<CSTNode *>	m_arypStnodChild;
 };
@@ -265,6 +269,7 @@ struct SSymbol	// tag = sym
 
 	STypeInfo *		m_pTin;
 	CSymbolTable *	m_pSymtab;	// should this be here? or in pTin?
+	CIRValue *		m_pVal;
 };
 
 enum FSYMTAB	// SYMbol LOOKup flags

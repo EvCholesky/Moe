@@ -51,6 +51,7 @@ public:
 enum VALK	// VALue Kind
 {
 	VALK_Constant,
+	VALK_Argument,
 
 	VALK_ProcedureDefinition,
 
@@ -156,6 +157,16 @@ public:
 
 
 
+class CIRArgument : public CIRValue // tag = arg
+{
+public:
+						CIRArgument()
+						:CIRValue(VALK_Argument)
+							{ ; }
+};
+
+
+
 class CIRInstruction : public CIRValue	// tag = inst
 {
 public:
@@ -227,6 +238,8 @@ public:
 	CIRInstruction *	PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+
+	CIRInstruction *	PInstCreateRet(CIRValue * pValRhs);
 
 	llvm::Module *			m_pLmoduleCur;
 	LlvmIRBuilder *			m_pLbuild;

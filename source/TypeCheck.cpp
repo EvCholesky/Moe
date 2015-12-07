@@ -882,6 +882,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						{
 							EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
 							pStnod->m_pTin = pStnodDefinition->m_pTin;
+							pStnod->m_pSym = pSym;
 						}
 						else
 						{
@@ -1023,6 +1024,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 														pStnodIdent->m_pStval->m_str,
 														pStnodIdent->m_lexloc,
 														pTcsentTop->m_grfsymlook);
+						pStnod->m_pSym = pSymIdent;
 						OnTypeComplete(pTcwork, pSymIdent);
 					}
 
@@ -1570,6 +1572,10 @@ void TestTypeCheck()
 
 	pChzIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";
 	pChzOut = "({} (bool @i bool) (bool @foo bool) (bool @g bool)) (bool @g_g bool BoolLiteral)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
+	pChzOut		= "(ParamFunc() @ParamFunc (params (s32 @nA s32) (float @g float)) ({} (s32 @foo s32) (float @bah float)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : string = \"huzzah\";";

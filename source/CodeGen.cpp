@@ -230,7 +230,6 @@ void CIRBuilder::PrintDump()
 CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
 {
 	int cpValOperand = COperand(irop);
-	EWC_ASSERT(cpValOperand == 2, "expected two operands");
 	size_t cB = sizeof(CIRInstruction) + (cpValOperand - 1) * sizeof(CIRValue *);
 
 	CIRInstruction * pInst = (CIRInstruction *)m_pAlloc->EWC_ALLOC(cB, EWC_ALIGN_OF(CIRInstruction));
@@ -312,8 +311,15 @@ CIRInstruction * CIRBuilder::PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pVal
 
 CIRInstruction * CIRBuilder::PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
 {
-	CIRInstruction * pInst = PInstCreate(IROP_GDiv, pValLhs, pValRhs, "gDivTmp");
+	CIRInstruction * pInst = PInstCreate(IROP_GDiv, pValLhs, pValRhs, pChzName);
 	pInst->m_pLval = m_pLbuild->CreateFDiv(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateRet(CIRValue * pValRhs)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_Ret, pValRhs, nullptr, "RetTmp");
+	pInst->m_pLval = m_pLbuild->CreateRet(pValRhs->m_pLval);
 	return pInst;
 }
 
@@ -401,6 +407,41 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			pConst->m_pLval = pLconst;
 			return pConst;
 		}
+		case PARK_ReservedWord:
+		{
+			if (!EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
+				return nullptr;
+			
+			RWORD rword = pStnod->m_pStval->m_rword;
+			switch (rword)
+			{
+				case RWORD_Return:
+				{
+					CIRValue * pValRhs = nullptr;
+					if (pStnod->CStnodChild() == 1)
+					{
+						pValRhs = PValGenerate(pBuild, pStnod->PStnodChild(0));
+					}
+
+					if (pValRhs)
+					{
+						CIRInstruction * pInstRet = pBuild->PInstCreateRet(pValRhs);
+						pBuild->PBlockEnsure("block")->Append(pInstRet);
+					}
+				}break;
+				default:
+				{
+					EWC_ASSERT(false, "Unhandled reserved word in code gen");
+				}
+			}
+		} break;
+		case PARK_Identifier:
+		{
+			if (EWC_FVERIFY(pStnod->m_pSym, "unknown identifier in codeGen"))
+			{
+				return pStnod->m_pSym->m_pVal;
+			}
+		} break;
 		case PARK_AdditiveOp:
 		case PARK_MultiplicativeOp:
 		case PARK_ShiftOp:
@@ -515,6 +556,56 @@ CIRBasicBlock * CIRBuilder::PBlockEnsure(const char * pChzName)
 	return m_pBlockRoot;
 }
 
+static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
+{
+	if (!pTin)
+		return false;
+
+	llvm::LLVMContext & lctx = llvm::getGlobalContext();
+
+	switch (pTin->m_tink)
+	{
+	    case TINK_Integer:	
+		{
+			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTin;
+			switch (pTinint->m_cBit)
+			{
+			case 8:		return llvm::Type::getInt8Ty(lctx);
+			case 16:	return llvm::Type::getInt16Ty(lctx);
+			case 32:	return llvm::Type::getInt32Ty(lctx);
+			case 64:	return llvm::Type::getInt64Ty(lctx);
+			default:	return nullptr;
+			}
+		}
+		case TINK_Bool:		return llvm::Type::getInt1Ty(lctx);
+	    case TINK_Float:
+		{
+			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
+			switch (pTinfloat->m_cBit)
+			{
+			case 32:	return llvm::Type::getFloatTy(lctx);
+			case 64:	return llvm::Type::getDoubleTy(lctx);
+			default:	return nullptr;
+			}
+		}
+		case TINK_Literal:
+		{
+			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
+			switch (pTinlit->m_stval.m_litty.m_litk)
+			{
+			case LITK_Integer:	return llvm::Type::getInt64Ty(lctx);
+			case LITK_Float:	return llvm::Type::getDoubleTy(lctx);
+			case LITK_Bool:		return llvm::Type::getInt1Ty(lctx);
+			case LITK_Char:		return nullptr;
+			case LITK_String:	return nullptr;
+			case LITK_Null:		return nullptr;
+			default:			return nullptr;
+			}
+		}
+		default: return nullptr;
+	}
+}
+
 void CodeGenEntryPoint(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CWorkspace::SEntry> * paryEntry)
 {
 	CIRBuilder build(pAlloc);
@@ -535,17 +626,110 @@ void CodeGenEntryPoint(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CWorkspa
 			(void) build.CChGenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
 
 			std::vector<llvm::Type *> argsEmpty;
-			llvm::FunctionType * Lfunctype = llvm::FunctionType::get(build.m_pLbuild->getVoidTy(), argsEmpty, false);
+			llvm::FunctionType * pLfunctype = llvm::FunctionType::get(build.m_pLbuild->getVoidTy(), argsEmpty, false);
 
-			pProc->m_pLfunc = llvm::Function::Create(Lfunctype, llvm::Function::ExternalLinkage, aCh, build.m_pLmoduleCur);
+			pProc->m_pLfunc = llvm::Function::Create(pLfunctype, llvm::Function::ExternalLinkage, aCh, build.m_pLmoduleCur);
 			pProc->m_pBlockEntry = build.PBlockEnsure(aCh);
+
+			(void) PValGenerate(&build, pStnod);
 		}
 		else
 		{
-			EWC_ASSERT(false, "need to set up named procedure");
+			// BB - this should move into PValGenerate, under a PARK_ProcedureDefinition case.
+			CSTProcedure * pStproc = pStnod->m_pStproc;
+			CSTNode * pStnodParams = nullptr;
+			CSTNode * pStnodBody = nullptr;
+			CSTNode * pStnodReturn = nullptr;
+			CSTNode * pStnodName = nullptr;
+			if (EWC_FVERIFY(pStproc, "Encountered procedure without CSTProcedure"))
+			{
+				pStnodParams = pStnod->PStnodChildSafe(pStproc->m_iStnodParameterList);
+				pStnodBody = pStnod->PStnodChildSafe(pStproc->m_iStnodBody);
+				pStnodReturn = pStnod->PStnodChildSafe(pStproc->m_iStnodReturnType);
+				pStnodName = pStnod->PStnodChildSafe(pStproc->m_iStnodProcName);
+			}
+
+			std::vector<llvm::Type*> aryPLtype;
+			if (pStnodParams && EWC_FVERIFY(pStnodParams->m_park == PARK_ParameterList, "expected parameter list"))
+			{
+				int cpStnodParams = pStnodParams->CStnodChild();
+				for (int ipStnod = 0; ipStnod < cpStnodParams; ++ipStnod)
+				{
+					CSTNode * pStnodDecl = pStnodParams->PStnodChild(ipStnod);
+					if (!EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl, "bad parameter"))
+						continue;
+
+					llvm::Type * pLtype = PLtypeFromPTin(pStnodDecl->m_pTin);
+					if (EWC_FVERIFY(pLtype, "Could not compute LLVM type for parameter"))
+					{
+						aryPLtype.push_back(pLtype);
+					}
+				}
+			}
+
+			llvm::Type * pLtypeReturn;
+			if (pStnodReturn)
+			{
+				pLtypeReturn = PLtypeFromPTin(pStnodReturn->m_pTin);
+				EWC_FVERIFY(pLtypeReturn, "Could not compute LLVM type for return type");
+			}
+			if (!pLtypeReturn)
+			{
+				pLtypeReturn = build.m_pLbuild->getVoidTy();
+			}
+
+			const char * pChzName;
+			if (pStnodName)
+			{
+				CString strProcName = StrFromIdentifier(pStnodName);
+				pChzName = strProcName.PChz();
+			}
+
+			char aCh[128];
+			if (!pStnodName)
+			{
+				(void) build.CChGenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
+				pChzName = aCh;
+			}
+
+			EWC_ASSERT(build.m_pProc == nullptr, "expected null procedure for entry point.");
+			CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
+			pEntry->m_pProc = pProc;
+			build.m_pProc = pProc;
+
+			llvm::FunctionType * pLfunctype = llvm::FunctionType::get(pLtypeReturn, aryPLtype, false);
+			pProc->m_pLfunc = llvm::Function::Create(
+												pLfunctype,
+												llvm::Function::ExternalLinkage,
+												pChzName,
+												build.m_pLmoduleCur);
+
+			pProc->m_pBlockEntry = build.PBlockEnsure(pChzName);
+
+			u32 iArg = 0;
+			int cpStnodParam = pStnodParams->CStnodChild();
+			llvm::Function::arg_iterator argIt = pProc->m_pLfunc->arg_begin(); 
+			for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam, ++argIt)
+			{
+				CSTNode * pStnodParam = pStnodParams->PStnodChild(ipStnodParam);
+				if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
+				{
+					argIt->setName(pStnodParam->m_pSym->m_strName.PChz()); 
+
+					CIRArgument * pArg = EWC_NEW(pAlloc, CIRArgument) CIRArgument();
+					pArg->m_pLval = argIt;
+
+					build.AddManagedVal(pArg);
+					pStnodParam->m_pSym->m_pVal = pArg;
+
+					// Add arguments to variable symbol table.
+					//NamedValues[Args[iArg]] = artIt;
+				}
+			}
+
+			(void) PValGenerate(&build, pStnodBody);
 		}
 
-		(void) PValGenerate(&build, pStnod);
 
 	    llvm::verifyFunction(*build.m_pProc->m_pLfunc);
 	}
@@ -645,7 +829,8 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 
-	const char * pChzIn =	"{ i:=5 + 2 * 3; }";
+//	const char * pChzIn =	"{ i:=5 + 2 * 3; }";
+	const char * pChzIn =	"AddNums :: (nA : int, nB : int) -> int { return nA + nB; }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	StaticShutdownStrings(&allocString);

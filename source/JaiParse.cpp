@@ -1341,7 +1341,7 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 			Expect(pParctx, pJlex, JTOK(';'));
 
 			return pStnod;
-		}
+		} break;
 	case RWORD_Return:
 		{
 			CSTNode * pStnodReturn = PStnodParseReservedWord(pParctx, pJlex, rword);
@@ -1353,7 +1353,7 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 
 			Expect(pParctx, pJlex, JTOK(';'));
 			return pStnodReturn;
-		}break;
+		} break;
 	default:
 		return nullptr;
 	}
@@ -1602,6 +1602,7 @@ SSymbol * CSymbolTable::PSymEnsure(const CString & strName, CSTNode * pStnodDefi
 	pSym->m_grfsym = grfsym;
 	pSym->m_pTin = nullptr;
 	pSym->m_pSymtab = nullptr;
+	pSym->m_pVal = nullptr;
 
 	return pSym;
 }
@@ -1851,6 +1852,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_lexloc(lexLoc)
 ,m_pTin(nullptr)
 ,m_pSymtab(nullptr)
+,m_pSym(nullptr)
 ,m_arypStnodChild(pAlloc)
 {
 }
@@ -2187,7 +2189,6 @@ void TestParse()
 	const char * pChzOut2 = "(/ (+ @ugh @foo) (* (+ @x 3) 5))";
 	AssertParseMatchTailRecurse(&work, pChzIn2, pChzOut2);
 
-	EWC_ASSERT(32/8/2 == 2, "ack");
 	pChzIn2  = "ugh/foo/guh/ack;";
 	pChzOut2 = "(/ (/ (/ @ugh @foo) @guh) @ack)";
 	AssertParseMatchTailRecurse(&work, pChzIn2, pChzOut2);
