@@ -726,6 +726,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						if (!EWC_FVERIFY(pSymProc->m_pTin, "expected procedure type info to be created during parse"))
 							return TCRET_StoppingError;
 
+						pStnod->m_pSym = pSymProc;
 						PopTcsent(pTcfram);
 
 						pStnod->m_strees = STREES_TypeChecked;
@@ -755,6 +756,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					{
 						pSymProc = pSymtab->PSymLookup(strProcName, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
 					}
+					pStnod->m_pSym = pSymProc;
 
 					if (!EWC_FVERIFY(pSymProc && pSymProc->m_pStnodDefinition, "unknown procedure in type check"))
 						return TCRET_StoppingError;

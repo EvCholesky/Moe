@@ -82,6 +82,9 @@ EWC_ENUM_UTILS(VALK);
 		OP(Ret), \
 		OP_RANGE(TerminalOp, Ret), \
 		\
+		OP(Call), \
+		OP_RANGE(JumpOp, TerminalOpMax), \
+		\
 		OP(SAdd), \
 		OP(UAdd), \
 		OP(GAdd), \
@@ -94,7 +97,7 @@ EWC_ENUM_UTILS(VALK);
 		OP(SDiv), \
 		OP(UDiv), \
 		OP(GDiv), \
-		OP_RANGE(BinaryOp, TerminalOpMax), \
+		OP_RANGE(BinaryOp, JumpOpMax), \
 		\
 		OP(Shl), \
 		OP(Shr), \
@@ -241,6 +244,8 @@ public:
 
 	CIRInstruction *	PInstCreateRet(CIRValue * pValRhs);
 
+	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+
 	llvm::Module *			m_pLmoduleCur;
 	LlvmIRBuilder *			m_pLbuild;
 	EWC::CAlloc *			m_pAlloc;
@@ -251,8 +256,6 @@ public:
 
 	EWC::CHash<HV, u32>		m_hashHvNUnique;	// map for generating unique strings
 
-private:
-	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 };
 
 CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod);
