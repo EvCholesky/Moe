@@ -34,7 +34,6 @@ struct STypeCheckStackEntry // tag = tcsent
 
 struct STypeCheckFrame // tag = tcfram
 {
-	int								m_iTcfram;			// index in tcwork::m_aryTcfram 
 	int								m_ipTcframQueue;	// index in the pending/waiting queue
 	CDynAry<STypeCheckStackEntry>	m_aryTcsent;
 };
@@ -766,7 +765,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					{
 						// wait for this procedure's signature to be type checked.
 						SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymProc);
-						pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
+						pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
 						return TCRET_WaitingForSymbolDefinition;
 					}
 
@@ -892,7 +891,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							
 							SSymbol * pSymDepend = pSym;
 							SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
-							pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
+							pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
 							return TCRET_WaitingForSymbolDefinition;
 						}
 					}
@@ -974,7 +973,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							{
 								// wait for this type to be resolved.
 								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymType);
-								pUntype->m_aryiTcframDependent.Append(pTcfram->m_iTcfram);
+								pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
 								return TCRET_WaitingForSymbolDefinition;
 							}
 						}
@@ -1452,7 +1451,11 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	pTcwork->m_hashPSymUntype.Remove(pSym);
 }
 
-void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CWorkspace::SEntry> * paryEntry)
+void PerformTypeCheck(
+	CAlloc * pAlloc,
+	CSymbolTable * pSymtabTop,
+	CAry<CWorkspace::SEntry> * paryEntry,
+	CAry<int> * paryiEntryChecked)
 {
 	STypeCheckWorkspace * pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, (s32)paryEntry->C());
 
@@ -1461,7 +1464,6 @@ void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CWorkspac
 	for (CWorkspace::SEntry * pEntry = paryEntry->A(); pEntry != pEntryMax; ++pEntry, ++ipTcfram)
 	{
 		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
-		pTcfram->m_iTcfram = ipTcfram;
 		pTcfram->m_ipTcframQueue = ipTcfram;
 
 		pTcfram->m_aryTcsent.SetAlloc(pAlloc);
@@ -1483,6 +1485,12 @@ void PerformTypeCheck(CAlloc * pAlloc, CSymbolTable * pSymtabTop, CAry<CWorkspac
 		if (tcret == TCRET_StoppingError || tcret == TCRET_Complete)
 		{
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);
+
+			if (tcret == TCRET_Complete)
+			{
+				size_t iEntry = pTcwork->m_aryTcfram.IFromP(pTcfram);
+				paryiEntryChecked->Append(S32Coerce(iEntry));
+			}
 		}
 		else if (EWC_FVERIFY(tcret == TCRET_WaitingForSymbolDefinition))
 		{
@@ -1531,7 +1539,7 @@ void AssertTestTypeCheck(
 
 	EndParse(pWork, &jlex);
 
-	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry);
+	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 	char aCh[1024];
 	char * pCh = aCh;

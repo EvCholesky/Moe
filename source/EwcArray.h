@@ -100,9 +100,9 @@ public:
 							return &m_a[m_c-1];
 						return nullptr;
 					}
-	s32			IFromP(const T * pT) const
+	size_t		IFromP(const T * pT) const
 					{ 
-						s32 iT = ((uintptr_t)pT - (uintptr_t)m_a) / sizeof(T); 
+						size_t iT = ((uintptr_t)pT - (uintptr_t)m_a) / sizeof(T); 
 						EWC_ASSERT((iT >= 0) & (iT < m_c), "pointer not contained within array bounds");
 						return iT; 
 					}

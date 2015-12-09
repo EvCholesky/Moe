@@ -64,6 +64,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 :m_pAlloc(pAlloc)
 ,m_pParctx(nullptr)
 ,m_aryEntry(pAlloc)
+,m_aryiEntryChecked(pAlloc) 
 ,m_pSymtab(nullptr)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
@@ -96,6 +97,7 @@ void BeginWorkspace(CWorkspace * pWork)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 
+	pWork->m_aryiEntryChecked.Clear();
 	pWork->m_aryEntry.Clear();
 	pWork->m_cbFreePrev = pAlloc->CB();
 
@@ -131,6 +133,8 @@ void EndParse(CWorkspace * pWork, SJaiLexer * pJlex)
 	
 	pAlloc->EWC_DELETE(pWork->m_pParctx);
 	pWork->m_pParctx = nullptr;
+
+	pWork->m_aryiEntryChecked.EnsureSize(pWork->m_aryEntry.C());
 }
 
 void EndWorkspace(CWorkspace * pWork)
@@ -164,6 +168,7 @@ void EndWorkspace(CWorkspace * pWork)
 		}
 	}
 	pWork->m_aryEntry.Clear();
+	pWork->m_aryiEntryChecked.Clear();
 
 	size_t cbFreePost = pAlloc->CB();
 	EWC_ASSERT(pWork->m_cbFreePrev == cbFreePost, "failed to free all bytes");

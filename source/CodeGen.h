@@ -230,7 +230,10 @@ public:
 	void				PrintDump();
 	size_t				CChGenerateUniqueName(const char * pChzIn, char * pChzOut, size_t cChMax);
 
-	CIRBasicBlock *		PBlockEnsure(const char * pChzName);
+	CIRBasicBlock *		PBlockCreate(CIRProcedure * pProc, const char * pChzName);
+
+	void				ActivateProcedure(CIRProcedure * pProc);
+	void				ActivateBlock(CIRBasicBlock * pBlock);
 	void				AddManagedVal(CIRValue * pVal);
 
 	CIRInstruction *	PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
@@ -251,8 +254,8 @@ public:
 	EWC::CAlloc *			m_pAlloc;
 	SInsertPoint			m_inspt;
 
-	CIRBasicBlock *			m_pBlockRoot;
-	CIRProcedure *			m_pProc;
+	CIRProcedure *			m_pProcCur;
+	CIRBasicBlock *			m_pBlockCur;
 
 	EWC::CHash<HV, u32>		m_hashHvNUnique;	// map for generating unique strings
 

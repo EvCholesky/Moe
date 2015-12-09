@@ -42,6 +42,8 @@ public:
 	{
 		CSTNode *				m_pStnod;
 		CSymbolTable *		 	m_pSymtab;	// symbol table for this entry, local symbols for lambdas 
+
+		// BB - could remove? (just use CSTNode::m_pVal for PARK_ProcedureDefinition?)
 		CIRProcedure *			m_pProc;
 	};
 
@@ -53,7 +55,8 @@ public:
 	EWC::CAlloc *					m_pAlloc;
 	CParseContext *					m_pParctx;
 	EWC::CDynAry<SEntry> 			m_aryEntry;
-	CSymbolTable *					m_pSymtab;	// top level symbols
+	EWC::CDynAry<int> 				m_aryiEntryChecked;		// order in which entry points were successfully type checked
+	CSymbolTable *					m_pSymtab;				// top level symbols
 
 	SErrorManager *					m_pErrman;
 	size_t							m_cbFreePrev;
@@ -64,5 +67,9 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn);
 void EndParse(CWorkspace * pWork, SJaiLexer * pJlex);
 void EndWorkspace(CWorkspace * pWork);
 
-void PerformTypeCheck(EWC::CAlloc * pAlloc, CSymbolTable * pSymtabTop, EWC::CAry<CWorkspace::SEntry> * paryEntry);
+void PerformTypeCheck(
+	EWC::CAlloc * pAlloc,
+	CSymbolTable * pSymtabTop,
+	EWC::CAry<CWorkspace::SEntry> * paryEntry,
+	EWC::CAry<int> * paryiEntryChecked);
 
