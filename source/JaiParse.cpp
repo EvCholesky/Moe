@@ -2181,86 +2181,93 @@ void TestParse()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 
-	const char * pChzIn1 =	"x + 3*5;";
-	const char * pChzOut1 = "(+ @x (* 3 5))";
-	AssertParseMatchTailRecurse(&work, pChzIn1, pChzOut1);
+	const char * pChzIn;
+	const char * pChzOut;
 
-	const char * pChzIn2 =	"(ugh + foo) / ((x + 3)*5);";
-	const char * pChzOut2 = "(/ (+ @ugh @foo) (* (+ @x 3) 5))";
-	AssertParseMatchTailRecurse(&work, pChzIn2, pChzOut2);
+	pChzIn =	"x + 3*5;";
+	pChzOut = "(+ @x (* 3 5))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn2  = "ugh/foo/guh/ack;";
-	pChzOut2 = "(/ (/ (/ @ugh @foo) @guh) @ack)";
-	AssertParseMatchTailRecurse(&work, pChzIn2, pChzOut2);
+	pChzIn =	"(ugh + foo) / ((x + 3)*5);";
+	pChzOut = "(/ (+ @ugh @foo) (* (+ @x 3) 5))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	const char * pChzIn3 =	"(5 + -x) * -(3 / foo);";
-	const char * pChzOut3 = "(* (+ 5 (unary[-] @x)) (unary[-] (/ 3 @foo)))";
-	AssertParseMatchTailRecurse(&work, pChzIn3, pChzOut3);
+	pChzIn  = "ugh/foo/guh/ack;";
+	pChzOut = "(/ (/ (/ @ugh @foo) @guh) @ack)";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	const char * pChzIn4 =	"ick * ack * -(3 / foo);";
-	const char * pChzOut4 = "(* (* @ick @ack) (unary[-] (/ 3 @foo)))";
-	AssertParseMatchTailRecurse(&work, pChzIn4, pChzOut4);
+	pChzIn =	"(5 + -x) * -(3 / foo);";
+	pChzOut = "(* (+ 5 (unary[-] @x)) (unary[-] (/ 3 @foo)))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	const char * pChzIn5 =	"ick & (ack&&foo | 123) || guh;";
-	const char * pChzOut5 = "(|| (& @ick (&& @ack (| @foo 123))) @guh)";
-	AssertParseMatchTailRecurse(&work, pChzIn5, pChzOut5);
+	pChzIn =	"ick * ack * -(3 / foo);";
+	pChzOut = "(* (* @ick @ack) (unary[-] (/ 3 @foo)))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	const char * pChzIn6 =	"ick == ack < foo\n != 123 >= guh;";
-	const char * pChzOut6 = "(!= (== @ick (< @ack @foo)) (>= 123 @guh))";
-	AssertParseMatchTailRecurse(&work, pChzIn6, pChzOut6);
+	pChzIn =	"ick & (ack&&foo | 123) || guh;";
+	pChzOut = "(|| (& @ick (&& @ack (| @foo 123))) @guh)";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+	pChzIn =	"ick == ack < foo\n != 123 >= guh;";
+	pChzOut = "(!= (== @ick (< @ack @foo)) (>= 123 @guh))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 	// NOTE - weird ordering shouldn't matter as we will ensure lhs is l-value
-	const char * pChzIn7 =	"ick = 5 += foo *= guh;";
-	const char * pChzOut7 = "(*= (+= (= @ick 5) @foo) @guh)";
-	AssertParseMatchTailRecurse(&work, pChzIn7, pChzOut7);
+	pChzIn =	"ick = 5 += foo *= guh;";
+	pChzOut = "(*= (+= (= @ick 5) @foo) @guh)";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	const char * pChzIn8 =	"++foo.bah[23];";
-	const char * pChzOut8 = "(unary[++] (elem (member @foo @bah) 23))";
-	AssertParseMatchTailRecurse(&work, pChzIn8, pChzOut8);
+	pChzIn =	"++foo.bah[23];";
+	pChzOut = "(unary[++] (elem (member @foo @bah) 23))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	const char * pChzIn9 =	"{ i=5; foo.bah = ack; }";
-	const char * pChzOut9 = "({} (= @i 5) (= (member @foo @bah) @ack))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	pChzIn =	"{ i=5; foo.bah = ack; }";
+	pChzOut = "({} (= @i 5) (= (member @foo @bah) @ack))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
-	pChzOut9	= "({} (if (== @i (member (member @foo @bar) @fug)) (= @ick 3) (else (= @ick 7))))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	pChzIn		= "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
+	pChzOut	= "({} (if (== @i (member (member @foo @bar) @fug)) (= @ick 3) (else (= @ick 7))))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "{ break; continue; return foo=\"test\"; }";
-	pChzOut9	= "({} (break) (continue) (return (= @foo \"test\")))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	pChzIn		= "{ break; continue; return foo=\"test\"; }";
+	pChzOut	= "({} (break) (continue) (return (= @foo \"test\")))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
-	pChzOut9	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
+	pChzIn		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
+	pChzOut	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
 					" ({} (decl @bah 3))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
-	pChzOut9	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
+	pChzIn =	"AddLocal :: (nA : int) -> int { nLocal := 2; return nA + nLocal; }";
+	pChzOut	= "(func @AddLocal (params (decl @nA @int)) @int ({} (decl @nLocal 2) (return (+ @nA @nLocal))))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+	pChzIn		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
+	pChzOut	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
 					" ({} (procCall @AddNums 2 3))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "{ FooFunc(); n:=BarFunc(x+(ack)); }";
-	pChzOut9	= "({} (procCall @FooFunc) (decl @n (procCall @barFunc (+ @x @ack))))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	pChzIn		= "{ FooFunc(); n:=BarFunc(x+(ack)); }";
+	pChzOut	= "({} (procCall @FooFunc) (decl @n (procCall @barFunc (+ @x @ack))))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "{ NopFunc :: () { guh := 2; } wha : * int; }";
-	pChzOut9	= "(func @NopFunc ({} (decl @guh 2))) ({} (decl @wha (ptr @int)))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	pChzIn		= "{ NopFunc :: () { guh := 2; } wha : * int; }";
+	pChzOut	= "(func @NopFunc ({} (decl @guh 2))) ({} (decl @wha (ptr @int)))";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 }; a = 2; }";
-	pChzOut9	= "({} (enum @ENUMK @int ({} (enumConst @ENUMK_Nil (unary[-] 1)) (enumConst @ENUMK_Foo) (enumConst @ENUMK_Bah 3)))"
+	pChzIn		= "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 }; a = 2; }";
+	pChzOut	= "({} (enum @ENUMK @int ({} (enumConst @ENUMK_Nil (unary[-] 1)) (enumConst @ENUMK_Foo) (enumConst @ENUMK_Bah 3)))"
 					" (= @a 2))";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "STest :: struct { m_a := 2; m_b : int; }; boo : int = 3;";
-	pChzOut9	= "(struct @STest ({} (decl @m_a 2) (decl @m_b @int))) (decl @boo @int 3)";
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9);
+	pChzIn		= "STest :: struct { m_a := 2; m_b : int; }; boo : int = 3;";
+	pChzOut	= "(struct @STest ({} (decl @m_a 2) (decl @m_b @int))) (decl @boo @int 3)";
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn9		= "pChz := foo; guh : gur = 5; bah : s32 = woo;";
-	pChzOut9	= "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
+	pChzIn		= "pChz := foo; guh : gur = 5; bah : s32 = woo;";
+	pChzOut	= "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
 	const char * apChzExpectedSym[] = {"pChz", "guh", "bah", nullptr };
-	AssertParseMatchTailRecurse(&work, pChzIn9, pChzOut9, apChzExpectedSym);
+	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut, apChzExpectedSym);
 
 	StaticShutdownStrings(&allocString);
 }

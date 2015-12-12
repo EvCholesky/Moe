@@ -24,12 +24,15 @@ namespace llvm
 	class Constant;
 	class Function;
 	class Module;
+	class Type;
 	class Value;
 }
 
 class CIRInstruction;
 class CSTNode;
 class LlvmIRBuilder; // wrapper class to avoid the forward decl template mess.
+struct SSymbol;
+
 
 
 class CIRBasicBlock		// tag = block
@@ -106,6 +109,7 @@ EWC_ENUM_UTILS(VALK);
 		OP(Xor), \
 		OP_RANGE(LogicOp, BinaryOpMax), \
 		\
+		OP(Alloca), \
 		OP(Load), \
 		OP(Store), \
 		OP_RANGE(MemoryOp, LogicOpMax), \
@@ -246,8 +250,12 @@ public:
 	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
 	CIRInstruction *	PInstCreateRet(CIRValue * pValRhs);
+	CIRInstruction *	PInstCreateAlloca(llvm::Type * pLtype, const char * pChzName);
 
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+
+	CIRInstruction *	PInstLoadSymbol(SSymbol * pSym, const char * pChzName);
+	CIRInstruction *	PInstCreateStore(CIRValue * pValDst, CIRValue * pValSrc);
 
 	llvm::Module *			m_pLmoduleCur;
 	LlvmIRBuilder *			m_pLbuild;
