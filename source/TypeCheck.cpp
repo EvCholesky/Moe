@@ -1139,7 +1139,51 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					RWORD rword = pStnod->m_pStval->m_rword;
 					switch (rword)
 					{
-						case RWORD_Return:
+					case RWORD_If:
+						{
+							if (pTcsentTop->m_nState < pStnod->CStnodChild())
+							{
+								PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								break;
+							}
+
+							if (pStnod->CStnodChild() < 2)
+							{
+								EmitError(pTcwork, pStnod, "encountered if statement without expected predicate,child");
+								return TCRET_StoppingError;
+							}
+
+							// (if (predicate) (ifCase) (else (elseCase)))
+							CSTNode * pStnodPred = pStnod->PStnodChild(0);
+							STypeInfo * pTinPred = pStnodPred->m_pTin;
+
+							auto pSymtab = pTcsentTop->m_pSymtab;
+							STypeInfo * pTinBool = pSymtab->PTinBuiltin("bool");
+							STypeInfo * pTinPredPromoted = PTinPromoteLiteralTightest(
+															pTcwork,
+															pTcsentTop->m_pSymtab,
+															pStnodPred,
+															pTinBool);
+							if (FCanImplicitCast(pTinPredPromoted, pTinBool))
+							{
+								pStnod->m_pTin = pTinBool;
+							}
+
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram);
+						} break;
+					case RWORD_Else:
+						{
+							if (pTcsentTop->m_nState < pStnod->CStnodChild())
+							{
+								PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								break;
+							}
+
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram);
+						} break;
+					case RWORD_Return:
 						{
 							if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 							{
@@ -1618,6 +1662,10 @@ void TestTypeCheck()
 
 	pChzIn =	"{ n:s64; pN:*s8; fN := !pN; ++n; --n;}";
 	pChzOut = "({} (s64 @n s64) (*s8 @pN (*s8 s8)) (bool @fN (bool *s8)) (s64 s64) (s64 s64))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
+	pChzOut = "({} (s64 @n s64) (bool (bool s64 UintLiteral) (s64 s64 UintLiteral) (??? (s64 s64 UintLiteral))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";
