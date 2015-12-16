@@ -86,6 +86,9 @@ EWC_ENUM_UTILS(VALK);
 		OP_RANGE(TerminalOp, Ret), \
 		\
 		OP(Call), \
+		OP(CondBranch), \
+		OP(Branch), \
+		OP(Phi), \
 		OP_RANGE(JumpOp, TerminalOpMax), \
 		\
 		OP(SAdd), \
@@ -102,23 +105,29 @@ EWC_ENUM_UTILS(VALK);
 		OP(GDiv), \
 		OP_RANGE(BinaryOp, JumpOpMax), \
 		\
+		OP(NCmp), \
+		OP(GCmp), \
+		OP_RANGE(CmpOp, BinaryOpMax), \
+		\
 		OP(Shl), \
 		OP(Shr), \
 		OP(And), \
 		OP(Or), \
 		OP(Xor), \
-		OP_RANGE(LogicOp, BinaryOpMax), \
+		OP_RANGE(LogicOp, CmpOpMax), \
 		\
 		OP(Alloca), \
 		OP(Load), \
 		OP(Store), \
 		OP_RANGE(MemoryOp, LogicOpMax), \
 		\
-		OP(Trunc), \
-		OP(GToS64), \
-		OP(GToU64), \
-		OP(S64ToG), \
-		OP(U64ToG), \
+		OP(NTrunc), \
+		OP(SignExt), \
+		OP(ZeroExt), \
+		OP(GToS), \
+		OP(GToU), \
+		OP(SToG), \
+		OP(UToG), \
 		OP(GTrunc), \
 		OP(GExtend), \
 		OP(PtrToInt), \
@@ -126,7 +135,7 @@ EWC_ENUM_UTILS(VALK);
 		OP_RANGE(CastOp, MemoryOpMax), \
 
 #define OP(x) IROP_##x
-#define OP_RANGE(range, prev) IROP_##range##Max, IROP_##range##Min = IROP_##prev
+#define OP_RANGE(range, PREV_VAL) IROP_##range##Max, IROP_##range##Min = IROP_##PREV_VAL, IROP_##range##Last = IROP_##range##Max - 1
 	enum IROP
 	{
 		OPCODE_LIST
@@ -135,8 +144,9 @@ EWC_ENUM_UTILS(VALK);
 		IROP_Min = 0,
 		IROP_Nil = -1,
 	};
-#undef OP
 #undef OP_RANGE
+#undef OP
+
 
 
 
@@ -212,6 +222,7 @@ public:
 						,m_pAlloc(pAlloc)
 						,m_pLfunc(nullptr)
 						,m_pBlockEntry(nullptr)
+						,m_arypBlockManaged(pAlloc)
 						,m_arypValManaged(pAlloc)
 							{ ; }
 
@@ -221,6 +232,8 @@ public:
 	llvm::Function *	m_pLfunc;		// null if anonymous function
 	CIRBasicBlock *		m_pBlockEntry;	
 
+	EWC::CDynAry<CIRBasicBlock *>
+						m_arypBlockManaged;
 	EWC::CDynAry<CIRValue *>
 						m_arypValManaged;
 };
@@ -248,6 +261,9 @@ public:
 	CIRInstruction *	PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+
+	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBasicBlock * pBlockTrue, CIRBasicBlock * pBlockFalse);
+	CIRInstruction *	PInstCreateBranch(CIRBasicBlock * pBlock);
 
 	CIRInstruction *	PInstCreateRet(CIRValue * pValRhs);
 	CIRInstruction *	PInstCreateAlloca(llvm::Type * pLtype, const char * pChzName);

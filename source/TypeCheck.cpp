@@ -138,16 +138,23 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 				if (!EWC_FVERIFY(pStnod->m_pStval, "identifier without value string detected"))
 					break;
 				pCh += CChCopy(pStnod->m_pStval->m_str.PChz(), pCh, pChEnd - pCh); 
+				pStnodIt = nullptr;
 			}break;
 			case PARK_Reference:
 				pCh += CChCopy("* ", pCh, pChEnd - pCh); 
+
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				pStnodIt = pStnodIt->PStnodChild(0);
 				break;
 			case PARK_ArrayDecl:
 				// BB - should follow the [], [..], [c] convention
-				pCh += CChCopy("[] ", pCh, pChEnd - pCh); 
+				EWC_ASSERT(false, "not type-checking asserts yet");
+				pStnodIt=  nullptr;
+
 				break;
 			default:
 				pCh += CChCopy("<BadPark> ", pCh, pChEnd - pCh); 
+				pStnod = nullptr;
 				break;
 		}
 	}
@@ -558,32 +565,47 @@ STypeInfo * PTinFindUpcast(
 	return nullptr;
 }
 
-bool FCanImplicitCast(STypeInfo * pTinFrom, STypeInfo * pTinTo)
+bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
-	EWC_ASSERT(pTinFrom->m_tink != TINK_Literal, "literals should be promoted before calling FCanImplicitCast()");
+	EWC_ASSERT(pTinSrc->m_tink != TINK_Literal, "literals should be promoted before calling FCanImplicitCast()");
 
-	if (pTinFrom->m_tink == pTinTo->m_tink)
+	if (pTinSrc->m_tink == pTinDst->m_tink)
 	{
-		if (pTinFrom->m_tink == TINK_Float)
+		// Note - can't just compare pointers directly as tins are not unique. (but they should be)
+		switch (pTinSrc->m_tink)
 		{
-			STypeInfoFloat * pTinfloatFrom = (STypeInfoFloat *)pTinFrom;
-			STypeInfoFloat * pTinfloatTo = (STypeInfoFloat *)pTinTo;
-			return pTinfloatTo->m_cBit >= pTinfloatFrom->m_cBit;
-		}
-		if (pTinFrom->m_tink == TINK_Integer)
-		{
-			STypeInfoInteger * pTinintFrom = (STypeInfoInteger *)pTinFrom;
-			STypeInfoInteger * pTinintTo = (STypeInfoInteger *)pTinTo;
+		case TINK_Integer:
+			{
+				STypeInfoInteger * pTinintSrc = (STypeInfoInteger *)pTinSrc;
+				STypeInfoInteger * pTinintDst = (STypeInfoInteger *)pTinDst;
 
-			// BB - this could be more forgiving... allow signed/unsigned conversions if a higher cBit
-			return (pTinintTo->m_cBit >= pTinintFrom->m_cBit) & (pTinintTo->m_fSigned == pTinintFrom->m_fSigned);
+				// BB - this could be more forgiving... allow signed/unsigned conversions if a higher cBit
+				return (pTinintDst->m_cBit >= pTinintSrc->m_cBit) & (pTinintDst->m_fSigned == pTinintSrc->m_fSigned);
+			} break;
+		case TINK_Float:
+			{
+				STypeInfoFloat * pTinfloatSrc = (STypeInfoFloat *)pTinSrc;
+				STypeInfoFloat * pTinfloatDst = (STypeInfoFloat *)pTinDst;
+				return pTinfloatDst->m_cBit >= pTinfloatSrc->m_cBit;
+			} break;
+		case TINK_Bool: return true;
+		case TINK_String: return true;
+		case TINK_Pointer: return pTinSrc == pTinDst;	// BB - not safe, type infos are not unique
+		case TINK_Enum: return pTinSrc == pTinDst;	// BB - not safe, type infos are not unique
+		default: return false;
 		}
-		return pTinFrom == pTinTo;
 	}
-	else if (pTinFrom->m_tink == TINK_Pointer)
+
+	if (pTinDst->m_tink == TINK_Bool)
 	{
-		if (pTinTo->m_tink == TINK_Bool)
-			return true;
+		switch (pTinSrc->m_tink)
+		{
+		case TINK_Integer:	return true;
+		case TINK_Float:	return true;
+		case TINK_Pointer:	return true;
+		case TINK_Bool:	return true;
+		default : return false;
+		}
 	}
 	return false;
 }
@@ -1164,10 +1186,13 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 															pTcsentTop->m_pSymtab,
 															pStnodPred,
 															pTinBool);
-							if (FCanImplicitCast(pTinPredPromoted, pTinBool))
+							if (!FCanImplicitCast(pTinPredPromoted, pTinBool))
 							{
-								pStnod->m_pTin = pTinBool;
+								CString strTinPred = StrFromTypeInfo(pTinPredPromoted);
+								EmitError(pTcwork, pStnod, "No conversion between %s and bool", strTinPred.PChz());
 							}
+
+							pStnod->m_pTin = pTinBool;
 
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram);
@@ -1666,6 +1691,10 @@ void TestTypeCheck()
 
 	pChzIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
 	pChzOut = "({} (s64 @n s64) (bool (bool s64 UintLiteral) (s64 s64 UintLiteral) (??? (s64 s64 UintLiteral))))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn =	"{ n:s64; if n n = 5; else n = 6;}";
+	pChzOut = "({} (s64 @n s64) (bool s64 (s64 s64 UintLiteral) (??? (s64 s64 UintLiteral))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";

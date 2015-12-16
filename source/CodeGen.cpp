@@ -93,6 +93,43 @@ public:
 
 
 
+static inline size_t CChGetTypeString(llvm::Type * pType, char * pCh, const char * pChEnd)
+{
+	if (pType->isIntegerTy())
+	{
+		switch (pType->getIntegerBitWidth())
+		{
+		case 1: return CChCopy("bool", pCh, pChEnd-pCh);
+		case 8: return CChCopy("s8", pCh, pChEnd-pCh);
+		case 16: return CChCopy("s16", pCh, pChEnd-pCh);
+		case 32: return CChCopy("s32", pCh, pChEnd-pCh);
+		case 64: return CChCopy("s64", pCh, pChEnd-pCh);
+		}
+	}
+	else if (pType->isFloatTy())
+	{
+		return CChCopy("f32", pCh, pChEnd-pCh);
+	}
+	else if (pType->isDoubleTy())
+	{
+		return CChCopy("f64", pCh, pChEnd-pCh);
+	}
+	else if (pType->isVoidTy())
+	{
+		return CChCopy("void", pCh, pChEnd-pCh);
+	}
+	else if (pType->isPointerTy())
+	{
+		size_t cChPrefix = CChCopy("* ", pCh, pChEnd-pCh);
+		llvm::Type * pLtypeElement = pType->getPointerElementType();
+		return cChPrefix + CChGetTypeString(pLtypeElement, pCh+cChPrefix, pChEnd);
+	}
+
+	return CChCopy("unknown", pCh, pChEnd-pCh);
+}
+
+
+
 CIRValue::CIRValue(VALK valk)
 :m_pLval(nullptr)
 ,m_pStnod(nullptr)
@@ -137,11 +174,12 @@ s8 CIRInstruction::CpValOperandMax()
 
 CIRProcedure::~CIRProcedure()
 {
-	if (m_pBlockEntry)
+	size_t cpBlock = m_arypBlockManaged.C();
+	for (size_t ipBlock = 0; ipBlock < cpBlock; ++ipBlock)
 	{
-		m_pAlloc->EWC_DELETE(m_pBlockEntry);
-		m_pBlockEntry = nullptr;
+		m_pAlloc->EWC_DELETE(m_arypBlockManaged[ipBlock]);
 	}
+	m_arypBlockManaged.Clear();
 
 	size_t cpVal = m_arypValManaged.C();
 	for (size_t ipVal = 0; ipVal < cpVal; ++ipVal)
@@ -320,6 +358,23 @@ CIRInstruction * CIRBuilder::PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pVal
 	pInst->m_pLval = m_pLbuild->CreateFDiv(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
 	return pInst;
 }
+					
+CIRInstruction * CIRBuilder::PInstCreateCondBranch(
+	CIRValue * pValPred,
+	CIRBasicBlock * pBlockTrue,
+	CIRBasicBlock * pBlockFalse)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_CondBranch, pValPred, nullptr, "branch");
+	pInst->m_pLval = m_pLbuild->CreateCondBr(pValPred->m_pLval, pBlockTrue->m_pLblock, pBlockFalse->m_pLblock);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateBranch(CIRBasicBlock * pBlock)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_Branch, nullptr, nullptr, "branch");
+	pInst->m_pLval = m_pLbuild->CreateBr(pBlock->m_pLblock);
+	return pInst;
+}
 
 CIRInstruction * CIRBuilder::PInstCreateRet(CIRValue * pValRhs)
 {
@@ -361,18 +416,8 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValDst, CIRValue * pVa
 		return nullptr;
 
 	CIRInstruction * pInstStore = PInstCreate(IROP_Store, pInstSym, pValSrc, "store");
-
-	EWC_ASSERT(pInstSym->m_pLval->getType()->isPointerTy(),"wha");
     pInstStore->m_pLval = m_pLbuild->CreateStore(pValSrc->m_pLval, pInstSym->m_pLval);
 	return pInstStore;
-}
-
-CIRValue * PValImplicitCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * pTinSrc, STypeInfo * pTinDst)
-{
-	// BB - hard to check because type info's aren't unique... also TypeInfo is not sufficient for the literal case.
-	//EWC_ASSERT(pTinSrc == pTinDst, "implicit casting is not done yet");	
-
-	return pValSrc;
 }
 
 static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
@@ -423,6 +468,154 @@ static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
 		}
 		default: return nullptr;
 	}
+}
+
+void ExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
+{
+	// BB - Is there really any good reason not to make one type info for ints, bools and floats?
+	switch (pTin->m_tink)
+	{
+	case TINK_Bool:
+		{
+			*pCBit = 1;	
+			*pFSigned = false;
+		} break;
+	case TINK_Integer:
+		{
+			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTin;
+			*pCBit = pTinint->m_cBit;	
+			*pFSigned = pTinint->m_fSigned;
+		} break;
+	case TINK_Float:
+		{
+			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
+			*pCBit = pTinfloat->m_cBit;	
+			*pFSigned = true;
+		} break;
+	default: EWC_ASSERT(false, "non-numeric type info");
+	}
+}
+
+llvm::Value * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
+{
+	LlvmIRBuilder * pLbuild = pBuild->m_pLbuild;
+	switch (pTin->m_tink)
+	{
+	case TINK_Integer:	
+		{
+			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTin;
+			switch (pTinint->m_cBit)
+			{
+			case 8: return pLbuild->getInt8(0);
+			case 16: return pLbuild->getInt16(0);
+			case 32: return pLbuild->getInt32(0);
+			case 64: return pLbuild->getInt64(0);
+			}
+		} break;
+	case TINK_Float:	return llvm::ConstantFP::get(llvm::getGlobalContext(), llvm::APFloat(0.0f));
+	case TINK_Bool:		return llvm::ConstantInt::getFalse(llvm::getGlobalContext());
+	default: break;
+	}
+
+	return nullptr;
+}
+
+CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * pTinSrc, STypeInfo * pTinDst)
+{
+#define PINST_CREATE_CAST(Irop, CreateFunc, pChz) \
+		pInst = pBuild->PInstCreate(Irop, pValSrc, nullptr, pChz); \
+		pInst->m_pLval = pBuild->m_pLbuild->CreateFunc(pValSrc->m_pLval, pLtypeDst, pChz); \
+		pInst
+
+	u32 cBitSrc;
+	u32 cBitDst;
+	bool fSignedSrc;
+	bool fSignedDst;
+	if (pTinSrc->m_tink == TINK_Literal)
+		return pValSrc;
+
+	ExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc);
+	ExtractNumericInfo(pTinDst, &cBitDst, &fSignedDst);
+	auto pLtypeDst = PLtypeFromPTin(pTinDst);
+
+	CIRInstruction * pInst = nullptr;
+	switch (pTinDst->m_tink)
+	{
+	case TINK_Integer:
+		{
+			switch (pTinSrc->m_tink)
+			{
+			case TINK_Integer: // fall through
+			case TINK_Bool:
+				{
+					if (cBitDst < cBitSrc)				{ return PINST_CREATE_CAST(IROP_NTrunc, CreateTrunc, "NTrunc"); }
+					else if (fSignedSrc & fSignedDst)	{ return PINST_CREATE_CAST(IROP_SignExt, CreateSExt, "SignExt"); }
+					else								{ return PINST_CREATE_CAST(IROP_ZeroExt, CreateZExt, "ZeroExt"); }
+				} break;
+			case TINK_Float:
+				{
+					if (fSignedSrc) { return PINST_CREATE_CAST(IROP_GToS, CreateFPToSI, "GToS"); }
+					else			{ return PINST_CREATE_CAST(IROP_GToU, CreateFPToUI, "GToU"); }
+				} break;
+			case TINK_Literal:
+				{
+					return pValSrc;
+				} break;
+			}
+		} break;
+	case TINK_Float:
+		{
+			switch (pTinSrc->m_tink)
+			{
+			case TINK_Integer: // fall through
+			case TINK_Bool:
+				{
+					if (fSignedSrc) { return PINST_CREATE_CAST(IROP_SToG, CreateSIToFP, "SToG"); }
+					else			{ return PINST_CREATE_CAST(IROP_UToG, CreateUIToFP, "UToG"); }
+				}
+			case TINK_Float:
+					if (cBitDst > cBitSrc)	{ return PINST_CREATE_CAST(IROP_GExtend, CreateFPExt, "GExtend"); }
+					else					{ return PINST_CREATE_CAST(IROP_GTrunc, CreateFPTrunc, "GTrunc"); }
+			case TINK_Literal:
+				{
+					return pValSrc;
+				} break;
+			}
+
+		}break;
+	case TINK_Bool:
+			switch (pTinSrc->m_tink)
+			{
+			case TINK_Bool:	
+				return pValSrc;
+			case TINK_Integer:
+				{
+					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
+					pInst = pBuild->PInstCreate(IROP_NCmp, pValSrc, nullptr, "NCmp"); 
+					pInst->m_pLval = pBuild->m_pLbuild->CreateICmpNE(pValSrc->m_pLval, pLvalZero, "NCmp"); 
+					return pInst;
+				} 
+			case TINK_Float:
+				{
+					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
+					pInst = pBuild->PInstCreate(IROP_GCmp, pValSrc, nullptr, "GCmp");
+					pInst->m_pLval = pBuild->m_pLbuild->CreateFCmpONE(pValSrc->m_pLval, pLvalZero, "GCmp");
+					return pInst;
+				}
+			case TINK_Literal:
+				{
+					return pValSrc;
+				} break;
+			} break;
+	case TINK_Literal:
+		EWC_ASSERT(false, "can't cast to literal");
+		return nullptr;
+	default:
+		EWC_ASSERT(false, "unsupported cast destination type in PValCreateCast");
+	}
+#undef PINST_CREATE_CAST
+
+	return pValSrc;
 }
 
 static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, STypeInfo * pTin)
@@ -544,10 +737,58 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 		{
 			if (!EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
 				return nullptr;
-			
+
 			RWORD rword = pStnod->m_pStval->m_rword;
 			switch (rword)
+
 			{
+			case RWORD_If:
+				{
+					if (pStnod->CStnodChild() < 2)
+						return nullptr;
+
+					// BB - should handle declarations inside conditional statement? ie, does it need a new block
+
+					CSTNode * pStnodPred = pStnod->PStnodChild(0);
+					CIRValue * pValPred = PValGenerate(pBuild, pStnodPred);
+
+					STypeInfo * pTinBool = pStnod->m_pTin;
+					EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for if");
+					CIRValue * pValPredCast = PValCreateCast(pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
+
+					//Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+					CIRProcedure * pProc = pBuild->m_pProcCur;
+					CIRBasicBlock *	pBlockThen = pBuild->PBlockCreate(pProc, "ifThen");
+					CIRBasicBlock *	pBlockElse = pBuild->PBlockCreate(nullptr, "ifElse");
+					CIRBasicBlock *	pBlockPost = pBuild->PBlockCreate(nullptr, "postIf");
+					pProc->m_arypBlockManaged.Append(pBlockThen);
+					pProc->m_arypBlockManaged.Append(pBlockElse);
+					pProc->m_arypBlockManaged.Append(pBlockPost);
+
+					(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockThen, pBlockElse);
+
+					pBuild->ActivateBlock(pBlockThen);
+					auto pValThen = PValGenerate(pBuild, pStnod->PStnodChild(1));
+					(void) pBuild->PInstCreateBranch(pBlockPost);	
+					pBlockThen = pBuild->m_pBlockCur;	// could have changed during this' codegen
+
+					pBuild->ActivateBlock(pBlockElse);
+					pBlockElse->m_pLblock->insertInto(pProc->m_pLfunc, nullptr);
+					if (pStnod->CStnodChild() == 3)
+					{
+						auto pValThen = PValGenerate(pBuild, pStnod->PStnodChild(2));
+						pBlockElse = pBuild->m_pBlockCur;	// could have changed during else's codegen
+					}
+					(void) pBuild->PInstCreateBranch(pBlockPost);	
+
+					pBuild->ActivateBlock(pBlockPost);
+					pBlockPost->m_pLblock->insertInto(pProc->m_pLfunc, nullptr);
+					
+				} break;
+			//case RWORD_Else:
+			//	{
+			//	} break;
 			case RWORD_Return:
 				{
 					CIRValue * pValRhs = nullptr;
@@ -637,7 +878,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinLhs != nullptr) & (pTinRhs != nullptr), "bad cast"))
 				return nullptr;
 	
-			CIRValue * pValRhsCast = PValImplicitCast(pBuild, pValRhs, pTinRhs, pTinOutput);
+			CIRValue * pValRhsCast = PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOutput);
 
 			auto pInstOp = pBuild->PInstCreateStore(pSymLhs->m_pVal, pValRhsCast);
 			if ( EWC_FVERIFY(pBuild->m_pBlockCur, "missing current block"))
@@ -673,8 +914,8 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinLhs != nullptr) & (pTinRhs != nullptr), "bad cast"))
 				return nullptr;
 	
-			CIRValue * pValLhsCast = PValImplicitCast(pBuild, pValLhs, pTinLhs, pTinOutput);
-			CIRValue * pValRhsCast = PValImplicitCast(pBuild, pValRhs, pTinRhs, pTinOutput);
+			CIRValue * pValLhsCast = PValCreateCast(pBuild, pValLhs, pTinLhs, pTinOutput);
+			CIRValue * pValRhsCast = PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOutput);
 			CIRInstruction * pInstOp = nullptr;
 
 			bool fSigned = true;
@@ -805,7 +1046,7 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 		}
 	}
 
-	llvm::Type * pLtypeReturn;
+	llvm::Type * pLtypeReturn = nullptr;
 	if (pStnodReturn)
 	{
 		pLtypeReturn = PLtypeFromPTin(pStnodReturn->m_pTin);
@@ -841,6 +1082,7 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 										pBuild->m_pLmoduleCur);
 
 	pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzName);
+	pProc->m_arypBlockManaged.Append(pProc->m_pBlockEntry);
 
 	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
 	{
@@ -915,6 +1157,7 @@ void CodeGenEntryPoint(
 
 			pProc->m_pLfunc = llvm::Function::Create(pLfunctype, llvm::Function::ExternalLinkage, aCh, build.m_pLmoduleCur);
 			pProc->m_pBlockEntry = build.PBlockCreate(pProc, aCh);
+			pProc->m_arypBlockManaged.Append(pProc->m_pBlockEntry);
 			pStnodBody = pStnod;
 		}
 		else
@@ -1051,6 +1294,11 @@ void TestCodeGen()
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
 
+	pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet; }";
+//	pChzIn =	"Foo :: (fArg : bool) -> bool { fRet : bool = true; if (fArg) fRet = false; return fRet; }";
+//	pChzIn =	"Foo :: (fArg : bool) -> bool { fRet : bool = true; return fRet; }";
+	AssertTestCodeGen(&work, pChzIn);
+
 	pChzIn =	"{ i:=5 + 2 * 3; }";
 	AssertTestCodeGen(&work, pChzIn);
 
@@ -1064,6 +1312,5 @@ void TestCodeGen()
 	//pChzIn =	"AddTwo :: (nA : int) -> int { return nA + GetTwo(); } GetTwo :: ()-> int { return 2; }";
 	pChzIn =	"Foo :: () -> int { return Bah(); } Bah :: ()-> int { return Foo(); }";
 	AssertTestCodeGen(&work, pChzIn);
-
 	StaticShutdownStrings(&allocString);
 }
