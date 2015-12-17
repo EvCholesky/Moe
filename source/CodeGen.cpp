@@ -760,11 +760,8 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 
 					CIRProcedure * pProc = pBuild->m_pProcCur;
 					CIRBasicBlock *	pBlockThen = pBuild->PBlockCreate(pProc, "ifThen");
-					CIRBasicBlock *	pBlockElse = pBuild->PBlockCreate(nullptr, "ifElse");
-					CIRBasicBlock *	pBlockPost = pBuild->PBlockCreate(nullptr, "postIf");
-					pProc->m_arypBlockManaged.Append(pBlockThen);
-					pProc->m_arypBlockManaged.Append(pBlockElse);
-					pProc->m_arypBlockManaged.Append(pBlockPost);
+					CIRBasicBlock *	pBlockElse = pBuild->PBlockCreate(pProc, "ifElse");
+					CIRBasicBlock *	pBlockPost = pBuild->PBlockCreate(pProc, "postIf");
 
 					(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockThen, pBlockElse);
 
@@ -774,7 +771,6 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 					pBlockThen = pBuild->m_pBlockCur;	// could have changed during this' codegen
 
 					pBuild->ActivateBlock(pBlockElse);
-					pBlockElse->m_pLblock->insertInto(pProc->m_pLfunc, nullptr);
 					if (pStnod->CStnodChild() == 3)
 					{
 						auto pValThen = PValGenerate(pBuild, pStnod->PStnodChild(2));
@@ -783,7 +779,6 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 					(void) pBuild->PInstCreateBranch(pBlockPost);	
 
 					pBuild->ActivateBlock(pBlockPost);
-					pBlockPost->m_pLblock->insertInto(pProc->m_pLfunc, nullptr);
 					
 				} break;
 			//case RWORD_Else:
@@ -994,22 +989,34 @@ CIRBasicBlock * CIRBuilder::PBlockCreate(CIRProcedure * pProc, const char * pChz
 {
 	CIRBasicBlock * pBlock = EWC_NEW(m_pAlloc, CIRBasicBlock) CIRBasicBlock(m_pAlloc);
 
-	llvm::Function * pLfunc = (pProc) ? pProc->m_pLfunc : nullptr;
-	llvm::BasicBlock * pLblock = llvm::BasicBlock::Create(llvm::getGlobalContext(), pChzName, pLfunc);
+	// NOTE: we're not passing the lFunc into BasicBlock::Create, you must call ActivateBlock
+
+	llvm::BasicBlock * pLblock = llvm::BasicBlock::Create(llvm::getGlobalContext(), pChzName, nullptr);
 	pBlock->m_pLblock = pLblock;
 
+	if (EWC_FVERIFY(pProc, "missing procedure in PBlockCreate"))
+	{
+		pProc->m_arypBlockManaged.Append(pBlock);
+	}
 	return pBlock;
 }
 
-void CIRBuilder::ActivateProcedure(CIRProcedure * pProc)
+void CIRBuilder::ActivateProcedure(CIRProcedure * pProc, CIRBasicBlock * pBlock)
 {
 	m_pProcCur = pProc;
+	ActivateBlock(pBlock);
 }
 
 void CIRBuilder::ActivateBlock(CIRBasicBlock * pBlock)
 {
 	if (pBlock)
 	{
+		if (!pBlock->m_pLblock->getParent())
+		{
+			pBlock->m_pLblock->insertInto(m_pProcCur->m_pLfunc, nullptr);
+		}
+
+		EWC_ASSERT(pBlock->m_pLblock->getParent() == m_pProcCur->m_pLfunc, "block with multiple parents?");
 		m_pLbuild->SetInsertPoint(pBlock->m_pLblock);
 	}
 	m_pBlockCur = pBlock;
@@ -1082,7 +1089,6 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 										pBuild->m_pLmoduleCur);
 
 	pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzName);
-	pProc->m_arypBlockManaged.Append(pProc->m_pBlockEntry);
 
 	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
 	{
@@ -1091,8 +1097,7 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
-	pBuild->ActivateBlock(pProc->m_pBlockEntry);
-	pBuild->ActivateProcedure(pProc);
+	pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
 	if (pStnodParamList)
 	{
 		// set up llvm::Argument values for our formal parameters
@@ -1111,8 +1116,6 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 				pArg->m_pLval = argIt;
 				pBuild->AddManagedVal(pArg);
 
-				auto pLblock = pProc->m_pBlockEntry->m_pLblock;
-
 				auto pInstAlloca = pBuild->PInstCreateAlloca(aryPLtype[ipStnodParam], pChzArgName);
 				pStnodParam->m_pSym->m_pVal = pInstAlloca;
 
@@ -1120,8 +1123,7 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 			}
 		}
 	}
-	pBuild->ActivateProcedure(pProcPrev);
-	pBuild->ActivateBlock(pBlockPrev);
+	pBuild->ActivateProcedure(pProcPrev, pBlockPrev);
 
 	return pProc;
 }
@@ -1157,7 +1159,6 @@ void CodeGenEntryPoint(
 
 			pProc->m_pLfunc = llvm::Function::Create(pLfunctype, llvm::Function::ExternalLinkage, aCh, build.m_pLmoduleCur);
 			pProc->m_pBlockEntry = build.PBlockCreate(pProc, aCh);
-			pProc->m_arypBlockManaged.Append(pProc->m_pBlockEntry);
 			pStnodBody = pStnod;
 		}
 		else
@@ -1187,14 +1188,11 @@ void CodeGenEntryPoint(
 
 		if (pProc && pStnodBody)
 		{
-			build.ActivateBlock(pProc->m_pBlockEntry);
-			build.ActivateProcedure(pProc);
+			build.ActivateProcedure(pProc, pProc->m_pBlockEntry);
 			(void) PValGenerate(&build, pStnodBody);
 
 			llvm::verifyFunction(*pProc->m_pLfunc);
-
-			build.ActivateProcedure(nullptr);
-			build.ActivateBlock(nullptr);
+			build.ActivateProcedure(nullptr, nullptr);
 		}
 	}
 

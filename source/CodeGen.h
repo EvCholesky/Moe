@@ -249,7 +249,7 @@ public:
 
 	CIRBasicBlock *		PBlockCreate(CIRProcedure * pProc, const char * pChzName);
 
-	void				ActivateProcedure(CIRProcedure * pProc);
+	void				ActivateProcedure(CIRProcedure * pProc, CIRBasicBlock * pBlock);
 	void				ActivateBlock(CIRBasicBlock * pBlock);
 	void				AddManagedVal(CIRValue * pVal);
 
