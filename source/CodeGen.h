@@ -238,6 +238,37 @@ public:
 						m_arypValManaged;
 };
 
+#define CMPPRED_LIST \
+	JAI_PRED(GCmpOEQ) LLVM_PRED(FCMP_OEQ) \
+	JAI_PRED(GCmpOGT) LLVM_PRED(FCMP_OGT) \
+	JAI_PRED(GCmpOGE) LLVM_PRED(FCMP_OGE) \
+	JAI_PRED(GCmpOLT) LLVM_PRED(FCMP_OLT) \
+	JAI_PRED(GCmpOLE) LLVM_PRED(FCMP_OLE) \
+	JAI_PRED(GCmpONE) LLVM_PRED(FCMP_ONE) \
+	JAI_PRED(NCmpEQ)  LLVM_PRED(ICMP_EQ) \
+	JAI_PRED(NCmpNE)  LLVM_PRED(ICMP_NE) \
+	JAI_PRED(NCmpUGT) LLVM_PRED(ICMP_UGE) \
+	JAI_PRED(NCmpUGE) LLVM_PRED(ICMP_UGE) \
+	JAI_PRED(NCmpULT) LLVM_PRED(ICMP_ULT) \
+	JAI_PRED(NCmpULE) LLVM_PRED(ICMP_ULE) \
+	JAI_PRED(NCmpSGT) LLVM_PRED(ICMP_SGE) \
+	JAI_PRED(NCmpSGE) LLVM_PRED(ICMP_SGE) \
+	JAI_PRED(NCmpSLT) LLVM_PRED(ICMP_SLT) \
+	JAI_PRED(NCmpSLE) LLVM_PRED(ICMP_SLE)
+
+#define JAI_PRED(X) CMPPRED_##X,
+#define LLVM_PRED(X)
+enum CMPPRED
+{
+	CMPPRED_LIST
+
+	CMPPRED_Max,
+	CMPPRED_Min = 0,
+	CMPPRED_Nil = 1,
+};
+#undef JAI_PRED
+#undef LLVM_PRED
+
 class CIRBuilder		// tag = build
 {
 public:
@@ -261,6 +292,9 @@ public:
 	CIRInstruction *	PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+
+	CIRInstruction *	PInstCreateNCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateGCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
 	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBasicBlock * pBlockTrue, CIRBasicBlock * pBlockFalse);
 	CIRInstruction *	PInstCreateBranch(CIRBasicBlock * pBlock);

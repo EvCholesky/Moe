@@ -160,6 +160,7 @@ static inline s8 COperand(IROP irop)
 	if (irop == IROP_Call)
 		return 0;
 	if (((irop >= IROP_BinaryOpMin) & (irop < IROP_BinaryOpMax)) | 
+		((irop >= IROP_CmpOpMin) & (irop < IROP_CmpOpMax)) | 
 		(irop == IROP_Store))
 		return 2;
 	return 1;
@@ -280,7 +281,14 @@ CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue
 	AddManagedVal(pInst);
 
 	pInst->m_apValOperand[0] = pValLhs;
-	pInst->m_apValOperand[1] = pValRhs;
+	if (cpValOperand > 1)
+	{
+		pInst->m_apValOperand[1] = pValRhs;
+	}
+	else
+	{
+		EWC_ASSERT(pValRhs == nullptr, "unexpected second operand");
+	}
 	pInst->m_cpValOperand = cpValOperand;
 
 	return pInst;
@@ -366,6 +374,46 @@ CIRInstruction * CIRBuilder::PInstCreateCondBranch(
 {
 	CIRInstruction * pInst = PInstCreate(IROP_CondBranch, pValPred, nullptr, "branch");
 	pInst->m_pLval = m_pLbuild->CreateCondBr(pValPred->m_pLval, pBlockTrue->m_pLblock, pBlockFalse->m_pLblock);
+	return pInst;
+}
+
+llvm::CmpInst::Predicate LpredicateFromCmppred(CMPPRED cmppred)
+{
+#define JAI_PRED(X) 
+#define LLVM_PRED(X) llvm::CmpInst::##X ,
+	static const llvm::CmpInst::Predicate s_mpCmpredLpredicate[] =
+	{
+		CMPPRED_LIST
+	};
+#undef JAI_PRED
+#undef LLVM_PRED
+	EWC_CASSERT(CMPPRED_Max == 16, "bad count");
+	EWC_CASSERT(EWC_DIM(s_mpCmpredLpredicate) == CMPPRED_Max, "missing elements in predicate map");
+
+	return s_mpCmpredLpredicate[cmppred];
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNCmp(
+	CMPPRED cmppred,
+	CIRValue * pValLhs,
+	CIRValue * pValRhs,
+	const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_NCmp, pValLhs, pValRhs, pChzName);
+	auto lPredicate = LpredicateFromCmppred(cmppred);
+	pInst->m_pLval = m_pLbuild->CreateICmp(lPredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGCmp(
+	CMPPRED cmppred,
+	CIRValue * pValLhs,
+	CIRValue * pValRhs,
+	const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_GCmp, pValLhs, pValRhs, pChzName);
+	auto lPredicate = LpredicateFromCmppred(cmppred);
+	pInst->m_pLval = m_pLbuild->CreateFCmp(lPredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
 	return pInst;
 }
 
@@ -592,14 +640,14 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 				{
 					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
 					pInst = pBuild->PInstCreate(IROP_NCmp, pValSrc, nullptr, "NCmp"); 
-					pInst->m_pLval = pBuild->m_pLbuild->CreateICmpNE(pValSrc->m_pLval, pLvalZero, "NCmp"); 
+					pInst->m_pLval = pBuild->m_pLbuild->CreateICmpNE(pValSrc->m_pLval, pLvalZero, "NCmpNE"); 
 					return pInst;
 				} 
 			case TINK_Float:
 				{
 					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
 					pInst = pBuild->PInstCreate(IROP_GCmp, pValSrc, nullptr, "GCmp");
-					pInst->m_pLval = pBuild->m_pLbuild->CreateFCmpONE(pValSrc->m_pLval, pLvalZero, "GCmp");
+					pInst->m_pLval = pBuild->m_pLbuild->CreateFCmpONE(pValSrc->m_pLval, pLvalZero, "GCmpONE");
 					return pInst;
 				}
 			case TINK_Literal:
@@ -903,6 +951,11 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 				return nullptr;
 
 			STypeInfo * pTinOutput = pStnod->m_pTin;
+			if (pStnod->m_park == PARK_RelationalOp || pStnod->m_park == PARK_EqualityOp)
+			{
+				pTinOutput = pStnodLhs->m_pTin;
+			}
+
 			STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 
 			STypeInfo * pTinRhs = pStnodRhs->m_pTin;
@@ -933,41 +986,56 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 				fSigned = ((STypeInfoInteger *)pValLhs->m_pStnod->m_pTin)->m_fSigned;
 			}
 
-			switch (pStnod->m_jtok)
+			switch (tink)
 			{
-			case '+':
-			{
-				switch (tink)
+			case TINK_Bool:
+				switch (pStnod->m_jtok)
 				{
-				case TINK_Integer:	pInstOp = pBuild->PInstCreateNAdd(pValLhs, pValRhs, "nAddTmp", fSigned); break;
-				case TINK_Float:	pInstOp = pBuild->PInstCreateGAdd(pValLhs, pValRhs, "gAddTmp"); break;
-				}
-			}break;
-			case '-':
-			{
-				switch (tink)
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+				} break;
+			case TINK_Integer:
+				switch (pStnod->m_jtok)
 				{
-				case TINK_Integer:	pInstOp = pBuild->PInstCreateNSub(pValLhs, pValRhs, "nSubTmp", fSigned); break;
-				case TINK_Float:	pInstOp = pBuild->PInstCreateGSub(pValLhs, pValRhs, "gSubTmp"); break;
-				}
-			}break;
-			case '*':
-			{
-				switch (tink)
+					case '+': 				pInstOp = pBuild->PInstCreateNAdd(pValLhs, pValRhs, "nAddTmp", fSigned); break;
+					case '-': 				pInstOp = pBuild->PInstCreateNSub(pValLhs, pValRhs, "nSubTmp", fSigned); break;
+					case '*': 				pInstOp = pBuild->PInstCreateNMul(pValLhs, pValRhs, "nMulTmp", fSigned); break;
+					case '/': 				pInstOp = pBuild->PInstCreateNDiv(pValLhs, pValRhs, "nDivTmp", fSigned); break;
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+					case JTOK_LessEqual:
+						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSLE, pValLhs, pValRhs, "NCmpSLE");
+						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpULE, pValLhs, pValRhs, "NCmpULE");
+						break;
+					case JTOK_GreaterEqual:
+						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSGE, pValLhs, pValRhs, "NCmpSGE");
+						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpUGE, pValLhs, pValRhs, "NCmpUGE");
+						break;
+					case '<':
+						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSLT, pValLhs, pValRhs, "NCmpSLT");
+						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpULT, pValLhs, pValRhs, "NCmpULT");
+						break;
+					case '>':
+						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSGT, pValLhs, pValRhs, "NCmpSGT");
+						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpUGT, pValLhs, pValRhs, "NCmpUGT");
+						break;
+				} break;
+			case TINK_Float:
+				switch (pStnod->m_jtok)
 				{
-				case TINK_Integer:	pInstOp = pBuild->PInstCreateNMul(pValLhs, pValRhs, "nMulTmp", fSigned); break;
-				case TINK_Float:	pInstOp = pBuild->PInstCreateGMul(pValLhs, pValRhs, "gMulTmp"); break;
-				}
-			}break;
-			case '/':
-			{
-				switch (tink)
-				{
-				case TINK_Integer:	pInstOp = pBuild->PInstCreateNDiv(pValLhs, pValRhs, "nDivTmp", fSigned); break;
-				case TINK_Float:	pInstOp = pBuild->PInstCreateGDiv(pValLhs, pValRhs, "gDivTmp"); break;
-				}
-			}break;
-			default: break;
+					case '+': 				pInstOp = pBuild->PInstCreateGAdd(pValLhs, pValRhs, "gAddTmp"); break;
+					case '-': 				pInstOp = pBuild->PInstCreateGSub(pValLhs, pValRhs, "gSubTmp"); break;
+					case '*': 				pInstOp = pBuild->PInstCreateGMul(pValLhs, pValRhs, "gMulTmp"); break;
+					case '/': 				pInstOp = pBuild->PInstCreateGDiv(pValLhs, pValRhs, "gDivTmp"); break;
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpOEQ, pValLhs, pValRhs, "NCmpOEQ"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpONE, pValLhs, pValRhs, "NCmpONE"); break;
+					case JTOK_LessEqual:	pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpOLE, pValLhs, pValRhs, "NCmpOLE"); break;
+					case JTOK_GreaterEqual:	pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpOGE, pValLhs, pValRhs, "NCmpOGE"); break;
+					case '<': 				pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpOLT, pValLhs, pValRhs, "NCmpOLT"); break;
+					case '>': 				pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpOGT, pValLhs, pValRhs, "NCmpOGT"); break;
+				} break;
+			default: 
+				break;
 			}
 
 			if (EWC_FVERIFY(pInstOp, "%s operator unsupported in codegen", PChzFromJtok(pStnod->m_jtok)) &
@@ -1304,6 +1372,9 @@ void TestCodeGen()
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"AddLocal :: (nA : int) -> int { nFoo : int; nFoo = 2; return nA + nFoo; }";
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn = "Foo :: (nA : s8, nB : s8) -> bool { return (nA < nB) == (nB >= nA); }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	//pChzIn =	"GetTwo :: ()-> int { return 2; } AddTwo :: (nA : int) -> int { return nA + GetTwo(); }";

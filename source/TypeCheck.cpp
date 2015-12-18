@@ -1693,6 +1693,10 @@ void TestTypeCheck()
 	pChzOut = "({} (s64 @n s64) (bool (bool s64 UintLiteral) (s64 s64 UintLiteral) (??? (s64 s64 UintLiteral))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
+	pChzIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA); }";
+	pChzOut = "({} (s8 @nA s8) (s8 @nB s8) (bool @nC (bool (bool s8 s8) (bool s8 s8))))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn =	"{ n:s64; if n n = 5; else n = 6;}";
 	pChzOut = "({} (s64 @n s64) (bool s64 (s64 s64 UintLiteral) (??? (s64 s64 UintLiteral))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
