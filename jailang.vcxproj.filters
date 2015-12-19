@@ -36,9 +36,6 @@
     <ClInclude Include="source\JaiTypes.h">
       <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="source\stb_lexer.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="source\stb_malloc.h">
       <Filter>Source Files</Filter>
     </ClInclude>
