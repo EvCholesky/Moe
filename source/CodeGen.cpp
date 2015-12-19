@@ -373,7 +373,8 @@ CIRInstruction * CIRBuilder::PInstCreateCondBranch(
 	CIRBasicBlock * pBlockFalse)
 {
 	CIRInstruction * pInst = PInstCreate(IROP_CondBranch, pValPred, nullptr, "branch");
-	pInst->m_pLval = m_pLbuild->CreateCondBr(pValPred->m_pLval, pBlockTrue->m_pLblock, pBlockFalse->m_pLblock);
+	auto pLblockFalse = (pBlockFalse == nullptr) ? nullptr : pBlockFalse->m_pLblock;
+	pInst->m_pLval = m_pLbuild->CreateCondBr(pValPred->m_pLval, pBlockTrue->m_pLblock, pLblockFalse);
 	return pInst;
 }
 
@@ -691,6 +692,14 @@ static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, SType
 	return pConst;
 }
 
+static inline bool FIsReservedWord(CSTNode * pStnod, RWORD rword)
+{
+	if ((pStnod->m_park != PARK_ReservedWord) | (pStnod->m_pStval == nullptr))
+		return false;
+
+	return pStnod->m_pStval->m_rword == rword;
+}
+
 CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 {
 	switch (pStnod->m_park)
@@ -792,46 +801,107 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			{
 			case RWORD_If:
 				{
+
+					//		NCmp
+					//		CondBr then, elifA
+					//	}
+					//	{ then:
+					//		...do stuff
+					//		Br post
+					//	}
+					//	{ :elifA
+					//		NCmp	
+					//		CondBr thenA, else
+					//	}
+					//	{ :thenA
+					//		...do stuff A	
+					//		Br post
+					//	}
+					//	{ :else
+					//		...do stuff C
+					//		Br post
+					//	}
+					//	{ :post
+
 					if (pStnod->CStnodChild() < 2)
 						return nullptr;
 
-					// BB - should handle declarations inside conditional statement? ie, does it need a new block
-
-					CSTNode * pStnodPred = pStnod->PStnodChild(0);
-					CIRValue * pValPred = PValGenerate(pBuild, pStnodPred);
-
-					STypeInfo * pTinBool = pStnod->m_pTin;
-					EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for if");
-					CIRValue * pValPredCast = PValCreateCast(pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
-
-					//Function *TheFunction = Builder.GetInsertBlock()->getParent();
-
 					CIRProcedure * pProc = pBuild->m_pProcCur;
-					CIRBasicBlock *	pBlockThen = pBuild->PBlockCreate(pProc, "ifThen");
-					CIRBasicBlock *	pBlockElse = pBuild->PBlockCreate(pProc, "ifElse");
-					CIRBasicBlock *	pBlockPost = pBuild->PBlockCreate(pProc, "postIf");
+					CIRBasicBlock * pBlockPost = nullptr;	
+					CSTNode * pStnodCur = pStnod;
 
-					(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockThen, pBlockElse);
-
-					pBuild->ActivateBlock(pBlockThen);
-					auto pValThen = PValGenerate(pBuild, pStnod->PStnodChild(1));
-					(void) pBuild->PInstCreateBranch(pBlockPost);	
-					pBlockThen = pBuild->m_pBlockCur;	// could have changed during this' codegen
-
-					pBuild->ActivateBlock(pBlockElse);
-					if (pStnod->CStnodChild() == 3)
+					while (pStnodCur)
 					{
-						auto pValThen = PValGenerate(pBuild, pStnod->PStnodChild(2));
-						pBlockElse = pBuild->m_pBlockCur;	// could have changed during else's codegen
+						// BB - should handle declarations inside conditional statement? ie, does it need a new block
+
+						CSTNode * pStnodIf = pStnodCur;
+						CSTNode * pStnodPred = pStnodIf->PStnodChild(0);
+						CIRValue * pValPred = PValGenerate(pBuild, pStnodPred);
+
+						STypeInfo * pTinBool = pStnodIf->m_pTin;
+						EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for if");
+						CIRValue * pValPredCast = PValCreateCast(pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
+
+						if (!pBlockPost)
+						{
+							pBlockPost = pBuild->PBlockCreate(pProc, "postIf");
+						}
+
+						CIRBasicBlock *	pBlockTrue = pBuild->PBlockCreate(pProc, "ifThen");
+						CIRBasicBlock * pBlockFalse = pBlockPost;
+						pStnodCur = nullptr;
+						CSTNode * pStnodElseChild = nullptr;
+						if (pStnodIf->CStnodChild() == 3)
+						{
+							CSTNode * pStnodElse = pStnodIf->PStnodChild(2);
+							if (FIsReservedWord(pStnodElse, RWORD_Else))
+							{
+								CSTNode * pStnodChild = nullptr;
+								if (EWC_FVERIFY(pStnodElse->CStnodChild() == 1, "expected one child for else statement")) //statement or list
+								{
+									pStnodChild = pStnodElse->PStnodChild(0);
+								}
+
+								if (pStnodChild && FIsReservedWord(pStnodChild, RWORD_If))
+								{
+									pBlockFalse = pBuild->PBlockCreate(pProc, "ifElif");
+									pStnodCur = pStnodChild;
+								}
+								else
+								{
+									pBlockFalse = pBuild->PBlockCreate(pProc, "ifElse");
+									pStnodElseChild = pStnodChild;
+								}
+							}
+						}
+
+						(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockTrue, pBlockFalse);
+
+						pBuild->ActivateBlock(pBlockTrue);
+						auto pValThen = PValGenerate(pBuild, pStnodIf->PStnodChild(1));
+						(void) pBuild->PInstCreateBranch(pBlockPost);	
+						pBlockTrue = pBuild->m_pBlockCur;	// could have changed during this' codegen
+
+						if (pBlockFalse != pBlockPost)
+						{
+							pBuild->ActivateBlock(pBlockFalse);
+						}
+
+						if (pStnodElseChild)
+						{
+							auto pValThen = PValGenerate(pBuild, pStnodElseChild);
+							pBlockFalse = pBuild->m_pBlockCur;	// could have changed during else's codegen
+
+							(void) pBuild->PInstCreateBranch(pBlockPost);	
+						}
 					}
-					(void) pBuild->PInstCreateBranch(pBlockPost);	
 
 					pBuild->ActivateBlock(pBlockPost);
-					
+
 				} break;
-			//case RWORD_Else:
-			//	{
-			//	} break;
+			case RWORD_Else:
+				EWC_ASSERT(false, "Else reserved word should be handled during codegen for if");
+				return nullptr;
 			case RWORD_Return:
 				{
 					CIRValue * pValRhs = nullptr;
@@ -1360,9 +1430,9 @@ void TestCodeGen()
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
 
-	pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet; }";
-//	pChzIn =	"Foo :: (fArg : bool) -> bool { fRet : bool = true; if (fArg) fRet = false; return fRet; }";
-//	pChzIn =	"Foo :: (fArg : bool) -> bool { fRet : bool = true; return fRet; }";
+	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; else nRet =1; return nRet; }";
+	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet; }";
+	pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n == 4) nRet = 4; else if (n == 3) nRet =3; else nRet = 2; return nRet; }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ i:=5 + 2 * 3; }";
@@ -1381,5 +1451,6 @@ void TestCodeGen()
 	//pChzIn =	"AddTwo :: (nA : int) -> int { return nA + GetTwo(); } GetTwo :: ()-> int { return 2; }";
 	pChzIn =	"Foo :: () -> int { return Bah(); } Bah :: ()-> int { return Foo(); }";
 	AssertTestCodeGen(&work, pChzIn);
+
 	StaticShutdownStrings(&allocString);
 }
