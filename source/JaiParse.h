@@ -235,6 +235,22 @@ public:
 size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd);
 void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
 
+inline bool FIsReservedWord(CSTNode * pStnod, RWORD rword)
+{
+	if ((pStnod->m_park != PARK_ReservedWord) | (pStnod->m_pStval == nullptr))
+		return false;
+
+	return pStnod->m_pStval->m_rword == rword;
+}
+
+inline bool FIsIdentifier(CSTNode * pStnod, const char * pChzIdent)
+{
+	if ((pStnod->m_park != PARK_Identifier) | (pStnod->m_pStval == nullptr))
+		return false;
+
+	return pStnod->m_pStval->m_str == pChzIdent;
+}
+
 
 
 enum FSYM		// SYMbol flags

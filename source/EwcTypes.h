@@ -1135,7 +1135,7 @@ public:
 #ifdef EWC_TRACK_ALLOCATION
 				char aCh[2048];
 				CChFormat(aCh, EWC_DIM(aCh), "%s:%d", pChzFile, cLine);
-				return HvFromPchz(aCh);
+				return HvFromPChz(aCh);
 #else
 				return 0;
 #endif

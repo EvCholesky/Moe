@@ -15,6 +15,8 @@
 
 #pragma once
 #include "EwcArray.h"
+#include "EwcHash.h"
+#include "EwcString.h"
 
 namespace EWC
 {
@@ -46,9 +48,16 @@ public:
 		// BB - could remove? (just use CSTNode::m_pVal for PARK_ProcedureDefinition?)
 		CIRProcedure *			m_pProc;
 	};
+	
+	struct SFile // tag = file
+	{
+		EWC::CString	m_strFilename;
+		char *			m_pChzFile;
+	};
 
 							CWorkspace(EWC::CAlloc * pAlloc, SErrorManager * pErrman);
 
+	char *					PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * pAlloc);
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
 	CSymbolTable *			PSymtabNew();
 
@@ -56,6 +65,7 @@ public:
 	CParseContext *					m_pParctx;
 	EWC::CDynAry<SEntry> 			m_aryEntry;
 	EWC::CDynAry<int> 				m_aryiEntryChecked;		// order in which entry points were successfully type checked
+	EWC::CHash<HV, SFile *>			m_hashHvPFile;
 	CSymbolTable *					m_pSymtab;				// top level symbols
 
 	SErrorManager *					m_pErrman;

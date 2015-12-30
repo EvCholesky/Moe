@@ -176,8 +176,13 @@ struct SLexerLocation // tag = lexloc
 {
 					SLexerLocation()
 					:m_strFilename()
-					, m_dB(-1)
+					,m_dB(-1)
 						{ ; }
+
+					SLexerLocation(const EWC::CString & strFilename, s32 dB = -1)
+					:m_strFilename(strFilename)
+					,m_dB(dB)
+					{ ; }
 
 	explicit		SLexerLocation(SJaiLexer * pJlex)
 					:m_strFilename(pJlex->m_pChzFilename)

@@ -1045,6 +1045,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				Expect(pParctx, pJlex, JTOK(')'));
 
 				CSTNode * pStnodReturns = nullptr;
+				bool fHasArrow = pJlex->m_jtok == JTOK_Arrow;
 				if (pJlex->m_jtok == JTOK_Arrow)
 				{
 					JtokNextToken(pJlex);
@@ -1054,9 +1055,26 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					pStnodReturns = PStnodParseTypeSpecifier(pParctx, pJlex);
 					pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 				}
+				else
+				{
+					SLexerLocation lexloc(pJlex);
+					CSTNode * pStnodVoid = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+
+					pStnodVoid->m_jtok = JTOK_Identifier;
+					pStnodVoid->m_park = PARK_Identifier;
+
+					CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
+					pStval->m_str = CString("void");
+					pStval->m_rword = RWORD_Nil;
+					pStnodVoid->m_pStval = pStval;
+					pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodVoid);
+
+					pStnodReturns = pStnodVoid;
+				}
 
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew();
+				pStproc->m_iStnodBody = -1;
 				if (pJlex->m_jtok == JTOK('{'))
 				{
 					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex, pSymtabProc);
@@ -1105,6 +1123,42 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					pTinproc->m_arypTinReturns.Append((*ppStnodReturns)->m_pTin);
 				}
 
+				if (pStproc->m_iStnodBody >= 0)
+				{
+					bool fReturnsVoid = false;
+					if (EWC_FVERIFY(pStproc->m_iStnodReturnType != -1, "implicit return should be set"))
+					{
+						CSTNode * pStnodReturn = pStnodProc->PStnodChild(pStproc->m_iStnodReturnType);
+						fReturnsVoid = FIsIdentifier(pStnodReturn, "void");
+					}
+
+					if (fReturnsVoid)
+					{
+						CSTNode * pStnodBody = pStnodProc->PStnodChild(pStproc->m_iStnodBody);
+
+						if (EWC_FVERIFY( pStnodBody->m_park == PARK_List, "Expected body list"))
+						{
+							CSTNode * pStnodLast = pStnodBody->PStnodChildSafe(pStnodBody->CStnodChild()-1);
+
+							bool fHasReturn = pStnodLast && FIsReservedWord(pStnodLast, RWORD_Return);
+							if (!fHasReturn)
+							{
+								SLexerLocation lexloc(pJlex);
+								CSTNode * pStnodReturn = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+
+								pStnodReturn->m_jtok = JTOK_ReservedWord;
+								pStnodReturn->m_park = PARK_ReservedWord;
+
+								CSTValue * pStvalReturn = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
+								pStvalReturn->m_str = CString("return");
+								pStvalReturn->m_rword = RWORD_Return;
+								pStnodReturn->m_pStval = pStvalReturn;
+
+								(void) pStnodBody->IAppendChild(pStnodReturn);
+							}
+						}
+					}
+				}
 
 				SSymbol * pSymProc = pSymtabParent->PSymEnsure(pStnodIdent->m_pStval->m_str, pStnodProc);
 				pSymProc->m_pTin = pTinproc;
@@ -1279,7 +1333,6 @@ CSTNode * PStnodParseExpressionStatement(CParseContext * pParctx, SJaiLexer * pJ
 
 CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtab)
 {
-	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodList = nullptr;
 
 	if (pJlex->m_jtok == JTOK('{'))
@@ -1317,7 +1370,6 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 					pStnodList->m_pSymtab = pSymtab;
 				}
 
-
 				pStnodList->IAppendChild(pStnod);
 			}
 		}
@@ -1326,6 +1378,7 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 		EWC_ASSERT(pSymtab == pSymtabPop, "CSymbol table push/pop mismatch (list)");
 		Expect(pParctx, pJlex, JTOK('}'));
 	}
+
 	return pStnodList;
 }
 
@@ -2178,96 +2231,97 @@ void TestParse()
 	u8 aB[1024 * 100];
 	CAlloc alloc(aB, sizeof(aB));
 
-	SErrorManager errman;
-	CWorkspace work(&alloc, &errman);
-
 	const char * pChzIn;
 	const char * pChzOut;
+	{
+		SErrorManager errman;
+		CWorkspace work(&alloc, &errman);
 
-	pChzIn =	"x + 3*5;";
-	pChzOut = "(+ @x (* 3 5))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "x + 3*5;";
+		pChzOut = "(+ @x (* 3 5))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"(ugh + foo) / ((x + 3)*5);";
-	pChzOut = "(/ (+ @ugh @foo) (* (+ @x 3) 5))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "(ugh + foo) / ((x + 3)*5);";
+		pChzOut = "(/ (+ @ugh @foo) (* (+ @x 3) 5))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn  = "ugh/foo/guh/ack;";
-	pChzOut = "(/ (/ (/ @ugh @foo) @guh) @ack)";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "ugh/foo/guh/ack;";
+		pChzOut = "(/ (/ (/ @ugh @foo) @guh) @ack)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"(5 + -x) * -(3 / foo);";
-	pChzOut = "(* (+ 5 (unary[-] @x)) (unary[-] (/ 3 @foo)))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "(5 + -x) * -(3 / foo);";
+		pChzOut = "(* (+ 5 (unary[-] @x)) (unary[-] (/ 3 @foo)))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"ick * ack * -(3 / foo);";
-	pChzOut = "(* (* @ick @ack) (unary[-] (/ 3 @foo)))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "ick * ack * -(3 / foo);";
+		pChzOut = "(* (* @ick @ack) (unary[-] (/ 3 @foo)))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"ick & (ack&&foo | 123) || guh;";
-	pChzOut = "(|| (& @ick (&& @ack (| @foo 123))) @guh)";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "ick & (ack&&foo | 123) || guh;";
+		pChzOut = "(|| (& @ick (&& @ack (| @foo 123))) @guh)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"ick == ack < foo\n != 123 >= guh;";
-	pChzOut = "(!= (== @ick (< @ack @foo)) (>= 123 @guh))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "ick == ack < foo\n != 123 >= guh;";
+		pChzOut = "(!= (== @ick (< @ack @foo)) (>= 123 @guh))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	// NOTE - weird ordering shouldn't matter as we will ensure lhs is l-value
-	pChzIn =	"ick = 5 += foo *= guh;";
-	pChzOut = "(*= (+= (= @ick 5) @foo) @guh)";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		// NOTE - weird ordering shouldn't matter as we will ensure lhs is l-value
+		pChzIn = "ick = 5 += foo *= guh;";
+		pChzOut = "(*= (+= (= @ick 5) @foo) @guh)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"++foo.bah[23];";
-	pChzOut = "(unary[++] (elem (member @foo @bah) 23))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "++foo.bah[23];";
+		pChzOut = "(unary[++] (elem (member @foo @bah) 23))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ i=5; foo.bah = ack; }";
-	pChzOut = "({} (= @i 5) (= (member @foo @bah) @ack))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ i=5; foo.bah = ack; }";
+		pChzOut = "({} (= @i 5) (= (member @foo @bah) @ack))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
-	pChzOut	= "({} (if (== @i (member (member @foo @bar) @fug)) (= @ick 3) (else (= @ick 7))))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
+		pChzOut = "({} (if (== @i (member (member @foo @bar) @fug)) (= @ick 3) (else (= @ick 7))))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "{ break; continue; return foo=\"test\"; }";
-	pChzOut	= "({} (break) (continue) (return (= @foo \"test\")))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ break; continue; return foo=\"test\"; }";
+		pChzOut = "({} (break) (continue) (return (= @foo \"test\")))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
-	pChzOut	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
-					" ({} (decl @bah 3))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
+		pChzOut = "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
+			" ({} (decl @bah 3))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn =	"AddLocal :: (nA : int) -> int { nLocal := 2; return nA + nLocal; }";
-	pChzOut	= "(func @AddLocal (params (decl @nA @int)) @int ({} (decl @nLocal 2) (return (+ @nA @nLocal))))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "AddLocal :: (nA : int) -> int { nLocal := 2; return nA + nLocal; }";
+		pChzOut = "(func @AddLocal (params (decl @nA @int)) @int ({} (decl @nLocal 2) (return (+ @nA @nLocal))))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
-	pChzOut	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
-					" ({} (procCall @AddNums 2 3))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
+		pChzOut = "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
+			" ({} (procCall @AddNums 2 3))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "{ FooFunc(); n:=BarFunc(x+(ack)); }";
-	pChzOut	= "({} (procCall @FooFunc) (decl @n (procCall @barFunc (+ @x @ack))))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ FooFunc(); n:=BarFunc(x+(ack)); }";
+		pChzOut = "({} (procCall @FooFunc) (decl @n (procCall @barFunc (+ @x @ack))))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "{ NopFunc :: () { guh := 2; } wha : * int; }";
-	pChzOut	= "(func @NopFunc ({} (decl @guh 2))) ({} (decl @wha (ptr @int)))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ NopFunc :: () { guh := 2; } wha : * int; }";
+		pChzOut = "(func @NopFunc @void ({} (decl @guh 2) (return))) ({} (decl @wha (ptr @int)))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 }; a = 2; }";
-	pChzOut	= "({} (enum @ENUMK @int ({} (enumConst @ENUMK_Nil (unary[-] 1)) (enumConst @ENUMK_Foo) (enumConst @ENUMK_Bah 3)))"
-					" (= @a 2))";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 }; a = 2; }";
+		pChzOut = "({} (enum @ENUMK @int ({} (enumConst @ENUMK_Nil (unary[-] 1)) (enumConst @ENUMK_Foo) (enumConst @ENUMK_Bah 3)))"
+			" (= @a 2))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "STest :: struct { m_a := 2; m_b : int; }; boo : int = 3;";
-	pChzOut	= "(struct @STest ({} (decl @m_a 2) (decl @m_b @int))) (decl @boo @int 3)";
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+		pChzIn = "STest :: struct { m_a := 2; m_b : int; }; boo : int = 3;";
+		pChzOut = "(struct @STest ({} (decl @m_a 2) (decl @m_b @int))) (decl @boo @int 3)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-	pChzIn		= "pChz := foo; guh : gur = 5; bah : s32 = woo;";
-	pChzOut	= "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
-	const char * apChzExpectedSym[] = {"pChz", "guh", "bah", nullptr };
-	AssertParseMatchTailRecurse(&work, pChzIn, pChzOut, apChzExpectedSym);
+		pChzIn = "pChz := foo; guh : gur = 5; bah : s32 = woo;";
+		pChzOut = "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
+		const char * apChzExpectedSym[] = { "pChz", "guh", "bah", nullptr };
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut, apChzExpectedSym);
 
-	StaticShutdownStrings(&allocString);
+		StaticShutdownStrings(&allocString);
+	}
 }

@@ -14,8 +14,10 @@
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
 #define EWC_TYPES_IMPLEMENTATION
+#include "CodeGen.h"
 #include "JaiLex.h"
 #include "JaiParse.h"
+#include "Workspace.h"
 
 using namespace EWC;
 
@@ -24,12 +26,116 @@ extern void TestParse();
 extern void TestTypeCheck();
 extern void TestCodeGen();
 
-int main()
+class CCommandLine // tag = comline
 {
-	TestLexing();
-	TestParse();
-	TestTypeCheck();
-	TestCodeGen();
+public:
+	struct SCommand // tag = com
+	{
+		HV		m_hvName;
+		HV		m_hvValue;
+	};
+
+	CCommandLine()
+	:m_aryCom()
+	,m_pChzFilename(nullptr)
+		{ ; }
+
+	void Parse(int cpChzArg, const char * apChzArg[])
+	{
+		const char * pChzFilename = nullptr;
+		for (int ipChz = 1; ipChz < cpChzArg; ++ipChz)
+		{
+			const char * pChzArg = apChzArg[ipChz];
+			if (pChzArg[0] == '-')
+			{
+				if (m_aryCom.C() == m_aryCom.CMax())
+				{
+					printf("Too many arguments. ignoring %s\n", pChzArg);
+				}
+				else
+				{
+					SCommand * pCom = m_aryCom.AppendNew();
+					pCom->m_hvName = HvFromPChz(pChzArg);
+				}
+			}
+			else
+			{
+				if (pChzFilename)
+					printf("Expected one filename argument.");
+
+				pChzFilename = pChzArg;
+			}
+		}
+		m_pChzFilename = pChzFilename;
+	}
+
+	bool FHasCommand(const char * pChzCommand)
+	{
+		HV hvCommand = HvFromPChz(pChzCommand);
+
+		for (int iCom = 0; iCom < m_aryCom.C(); ++iCom)
+		{
+			if (m_aryCom[iCom].m_hvName == hvCommand)
+				return true;
+		}
+		return false;
+	}
+
+	CFixAry<SCommand, 32>	m_aryCom;
+	const char *			m_pChzFilename;
+};
+
+void PrintCommandLineOptions()
+{
+	printf("jailang [options] [filename]\n");
+	printf("  options:\n");
+	printf("	-help  : Print this message\n");
+	printf("    -test  : Run compiler unit tests\n");
+}
+
+int main(int cpChzArg, const char * apChzArg[])
+{
+	if (cpChzArg < 2)
+	{
+		PrintCommandLineOptions();
+		return 0;
+	}
+
+	CCommandLine comline;
+	comline.Parse(cpChzArg, apChzArg);
+
+	if (comline.FHasCommand("-help"))
+	{
+		PrintCommandLineOptions();
+	}
+
+	if (comline.m_pChzFilename)
+	{
+		u8 aBString[1024 * 100];
+		CAlloc allocString(aBString, sizeof(aBString));
+		StaticInitStrings(&allocString);
+
+		u8 aB[1024 * 100];
+		CAlloc alloc(aB, sizeof(aB));
+
+		SErrorManager errman;
+		CWorkspace work(&alloc, &errman);
+
+		InitLLVM();
+		CompileModule(&work, comline.m_pChzFilename);
+		ShutdownLLVM();
+
+		StaticShutdownStrings(&allocString);
+	}
+
+	if (comline.FHasCommand("-test"))
+	{
+		TestLexing();
+		TestParse();
+		TestTypeCheck();
+		TestCodeGen();
+		return 0;
+	}
 
 	return 0;
 }

@@ -65,9 +65,27 @@ using namespace EWC;
 #define __STDC_CONSTANT_MACROS
 #define __STDC_FORMAT_MACROS
 #define __STDC_LIMIT_MACROS
+
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/ADT/Triple.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/PassRegistry.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/ManagedStatic.h"
+#include "llvm/Target/TargetOptions.h"
+
+namespace llvm
+{
+	class MachineFunctionInitializer;
+}
 
 #undef _CRT_SECURE_NO_DEPRECATE
 #undef _CRT_SECURE_NO_WARNINGS
@@ -239,7 +257,7 @@ size_t CIRBuilder::CChGenerateUniqueName(const char * pChzIn, char * pChzOut, si
 	HV hv = 0;
 	if (iCh >= 0)
 	{
-		hv = HvFromPchz(pChzIn, iCh+1);
+		hv = HvFromPChz(pChzIn, iCh+1);
 	}
 
 	u32 * pN = nullptr;
@@ -428,7 +446,14 @@ CIRInstruction * CIRBuilder::PInstCreateBranch(CIRBasicBlock * pBlock)
 CIRInstruction * CIRBuilder::PInstCreateRet(CIRValue * pValRhs)
 {
 	CIRInstruction * pInst = PInstCreate(IROP_Ret, pValRhs, nullptr, "RetTmp");
-	pInst->m_pLval = m_pLbuild->CreateRet(pValRhs->m_pLval);
+	if (pValRhs)
+	{
+		pInst->m_pLval = m_pLbuild->CreateRet(pValRhs->m_pLval);
+	}
+	else
+	{
+		pInst->m_pLval = m_pLbuild->CreateRetVoid();
+	}
 	return pInst;
 }
 
@@ -478,6 +503,10 @@ static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
 
 	switch (pTin->m_tink)
 	{
+		case TINK_Void:
+		{
+			return llvm::Type::getVoidTy(lctx);
+		}
 	    case TINK_Integer:	
 		{
 			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTin;
@@ -692,14 +721,6 @@ static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, SType
 	return pConst;
 }
 
-static inline bool FIsReservedWord(CSTNode * pStnod, RWORD rword)
-{
-	if ((pStnod->m_park != PARK_ReservedWord) | (pStnod->m_pStval == nullptr))
-		return false;
-
-	return pStnod->m_pStval->m_rword == rword;
-}
-
 CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 {
 	switch (pStnod->m_park)
@@ -910,13 +931,10 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 						pValRhs = PValGenerate(pBuild, pStnod->PStnodChild(0));
 					}
 
-					if (pValRhs)
+					CIRInstruction * pInstRet = pBuild->PInstCreateRet(pValRhs);
+					if (EWC_FVERIFY(pBuild->m_pBlockCur, "no current block"))
 					{
-						CIRInstruction * pInstRet = pBuild->PInstCreateRet(pValRhs);
-						if (EWC_FVERIFY(pBuild->m_pBlockCur, "no current block"))
-						{
-							pBuild->m_pBlockCur->Append(pInstRet);
-						}
+						pBuild->m_pBlockCur->Append(pInstRet);
 					}
 				}break;
 			default:
@@ -1269,19 +1287,18 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 
 void CodeGenEntryPoint(
 	CAlloc * pAlloc,
+	CIRBuilder * pBuild, 
 	CSymbolTable * pSymtabTop,
 	CAry<CWorkspace::SEntry> * paryEntry,
 	CAry<int> * paryiEntryOrder)
 {
-	CIRBuilder build(pAlloc);
-
 	int * piEntryMax = paryiEntryOrder->PMac();
 	for (int * piEntry = paryiEntryOrder->A(); piEntry != piEntryMax; ++piEntry)
 	{
 		CWorkspace::SEntry *pEntry = &(*paryEntry)[*piEntry];
 		CSTNode * pStnod = pEntry->m_pStnod;
 
-		EWC_ASSERT(build.m_pProcCur == nullptr, "expected null procedure for entry point.");
+		EWC_ASSERT(pBuild->m_pProcCur == nullptr, "expected null procedure for entry point.");
 		CIRProcedure * pProc = nullptr;
 		CSTNode * pStnodBody;
 		if (pStnod->m_park != PARK_ProcedureDefinition)
@@ -1290,13 +1307,13 @@ void CodeGenEntryPoint(
 			pEntry->m_pProc = pProc;
 
 			char aCh[128];
-			(void) build.CChGenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
+			(void) pBuild->CChGenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
 
 			std::vector<llvm::Type *> argsEmpty;
-			llvm::FunctionType * pLfunctype = llvm::FunctionType::get(build.m_pLbuild->getVoidTy(), argsEmpty, false);
+			llvm::FunctionType * pLfunctype = llvm::FunctionType::get(pBuild->m_pLbuild->getVoidTy(), argsEmpty, false);
 
-			pProc->m_pLfunc = llvm::Function::Create(pLfunctype, llvm::Function::ExternalLinkage, aCh, build.m_pLmoduleCur);
-			pProc->m_pBlockEntry = build.PBlockCreate(pProc, aCh);
+			pProc->m_pLfunc = llvm::Function::Create(pLfunctype, llvm::Function::ExternalLinkage, aCh, pBuild->m_pLmoduleCur);
+			pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, aCh);
 			pStnodBody = pStnod;
 		}
 		else
@@ -1307,7 +1324,7 @@ void CodeGenEntryPoint(
 
 			if (!pStnod->m_pSym->m_pVal)
 			{
-				pProc = PProcCodegenPrototype(&build, pStnod);
+				pProc = PProcCodegenPrototype(pBuild, pStnod);
 			}
 			else
 			{
@@ -1326,15 +1343,15 @@ void CodeGenEntryPoint(
 
 		if (pProc && pStnodBody)
 		{
-			build.ActivateProcedure(pProc, pProc->m_pBlockEntry);
-			(void) PValGenerate(&build, pStnodBody);
+			pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
+			(void) PValGenerate(pBuild, pStnodBody);
 
 			llvm::verifyFunction(*pProc->m_pLfunc);
-			build.ActivateProcedure(nullptr, nullptr);
+			pBuild->ActivateProcedure(nullptr, nullptr);
 		}
 	}
 
-	build.PrintDump();
+	pBuild->PrintDump();
 }
 
 void TestUniqueNames(CAlloc * pAlloc)
@@ -1381,6 +1398,213 @@ void TestUniqueNames(CAlloc * pAlloc)
 	EWC_ASSERT(cbFreePrev == cbFreePost, "memory leak testing unique names");
 }
 
+void ConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax)
+{
+	// remove the last extension (if one exists) and replace it with the supplied one.
+
+	char * pChzPeriod = nullptr;
+	char * pChzOut = pChzFilenameOut;
+	char * pChzOutMax = &pChzFilenameOut[cChOutMax];
+	const char * pChIt = pChzFilenameIn;
+	for ( ; *pChIt != '\0' && pChzOut != pChzOutMax; ++pChIt)
+	{
+		if (*pChIt == '.')
+		{
+			pChzPeriod = pChzOut;
+		}
+
+		*pChzOut++ = *pChIt;
+	}
+
+	if (pChzPeriod)
+		pChzOut = pChzPeriod;
+
+	pChIt = pChzExtension; 
+	for ( ; *pChIt != '\0' && pChzOut != pChzOutMax; ++pChIt)
+	{
+		*pChzOut++ = *pChIt;
+	}
+
+	*pChzOut = '\0';
+}
+
+static std::unique_ptr<tool_output_file> PLoutfileOpen(CWorkspace * pWork, const char * pChzFilenameOut)
+{
+	// Open the file.
+	std::error_code errcode;
+	llvm::sys::fs::OpenFlags OpenFlags = llvm::sys::fs::F_None; // fBinary file
+	auto pLoutfile = llvm::make_unique<tool_output_file>(pChzFilenameOut, errcode, OpenFlags);
+	if (errcode) 
+	{
+		EmitError(pWork, nullptr, "error making output file");
+		errs() << errcode.message() << '\n';
+		return nullptr;
+	}
+
+	return pLoutfile;
+}
+
+
+void CompileToObjectFile(CWorkspace * pWork, llvm::Module * pLmodule, const char * pChzFilenameIn)
+{
+	llvm::Triple ltriple;
+
+	if (ltriple.getTriple().empty())
+		ltriple.setTriple(llvm::sys::getDefaultTargetTriple());
+
+	std::string strMarch; // lookup valid option for -march
+	std::string strError;
+	const llvm::Target * pLtarget = llvm::TargetRegistry::lookupTarget(strMarch, ltriple, strError);
+	if (!EWC_FVERIFY(pLtarget, "Compiler Error: %s", strError.c_str()))
+		return;
+
+	llvm::CodeGenOpt::Level loptlevel = llvm::CodeGenOpt::Default;
+	loptlevel = llvm::CodeGenOpt::None;				// -O0
+	//loptlevel = llvm::CodeGenOpt::Aggressive;		// -02
+
+	llvm::TargetOptions loptions;
+
+	llvm::Reloc::Model lrelocmodel = llvm::Reloc::Default;
+	llvm::CodeModel::Model lcodemodel = llvm::CodeModel::JITDefault;
+
+	std::string strCPU = getCPUStr();
+	std::string strFeatures = getFeaturesStr();
+	std::unique_ptr<llvm::TargetMachine> pLtmachine( pLtarget->createTargetMachine(
+																ltriple.getTriple(),
+																strCPU,
+																strFeatures,
+																loptions,
+																lrelocmodel,
+																lcodemodel,
+																loptlevel));
+
+	if (!EWC_FVERIFY(pLtmachine, "Could not allocate target machine!"))
+		return;
+
+	const char * pChzExtension;
+    if (ltriple.getOS() == Triple::Win32)
+      pChzExtension = ".obj";
+    else
+      pChzExtension = ".o";
+
+	char aChFilenameOut[256];
+	ConstructFilename(pChzFilenameIn, pChzExtension, aChFilenameOut, EWC_DIM(aChFilenameOut));
+
+	// Figure out where we are going to send the output.
+	std::unique_ptr<llvm::tool_output_file> pLoutfile = PLoutfileOpen(pWork, aChFilenameOut);
+	if (!pLoutfile) 
+		return;
+
+	// Build up all of the passes that we want to do to the module.
+	llvm::legacy::PassManager lpassman;
+
+	// Add an appropriate TargetLibraryInfo pass for the module's triple.
+	llvm::TargetLibraryInfoImpl TLII(Triple(pLmodule->getTargetTriple()));
+
+	lpassman.add(new llvm::TargetLibraryInfoWrapperPass(TLII));
+
+	// Add the target data from the target machine, if it exists, or the module.
+	if (const llvm::DataLayout * pLdatalay = pLtmachine->getDataLayout())
+		pLmodule->setDataLayout(*pLdatalay);
+
+    llvm::raw_pwrite_stream * pLos = &pLoutfile->os();
+    std::unique_ptr<buffer_ostream> lbos;
+	llvm::TargetMachine::CodeGenFileType lfiletype = llvm::TargetMachine::CGFT_ObjectFile;
+	if (lfiletype != TargetMachine::CGFT_AssemblyFile && !pLoutfile->os().supportsSeeking())
+	{
+		lbos = llvm::make_unique<llvm::buffer_ostream>(*pLos);
+		pLos = lbos.get();
+	}
+
+    llvm::AnalysisID pVStartBeforeID = nullptr;
+    llvm::AnalysisID pVStartAfterID = nullptr;
+    llvm::AnalysisID pVStopAfterID = nullptr;
+    const llvm::PassRegistry * pLpassreg = llvm::PassRegistry::getPassRegistry();
+
+    // Ask the target to add backend passes as necessary.
+	bool fDisableVerify = false;
+	llvm::MachineFunctionInitializer * pLmfi = nullptr; // used when reading .mir files?
+    if (pLtmachine->addPassesToEmitFile(
+					lpassman,
+					*pLos,
+					lfiletype,
+					fDisableVerify,
+					pVStartBeforeID,
+			        pVStartAfterID,
+					pVStopAfterID,
+					pLmfi))
+	{
+		EmitError(pWork, nullptr, "Error generating object file");
+		return;
+    }
+
+	// Before executing passes, print the final values of the LLVM options.
+	cl::PrintOptionValues();
+
+	lpassman.run(*pLmodule);
+
+	// Declare success.
+	pLoutfile->keep();
+}
+
+void InitLLVM()
+{
+	(void)getGlobalContext();
+
+	// Initialize targets first, so that --version shows registered targets.
+	LLVMInitializeX86TargetInfo();
+	LLVMInitializeX86Target();
+	LLVMInitializeX86TargetMC();
+	LLVMInitializeX86AsmPrinter();
+	LLVMInitializeX86AsmParser();
+
+	// Initialize codegen and IR passes used by llc so that the -print-after,
+	// -print-before, and -stop-after options work.
+	PassRegistry *Registry = PassRegistry::getPassRegistry();
+	initializeCore(*Registry);
+	initializeCodeGen(*Registry);
+	initializeLoopStrengthReducePass(*Registry);
+	initializeLowerIntrinsicsPass(*Registry);
+	initializeUnreachableBlockElimPass(*Registry);
+}
+
+void ShutdownLLVM()
+{
+	llvm_shutdown();
+}
+
+void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
+{
+	SJaiLexer jlex;
+	BeginWorkspace(pWork);
+
+	CString strFilename(pChzFilenameIn);
+	const char * pChzFile = pWork->PChzLoadFile(strFilename, pWork->m_pAlloc);
+
+	BeginParse(pWork, &jlex, pChzFile);
+
+	EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
+	pWork->m_pParctx->m_cError = 0;
+
+	ParseGlobalScope(pWork, &jlex, true);
+	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
+
+	EndParse(pWork, &jlex);
+
+	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+
+	{
+		CIRBuilder build(pWork->m_pAlloc);
+		CodeGenEntryPoint(pWork->m_pAlloc, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+
+		CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
+	}
+
+	pWork->m_pAlloc->EWC_DELETE((void *)pChzFile);
+
+	EndWorkspace(pWork);
+}
+
 void AssertTestCodeGen(
 	CWorkspace * pWork,
 	const char * pChzIn)
@@ -1399,7 +1623,10 @@ void AssertTestCodeGen(
 	EndParse(pWork, &jlex);
 
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
-	CodeGenEntryPoint(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+	{
+		CIRBuilder build(pWork->m_pAlloc);
+		CodeGenEntryPoint(pWork->m_pAlloc, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+	}
 
 	/*
 	char aCh[1024];

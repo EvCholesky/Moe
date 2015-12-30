@@ -28,7 +28,7 @@ namespace EWC
 	class CStringTable;
 
 
-inline u32		HvFromPchz(const char * pChz, size_t cB = 0)
+inline u32		HvFromPChz(const char * pChz, size_t cB = 0)
 					{
 						if (!pChz)
 							return 0;
@@ -70,7 +70,7 @@ public:
 					}
 
 				CStringHash(const char * pChz, size_t cB = 0)
-				:m_hv(HvFromPchz(pChz, cB))
+				:m_hv(HvFromPChz(pChz, cB))
 #if EWC_SHASH_DEBUG_POINTER
 				,m_pChzDebugSource(pChz)
 #endif

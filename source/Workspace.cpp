@@ -46,7 +46,14 @@ void EmitError(CWorkspace * pWork, SLexerLocation * pLexloc, const char * pChz, 
 	s32 iCodepoint;
 	CalculateLinePosition(pLexloc, &iLine, &iCodepoint);
 
-	printf("%s(%d) error:", pLexloc->m_strFilename.PChz(), iLine);
+	if (pLexloc)
+	{
+		printf("%s(%d) error:", pLexloc->m_strFilename.PChz(), iLine);
+	}
+	else
+	{
+		printf("internal error:");
+	}
 	++pWork->m_pErrman->m_cError;
 	
 	if (pChz)
@@ -65,6 +72,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_pParctx(nullptr)
 ,m_aryEntry(pAlloc)
 ,m_aryiEntryChecked(pAlloc) 
+,m_hashHvPFile(pAlloc)
 ,m_pSymtab(nullptr)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
@@ -172,4 +180,38 @@ void EndWorkspace(CWorkspace * pWork)
 
 	size_t cbFreePost = pAlloc->CB();
 	EWC_ASSERT(pWork->m_cbFreePrev == cbFreePost, "failed to free all bytes");
+}
+
+char * CWorkspace::PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * pAlloc)
+{
+	SLexerLocation lexloc(strFilename);
+#if defined( _MSC_VER )
+	FILE * pFile;
+	fopen_s(&pFile, strFilename.PChz(), "rb");
+#else
+	FILE * pFile = fopen(strFilename.PChz(), "rb");
+#endif
+	if (!pFile)
+	{
+		EmitError(m_pErrman, &lexloc, "Failed opening file %s", strFilename.PChz());
+		return nullptr;
+	}
+
+	fseek(pFile, 0, SEEK_END);
+	size_t cB = ftell(pFile);
+	fseek(pFile, 0, SEEK_SET);
+
+	char * pChzFile = (char *)pAlloc->EWC_ALLOC(cB + 1, 4);
+	size_t cBRead = fread(pChzFile, 1, cB, pFile);
+	fclose(pFile);
+
+	if (cB != cBRead)
+	{
+		EmitError(m_pErrman, &lexloc, "Failed reading file %s", strFilename.PChz());
+		pAlloc->EWC_FREE(pChzFile);
+		return nullptr;
+	}
+
+	pChzFile[cB] = '\0';
+	return pChzFile;
 }

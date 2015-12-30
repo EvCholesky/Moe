@@ -131,8 +131,12 @@ public:
 							Destruct(&pEntry->m_key);
 							Destruct(&pEntry->m_value);
 						}
-						m_pAlloc->EWC_FREE(m_aEntry);
-						m_aEntry = nullptr;
+
+						if (m_aEntry)
+						{
+							m_pAlloc->EWC_FREE(m_aEntry);
+							m_aEntry = nullptr;
+						}
 
 						if (cCapacityNew)
 							Grow(cCapacityNew);

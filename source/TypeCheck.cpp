@@ -1212,25 +1212,32 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						{
 							if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 							{
-								if (EWC_FVERIFY(pStnod->CStnodChild() == 1, "expected one operands to return operand"))
+								CSTNode * pStnodProc = pTcsentTop->m_pStnodProcedure;
+								if (!pStnodProc)
 								{
-									CSTNode * pStnodProc = pTcsentTop->m_pStnodProcedure;
-									if (!pStnodProc)
+									EmitError(pTcwork, pStnod, "Return statement encountered outside of a procedure");
+									return TCRET_StoppingError;
+								}
+
+								STypeInfo * pTinReturn = PTinReturnFromStnodProcedure(pStnodProc);
+								if (!EWC_FVERIFY(pTinReturn, "expected return type (implicit void should be added by now"))
+								{
+									return TCRET_StoppingError;
+								}
+
+								if (pStnod->CStnodChild() == 0)
+								{
+									if (pTinReturn->m_tink != TINK_Void)
 									{
-										EmitError(pTcwork, pStnod, "Return statement encountered outside of a procedure");
+										EmitError(pTcwork, pStnod, "non void return type expected.");
 										return TCRET_StoppingError;
 									}
-
-									STypeInfo * pTinReturn = PTinReturnFromStnodProcedure(pStnodProc);
-									if (!pTinReturn)
-									{
-										EmitError(pTcwork, pStnod, "Unexpected return statement, procedure has void return type");
-										return TCRET_StoppingError;
-									}
-
+									pStnod->m_pTin = pTinReturn;
+								}
+								else if (pStnod->CStnodChild() == 1)
+								{
 									CSTNode * pStnodRhs = pStnod->PStnodChild(0);
 									STypeInfo * pTinRhs = pStnodRhs->m_pTin;
-
 									STypeInfo * pTinRhsPromoted = PTinPromoteLiteralTightest(
 																	pTcwork,
 																	pTcsentTop->m_pSymtab,
@@ -1249,6 +1256,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 											strRhs.PChz(),
 											strLhs.PChz());
 									}
+								}
+								else
+								{
+									EWC_ASSERT(false, "multiple return types not supported (yet).");
 								}
 
 								pStnod->m_strees = STREES_TypeChecked;
@@ -1654,7 +1665,7 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
-	pChzOut		= "(ParamFunc() @ParamFunc (params (s32 @nA s32) (float @g float)) ({} (s32 @foo s32) (float @bah float)))";
+	pChzOut		= "(ParamFunc() @ParamFunc (params (s32 @nA s32) (float @g float)) void ({} (s32 @foo s32) (float @bah float) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : string = \"huzzah\";";
@@ -1707,8 +1718,14 @@ void TestTypeCheck()
 					" (int @n (int @AddNums UintLiteral UintLiteral))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
+// todo fix for implicit void
 	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
-	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) ({} (int @n int))) (??? @NoReturn UintLiteral)";
+	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn UintLiteral)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+// todo fix for explicit void
+	pChzIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
+	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn UintLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { n:int=2; Foo :: () -> int { n2:=n; g:=Bar();}    Bar :: () -> float { n:=Foo(); } }";
@@ -1722,7 +1739,7 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		=	"(Foo() @Foo ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float)))"
+	pChzOut		=	"(Foo() @Foo void ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float) (void)))"
 					" ({} (int @ovr int) (int @n int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 

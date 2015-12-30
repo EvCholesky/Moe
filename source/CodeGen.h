@@ -31,6 +31,7 @@ namespace llvm
 class CIRInstruction;
 class CSTNode;
 class LlvmIRBuilder; // wrapper class to avoid the forward decl template mess.
+class CWorkspace;
 struct SSymbol;
 
 
@@ -320,3 +321,7 @@ public:
 };
 
 CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod);
+
+void InitLLVM();
+void ShutdownLLVM();
+void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn);
