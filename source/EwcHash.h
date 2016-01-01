@@ -138,8 +138,7 @@ public:
 							m_aEntry = nullptr;
 						}
 
-						if (cCapacityNew)
-							Grow(cCapacityNew);
+						Grow(cCapacityNew);
 					}
 
 	void		Remove(K key)
@@ -176,6 +175,12 @@ public:
 
 	FINS		FinsEnsureKey(K key, V ** ppValue = nullptr)
 					{
+						if (m_cUsed >= m_cCapacity)
+						{
+							int cCapacityNew = ewcMax<u32>(32, m_cCapacity * 2);
+							Grow(cCapacityNew);
+						}
+
 						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
 						u32 mask = m_cCapacity - 1;
 						u32 iEntry = hv & mask;
@@ -238,6 +243,12 @@ public:
 
 	FINS		FinsEnsureKeyAndValue(K key, V value)
 					{
+						if (m_cUsed >= m_cCapacity)
+						{
+							int cCapacityNew = ewcMax<u32>(32, m_cCapacity * 2);
+							Grow(cCapacityNew);
+						}
+
 						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
 						u32 mask = m_cCapacity - 1;
 						u32 iEntry = hv & mask;
@@ -332,6 +343,13 @@ public:
 
 	void		Grow(u32 cCapacityNew)
 					{
+						if (cCapacityNew == 0)
+						{
+							m_aEntry = nullptr;
+							m_cCapacity = 0;
+							return;
+						}
+
 						EWC_ASSERT(FIsPowerOfTwo(cCapacityNew), "invalid CHash capacity");
 
 						SEntry * aEntryNew = (SEntry*)m_pAlloc->EWC_ALLOC(sizeof(SEntry) * cCapacityNew, EWC_ALIGN_OF(SEntry));
@@ -384,9 +402,9 @@ public:
 
 	CAlloc *	PAlloc()
 					{ return m_pAlloc; } 
-	u32			C()
+	u32			C() const
 					{ return m_cUsed; }
-	u32			CCapacity()
+	u32			CCapacity() const
 					{ return m_cCapacity; }
 
 protected:

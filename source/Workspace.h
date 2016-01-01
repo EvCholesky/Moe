@@ -49,10 +49,32 @@ public:
 		CIRProcedure *			m_pProc;
 	};
 	
+	enum FILEK
+	{
+		FILEK_Nil = -1,
+		FILEK_Source,
+		FILEK_Library
+	};
+
+	enum FILES
+	{
+		FILES_Nil,
+		FILES_Requested,
+		FILES_Processing,
+		FILES_Complete,
+	};
+
 	struct SFile // tag = file
 	{
+						SFile(const EWC::CString & strFilename, FILEK filek)
+						:m_strFilename(strFilename)
+						,m_filek(filek)
+						,m_files(FILES_Requested)
+							{ ; }
+
 		EWC::CString	m_strFilename;
-		char *			m_pChzFile;
+		FILEK			m_filek;
+		FILES			m_files;
 	};
 
 							CWorkspace(EWC::CAlloc * pAlloc, SErrorManager * pErrman);
@@ -61,11 +83,22 @@ public:
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
 	CSymbolTable *			PSymtabNew();
 
+	void					EnsureFile(const char * pChzFile, FILEK filek);
+	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek)
+								{ return (filek == FILEK_Source) ? &m_hashHvIPFileSource :  &m_hashHvIPFileLibrary; }
+	int						CFile(FILEK filek) const
+								{ return m_hashHvIPFileSource.C(); }
+	SFile *					PFileLookup(HV hv, FILEK filek);
+
 	EWC::CAlloc *					m_pAlloc;
 	CParseContext *					m_pParctx;
 	EWC::CDynAry<SEntry> 			m_aryEntry;
 	EWC::CDynAry<int> 				m_aryiEntryChecked;		// order in which entry points were successfully type checked
-	EWC::CHash<HV, SFile *>			m_hashHvPFile;
+
+	EWC::CHash<HV, int>				m_hashHvIPFileSource;	// imported (and root) source files
+	EWC::CHash<HV, int>				m_hashHvIPFileLibrary;	// requested foreign library files
+	EWC::CDynAry<SFile *> 			m_arypFile;
+
 	CSymbolTable *					m_pSymtab;				// top level symbols
 
 	SErrorManager *					m_pErrman;

@@ -138,8 +138,18 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 
 	CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 	pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+
 	pStval->m_rword = RWORD_Nil;
 	pStnod->m_pStval = pStval;
+
+	if (pStval->m_str.FIsEmpty())
+	{
+		ParseError(pParctx, pJlex, "Identifier with no string");
+	}
+	else if (pJlex->m_pChString[0] == '#')
+	{
+		ParseError(pParctx, pJlex, "Unknown directive encountered %s", pJlex->m_pChString);
+	}
 
 	JtokNextToken(pJlex);
 	return pStnod;
@@ -1519,6 +1529,41 @@ CSTNode * PStnodParseStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 	return PStnodParseJumpStatement(pParctx, pJlex);
 }
 
+bool FParseImportDirectives(CWorkspace * pWork, SJaiLexer * pJlex)
+{
+	if (pJlex->m_jtok == JTOK_ReservedWord)
+	{
+		RWORD rword = RwordLookup(pJlex);
+
+		if ((rword == RWORD_ImportDirective) | (rword == RWORD_ForeignLibraryDirective))
+		{
+			JtokNextToken(pJlex);
+			if (pJlex->m_jtok == JTOK_Literal && pJlex->m_litty.m_litk == LITK_String)
+			{
+				if (rword == RWORD_ImportDirective)
+				{
+					pWork->EnsureFile(pJlex->m_pChString, CWorkspace::FILEK_Source);
+				}
+				else if (EWC_FVERIFY(rword == RWORD_ForeignLibraryDirective, "unknown directive"))
+				{
+					pWork->EnsureFile(pJlex->m_pChString, CWorkspace::FILEK_Library);
+				}
+				JtokNextToken(pJlex);
+				return true;
+			}
+			else
+			{
+				ParseError(
+					pWork->m_pParctx,
+					pJlex,
+					"expected path following %s directive",
+					(rword == RWORD_ImportDirective) ? "#import" : "#foreign_library");
+			}
+		}
+	}
+	return false;
+}
+
 void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalEntries)
 {
 	CParseContext * pParctx = pWork->m_pParctx;
@@ -1528,6 +1573,9 @@ void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalE
 
 	while (pJlex->m_jtok != JTOK_Eof)
 	{
+		if (FParseImportDirectives(pWork, pJlex))
+			continue;
+
 		CSTNode * pStnod = PStnodParseStatement(pWork->m_pParctx, pJlex);
 
 		if (!pStnod)
@@ -2157,10 +2205,15 @@ void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChMax
 		CSTNode * pStnod = pWork->m_aryEntry[ipStnod].m_pStnod;
 		pCh += pStnod->CChWriteDebugString(pCh, pChMax, grfdbgstr);
 
-		if (pCh != pChMax)
+		if ((pCh != pChMax) & (ipStnod+1 != pWork->m_aryEntry.C()))
 		{
-			*pCh++ = (ipStnod+1 == pWork->m_aryEntry.C()) ? '\0' : ' ';
+			*pCh++ = ' ';
 		}
+	}
+
+	if (pCh != pChMax)
+	{
+		*pCh = '\0';
 	}
 }
 
@@ -2168,7 +2221,8 @@ void AssertParseMatchTailRecurse(
 	CWorkspace * pWork,
 	const char * pChzIn,
 	const char * pChzOut,
-	const char * apChzExpectedSym[] = nullptr)
+	const char * apChzExpectedImport[] = nullptr,
+	const char * apChzExpectedLibrary[] = nullptr)
 {
 
 #ifdef EWC_TRACK_ALLOCATION
@@ -2187,7 +2241,6 @@ void AssertParseMatchTailRecurse(
 	pWork->m_pParctx->m_cError = 0;
 
 	ParseGlobalScope(pWork, &jlex, true);
-	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
 	char aCh[1024];
 	char * pCh = aCh;
@@ -2197,19 +2250,34 @@ void AssertParseMatchTailRecurse(
 
 	EWC_ASSERT(FAreSame(aCh, pChzOut), "parse debug string doesn't match expected value");
 
-	CSymbolTable * pSymtab = pWork->m_pParctx->m_pSymtab;
-	if (apChzExpectedSym)
+	if (apChzExpectedImport)
 	{
-		for (int ipChz = 0; ; ++ipChz)
+		int ipChz;
+		for (ipChz = 0; ; ++ipChz)
 		{
-			const char * pChzSym = apChzExpectedSym[ipChz];
-			if (!pChzSym)
+			const char * pChz= apChzExpectedImport[ipChz];
+			if (!pChz)
 				break;
 
-			SLexerLocation lexlocEnd(&jlex);
-			SSymbol * pSym = pSymtab->PSymLookup(pChzSym, lexlocEnd);
-			EWC_ASSERT(pSym, "Failed to find expected symbol %s", pChzSym);
+			HV hvImport = HvFromPChz(pChz);
+			EWC_ASSERT(pWork->PFileLookup(hvImport, CWorkspace::FILEK_Source), "expected import %s", pChz);
 		}
+		EWC_ASSERT(pWork->CFile(CWorkspace::FILEK_Source), "missing import");
+	}
+	
+	if (apChzExpectedLibrary)
+	{
+		int ipChz;
+		for (ipChz = 0; ; ++ipChz)
+		{
+			const char * pChz= apChzExpectedLibrary[ipChz];
+			if (!pChz)
+				break;
+
+			HV hvImport = HvFromPChz(pChz);
+			EWC_ASSERT(pWork->PFileLookup(hvImport, CWorkspace::FILEK_Library), "expected import %s", pChz);
+		}
+		EWC_ASSERT(pWork->CFile(CWorkspace::FILEK_Library) == ipChz, "missing import");
 	}
 
 	EndParse(pWork, &jlex);
@@ -2319,8 +2387,16 @@ void TestParse()
 
 		pChzIn = "pChz := foo; guh : gur = 5; bah : s32 = woo;";
 		pChzOut = "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
-		const char * apChzExpectedSym[] = { "pChz", "guh", "bah", nullptr };
-		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut, apChzExpectedSym);
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+		pChzIn = "#import \"foo/blah/ack\" #foreign_library \"foo/blah/ack\" "
+				"#import \"test\\wha\\huh\" #foreign_library \"test\\wha\\huh\" "
+				"#import \"basic\" ";
+			
+		pChzOut = "";
+		const char * apChzExpectedImport[] = { "foo/blah/ack", "test\\wha\\huh", "basic",nullptr };
+		const char * apChzExpectedLibrary[] = { "foo/blah/ack", "test\\wha\\huh", nullptr };
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut, apChzExpectedImport, apChzExpectedLibrary);
 
 		StaticShutdownStrings(&allocString);
 	}

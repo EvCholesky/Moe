@@ -301,7 +301,8 @@ int JtokNextToken(SJaiLexer * pJlex)
 			if (  ((*pChz >= 'a') & (*pChz <= 'z'))
 				| ((*pChz >= 'A') & (*pChz <= 'Z'))
 				| (*pChz == '_') 
-				| (u8(*pChz) >= 128))    // >= 128 is UTF8 char
+				| (*pChz == '#')		// allowing identifiers containing '#' to catch directive rwords, parse will error.
+				| (u8(*pChz) >= 128))   // >= 128 is UTF8 char
 			{
 				size_t iCh = 0;
 				pJlex->m_pChString = pJlex->m_aChStorage;

@@ -72,7 +72,9 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_pParctx(nullptr)
 ,m_aryEntry(pAlloc)
 ,m_aryiEntryChecked(pAlloc) 
-,m_hashHvPFile(pAlloc)
+,m_hashHvIPFileSource(pAlloc)
+,m_hashHvIPFileLibrary(pAlloc)
+,m_arypFile(pAlloc)
 ,m_pSymtab(nullptr)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
@@ -99,6 +101,38 @@ CSymbolTable * CWorkspace::PSymtabNew()
 	return pSymtabNew;
 }
 
+void CWorkspace::EnsureFile(const char * pChzFile, FILEK filek)
+{
+	EWC::CHash<HV, int> * phashHvIPFile = PHashHvIPFile(filek);
+	EWC::CString strFilename(pChzFile);
+
+	int * pipFile = nullptr;
+	FINS fins = phashHvIPFile->FinsEnsureKey(strFilename.Hv(), &pipFile);
+	if (fins == EWC::FINS_Inserted)
+	{
+		SFile * pFile = EWC_NEW(m_pAlloc, SFile) SFile(strFilename, filek);
+		*pipFile = (int)m_arypFile.C();
+		m_arypFile.Append(pFile);
+
+		pFile->m_strFilename = strFilename;
+	}
+}
+
+CWorkspace::SFile * CWorkspace::PFileLookup(HV hv, FILEK filek)
+{
+	EWC::CHash<HV, int> * phashHvIPFile = PHashHvIPFile(filek);
+	int * pipFile = phashHvIPFile->Lookup(hv);
+	if (pipFile)
+	{
+		if (EWC_FVERIFY(*pipFile >= 0) & (*pipFile < m_arypFile.C()), "bad file index")
+		{
+			return m_arypFile[*pipFile];
+		}
+	}
+
+	return nullptr;
+}
+
 
 
 void BeginWorkspace(CWorkspace * pWork)
@@ -107,6 +141,10 @@ void BeginWorkspace(CWorkspace * pWork)
 
 	pWork->m_aryiEntryChecked.Clear();
 	pWork->m_aryEntry.Clear();
+
+	pWork->m_arypFile.Clear();
+	pWork->m_hashHvIPFileSource.Clear(0);
+	pWork->m_hashHvIPFileLibrary.Clear(0);
 	pWork->m_cbFreePrev = pAlloc->CB();
 
 	pWork->m_pSymtab = pWork->PSymtabNew();
@@ -177,6 +215,19 @@ void EndWorkspace(CWorkspace * pWork)
 	}
 	pWork->m_aryEntry.Clear();
 	pWork->m_aryiEntryChecked.Clear();
+	pWork->m_hashHvIPFileSource.Clear(0);
+	pWork->m_hashHvIPFileLibrary.Clear(0);
+
+	size_t cipFile = pWork->m_arypFile.C();
+	for (size_t ipFile = 0; ipFile < cipFile; ++ipFile)
+	{
+		if (pWork->m_arypFile[ipFile])
+		{
+			pAlloc->EWC_DELETE(pWork->m_arypFile[ipFile]);
+			pWork->m_arypFile[ipFile] = nullptr;
+		}
+	}
+	pWork->m_arypFile.Clear();
 
 	size_t cbFreePost = pAlloc->CB();
 	EWC_ASSERT(pWork->m_cbFreePrev == cbFreePost, "failed to free all bytes");

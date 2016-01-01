@@ -1,4 +1,6 @@
 
+#import "Basic"
+
 AddNums :: (nA : int, nB : int) -> int
 {
 	return nA + nB;
@@ -6,5 +8,6 @@ AddNums :: (nA : int, nB : int) -> int
 
 main :: ()
 {
+	nAck := NReturn();
 	nFoo := AddNums(2, 5);
 }
