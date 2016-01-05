@@ -68,11 +68,13 @@ public:
 	{
 						SFile(const EWC::CString & strFilename, FILEK filek)
 						:m_strFilename(strFilename)
+						,m_pChzFile(nullptr)
 						,m_filek(filek)
 						,m_files(FILES_Requested)
 							{ ; }
 
 		EWC::CString	m_strFilename;
+		char *			m_pChzFile;
 		FILEK			m_filek;
 		FILES			m_files;
 	};
