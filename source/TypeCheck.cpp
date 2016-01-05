@@ -779,8 +779,11 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 					pStnod->m_pSym = pSymProc;
 
-					if (!EWC_FVERIFY(pSymProc && pSymProc->m_pStnodDefinition, "unknown procedure in type check"))
+					if (!pSymProc || !pSymProc->m_pStnodDefinition)
+					{
+						EmitError(pTcwork, pStnod, "unknown procedure in type check: %s", strProcName.PChz());
 						return TCRET_StoppingError;
+					}
 
 					CSTNode * pStnodDefinition = pSymProc->m_pStnodDefinition;
 					if (pStnodDefinition->m_strees < STREES_SignatureTypeChecked)

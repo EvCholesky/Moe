@@ -1578,21 +1578,41 @@ void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 	SJaiLexer jlex;
 	BeginWorkspace(pWork);
 
-	CString strFilename(pChzFilenameIn);
-	const char * pChzFile = pWork->PChzLoadFile(strFilename, pWork->m_pAlloc);
+#ifdef EWC_TRACK_ALLOCATION
+	u8 aBAltrac[1024 * 100];
+	CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
 
-	BeginParse(pWork, &jlex, pChzFile);
+	CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
+	pWork->m_pAlloc->SetAltrac(pAltrac);
+#endif
 
-	EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
-	pWork->m_pParctx->m_cError = 0;
+	pWork->EnsureFile(pChzFilenameIn, CWorkspace::FILEK_Source);
 
-	ParseGlobalScope(pWork, &jlex, true);
-	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
+	for (int ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
+	{
+		CWorkspace::SFile * pFile = pWork->m_arypFile[ipFile];
 
-	EndParse(pWork, &jlex);
+		char aChFilenameOut[256];
+		ConstructFilename(pFile->m_strFilename.PChz(), ".jai", aChFilenameOut, EWC_DIM(aChFilenameOut));
+
+		pFile->m_pChzFile = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
+		if (!pFile->m_pChzFile)
+			continue;
+
+		BeginParse(pWork, &jlex, pFile->m_pChzFile);
+
+		EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
+		pWork->m_pParctx->m_cError = 0;
+
+		ParseGlobalScope(pWork, &jlex, true);
+		EWC_ASSERT(pWork->m_aryEntry.C() > 0);
+
+		EndParse(pWork, &jlex);
+	}
 
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
+	if (pWork->m_pErrman->m_cError == 0)
 	{
 		CIRBuilder build(pWork->m_pAlloc);
 		CodeGenEntryPoint(pWork->m_pAlloc, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
@@ -1600,9 +1620,23 @@ void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 		CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
 	}
 
-	pWork->m_pAlloc->EWC_DELETE((void *)pChzFile);
+	for (int ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
+	{
+		CWorkspace::SFile * pFile = pWork->m_arypFile[ipFile];
+
+		if (pFile->m_pChzFile)
+		{
+			pWork->m_pAlloc->EWC_DELETE((void *)pFile->m_pChzFile);
+			pFile->m_pChzFile = nullptr;
+		}
+	}
 
 	EndWorkspace(pWork);
+
+#ifdef EWC_TRACK_ALLOCATION
+	DeleteAltrac(&allocAltrac, pAltrac);
+	pWork->m_pAlloc->SetAltrac(nullptr);
+#endif
 }
 
 void AssertTestCodeGen(

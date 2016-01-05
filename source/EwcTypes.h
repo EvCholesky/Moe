@@ -420,6 +420,16 @@ extern TID TID_Nil;
 extern void * STBM_CALLBACK EwcSystemAlloc(void * pUserContext, size_t cBRequested, size_t * pCbProvided);
 extern void STBM_CALLBACK EwcSystemFree(void * pUserContext, void *p);
 
+// BB - This allocation tracking code doesn't work yet, it doesn't clean up properly for deletions (it needs to
+// add some kind of HV(file,line) into an allocation prefix
+
+#define EWC_TRACK_ALLOCATION
+#ifdef EWC_TRACK_ALLOCATION
+	inline size_t CBAllocationPrefix() { return sizeof(HV); }
+#else
+	inline size_t CBAllocationPrefix() { return 0; }
+#endif
+
 class CAllocTracker;
 class CAlloc // tag=alloc
 {
@@ -475,20 +485,23 @@ public:
 							}
 
 	static void			StaticShutdown()
-							{
-								s_fProgramIsShutdown = true;
-							}
+							{ s_fProgramIsShutdown = true; }
 
-	void *				AllocImpl(size_t cB, size_t cAlign, const char* pChzFile, int cLine)
+	CAllocTracker *		PAltrac()
+							{ return m_pAltrac; }
+
+	void *				AllocImpl(size_t cB, size_t cBAlign, const char* pChzFile, int cLine)
 							{
+								size_t cBPrefix = CBAllocationPrefix();
+								size_t alignOffset = (cBAlign > cBPrefix) ? cBAlign - cBPrefix : 0;
 								EWC_ASSERT(m_pStbheap, "Trying to allocate from a NULL heap");
 								void * pV = stbm_alloc_align_fileline(
 											nullptr, 
 											m_pStbheap, 
-											cB, 
+											cB + cBPrefix, 
 											0, 
-											cAlign, 
-											0, 
+											cBAlign, 
+											alignOffset, 
 											const_cast<char*>(pChzFile), 
 											cLine);
 
@@ -498,23 +511,38 @@ public:
 
 								m_cBFree -= cBActual;
 
-								if (m_pAltrac)
-									TrackAlloc(cBActual, pChzFile, cLine);
+#ifdef EWC_TRACK_ALLOCATION
+								void * pVAdjust = ((char *)pV) + cBPrefix;
+								HV * pHv = (HV *)pV;
+								*pHv = 0;
 
-								return pV;
+								uintptr_t nAlignMask = cBAlign - 1;
+								EWC_ASSERT(((uintptr_t)pVAdjust & nAlignMask) == 0, "bad alignment calculation");
+
+								if (m_pAltrac)
+									TrackAlloc(cBActual, pChzFile, cLine, pHv);
+#endif
+
+								return pVAdjust;
 							}
 
-	void				FreeImpl(void * p, const char * pChzFile, int cLine)
+	void				FreeImpl(void * pV, const char * pChzFile, int cLine)
 							{
-								EWC_ASSERT(p, "NULL pointer in CAlloc::FreeImpl");		
+								EWC_ASSERT(pV, "NULL pointer in CAlloc::FreeImpl");		
 								EWC_ASSERT(m_pStbheap, "Trying to free to a NULL heap");
-								size_t cB = stbm_get_allocation_size(p);
-								stbm_free(nullptr, m_pStbheap, p);
+
+								pV = ((char *)pV) - CBAllocationPrefix();
+								size_t cB = stbm_get_allocation_size(pV);
+
+#ifdef EWC_TRACK_ALLOCATION
+								HV * pHv = (HV *)pV;
+								if (m_pAltrac)
+									TrackFree(cB, pHv);
+#endif
+								
+								stbm_free(nullptr, m_pStbheap, pV);
 
 								m_cBFree += cB;
-
-								if (m_pAltrac)
-									TrackFree(cB, pChzFile, cLine);
 							}
 
 	template <typename T> 
@@ -524,8 +552,9 @@ public:
 								FreeImpl(p, pChzFile, cLine);
 							}
 
-	void				TrackAlloc(size_t cB, const char * pChzFile, int cLine);
-	void				TrackFree(size_t cB, const char * pChzFile, int cLine);
+	void				TrackAlloc(size_t cB, const char * pChzFile, int cLine, HV * pHv);
+	void				TrackFree(size_t cBt, HV * pHv);
+	void				PrintAllocations();
 
 	void				VerifyHeap();
 
@@ -540,11 +569,6 @@ protected:
 	size_t				m_cBFree;
 	static bool			s_fProgramIsShutdown;
 };
-
-// BB - This allocation tracking code doesn't work yet, it doesn't clean up properly for deletions (it needs to
-// add some kind of HV(file,line) into an allocation prefix
-
-//#define EWC_TRACK_ALLOCATION
 
 CAllocTracker * PAltracCreate(CAlloc * pAllocWork);
 void DeleteAltrac(CAlloc * pAllocWork, CAllocTracker * pAltrac);
@@ -1096,7 +1120,6 @@ enum TILAY // tile layer
 #ifdef EWC_TRACK_ALLOCATION
 #include "EwcArray.h"
 #include "EwcHash.h"
-#include "EwcString.h"
 #endif
 
 namespace EWC
@@ -1141,11 +1164,15 @@ public:
 #endif
 			}
 
-	void	TrackAlloc(size_t cB, const char * pChzFile, int cLine)
+	void	TrackAlloc(size_t cB, const char * pChzFile, int cLine, HV * pHv)
 			{
 #ifdef EWC_TRACK_ALLOCATION
+
+				HV hv = HvFromFileLine(pChzFile, cLine);
+				*pHv = hv;
+
 				int * piEntry;
-				if (m_hashHvIentry.FinsEnsureKey(HvFromFileLine(pChzFile, cLine), &piEntry) == FINS_AlreadyExisted)
+				if (m_hashHvIentry.FinsEnsureKey(hv, &piEntry) == FINS_AlreadyExisted)
 				{
 					SEntry * pEntry = &m_aryEntry[*piEntry];
 					pEntry->m_cB += cB;
@@ -1154,7 +1181,7 @@ public:
 				}
 				else
 				{
-					*piEntry = m_aryEntry.C();
+					*piEntry = (int)m_aryEntry.C();
 					SEntry * pEntry = m_aryEntry.AppendNew();
 					pEntry->m_cB 	   	   = cB;
 					pEntry->m_cBHighwater  = cB;
@@ -1165,17 +1192,37 @@ public:
 #endif // EWC_TRACK_ALLOCATION
 			}
 
-	void	TrackFree(size_t cB, const char * pChzFile, int cLine)
+	void	TrackFree(size_t cB, HV * pHv)
 			{
 #ifdef EWC_TRACK_ALLOCATION
-				int * piEntry = m_hashHvIentry.Lookup(HvFromFileLine(pChzFile, cLine));
-				if (EWC_FASSERT(piEntry, "Failed to find allocation record during free"))
+				if (*pHv)
 				{
-					SEntry * pEntry = &m_aryEntry[*piEntry];
-					pEntry->m_cB -= cB;
+					int * piEntry = m_hashHvIentry.Lookup(*pHv);
+
+					if (EWC_FASSERT(piEntry, "Failed to find allocation record during free"))
+					{
+						SEntry * pEntry = &m_aryEntry[*piEntry];
+						pEntry->m_cB -= cB;
+					}
 				}
 #endif // EWC_TRACK_ALLOCATION
 			}
+
+	void Print()
+	{
+#ifdef EWC_TRACK_ALLOCATION
+		SEntry * pEntryMac = m_aryEntry.PMac();
+		size_t cBTotal = 0;
+		for (SEntry * pEntry = m_aryEntry.A(); pEntry != pEntryMac; ++pEntry)
+		{
+			if (pEntry->m_cB == 0)
+				continue;
+			printf("%zd / %zd\t\t %s : %d\n", pEntry->m_cB, pEntry->m_cBHighwater, pEntry->m_pChzFile, pEntry->m_cLine);
+			cBTotal += pEntry->m_cB;
+		}
+		printf("%zd tracked\n", cBTotal);
+#endif
+	}
 
 	struct SEntry // tag=entry
 	{
@@ -1229,14 +1276,20 @@ void CAlloc::VerifyHeap()
 	STBM__CHECK_LOCKED(m_pStbheap);
 }
 
-void CAlloc::TrackAlloc(size_t cB, const char * pChzFile, int cLine)
+void CAlloc::TrackAlloc(size_t cB, const char * pChzFile, int cLine, HV * pHv)
 {
-	m_pAltrac->TrackAlloc(cB, pChzFile, cLine);
+	m_pAltrac->TrackAlloc(cB, pChzFile, cLine, pHv);
 }
 
-void CAlloc::TrackFree(size_t cB, const char * pChzFile, int cLine)
+void CAlloc::TrackFree(size_t cB, HV * pHv)
 {
-	m_pAltrac->TrackFree(cB, pChzFile, cLine);
+	m_pAltrac->TrackFree(cB, pHv);
+}
+
+void CAlloc::PrintAllocations()
+{
+	if (m_pAltrac)
+		m_pAltrac->Print();
 }
 
 void AssertHandler(const char* pChzFile, u32 line, const char* pChzCondition, const char* pChzMessage, ... )

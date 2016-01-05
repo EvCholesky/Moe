@@ -162,9 +162,6 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn)
 	char * aChStorage = (char *)pAlloc->EWC_ALLOC(cChStorage, 4);
 	InitJaiLexer(pJlex, pChzIn, &pChzIn[CCh(pChzIn)], aChStorage, cChStorage);
 
-	// force our stacks to have zero allocated memory before we take our prev cbFree measurement
-	pWork->m_aryEntry.Clear();
-
 	SLexerLocation lexloc(pJlex);
 	PushSymbolTable(pParctx, pWork->m_pSymtab, lexloc);
 }
@@ -230,7 +227,11 @@ void EndWorkspace(CWorkspace * pWork)
 	pWork->m_arypFile.Clear();
 
 	size_t cbFreePost = pAlloc->CB();
-	EWC_ASSERT(pWork->m_cbFreePrev == cbFreePost, "failed to free all bytes");
+	if (pWork->m_cbFreePrev != cbFreePost)
+	{
+		pAlloc->PrintAllocations();
+		EWC_ASSERT(pWork->m_cbFreePrev == cbFreePost, "failed to free all bytes");
+	}
 }
 
 char * CWorkspace::PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * pAlloc)
