@@ -31,6 +31,10 @@ struct SLexerLocation;
 
 struct SErrorManager	//  // tag = errman
 {
+				SErrorManager()
+				:m_cError(0)
+					{ ; }
+
 	int			m_cError;
 };
 
@@ -86,10 +90,10 @@ public:
 	CSymbolTable *			PSymtabNew();
 
 	void					EnsureFile(const char * pChzFile, FILEK filek);
-	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek)
+	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek) 
 								{ return (filek == FILEK_Source) ? &m_hashHvIPFileSource :  &m_hashHvIPFileLibrary; }
-	int						CFile(FILEK filek) const
-								{ return m_hashHvIPFileSource.C(); }
+	int						CFile(FILEK filek)
+								{ return PHashHvIPFile(filek)->C(); }
 	SFile *					PFileLookup(HV hv, FILEK filek);
 
 	EWC::CAlloc *					m_pAlloc;

@@ -1619,6 +1619,10 @@ void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 
 		CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
 	}
+	else
+	{
+		printf("Compilation failed: %d errors\n", pWork->m_pErrman->m_cError);
+	}
 
 	for (int ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
 	{

@@ -10,6 +10,6 @@ main :: () -> int
 {
 	nAck := NReturn();
 	nFoo := AddNums(2, 5);
-	
-	return nAck + nFoo;
+
+	return 100 - nAck + nFoo;
 }

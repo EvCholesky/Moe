@@ -1298,7 +1298,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						if (EWC_FVERIFY((pTinLhs != nullptr) & (pTinRhs != nullptr), "unknown type in binary operation"))
 						{
 							STypeInfo * pTinUpcast = nullptr;
-							if ((pTinLhs->m_tink == TINK_Literal) & (pTinLhs->m_tink == TINK_Literal))
+							if ((pTinLhs->m_tink == TINK_Literal) & (pTinRhs->m_tink == TINK_Literal))
 							{
 								// this needs to be explicitly handled, create a new literal with the result
 								if (EWC_FVERIFY(
@@ -1659,6 +1659,10 @@ void TestTypeCheck()
 				"(float @g (float FloatLiteral (FloatLiteral FloatLiteral UintLiteral)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
+	pChzIn = "n:=2; n = 100-n;";
+	pChzOut ="(int @n int) (int int (int UintLiteral int))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : float64 = 2.2;";
 	pChzOut = "({} (s8 @i s8 UintLiteral) (s8 @foo s8) (s16 @bar s16 s8) (float64 @g float64)) (float64 @g_g float64 FloatLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
@@ -1716,17 +1720,14 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";
-	//pChzOut	= "(func @AddNums (params (decl @a @int) (decl @b 1)) @int (return (+ @a @b)))";
 	pChzOut		= "(AddNums() @AddNums (Params (int @a int) (int @b int)) int ({} (int (int int int))))"
 					" (int @n (int @AddNums UintLiteral UintLiteral))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-// todo fix for implicit void
 	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
 	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn UintLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-// todo fix for explicit void
 	pChzIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
 	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn UintLiteral)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
