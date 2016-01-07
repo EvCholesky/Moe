@@ -590,7 +590,15 @@ llvm::Value * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			case 64: return pLbuild->getInt64(0);
 			}
 		} break;
-	case TINK_Float:	return llvm::ConstantFP::get(llvm::getGlobalContext(), llvm::APFloat(0.0f));
+	case TINK_Float:	
+		{
+			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
+			switch (pTinfloat->m_cBit)
+			{
+			case 32: return llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), 0.0);
+			case 64: return llvm::ConstantFP::get(Type::getDoubleTy(llvm::getGlobalContext()), 0.0);
+			}
+		} break;
 	case TINK_Bool:		return llvm::ConstantInt::getFalse(llvm::getGlobalContext());
 	default: break;
 	}
@@ -787,7 +795,14 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 				}break;
 			case LITK_Float:
 				{
-					pLconst = llvm::ConstantFP::get(*pLctx, llvm::APFloat(pStval->m_g));
+					pLconst = llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), pStval->m_g);
+					/* this doesn't work, we don't propigate the resolved cBit for literals down yet
+					STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
+					switch (pTinfloat->m_cBit)
+					{
+					case 32: pLconst = llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), pStval->m_g);
+					case 64: pLconst = llvm::ConstantFP::get(Type::getDoubleTy(llvm::getGlobalContext()), pStval->m_g);
+					}*/
 				}break;
 			case LITK_Bool:
 				{
@@ -1165,6 +1180,9 @@ void CIRBuilder::ActivateProcedure(CIRProcedure * pProc, CIRBasicBlock * pBlock)
 
 void CIRBuilder::ActivateBlock(CIRBasicBlock * pBlock)
 {
+	if (pBlock == m_pBlockCur)
+		return;
+
 	if (pBlock)
 	{
 		if (!pBlock->m_pLblock->getParent())
@@ -1244,7 +1262,10 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 										pChzName,
 										pBuild->m_pLmoduleCur);
 
-	pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzName);
+	if (!pStproc->m_fIsForeign)
+	{
+		pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzName);
+	}
 
 	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
 	{
@@ -1253,7 +1274,8 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
-	pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
+
+	pBuild->ActivateProcedure(pProc, (pStproc->m_fIsForeign) ? pBlockPrev : pProc->m_pBlockEntry);
 	if (pStnodParamList)
 	{
 		// set up llvm::Argument values for our formal parameters
@@ -1265,17 +1287,20 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 			CSTNode * pStnodParam = pStnodParamList->PStnodChild(ipStnodParam);
 			if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 			{
-				const char * pChzArgName = pStnodParam->m_pSym->m_strName.PChz(); 
+				const char * pChzArgName = pStnodParam->m_pSym->m_strName.PChz();
 				argIt->setName(pChzArgName);
 
 				CIRArgument * pArg = EWC_NEW(pAlloc, CIRArgument) CIRArgument();
 				pArg->m_pLval = argIt;
 				pBuild->AddManagedVal(pArg);
 
-				auto pInstAlloca = pBuild->PInstCreateAlloca(aryPLtype[ipStnodParam], pChzArgName);
-				pStnodParam->m_pSym->m_pVal = pInstAlloca;
+				if (!pStproc->m_fIsForeign)
+				{
+					auto pInstAlloca = pBuild->PInstCreateAlloca(aryPLtype[ipStnodParam], pChzArgName);
+					pStnodParam->m_pSym->m_pVal = pInstAlloca;
 
-				(void) pBuild->PInstCreateStore(pStnodParam->m_pSym->m_pVal, pArg);
+					(void)pBuild->PInstCreateStore(pStnodParam->m_pSym->m_pVal, pArg);
+				}
 			}
 		}
 	}
@@ -1300,7 +1325,7 @@ void CodeGenEntryPoint(
 
 		EWC_ASSERT(pBuild->m_pProcCur == nullptr, "expected null procedure for entry point.");
 		CIRProcedure * pProc = nullptr;
-		CSTNode * pStnodBody;
+		CSTNode * pStnodBody = nullptr;
 		if (pStnod->m_park != PARK_ProcedureDefinition)
 		{
 			pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
@@ -1335,7 +1360,7 @@ void CodeGenEntryPoint(
 			pEntry->m_pProc = pProc;
 
 			CSTProcedure * pStproc = pStnod->m_pStproc;
-			if (EWC_FVERIFY(pStproc && pProc->m_pBlockEntry, "Encountered procedure without CSTProcedure"))
+			if (!pStproc->m_fIsForeign && EWC_FVERIFY(pStproc && pProc->m_pBlockEntry, "Encountered procedure without CSTProcedure"))
 			{
 				pStnodBody = pStnod->PStnodChildSafe(pStproc->m_iStnodBody);
 			}
@@ -1600,6 +1625,7 @@ void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 			continue;
 
 		BeginParse(pWork, &jlex, pFile->m_pChzFile);
+		jlex.m_pChzFilename = pFile->m_strFilename.PChz();
 
 		EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
 		pWork->m_pParctx->m_cError = 0;

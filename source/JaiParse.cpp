@@ -110,16 +110,27 @@ void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChz, .
 	}
 }
 
-void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected)
+void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const char * pChzInfo = nullptr, ...)
 {
 	if (pJlex->m_jtok != jtokExpected)
 	{
-		ParseError(
-			pParctx,
-			pJlex,
-			"Expected '%s' before %s",
-			PChzFromJtok(jtokExpected),
-			PChzFromJtok(JTOK(pJlex->m_jtok)));
+		if (pChzInfo)
+		{
+			va_list ap;
+			va_start(ap, pChzInfo);
+			vprintf(pChzInfo, ap);
+			printf("\n");
+		}
+
+		CString strIdent;
+		const char * pChzFound = PChzFromJtok(JTOK(pJlex->m_jtok));
+		if (pJlex->m_jtok == JTOK_Identifier)
+		{
+			strIdent = CString(pJlex->m_pChString, pJlex->m_cChString);
+			pChzFound = strIdent.PChz();
+		}
+
+		ParseError( pParctx, pJlex, "Expected '%s' before '%s'", PChzFromJtok(jtokExpected), pChzFound);
 	}
 
 	JtokNextToken(pJlex);
@@ -303,10 +314,12 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 				SLexerLocation lexloc(pJlex);
 				JtokNextToken(pJlex); // consume '('
 
+				CSTNode * pStnodIdent = nullptr;
 				if (pStnod->m_park == PARK_Identifier)
 				{
 					// clear out the identifier's type info
 					pStnod->m_pTin = nullptr;
+					pStnodIdent = pStnod;
 				}
 
 				CSTNode * pStnodArgList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
@@ -328,7 +341,12 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 					Expect(pParctx, pJlex, JTOK(','));
 				}
 
-				Expect(pParctx, pJlex, JTOK(')'));
+				Expect(
+					pParctx,
+					pJlex,
+					JTOK(')'),
+					"while parsing procedure call '%s'", 
+					pStnodIdent ? StrFromIdentifier(pStnodIdent).PChz() : "unknown");
 			}break;
 		case JTOK('.'):		// . identifier
 			{
@@ -1085,15 +1103,50 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew();
 				pStproc->m_iStnodBody = -1;
+				if (pJlex->m_jtok == JTOK_ReservedWord)
+				{
+					RWORD rwordLookup = RwordLookup(pJlex);
+					if (rwordLookup != RWORD_ForeignDirective)
+					{
+						ParseError(
+							pParctx,
+							pJlex,
+							"Unexpected token following procedure declaration %s\n",
+							PChzFromRword(rwordLookup));
+					}
+					else
+					{
+						pStproc->m_fIsForeign = true;
+					}
+
+					JtokNextToken(pJlex);
+
+					// TODO: add support for foreign function aliasing (ie. Ack :: () -> int #foreign foo;)
+					Expect(pParctx, pJlex, JTOK(';'), "While parsing foreign directive");
+				}
+
 				if (pJlex->m_jtok == JTOK('{'))
 				{
 					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex, pSymtabProc);
 					pStproc->m_iStnodBody = pStnodProc->IAppendChild(pStnodBody);
 				}
 
-				if (pStproc->m_iStnodBody == -1)
+				const CString & strName = pStnodIdent->m_pStval->m_str;
+				if (pStproc->m_fIsForeign)
 				{
-					ParseError(pParctx, pJlex, "Function definition with no body");
+					if (pStproc->m_iStnodBody != -1)
+					{
+						ParseError(
+							pParctx,
+							pJlex,
+							"Procedure '%s' is marked foreign, but defines a procedure body.",
+							strName.PChz());
+						pStproc->m_iStnodBody = -1;
+					}
+				}
+				else if (pStproc->m_iStnodBody == -1)
+				{
+					ParseError(pParctx, pJlex, "Procedure definition for '%s' has no body", strName.PChz());
 				}
 
 				// type info procedure
@@ -1109,7 +1162,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
-				const CString & strName = pStnodIdent->m_pStval->m_str;
 				STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName.PChz());
 				STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), 
 																		EWC_ALIGN_OF(STypeInfo *));
@@ -1579,7 +1631,10 @@ void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalE
 		CSTNode * pStnod = PStnodParseStatement(pWork->m_pParctx, pJlex);
 
 		if (!pStnod)
-			continue;
+		{
+			ParseError( pParctx, pJlex, "Unexpected token at global scope '%s'", PChzFromJtok((JTOK)pJlex->m_jtok));
+			break;
+		}
 
 		pWork->AppendEntry(pStnod, pParctx->m_pSymtab);
 		if (!fAllowIllegalEntries)
@@ -2217,6 +2272,17 @@ void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChMax
 	}
 }
 
+CString StrFromIdentifier(CSTNode * pStnod)
+{
+	if (EWC_FVERIFY(pStnod->m_park == PARK_Identifier, "expected identifier") && 
+		EWC_FVERIFY(pStnod->m_pStval, "identifier encountered without string value"))
+	{
+		return pStnod->m_pStval->m_str;
+	}
+
+	return CString();
+}
+
 void AssertParseMatchTailRecurse(
 	CWorkspace * pWork,
 	const char * pChzIn,
@@ -2389,10 +2455,14 @@ void TestParse()
 		pChzOut = "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
+		pChzIn = "ForeignFunc :: () -> int #foreign";
+		pChzOut = "(func @ForeignFunc @int)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+			
 		pChzIn = "#import \"foo/blah/ack\" #foreign_library \"foo/blah/ack\" "
 				"#import \"test\\wha\\huh\" #foreign_library \"test\\wha\\huh\" "
 				"#import \"basic\" ";
-			
+
 		pChzOut = "";
 		const char * apChzExpectedImport[] = { "foo/blah/ack", "test\\wha\\huh", "basic",nullptr };
 		const char * apChzExpectedLibrary[] = { "foo/blah/ack", "test\\wha\\huh", nullptr };

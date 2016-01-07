@@ -128,6 +128,9 @@ int main(int cpChzArg, const char * apChzArg[])
 		ShutdownLLVM();
 
 		StaticShutdownStrings(&allocString);
+
+		// current linker command line:
+		// link simple.obj ..\x64\debug\basic.lib libcmt.lib libucrt.lib /libpath:"c:\Program Files (x86)\Windows Kits\10\lib\10.0.10150.0\ucrt\x64" /libpath:"c:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\lib\amd64" /libpath:"c:\Program Files (x86)\Windows Kits\8.1\lib\winv6.3\um\x64" /subsystem:console /machine:x64
 	}
 
 	if (comline.FHasCommand("-test"))

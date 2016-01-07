@@ -131,14 +131,15 @@ public:
 					,m_iStnodReturnType(-1)
 					,m_iStnodBody(-1)
 					,m_pTinproc(nullptr)
+					,m_fIsForeign(false)
 						{ ; }
 
-	int				m_iStnodProcName;
-	int				m_iStnodParameterList;
-	int				m_iStnodReturnType;
-	int				m_iStnodBody;
-	STypeInfoProcedure *
-					m_pTinproc;
+	int						m_iStnodProcName;
+	int						m_iStnodParameterList;
+	int						m_iStnodReturnType;
+	int						m_iStnodBody;
+	STypeInfoProcedure *	m_pTinproc;
+	bool					m_fIsForeign;
 };
 
 class CSTEnum // tag = stenum
@@ -250,6 +251,8 @@ inline bool FIsIdentifier(CSTNode * pStnod, const char * pChzIdent)
 
 	return pStnod->m_pStval->m_str == pChzIdent;
 }
+
+EWC::CString StrFromIdentifier(CSTNode * pStnod);
 
 
 

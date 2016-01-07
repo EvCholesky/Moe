@@ -99,7 +99,8 @@ void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCh
 	// BB - need to do file/line lookup from pStnod
 	//printf("%s(%d) error:", pJlex->m_pChzFilename, NLine(pJlex));
 	
-	printf (" xx(xx) error: ");
+	const SLexerLocation & lexloc = pStnod->m_lexloc;
+	printf ("%s(%d) error: ", lexloc.m_strFilename.PChz(), -1);
 	++pTcwork->m_cError;
 	
 	if (pChz)
@@ -109,17 +110,6 @@ void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCh
 		vprintf(pChz, ap);
 		printf("\n");
 	}
-}
-
-CString StrFromIdentifier(CSTNode * pStnod)
-{
-	if (EWC_FVERIFY(pStnod->m_park == PARK_Identifier, "expected identifier") && 
-		EWC_FVERIFY(pStnod->m_pStval, "identifier encountered without string value"))
-	{
-		return pStnod->m_pStval->m_str;
-	}
-
-	return CString();
 }
 
 CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
