@@ -562,7 +562,7 @@ void ExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
 		{
 			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTin;
 			*pCBit = pTinint->m_cBit;	
-			*pFSigned = pTinint->m_fSigned;
+			*pFSigned = pTinint->m_fIsSigned;
 		} break;
 	case TINK_Float:
 		{
@@ -783,26 +783,27 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			{
 			case LITK_Integer:
 				{
-					switch (pStval->m_litty.m_litsize)
+					switch (pStval->m_litty.m_cBit)
 					{
-					case LITSIZE_8:		pLconst = pLbuild->getInt8(U8Coerce(pStval->m_nUnsigned));		break;
-					case LITSIZE_16:	pLconst = pLbuild->getInt16(U16Coerce(pStval->m_nUnsigned));	break;
-					case LITSIZE_32:	pLconst = pLbuild->getInt32(U32Coerce(pStval->m_nUnsigned));	break;
-					case LITSIZE_Nil: // fall through
-					case LITSIZE_64:	pLconst = pLbuild->getInt64(pStval->m_nUnsigned);				break;
-					default:			EWC_ASSERT(false, "unhandled LITSIZE");
+					case 8:		pLconst = pLbuild->getInt8(U8Coerce(pStval->m_nUnsigned));		break;
+					case 16:	pLconst = pLbuild->getInt16(U16Coerce(pStval->m_nUnsigned));	break;
+					case 32:	pLconst = pLbuild->getInt32(U32Coerce(pStval->m_nUnsigned));	break;
+					case -1: // fall through
+					case 64:	pLconst = pLbuild->getInt64(pStval->m_nUnsigned);				break;
+					default:	EWC_ASSERT(false, "unhandled integer size");
 					}
 				}break;
 			case LITK_Float:
 				{
-					pLconst = llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), pStval->m_g);
-					/* this doesn't work, we don't propigate the resolved cBit for literals down yet
-					STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
-					switch (pTinfloat->m_cBit)
+					if (pStval->m_litty.m_cBit == 64)
 					{
-					case 32: pLconst = llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), pStval->m_g);
-					case 64: pLconst = llvm::ConstantFP::get(Type::getDoubleTy(llvm::getGlobalContext()), pStval->m_g);
-					}*/
+						pLconst = llvm::ConstantFP::get(Type::getDoubleTy(llvm::getGlobalContext()), pStval->m_g);
+					}
+					else
+					{
+						EWC_ASSERT(pStval->m_litty.m_cBit == 32, "unhandled float size");
+						pLconst = llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), pStval->m_g);
+					}
 				}break;
 			case LITK_Bool:
 				{
@@ -1069,13 +1070,13 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			CIRValue * pValRhsCast = PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOutput);
 			CIRInstruction * pInstOp = nullptr;
 
-			bool fSigned = true;
+			bool fIsSigned = true;
 			TINK tink = pTinOutput->m_tink;
 			if (pTinOutput->m_tink == TINK_Literal)
 			{
 				if (EWC_FVERIFY(pStnod->m_pStval, "literal with no value"))
 				{
-					fSigned = pStnod->m_pStval->m_litty.m_litsign == LITSIGN_Signed;
+					fIsSigned = pStnod->m_pStval->m_litty.m_fIsSigned;
 					switch (pStnod->m_pStval->m_litty.m_litk)
 					{
 					case LITK_Integer:	tink = TINK_Integer;	break;
@@ -1086,7 +1087,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			}
 			else if (pTinOutput->m_tink == TINK_Literal)
 			{
-				fSigned = ((STypeInfoInteger *)pValLhs->m_pStnod->m_pTin)->m_fSigned;
+				fIsSigned = ((STypeInfoInteger *)pValLhs->m_pStnod->m_pTin)->m_fIsSigned;
 			}
 
 			switch (tink)
@@ -1100,26 +1101,26 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			case TINK_Integer:
 				switch (pStnod->m_jtok)
 				{
-					case '+': 				pInstOp = pBuild->PInstCreateNAdd(pValLhs, pValRhs, "nAddTmp", fSigned); break;
-					case '-': 				pInstOp = pBuild->PInstCreateNSub(pValLhs, pValRhs, "nSubTmp", fSigned); break;
-					case '*': 				pInstOp = pBuild->PInstCreateNMul(pValLhs, pValRhs, "nMulTmp", fSigned); break;
-					case '/': 				pInstOp = pBuild->PInstCreateNDiv(pValLhs, pValRhs, "nDivTmp", fSigned); break;
+					case '+': 				pInstOp = pBuild->PInstCreateNAdd(pValLhs, pValRhs, "nAddTmp", fIsSigned); break;
+					case '-': 				pInstOp = pBuild->PInstCreateNSub(pValLhs, pValRhs, "nSubTmp", fIsSigned); break;
+					case '*': 				pInstOp = pBuild->PInstCreateNMul(pValLhs, pValRhs, "nMulTmp", fIsSigned); break;
+					case '/': 				pInstOp = pBuild->PInstCreateNDiv(pValLhs, pValRhs, "nDivTmp", fIsSigned); break;
 					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
 					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
 					case JTOK_LessEqual:
-						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSLE, pValLhs, pValRhs, "NCmpSLE");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSLE, pValLhs, pValRhs, "NCmpSLE");
 						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpULE, pValLhs, pValRhs, "NCmpULE");
 						break;
 					case JTOK_GreaterEqual:
-						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSGE, pValLhs, pValRhs, "NCmpSGE");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSGE, pValLhs, pValRhs, "NCmpSGE");
 						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpUGE, pValLhs, pValRhs, "NCmpUGE");
 						break;
 					case '<':
-						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSLT, pValLhs, pValRhs, "NCmpSLT");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSLT, pValLhs, pValRhs, "NCmpSLT");
 						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpULT, pValLhs, pValRhs, "NCmpULT");
 						break;
 					case '>':
-						if (fSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSGT, pValLhs, pValRhs, "NCmpSGT");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpSGT, pValLhs, pValRhs, "NCmpSGT");
 						else			pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpUGT, pValLhs, pValRhs, "NCmpUGT");
 						break;
 				} break;

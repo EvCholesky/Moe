@@ -255,7 +255,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 				CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 				pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
 
-				if (pJlex->m_litty.m_litk == LITK_Float)
+				if (pJlex->m_litk == LITK_Float)
 				{
 					pStval->m_g = pJlex->m_g;
 				}
@@ -263,7 +263,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 				{
 					pStval->m_nUnsigned = pJlex->m_n;
 				}
-				pStval->m_litty = pJlex->m_litty;
+				pStval->m_litty = SLiteralType(pJlex->m_litk);
 
 				pStnod->m_pStval = pStval;
 
@@ -1590,7 +1590,7 @@ bool FParseImportDirectives(CWorkspace * pWork, SJaiLexer * pJlex)
 		if ((rword == RWORD_ImportDirective) | (rword == RWORD_ForeignLibraryDirective))
 		{
 			JtokNextToken(pJlex);
-			if (pJlex->m_jtok == JTOK_Literal && pJlex->m_litty.m_litk == LITK_String)
+			if (pJlex->m_jtok == JTOK_Literal && pJlex->m_litk == LITK_String)
 			{
 				if (rword == RWORD_ImportDirective)
 				{
@@ -2007,6 +2007,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_pStenum(nullptr)
 ,m_lexloc(lexLoc)
 ,m_pTin(nullptr)
+,m_pTinOperand(nullptr)
 ,m_pSymtab(nullptr)
 ,m_pSym(nullptr)
 ,m_arypStnodChild(pAlloc)
@@ -2102,15 +2103,8 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
 			char * pChWork = pCh;
 			const SLiteralType & litty = pTinlit->m_stval.m_litty;
-			if ((litty.m_litk == LITK_Integer) & (litty.m_litsign != LITSIGN_Signed))
-			{
-				pChWork += CChCopy("Uint", pChWork, pChEnd - pChWork);
-			}
-			else
-			{
-				pChWork += CChCopy(PChzFromLitk(pTinlit->m_stval.m_litty.m_litk), pChWork, pChEnd - pChWork);
-			}
-			pChWork += CChCopy("Literal", pChWork, pChEnd-pChWork);
+
+			pChWork += CChCopy("Literal", pChWork, pChEnd - pChWork);
 			return pChWork - pCh;
 		}
     case TINK_Procedure:
@@ -2210,6 +2204,22 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 			pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_park, pChWork, pChEnd);
 		}
 		grfdbgstr.Clear(FDBGSTR_Type);
+	}
+
+	if (grfdbgstr.FIsSet(FDBGSTR_LiteralSize))
+	{
+		if (pStnod->m_park == PARK_Literal && 
+			pStnod->m_pStval != nullptr)
+		{
+			const SLiteralType & litty = pStnod->m_pStval->m_litty;
+
+			pChWork += CChFormat(pChWork, pChEnd - pChWork, ":%s", PChzFromLitk(litty.m_litk));
+			if (pStnod->m_pStval->m_litty.m_cBit >= 0)
+			{
+				pChWork += CChFormat(pChWork, pChEnd - pChWork, "%d", litty.m_cBit);
+			}
+		}
+		grfdbgstr.Clear(FDBGSTR_LiteralSize);
 	}
 	return pChWork - pCh;
 }
@@ -2455,7 +2465,7 @@ void TestParse()
 		pChzOut = "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-		pChzIn = "ForeignFunc :: () -> int #foreign";
+		pChzIn = "ForeignFunc :: () -> int #foreign;";
 		pChzOut = "(func @ForeignFunc @int)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 			

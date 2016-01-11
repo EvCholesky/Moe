@@ -9,3 +9,8 @@ extern "C" void PrintInt(int n)
 {
 	printf("%d\n", n);
 }
+
+extern "C" void PrintByte(char n)
+{
+	printf("%d\n", n);
+}

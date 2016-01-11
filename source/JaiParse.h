@@ -179,11 +179,12 @@ EWC_DEFINE_GRF(GRFSTNOD, FSTNOD, u8);
 
 enum FDBGSTR // DeBuG STRing Flags
 {
-	FDBGSTR_Name = 0x1,
-	FDBGSTR_Type = 0x2,
+	FDBGSTR_Name        = 0x1,
+	FDBGSTR_Type        = 0x2,
+	FDBGSTR_LiteralSize = 0x4,
 
-	FDBGSTR_None = 0x0,
-	FDBGSTR_All = 0x3,
+	FDBGSTR_None        = 0x0,
+	FDBGSTR_All         = 0x7,
 };
 EWC_DEFINE_GRF(GRFDBGSTR, FDBGSTR, u32);
 
@@ -227,6 +228,7 @@ public:
 	CSTEnum *				m_pStenum;
 	SLexerLocation			m_lexloc;
 	STypeInfo *				m_pTin;	
+	STypeInfo *				m_pTinOperand;	
 	CSymbolTable *			m_pSymtab;
 	SSymbol *				m_pSym;
 

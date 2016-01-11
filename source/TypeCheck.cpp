@@ -329,7 +329,7 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 
 inline s64 NSignedLiteralCast(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSTValue * pStval)
 {
-	if (pStval->m_litty.m_litsign == LITSIGN_Unsigned)
+	if (!pStval->m_litty.m_fIsSigned)
 	{
 		if (pStval->m_nUnsigned >= LLONG_MAX)
 		{
@@ -344,9 +344,7 @@ inline F64 GLiteralCast(CSTValue * pStval)
 {
 	switch (pStval->m_litty.m_litk)
 	{
-	case LITK_Integer:	return (pStval->m_litty.m_litsign == LITSIGN_Signed) ? 
-									(F64)pStval->m_nSigned : 
-									(F64)pStval->m_nUnsigned;
+	case LITK_Integer:	return (pStval->m_litty.m_fIsSigned) ? (F64)pStval->m_nSigned : (F64)pStval->m_nUnsigned;
 	case LITK_Float:	return pStval->m_g;
 	default: EWC_ASSERT(false, "expected number");
 	}
@@ -409,18 +407,17 @@ inline bool FComputeBinaryOpOnLiterals(
 	} 
 	else // both LITK_Integer
 	{
-		// BB - ignoring explicit LITSIZE here, Is it worth supporting?
-		EWC_ASSERT(littyLhs.m_litsize == LITSIZE_Nil, "ignoring literal size spec");
-		EWC_ASSERT(littyRhs.m_litsize == LITSIZE_Nil, "ignoring literal size spec");
+		EWC_ASSERT(littyLhs.m_cBit == -1, "expected unsized literal here");
+		EWC_ASSERT(littyRhs.m_cBit == -1, "expected unsized literal here");
 
-		bool fMixedSign = littyLhs.m_litsign != littyRhs.m_litsign;
+		bool fMixedSign = littyLhs.m_fIsSigned != littyRhs.m_fIsSigned;
 		if (!fMixedSign)
 		{
 			// consider it mixed sign if the result will be negative
 			fMixedSign |= ((jtokOperand == JTOK('-')) & (pStvalRhs->m_nUnsigned > pStvalLhs->m_nUnsigned));
 		}
 
-		if (fMixedSign | (littyLhs.m_litsign == LITSIGN_Signed))
+		if (fMixedSign | littyLhs.m_fIsSigned)
 		{
 			s64 nLhs = NSignedLiteralCast(pTcwork, pStnodLhs, pStvalLhs);
 			s64 nRhs = NSignedLiteralCast(pTcwork, pStnodRhs, pStvalRhs);
@@ -438,7 +435,7 @@ inline bool FComputeBinaryOpOnLiterals(
 			CSTValue * pStvalStnod = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
 			*pStvalStnod = *pStvalLhs;
 			pStvalStnod->m_nSigned = n;
-			pStvalStnod->m_litty.m_litsign = (n < 0) ? LITSIGN_Signed : LITSIGN_Unsigned;
+			pStvalStnod->m_litty.m_fIsSigned = (n < 0);
 			*ppStval = pStvalStnod;
 
 			STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
@@ -544,7 +541,7 @@ STypeInfo * PTinFindUpcast(
 			STypeInfoInteger * pTinintA = (STypeInfoInteger *)pTinA;
 			STypeInfoInteger * pTinintB = (STypeInfoInteger *)pTinB;
 
-			if (pTinintA->m_fSigned != pTinintB->m_fSigned)
+			if (pTinintA->m_fIsSigned != pTinintB->m_fIsSigned)
 				return nullptr;
 		
 			return (pTinintA->m_cBit >= pTinintB->m_cBit) ? pTinA : pTinB;
@@ -570,7 +567,7 @@ bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 				STypeInfoInteger * pTinintDst = (STypeInfoInteger *)pTinDst;
 
 				// BB - this could be more forgiving... allow signed/unsigned conversions if a higher cBit
-				return (pTinintDst->m_cBit >= pTinintSrc->m_cBit) & (pTinintDst->m_fSigned == pTinintSrc->m_fSigned);
+				return (pTinintDst->m_cBit >= pTinintSrc->m_cBit) & (pTinintDst->m_fIsSigned == pTinintSrc->m_fIsSigned);
 			} break;
 		case TINK_Float:
 			{
@@ -1016,12 +1013,12 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						}
 						else if (pStnodInit->m_pTin)
 						{
-							pStnodInit->m_pTin = PTinPromoteLiteralDefault(
+							pStnod->m_pTin = PTinPromoteLiteralDefault(
 													pTcwork,
 													pTcsentTop->m_pSymtab,
 													pStnodInit);
 
-							pStnod->m_pTin = pStnodInit->m_pTin;
+							//pStnod->m_pTin = pStnodInit->m_pTin;
 						}
 					}
 
@@ -1287,7 +1284,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 						if (EWC_FVERIFY((pTinLhs != nullptr) & (pTinRhs != nullptr), "unknown type in binary operation"))
 						{
-							STypeInfo * pTinUpcast = nullptr;
 							if ((pTinLhs->m_tink == TINK_Literal) & (pTinRhs->m_tink == TINK_Literal))
 							{
 								// this needs to be explicitly handled, create a new literal with the result
@@ -1311,6 +1307,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 											&pStval))
 									{
 										pStnod->m_pTin = pTinlit;
+										pStnod->m_pTinOperand = pTinlit;
 										pStnod->m_pStval = pStval;
 									}
 									else
@@ -1323,7 +1320,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							{
 								STypeInfo * pTinUpcastLhs = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodLhs, pTinRhs);
 								STypeInfo * pTinUpcastRhs = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodRhs, pTinLhs);
-								pTinUpcast = PTinFindUpcast(pTcwork, pSymtab, pTinUpcastRhs, pTinUpcastLhs);
+								STypeInfo * pTinUpcast = PTinFindUpcast(pTcwork, pSymtab, pTinUpcastRhs, pTinUpcastLhs);
 								if (!pTinUpcast)
 								{
 									CString strLhs = StrFromTypeInfo(pTinLhs);
@@ -1343,6 +1340,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 									(park == PARK_LogicalAndOrOp);
 
 								pStnod->m_pTin = (fIsLogicalOp) ? pSymtab->PTinBuiltin("bool") : pTinUpcast;
+								pStnod->m_pTinOperand = pTinUpcast;
 							}
 						}
 					}
@@ -1446,7 +1444,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 									if (jtok == JTOK('-') && tinkOperand == TINK_Integer)
 									{
 										STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinOperand;
-										if (!pTinint->m_fSigned)
+										if (!pTinint->m_fIsSigned)
 										{
 											CString strOp = StrFromTypeInfo(pTinOperand);
 											EmitError(pTcwork, pStnod, "negate operand not valid for unsigned type %s", strOp.PChz());
@@ -1524,6 +1522,299 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	pTcwork->m_hashPSymUntype.Remove(pSym);
 }
 
+enum LITSTOR
+{
+	LITSTOR_Nil = -1,
+	LITSTOR_Float,
+	LITSTOR_SInt,
+	LITSTOR_UInt,
+};
+
+static inline LITSTOR LitstoreFromLitk(LITK litk, bool fSigned)
+{
+	switch (litk)
+	{
+	case LITK_Integer:	return (fSigned) ? LITSTOR_SInt : LITSTOR_UInt;
+	case LITK_Float:	return LITSTOR_Float;
+	case LITK_Bool:		return LITSTOR_UInt;
+	default:			return LITSTOR_Nil;
+	}
+}
+
+static inline LITK LitkFromTink(TINK tink)
+{
+	// BB - LITK and TINK should merge
+	switch (tink)
+	{
+	case TINK_Integer:	return LITK_Integer;
+	case TINK_Float:	return LITK_Float;
+	case TINK_Bool:		return LITK_Bool;
+	case TINK_String:	return LITK_String;
+	default:			return LITK_Nil;
+	}
+}
+
+void FlushResolvedLiterals(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, STypeInfo * pTinResolve)
+{
+	switch (pStnod->m_park)
+	{
+	case PARK_Literal:
+		{
+			CSTValue * pStval = pStnod->m_pStval;
+			if (EWC_FVERIFY(pStval && pTinResolve, "trying to flush resolved literal without type"))
+			{
+				LITK litkNew = LitkFromTink(pTinResolve->m_tink);
+				bool fIsTinResolveSigned = (pTinResolve->m_tink != TINK_Bool);
+				if (pTinResolve->m_tink == TINK_Integer)
+					fIsTinResolveSigned |= ((STypeInfoInteger *)pTinResolve)->m_fIsSigned;
+
+				SLiteralType littyOld = pStval->m_litty.m_litk;
+				LITSTOR litstorNew = LitstoreFromLitk(litkNew, fIsTinResolveSigned);
+				LITSTOR litstorOld = LitstoreFromLitk(littyOld.m_litk, pStval->m_tfnSigned == TFN_True);
+
+				if (litkNew != LITK_Nil && litstorOld != litstorNew)
+				{
+					// we need to 'cast' literals when you init something with a different type of literal:
+					// fTest : bool = 3; gTest : float = 10;
+
+					pStval->m_litty.m_litk = litkNew;
+					if (litstorOld == LITSTOR_Float && litkNew == LITK_Integer)
+					{
+						EmitError(pTcwork, pStnod, "Initializing integer with float literal");
+					}
+
+					switch (litstorNew)
+					{
+					case LITSTOR_Float:
+						{
+							pStval->m_g = (litstorOld == LITSTOR_UInt) ? (F64)(pStval->m_nUnsigned) : (F64)(pStval->m_nSigned);
+							pStval->m_litty.m_fIsSigned = true;
+						}break;
+					case LITSTOR_SInt:
+						{
+							pStval->m_litty.m_fIsSigned = true;
+							switch (litstorOld)
+							{
+							case LITSTOR_Float: 
+								pStval->m_nSigned = (s64)pStval->m_g;
+								break;
+							case LITSTOR_UInt:
+								if (pStval->m_nUnsigned > LLONG_MAX)
+								{
+									EmitError(pTcwork, pStnod, "Signed int constant too large for s64");
+								}
+								pStval->m_nSigned = (s64)pStval->m_nUnsigned;
+								break;
+							}
+						}break;
+					case LITSTOR_UInt:
+						{
+							pStval->m_litty.m_fIsSigned = false;
+							switch (litstorOld)
+							{
+							case LITSTOR_Float: 
+								pStval->m_nUnsigned = (u64)pStval->m_g;
+								break;
+							case LITSTOR_SInt:
+								if (pStval->m_nSigned < 0)
+								{
+									EmitError(pTcwork, pStnod, "Unsigned int constant with negative value");
+								}
+								pStval->m_nUnsigned = (u64)pStval->m_nSigned;
+								break;
+							}
+						}
+					}
+				}
+
+				switch (pStval->m_litty.m_litk)
+				{
+				case LITK_Integer:
+					{
+						if(!EWC_FVERIFY(pTinResolve && pTinResolve->m_tink == TINK_Integer, "expected integer type"))
+							return;
+
+						STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinResolve;
+						pStval->m_litty.m_cBit = pTinint->m_cBit;
+					}break;
+				case LITK_Float:
+					{
+						if(!EWC_FVERIFY(pTinResolve && pTinResolve->m_tink == TINK_Float, "expected float type"))
+							return;
+
+						STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTinResolve;
+						pStval->m_litty.m_cBit = pTinfloat->m_cBit;
+					}break;
+				}
+			}
+		}break;
+	case PARK_Identifier:
+		return;
+	case PARK_StructDefinition:
+	case PARK_ParameterList:
+	case PARK_List:
+		{
+			for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
+			{
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnod), nullptr);
+			}
+		}break;
+	case PARK_ProcedureDefinition:
+		{
+			CSTProcedure * pStproc = pStnod->m_pStproc;
+			if (!EWC_FVERIFY(pStproc, "missing procedure parse data"))
+				return;
+
+			if (pStproc->m_iStnodParameterList >= 0)
+			{
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(pStproc->m_iStnodParameterList), nullptr);
+			}
+
+			if (pStproc->m_iStnodBody >= 0)
+			{
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(pStproc->m_iStnodBody), nullptr);
+			}
+		}break;
+	case PARK_ProcedureCall:
+		{
+			if (!EWC_FVERIFY(pStnod->m_pSym && pStnod->m_pSym->m_pStnodDefinition, "Unknown procedure in call"))
+				return;
+
+			CSTNode * pStnodDefinition = pStnod->m_pSym->m_pStnodDefinition;
+			STypeInfoProcedure * pTinproc = (STypeInfoProcedure *)pStnodDefinition->m_pTin;
+			if (!EWC_FVERIFY(pTinproc && pTinproc->m_tink == TINK_Procedure, "expected procedure type"))
+				return;
+
+			for (int iStnodArg = 1; iStnodArg < pStnod->CStnodChild(); ++iStnodArg)
+			{
+				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodArg);
+				STypeInfo * pTinParam = pTinproc->m_arypTinParams[iStnodArg - 1];
+
+				FlushResolvedLiterals(pTcwork, pStnodArg, pTinParam);
+			}
+		}break;
+	case PARK_EnumConstant:
+	case PARK_EnumDefinition:
+		{
+			EWC_ASSERT(false, "WIP Enum typeCheck not finished");
+			return;
+		}break;
+	case PARK_Decl:
+		{
+			CSTDecl * pStdecl = pStnod->m_pStdecl;
+			if (!EWC_FVERIFY(pStdecl, "missing decl parse data"))
+				return;
+			if (pStdecl->m_iStnodInit >= 0)
+			{
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(pStdecl->m_iStnodInit), pStnod->m_pTin);
+			}
+		}break;
+	case PARK_AssignmentOp:
+		{
+			if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to assignment op"))
+			{
+				CSTNode * pStnodRhs = pStnod->PStnodChild(1);
+				FlushResolvedLiterals(pTcwork, pStnodRhs, pStnod->m_pTin);
+			}
+		}break;
+	case PARK_ReservedWord:
+		{
+			if (EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
+			{
+				RWORD rword = pStnod->m_pStval->m_rword;
+				switch (rword)
+				{
+				case RWORD_If:
+					{
+						if (pStnod->CStnodChild() < 2)
+						{
+							EmitError(pTcwork, pStnod, "encountered if statement without expected predicate,child,[else]");
+							return;
+						}
+
+						STypeInfo * pTinBool = pStnod->m_pTin;
+						if (EWC_FVERIFY(pTinBool->m_tink == TINK_Bool, "expected bool type for predicate"))
+						{
+							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pTinBool);
+						}
+
+						for (int iStnodArg = 1; iStnodArg < pStnod->CStnodChild(); ++iStnodArg)
+						{
+							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnodArg), nullptr);
+						}
+					} break;
+				case RWORD_Else:
+					{
+						for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
+						{
+							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnod), nullptr);
+						}
+					} break;
+				case RWORD_Return:
+					{
+						for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
+						{
+							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnod), pStnod->m_pTin);
+						}
+					}break;
+				default:
+					EmitError(pTcwork, pStnod, "unhandled reserved word '%s' in FlushResolvedLiterals", PChzFromRword(rword));
+					return;
+				}
+			}
+		}break;
+	case PARK_AdditiveOp:
+	case PARK_MultiplicativeOp:
+	case PARK_ShiftOp:
+	case PARK_BitwiseAndOrOp:
+		{
+			// binary ops where the return type is the same as the operands
+			if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to binary ops"))
+			{
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pTinResolve);
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(1), pTinResolve);
+			}
+		}break;
+	case PARK_RelationalOp:
+	case PARK_EqualityOp:
+	case PARK_LogicalAndOrOp:
+		{
+			// binary ops where the return type is bool
+			if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to binary ops"))
+			{
+				EWC_ASSERT(pStnod->m_pTinOperand, "expected operand type info");
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pStnod->m_pTinOperand);
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(1), pStnod->m_pTinOperand);
+			}
+		}break;
+	case PARK_UnaryOp:
+		{
+			if (EWC_FVERIFY(pStnod->CStnodChild() == 1, "expected one operand to unary operations"))
+			{
+				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pTinResolve);
+			}
+		}break;
+	}
+}
+
+void PerformFlushResolvedLiteralsPass(
+	STypeCheckWorkspace * pTcwork,
+	CAry<CWorkspace::SEntry> * paryEntry)
+{
+	// Type checking has done a bottom up pass resolving literals (as tightly as possible, or using default rules)
+	// Now we need to push those resolved literal types down the tree. This could be avoided (maybe?) once the
+	// code to collapse literal expressions also collapses the AST nodes into a single constant.
+
+	// Note: this only sets CSTNode::m_pStval->m_litty's type info, not the STypeInfoLiteral::m_litty 
+	//  as they should be unique-ified literal values (?) (yuck!)
+
+	CWorkspace::SEntry * pEntryMac = paryEntry->PMac();
+	for (CWorkspace::SEntry * pEntry = paryEntry->A(); pEntry != pEntryMac; ++pEntry)
+	{
+		FlushResolvedLiterals(pTcwork, pEntry->m_pStnod, nullptr);
+	}
+}
+
 void PerformTypeCheck(
 	CAlloc * pAlloc,
 	CSymbolTable * pSymtabTop,
@@ -1590,10 +1881,10 @@ void PerformTypeCheck(
 		}
 	}
 
+	PerformFlushResolvedLiteralsPass(pTcwork, paryEntry);
+
 	pAlloc->EWC_DELETE(pTcwork);
 }
-
-
 
 void AssertTestTypeCheck(
 	CWorkspace * pWork,
@@ -1618,7 +1909,7 @@ void AssertTestTypeCheck(
 	char * pCh = aCh;
 	char * pChMax = &aCh[EWC_DIM(aCh)];
 
-	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type);
+	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type|FDBGSTR_LiteralSize);
 
 	EWC_ASSERT(FAreSame(aCh, pChzOut), "type check debug string doesn't match expected value");
 
@@ -1641,24 +1932,24 @@ void TestTypeCheck()
 	const char * pChzIn;
 	const char * pChzOut;
 	pChzIn =	"{ i:=5; foo:=i; g:=g_g; } g_g:=2.2;";
-	pChzOut = "({} (int @i int) (int @foo int) (float @g float)) (float @g_g float)";
+	pChzOut = "({} (int @i Literal:Int64) (int @foo int) (float @g float)) (float @g_g Literal:Float32)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"i:= (5-4) + (5-6); g:=2.2 + (3.3*10);";
-	pChzOut = "(int @i (int (UintLiteral UintLiteral UintLiteral) (IntLiteral UintLiteral UintLiteral))) "
-				"(float @g (float FloatLiteral (FloatLiteral FloatLiteral UintLiteral)))";
+	pChzOut = "(int @i (Literal (Literal Literal:Int64 Literal:Int64) (Literal Literal:Int64 Literal:Int64))) "
+				"(float @g (Literal Literal:Float32 (Literal Literal:Float32 Literal:Float32)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:=2; n = 100-n;";
-	pChzOut ="(int @n int) (int int (int UintLiteral int))";
+	pChzOut ="(int @n Literal:Int64) (int int (int Literal:Int64 int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : float64 = 2.2;";
-	pChzOut = "({} (s8 @i s8 UintLiteral) (s8 @foo s8) (s16 @bar s16 s8) (float64 @g float64)) (float64 @g_g float64 FloatLiteral)";
+	pChzOut = "({} (s8 @i s8 Literal:Int8) (s8 @foo s8) (s16 @bar s16 s8) (float64 @g float64)) (float64 @g_g float64 Literal:Float64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";
-	pChzOut = "({} (bool @i bool) (bool @foo bool) (bool @g bool)) (bool @g_g bool BoolLiteral)";
+	pChzOut = "({} (bool @i Literal:Bool) (bool @foo bool) (bool @g bool)) (bool @g_g bool Literal:Bool)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
@@ -1666,23 +1957,23 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : string = \"huzzah\";";
-	pChzOut = "({} (string @i string) (string @foo string) (string @g string)) (string @g_g string StringLiteral)";
+	pChzOut = "({} (string @i Literal:String) (string @foo string) (string @g string)) (string @g_g string Literal:String)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ pN:* s8; pNInfer:=pN; pNTest:*s8=null;}";
-	pChzOut = "({} (*s8 @pN (*s8 s8)) (*s8 @pNInfer *s8) (*s8 @pNTest (*s8 s8) NullLiteral))";
+	pChzOut = "({} (*s8 @pN (*s8 s8)) (*s8 @pNInfer *s8) (*s8 @pNTest (*s8 s8) Literal:Null))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ pN:** s8; pNInfer:=pN; pNTest:**s8=null;}";
-	pChzOut = "({} (**s8 @pN (**s8 (*s8 s8))) (**s8 @pNInfer **s8) (**s8 @pNTest (**s8 (*s8 s8)) NullLiteral))";
+	pChzOut = "({} (**s8 @pN (**s8 (*s8 s8))) (**s8 @pNInfer **s8) (**s8 @pNTest (**s8 (*s8 s8)) Literal:Null))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; foo=6; i = foo; }";
-	pChzOut = "({} (s8 @i s8 UintLiteral) (s8 @foo s8) (s8 s8 UintLiteral) (s8 s8 s8))";
+	pChzOut = "({} (s8 @i s8 Literal:Int8) (s8 @foo s8) (s8 s8 Literal:Int8) (s8 s8 s8))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; fBool:bool = foo==i; fBool = i<2; }";
-	pChzOut = "({} (s8 @i s8 UintLiteral) (s8 @foo s8) (bool @fBool bool (bool s8 s8)) (bool bool (bool s8 UintLiteral)))";
+	pChzOut = "({} (s8 @i s8 Literal:Int8) (s8 @foo s8) (bool @fBool bool (bool s8 s8)) (bool bool (bool s8 Literal:Int8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i; }";
@@ -1698,7 +1989,7 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
-	pChzOut = "({} (s64 @n s64) (bool (bool s64 UintLiteral) (s64 s64 UintLiteral) (??? (s64 s64 UintLiteral))))";
+	pChzOut = "({} (s64 @n s64) (bool (bool s64 Literal:Int64) (s64 s64 Literal:Int64) (??? (s64 s64 Literal:Int64))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA); }";
@@ -1706,35 +1997,35 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s64; if n n = 5; else n = 6;}";
-	pChzOut = "({} (s64 @n s64) (bool s64 (s64 s64 UintLiteral) (??? (s64 s64 UintLiteral))))";
+	pChzOut = "({} (s64 @n s64) (bool s64 (s64 s64 Literal:Int64) (??? (s64 s64 Literal:Int64))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";
-	pChzOut		= "(AddNums() @AddNums (Params (int @a int) (int @b int)) int ({} (int (int int int))))"
-					" (int @n (int @AddNums UintLiteral UintLiteral))";
+	pChzOut		= "(AddNums() @AddNums (Params (int @a int) (int @b Literal:Int64)) int ({} (int (int int int))))"
+					" (int @n (int @AddNums Literal:Int64 Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
-	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn UintLiteral)";
+	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
-	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn UintLiteral)";
+	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { n:int=2; Foo :: () -> int { n2:=n; g:=Bar();}    Bar :: () -> float { n:=Foo(); } }";
 	pChzOut		=	"(Foo() @Foo int ({} (int @n2 int) (float @g (float @Bar))))"
 					" (Bar() @Bar float ({} (int @n (int @Foo))))"
-					" ({} (int @n int UintLiteral))";
+					" ({} (int @n int Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		= "({} (int @ovr int) ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float)) (int @n int))";
+	pChzOut		= "({} (int @ovr Literal:Int64) ({} (int @nNest int) (float @ovr float Literal:Float32) (float @g float)) (int @n int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		=	"(Foo() @Foo void ({} (int @nNest int) (float @ovr float FloatLiteral) (float @g float) (void)))"
-					" ({} (int @ovr int) (int @n int))";
+	pChzOut		=	"(Foo() @Foo void ({} (int @nNest int) (float @ovr float Literal:Float32) (float @g float) (void)))"
+					" ({} (int @ovr Literal:Int64) (int @n int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	StaticShutdownStrings(&allocString);

@@ -75,11 +75,11 @@ struct STypeInfoInteger : public STypeInfo // tag = tinint
 			STypeInfoInteger(const char * pChzName, u32 cBit, bool fSigned)
 			:STypeInfo(pChzName, s_tink)
 			,m_cBit(cBit)
-			,m_fSigned(fSigned)
+			,m_fIsSigned(fSigned)
 				{ ; }
 
 	u32		m_cBit;
-	bool	m_fSigned;
+	bool	m_fIsSigned;
 };
 
 struct STypeInfoFloat : public STypeInfo	// tag = tinfloat

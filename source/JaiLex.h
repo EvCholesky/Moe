@@ -113,39 +113,26 @@ enum LITK
 enum LITSIGN
 {
 	LITSIGN_Unsigned,
-	LITSIGN_Signed,
-
-	EWC_MAX_MIN_NIL(LITSIGN)
+	LITSIGN_Signed
 };
-
-enum LITSIZE
-{
-	LITSIZE_8,
-	LITSIZE_16,
-	LITSIZE_32,
-	LITSIZE_64,
-
-	EWC_MAX_MIN_NIL(LITSIZE)
-};
-
 
 struct SLiteralType	// litty
 {
 			SLiteralType()
 			:m_litk(LITK_Nil)
-			,m_litsign(LITSIGN_Nil)
-			,m_litsize(LITSIZE_Nil)
+			,m_cBit(-1)
+			,m_fIsSigned(true)
 				{ ; }
 
-			SLiteralType(LITK litk, LITSIGN litsign, LITSIZE litsize)
+			SLiteralType(LITK litk, LITSIGN litsign = LITSIGN_Signed, s8 cBit = -1)
 			:m_litk(litk)
-			,m_litsign(litsign)
-			,m_litsize(litsize)
+			,m_cBit(cBit)
+			,m_fIsSigned(litsign == LITSIGN_Signed)
 				{ ; }
 
 	LITK	m_litk;
-	LITSIGN	m_litsign;
-	LITSIZE	m_litsize;
+	s8		m_cBit;
+	bool	m_fIsSigned;
 };
 
 struct SJaiLexer // tag = jlex
@@ -168,7 +155,7 @@ struct SJaiLexer // tag = jlex
    RWORD			m_rword;
    F64				m_g;
    u64				m_n;
-   SLiteralType		m_litty;
+   LITK				m_litk;
    char *			m_pChString;
    size_t			m_cChString;
 };

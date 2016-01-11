@@ -26,9 +26,7 @@ static int JtokSetTokinf(SJaiLexer * pJlex, JTOK jtok, const char * pChStart, co
 	pJlex->m_pChEnd = pChEnd;
 	pJlex->m_pChParse = pChEnd + 1;
 
-	pJlex->m_litty.m_litk = LITK_Nil;
-	pJlex->m_litty.m_litsign = LITSIGN_Nil;
-	pJlex->m_litty.m_litsize = LITSIZE_Nil;
+	pJlex->m_litk = LITK_Nil;
 	return 1;
 }
 
@@ -104,42 +102,8 @@ static int JtokParseSuffixes(SJaiLexer * pJlex, JTOK jtok, LITK litk, const char
 	pJlex->m_pChString = pJlex->m_aChStorage;
 	pJlex->m_cChString = 0;
 
-	// don't know the suffix format so now I'm going with 
-	//	s,u			signed/unsigned 
-	//	b,h,w,d		byte,half(2bytes),word(4bytes),double(8bytes)
-
-	// would it be better to use types?
-	// 5s8 (5 : s8) 200s16 (200 : s16) etc... very understandable, less readable...
-
-	// Note: JBlow says literal suffixes shouldn't be needed for Jai, I'll leave them here until I'm sure.
-
-
-	SLiteralType litty;
-	litty.m_litk = litk;
-	litty.m_litsign = LITSIGN_Nil;
-	litty.m_litsize = LITSIZE_Nil;
-
-	while (((*pChzCur >= 'a') & (*pChzCur <= 'z')) | ((*pChzCur >= 'A') & (*pChzCur <= 'Z'))) 
-	{
-		switch (NToLower(*pChzCur))
-		{
-			case 's': litty.m_litsign = LITSIGN_Signed;		break;
-			case 'u': litty.m_litsign = LITSIGN_Unsigned;	break;
-			case 'b': litty.m_litsize = LITSIZE_8;		    break;
-			case 'h': litty.m_litsize = LITSIZE_16;		    break;
-			case 'w': litty.m_litsize = LITSIZE_32;		    break;
-			case 'd': litty.m_litsize = LITSIZE_64;	        break;
-			default: 
-				return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart, pChzCur);
-		}
-
-		if (pJlex->m_cChString+1 >= pJlex->m_cChStorage)
-			return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart, pChzCur);
-		pJlex->m_pChString[pJlex->m_cChString++] = *pChzCur++;
-	}
-
 	int jtokReturn = JtokSetTokinf(pJlex, jtok, pChzStart, pChzCur-1);
-	pJlex->m_litty = litty;
+	pJlex->m_litk = litk;
 	return jtokReturn;
 }
 
@@ -250,7 +214,7 @@ static int JtokParseString(SJaiLexer * pJlex, const char * pChz)
 	pJlex->m_cChString = pChOut - pJlex->m_aChStorage;
 
 	int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz);
-	pJlex->m_litty.m_litk = LITK_String;
+	pJlex->m_litk = LITK_String;
 	return jtok;
 }
 
@@ -458,7 +422,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 		    if (pChz == pJlex->m_pChEof || *pChz != '\'')
 		       return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart, pChz);
 			int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz+1);
-			pJlex->m_litty.m_litk = LITK_Char;
+			pJlex->m_litk = LITK_Char;
 			return jtok;
 		}
 		goto single_char;
@@ -509,17 +473,6 @@ int JtokNextToken(SJaiLexer * pJlex)
 					#endif
 
 					int jtok = JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Float, pChz, pChzNext);
-
-					if (pJlex->m_litty.m_litsign != LITSIGN_Nil)
-					{
-						// floats are always signed
-						return JtokSetTokinf(pJlex, JTOK_ParseError, pChz, pChzNext);
-					}
-	
-					if (pJlex->m_litty.m_litsize != LITSIZE_Nil && pJlex->m_litty.m_litsize < LITSIZE_32)
-					{
-						return JtokSetTokinf(pJlex, JTOK_ParseError, pChz, pChzNext);
-					}
 					return jtok;
 				}
 			}
@@ -561,9 +514,7 @@ void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInpu
 	pJlex->m_pChEnd = nullptr;
 	pJlex->m_n = 0;
 	pJlex->m_g = 0;
-	pJlex->m_litty.m_litk = LITK_Nil;
-	pJlex->m_litty.m_litsign = LITSIGN_Nil;
-	pJlex->m_litty.m_litsize = LITSIZE_Nil;
+	pJlex->m_litk = LITK_Nil;
 	pJlex->m_rword = RWORD_Nil;
 }
 
@@ -634,7 +585,7 @@ void AssertMatches(
 	const F64 * aG = nullptr,
 	const char * apChz[] = nullptr,
 	const RWORD * aRword = nullptr,
-	const SLiteralType * aLitty = nullptr)
+	const LITK * aLitk = nullptr)
 {
 	SJaiLexer jlex;
 	char aChStorage[1024 * 8];
@@ -652,7 +603,7 @@ void AssertMatches(
 		if (apChz && apChz[iJtok] == nullptr)
 			apChz = nullptr;
 
-		bool fIsStringLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litty.m_litk == LITK_String;
+		bool fIsStringLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_String;
 		if (apChz && jlex.m_jtok == JTOK_Identifier || fIsStringLiteral)
 		{
 			EWC_ASSERT(
@@ -661,29 +612,23 @@ void AssertMatches(
 			EWC_ASSERT(
 				EWC::FAreSame(apChz[iJtok], jlex.m_pChString, jlex.m_cChString), 
 				"lexed string doesn't match expected value");
-			EWC_ASSERT(jlex.m_litty.m_litsize == LITSIZE_Nil && jlex.m_litty.m_litsign == LITSIGN_Nil, "errant literal type");
 		}
 
-		bool fIsIntLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litty.m_litk == LITK_Integer;
+		bool fIsIntLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_Integer;
 		if (aN && fIsIntLiteral)
 		{
 			EWC_ASSERT(jlex.m_n == aN[iJtok], "integer literal value doesn't match expected"); 
 		}
 
-		bool fIsFloatLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litty.m_litk == LITK_Float;
+		bool fIsFloatLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_Float;
 		if (aG && fIsFloatLiteral)
 		{
 			EWC_ASSERT(jlex.m_g == aG[iJtok], "float literal value doesn't match expected"); 
-			EWC_ASSERT(
-				(jlex.m_litty.m_litsize == LITSIZE_Nil || jlex.m_litty.m_litsize >= LITSIZE_32) &&
-				jlex.m_litty.m_litsign == LITSIGN_Nil, "errant literal type");
 		}
 
-		if (aLitty && (fIsIntLiteral || fIsFloatLiteral))
+		if (aLitk)
 		{
-			EWC_ASSERT(aLitty[iJtok].m_litk == jlex.m_litty.m_litk, "Literal type mismatch");
-			EWC_ASSERT(aLitty[iJtok].m_litsize == jlex.m_litty.m_litsize, "Literal type mismatch");
-			EWC_ASSERT(aLitty[iJtok].m_litsign == jlex.m_litty.m_litsign, "Literal type mismatch");
+			EWC_ASSERT(aLitk[iJtok] == jlex.m_litk, "Literal type mismatch");
 		}
 
 		if (aRword && jlex.m_jtok == JTOK_ReservedWord)
@@ -729,7 +674,7 @@ void TestLexing()
 	const char * s_apChzMiscStrings[] = {"foo", "", "bar", "", "guh", "", "wut", "", nullptr};
 	AssertMatches(s_pChzMisc, s_aJtokMisc, nullptr, nullptr, s_apChzMiscStrings);
 
-	const char * s_pChzNum = "2.456,5ub,7.3D,-1,0xFFFF, 12.34e12 12.34e-12";
+	const char * s_pChzNum = "2.456,5,7.3,-1,0xFFFF, 12.34e12 12.34e-12";
 	const JTOK s_aJtokNum[] = {JTOK_Literal, JTOK(','), 
 								JTOK_Literal, JTOK(','), 
 								JTOK_Literal, JTOK(','), 
@@ -737,13 +682,13 @@ void TestLexing()
 								JTOK_Literal, JTOK(','),
 								JTOK_Literal, JTOK_Literal,
 								JTOK_Nil };
-	const SLiteralType s_aLitty[] = {	SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
-										SLiteralType(LITK_Integer, LITSIGN_Unsigned, LITSIZE_8), SLiteralType(),
-										SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_64), SLiteralType(),
-										SLiteralType(), SLiteralType(LITK_Integer, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
-										SLiteralType(LITK_Integer, LITSIGN_Nil, LITSIZE_Nil), SLiteralType(),
-										SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_Nil), 
-										SLiteralType(LITK_Float, LITSIGN_Nil, LITSIZE_Nil),
+	const LITK s_aLitk[] = {	LITK_Float, LITK_Nil,
+								LITK_Integer, LITK_Nil,
+										LITK_Float, LITK_Nil,
+										LITK_Nil, LITK_Integer, LITK_Nil,
+										LITK_Integer, LITK_Nil,
+										LITK_Float,
+										LITK_Float
 									};
 										
 	const int s_aNNum[] = {0,	  0, 5, 0, 0,   0, 0, 1, 0, 65535, 0, 0,        0};	// negative integer literal comes through as two tokens
@@ -751,7 +696,7 @@ void TestLexing()
 	static_assert(EWC_DIM(s_aJtokNum)-1 == EWC_DIM(s_aNNum), "s_aNNum size mismatch");
 	static_assert(EWC_DIM(s_aJtokNum)-1 == EWC_DIM(s_aGNum), "s_aGNum size mismatch");
 
-	AssertMatches(s_pChzNum, s_aJtokNum, s_aNNum, s_aGNum, nullptr, nullptr, s_aLitty);
+	AssertMatches(s_pChzNum, s_aJtokNum, s_aNNum, s_aGNum, nullptr, nullptr, s_aLitk);
 
 	const char * s_pChzRword = "for:=new.if\nelse while SOA";
 	const JTOK s_aJtokRword[] = {JTOK_ReservedWord, JTOK_ColonEqual, 
