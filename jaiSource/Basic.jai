@@ -1,3 +1,4 @@
+#foreign_library "Basic"
 
 PrintFloat :: (g : float) #foreign;
 PrintInt :: (n : int) #foreign;

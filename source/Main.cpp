@@ -20,6 +20,7 @@
 #include "JaiLex.h"
 #include "JaiParse.h"
 #include "Workspace.h"
+#include "Windows.h"
 
 using namespace EWC;
 
@@ -124,13 +125,110 @@ int main(int cpChzArg, const char * apChzArg[])
 		CWorkspace work(&alloc, &errman);
 
 		InitLLVM();
-		CompileModule(&work, comline.m_pChzFilename);
-		ShutdownLLVM();
 
-		StaticShutdownStrings(&allocString);
+		BeginWorkspace(&work);
+
+#ifdef EWC_TRACK_ALLOCATION
+		u8 aBAltrac[1024 * 100];
+		CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
+
+		CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
+		work.m_pAlloc->SetAltrac(pAltrac);
+#endif
+
+		bool fSuccess = FCompileModule(&work, comline.m_pChzFilename);
+		ShutdownLLVM();
 
 		// current linker command line:
 		// link simple.obj ..\x64\debug\basic.lib libcmt.lib libucrt.lib /libpath:"c:\Program Files (x86)\Windows Kits\10\lib\10.0.10150.0\ucrt\x64" /libpath:"c:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\lib\amd64" /libpath:"c:\Program Files (x86)\Windows Kits\8.1\lib\winv6.3\um\x64" /subsystem:console /machine:x64
+
+		if (fSuccess && !comline.FHasCommand("-nolink"))
+		{
+			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
+			//static const char * s_pChzCommandLine = "C:/Program Files (x86)/Microsoft Visual Studio 10.0/VC/bin/amd64/link.exe";
+
+			static const char * s_pChzCRTLibraries = "libcmt.lib libucrt.lib";
+			static const char * s_apChzDefaultPaths[] =
+			{
+				"c:/Code/jailang/x64/debug",
+				"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
+				"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
+				"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
+			};
+
+			static const char * s_pChzOptions = "/subsystem:console /machine:x64";
+
+			const char * s_pChzPath = "c:/Code/jailang/jaiSource";
+
+			char aChzCommandLine[2048];
+			char * pChzCmd = aChzCommandLine;
+			const char * pChzCmdMac = EWC_PMAC(aChzCommandLine);
+
+			pChzCmd += CChFormat(
+				pChzCmd,
+				pChzCmdMac - pChzCmd,
+				"link %s %s %s ",
+				work.m_pChzObjectFilename,
+				s_pChzCRTLibraries,
+				s_pChzOptions);
+
+			CWorkspace::SFile ** ppFileMac = work.m_arypFile.PMac();
+			for (CWorkspace::SFile ** ppFile = work.m_arypFile.A(); ppFile != ppFileMac; ++ppFile)
+			{
+				const CWorkspace::SFile & file = **ppFile;
+				if (file.m_filek != CWorkspace::FILEK_Library)
+					continue;
+
+				pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "%s.lib ",file.m_strFilename.PChz());
+			}
+
+			for (int ipChz = 0; ipChz < EWC_DIM(s_apChzDefaultPaths); ++ipChz)
+			{
+				pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "/libpath:\"%s\" ", s_apChzDefaultPaths[ipChz]);
+			}
+
+			STARTUPINFOA startupinfo = {};
+			startupinfo.cb = sizeof(startupinfo);
+			startupinfo.dwFlags = STARTF_USESHOWWINDOW;
+			startupinfo.wShowWindow = SW_HIDE;
+
+			PROCESS_INFORMATION processinfo = {};
+
+			if (CreateProcessA(
+					s_pChzCommand,
+					aChzCommandLine,
+					0,
+					0,
+					false,
+					0,
+					0,
+					s_pChzPath,
+					&startupinfo,
+					&processinfo))
+			{
+				WaitForSingleObject(processinfo.hProcess, INFINITE);
+
+				DWORD nExitCode;
+				(void) GetExitCodeProcess(processinfo.hProcess, &nExitCode);
+				CloseHandle(processinfo.hProcess);
+				CloseHandle(processinfo.hThread);
+			}
+			else
+			{
+				DWORD nErrorCode = GetLastError();
+			}
+
+			printf("\n\n%s\n\n", aChzCommandLine);
+		}
+
+		EndWorkspace(&work);
+
+#ifdef EWC_TRACK_ALLOCATION
+		DeleteAltrac(&allocAltrac, pAltrac);
+		work.m_pAlloc->SetAltrac(nullptr);
+#endif
+		StaticShutdownStrings(&allocString);
+
 	}
 
 	if (comline.FHasCommand("-test"))

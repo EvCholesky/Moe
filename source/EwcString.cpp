@@ -181,6 +181,7 @@ public:
 						if (m_mpHvEntry.FinsEnsureKey(hv, &pEntry) == FINS_Inserted)
 						{
 							size_t cCh = CCh(pChz) + 1;
+							pEntry->m_cRef = 1;
 							pEntry->m_pChz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cCh, EWC_ALIGN_OF(char));
 							(void) CChCopy(pChz, pEntry->m_pChz, cCh);
 						}
@@ -189,6 +190,7 @@ public:
 							++pEntry->m_cRef;
 							EWC_ASSERT(FAreSame(pEntry->m_pChz, pChz), "bad table lookup in CStringTable");
 						}
+
 						return pEntry->m_pChz;
 					}
 
@@ -212,7 +214,6 @@ public:
 	{
 		char *	m_pChz;
 		u16		m_cRef;
-		u16		m_cB;
 	};
 
 	CAlloc * 			m_pAlloc;

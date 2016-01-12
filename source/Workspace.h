@@ -95,6 +95,7 @@ public:
 	int						CFile(FILEK filek)
 								{ return PHashHvIPFile(filek)->C(); }
 	SFile *					PFileLookup(HV hv, FILEK filek);
+	void					SetObjectFilename(const char * pChzObjectFilename, size_t cCh = 0);
 
 	EWC::CAlloc *					m_pAlloc;
 	CParseContext *					m_pParctx;
@@ -104,6 +105,7 @@ public:
 	EWC::CHash<HV, int>				m_hashHvIPFileSource;	// imported (and root) source files
 	EWC::CHash<HV, int>				m_hashHvIPFileLibrary;	// requested foreign library files
 	EWC::CDynAry<SFile *> 			m_arypFile;
+	const char *					m_pChzObjectFilename;
 
 	CSymbolTable *					m_pSymtab;				// top level symbols
 

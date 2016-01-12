@@ -1424,7 +1424,7 @@ void TestUniqueNames(CAlloc * pAlloc)
 	EWC_ASSERT(cbFreePrev == cbFreePost, "memory leak testing unique names");
 }
 
-void ConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax)
+size_t CChConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax)
 {
 	// remove the last extension (if one exists) and replace it with the supplied one.
 
@@ -1451,7 +1451,8 @@ void ConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, 
 		*pChzOut++ = *pChIt;
 	}
 
-	*pChzOut = '\0';
+	*pChzOut++ = '\0';
+	return pChzOut - pChzFilenameOut;
 }
 
 static std::unique_ptr<tool_output_file> PLoutfileOpen(CWorkspace * pWork, const char * pChzFilenameOut)
@@ -1514,7 +1515,8 @@ void CompileToObjectFile(CWorkspace * pWork, llvm::Module * pLmodule, const char
       pChzExtension = ".o";
 
 	char aChFilenameOut[256];
-	ConstructFilename(pChzFilenameIn, pChzExtension, aChFilenameOut, EWC_DIM(aChFilenameOut));
+	size_t cCh = CChConstructFilename(pChzFilenameIn, pChzExtension, aChFilenameOut, EWC_DIM(aChFilenameOut));
+	pWork->SetObjectFilename(aChFilenameOut, cCh);
 
 	// Figure out where we are going to send the output.
 	std::unique_ptr<llvm::tool_output_file> pLoutfile = PLoutfileOpen(pWork, aChFilenameOut);
@@ -1599,27 +1601,20 @@ void ShutdownLLVM()
 	llvm_shutdown();
 }
 
-void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
+bool FCompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 {
 	SJaiLexer jlex;
-	BeginWorkspace(pWork);
-
-#ifdef EWC_TRACK_ALLOCATION
-	u8 aBAltrac[1024 * 100];
-	CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
-
-	CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
-	pWork->m_pAlloc->SetAltrac(pAltrac);
-#endif
 
 	pWork->EnsureFile(pChzFilenameIn, CWorkspace::FILEK_Source);
 
 	for (int ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
 	{
 		CWorkspace::SFile * pFile = pWork->m_arypFile[ipFile];
+		if (pFile->m_filek != CWorkspace::FILEK_Source)
+			continue;
 
 		char aChFilenameOut[256];
-		ConstructFilename(pFile->m_strFilename.PChz(), ".jai", aChFilenameOut, EWC_DIM(aChFilenameOut));
+		(void)CChConstructFilename(pFile->m_strFilename.PChz(), ".jai", aChFilenameOut, EWC_DIM(aChFilenameOut));
 
 		pFile->m_pChzFile = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
 		if (!pFile->m_pChzFile)
@@ -1649,11 +1644,14 @@ void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 	else
 	{
 		printf("Compilation failed: %d errors\n", pWork->m_pErrman->m_cError);
+		return false;
 	}
 
 	for (int ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
 	{
 		CWorkspace::SFile * pFile = pWork->m_arypFile[ipFile];
+		if (pFile->m_filek != CWorkspace::FILEK_Source)
+			continue;
 
 		if (pFile->m_pChzFile)
 		{
@@ -1662,12 +1660,7 @@ void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 		}
 	}
 
-	EndWorkspace(pWork);
-
-#ifdef EWC_TRACK_ALLOCATION
-	DeleteAltrac(&allocAltrac, pAltrac);
-	pWork->m_pAlloc->SetAltrac(nullptr);
-#endif
+	return true;
 }
 
 void AssertTestCodeGen(

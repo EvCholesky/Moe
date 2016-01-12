@@ -1017,8 +1017,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 													pTcwork,
 													pTcsentTop->m_pSymtab,
 													pStnodInit);
-
-							//pStnod->m_pTin = pStnodInit->m_pTin;
 						}
 					}
 

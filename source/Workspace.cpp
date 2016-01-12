@@ -75,6 +75,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_hashHvIPFileSource(pAlloc)
 ,m_hashHvIPFileLibrary(pAlloc)
 ,m_arypFile(pAlloc)
+,m_pChzObjectFilename(nullptr)
 ,m_pSymtab(nullptr)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
@@ -226,11 +227,32 @@ void EndWorkspace(CWorkspace * pWork)
 	}
 	pWork->m_arypFile.Clear();
 
+	if (pWork->m_pChzObjectFilename)
+	{
+		pWork->m_pAlloc->EWC_FREE((void*)pWork->m_pChzObjectFilename);
+		pWork->m_pChzObjectFilename = nullptr;
+	}
+
 	size_t cbFreePost = pAlloc->CB();
 	if (pWork->m_cbFreePrev != cbFreePost)
 	{
 		pAlloc->PrintAllocations();
 		EWC_ASSERT(pWork->m_cbFreePrev == cbFreePost, "failed to free all bytes");
+	}
+}
+
+void CWorkspace::SetObjectFilename(const char * pChzObjectFilename, size_t cCh)
+{
+	if (!cCh)
+	{
+		cCh = CCh(pChzObjectFilename);
+	}
+
+	if (EWC_FVERIFY(m_pChzObjectFilename == nullptr, "expected null object filename"))
+	{
+		char * pChz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cCh, EWC_ALIGN_OF(char));
+		(void) CChCopy(pChzObjectFilename, pChz, cCh);
+		m_pChzObjectFilename = pChz;
 	}
 }
 

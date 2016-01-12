@@ -324,4 +324,4 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod);
 
 void InitLLVM();
 void ShutdownLLVM();
-void CompileModule(CWorkspace * pWork, const char * pChzFilenameIn);
+bool FCompileModule(CWorkspace * pWork, const char * pChzFilenameIn);
