@@ -215,7 +215,7 @@ public:
 	CSTNode *			PStnodChild(int iStnod)
 							{ return m_arypStnodChild[iStnod]; }
 	CSTNode *			PStnodChildSafe(int iStnod)
-							{ return ((iStnod >= 0) & (iStnod < m_arypStnodChild.C())) ? m_arypStnodChild[iStnod] : nullptr; }
+							{ return ((iStnod >= 0) & (iStnod < (int)m_arypStnodChild.C())) ? m_arypStnodChild[iStnod] : nullptr; }
 
 	JTOK					m_jtok;
 	PARK					m_park;

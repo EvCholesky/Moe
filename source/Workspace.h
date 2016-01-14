@@ -41,6 +41,16 @@ struct SErrorManager	//  // tag = errman
 void EmitError(SErrorManager * pErrman, SLexerLocation * pLexloc, const char * pChz, ...);
 void EmitError(CWorkspace * pWork, SLexerLocation * pLexloc, const char * pChz, ...);
 
+
+
+enum OPTLEVEL
+{
+	OPTLEVEL_Debug,
+	OPTLEVEL_Release,
+};
+
+
+
 class CWorkspace	// tag = work
 {
 public:
@@ -111,6 +121,7 @@ public:
 
 	SErrorManager *					m_pErrman;
 	size_t							m_cbFreePrev;
+	OPTLEVEL						m_optlevel;
 };
 
 void BeginWorkspace(CWorkspace * pWork);

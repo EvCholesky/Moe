@@ -23,12 +23,12 @@
 #include <stdint.h>
 
 #if _WIN64
-#define EWC_IS_64BIT 1
+#define EWC_X64 1
 #else
-#define EWC_IS_64BIT 0
+#define EWC_X64 0
 #endif
 
-#if EWC_IS_64BIT
+#if EWC_X64
 #define STBM_POINTER_SIZE 64
 #define STBM_UINT32 uint32_t
 #define STBM_UINTPTR uintptr_t

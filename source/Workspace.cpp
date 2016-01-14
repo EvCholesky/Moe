@@ -79,6 +79,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_pSymtab(nullptr)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
+,m_optlevel(OPTLEVEL_Debug)
 {
 }
 
@@ -125,7 +126,7 @@ CWorkspace::SFile * CWorkspace::PFileLookup(HV hv, FILEK filek)
 	int * pipFile = phashHvIPFile->Lookup(hv);
 	if (pipFile)
 	{
-		if (EWC_FVERIFY(*pipFile >= 0) & (*pipFile < m_arypFile.C()), "bad file index")
+		if (EWC_FVERIFY(*pipFile >= 0) & (*pipFile < (int)m_arypFile.C()), "bad file index")
 		{
 			return m_arypFile[*pipFile];
 		}

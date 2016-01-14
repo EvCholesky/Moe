@@ -1376,8 +1376,6 @@ void CodeGenEntryPoint(
 			pBuild->ActivateProcedure(nullptr, nullptr);
 		}
 	}
-
-	pBuild->PrintDump();
 }
 
 void TestUniqueNames(CAlloc * pAlloc)
@@ -1486,8 +1484,12 @@ void CompileToObjectFile(CWorkspace * pWork, llvm::Module * pLmodule, const char
 		return;
 
 	llvm::CodeGenOpt::Level loptlevel = llvm::CodeGenOpt::Default;
-	loptlevel = llvm::CodeGenOpt::None;				// -O0
-	//loptlevel = llvm::CodeGenOpt::Aggressive;		// -02
+	switch (pWork->m_optlevel)
+	{
+	default:				EWC_ASSERT(false, "uknown optimization level"); // fall through
+	case OPTLEVEL_Debug:	loptlevel = llvm::CodeGenOpt::None;				break; // -O0
+	case OPTLEVEL_Release:	loptlevel = llvm::CodeGenOpt::Aggressive;		break; // -O2
+	}
 
 	llvm::TargetOptions loptions;
 
@@ -1601,13 +1603,13 @@ void ShutdownLLVM()
 	llvm_shutdown();
 }
 
-bool FCompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
+bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn)
 {
 	SJaiLexer jlex;
 
 	pWork->EnsureFile(pChzFilenameIn, CWorkspace::FILEK_Source);
 
-	for (int ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
+	for (size_t ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
 	{
 		CWorkspace::SFile * pFile = pWork->m_arypFile[ipFile];
 		if (pFile->m_filek != CWorkspace::FILEK_Source)
@@ -1640,6 +1642,12 @@ bool FCompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 		CodeGenEntryPoint(pWork->m_pAlloc, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 		CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
+
+		if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+		{
+			build.PrintDump();
+		}
+
 	}
 	else
 	{
@@ -1647,7 +1655,7 @@ bool FCompileModule(CWorkspace * pWork, const char * pChzFilenameIn)
 		return false;
 	}
 
-	for (int ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
+	for (size_t ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
 	{
 		CWorkspace::SFile * pFile = pWork->m_arypFile[ipFile];
 		if (pFile->m_filek != CWorkspace::FILEK_Source)

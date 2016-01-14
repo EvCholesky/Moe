@@ -324,4 +324,17 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod);
 
 void InitLLVM();
 void ShutdownLLVM();
-bool FCompileModule(CWorkspace * pWork, const char * pChzFilenameIn);
+
+enum FCOMPILE
+{
+	FCOMPILE_PrintIR	= 0x1,
+
+	FCOMPILE_None		= 0x0,
+	FCOMPILE_All		= 0x1
+};
+
+EWC_DEFINE_GRF(GRFCOMPILE, FCOMPILE, u32);
+
+
+
+bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn);

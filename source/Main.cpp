@@ -76,7 +76,7 @@ public:
 	{
 		HV hvCommand = HvFromPChz(pChzCommand);
 
-		for (int iCom = 0; iCom < m_aryCom.C(); ++iCom)
+		for (size_t iCom = 0; iCom < m_aryCom.C(); ++iCom)
 		{
 			if (m_aryCom[iCom].m_hvName == hvCommand)
 				return true;
@@ -92,8 +92,11 @@ void PrintCommandLineOptions()
 {
 	printf("jailang [options] [filename]\n");
 	printf("  options:\n");
-	printf("	-help  : Print this message\n");
-	printf("    -test  : Run compiler unit tests\n");
+	printf("	-help     : Print this message\n");
+	printf("	-nolink   : skip the linker step\n");
+	printf("	-printIR  : Print llvm's intermediate representation\n");
+	printf("    -release  : Generate optimized code and link against optimized local libraries\n");
+	printf("    -test     : Run compiler unit tests\n");
 }
 
 int main(int cpChzArg, const char * apChzArg[])
@@ -112,6 +115,12 @@ int main(int cpChzArg, const char * apChzArg[])
 		PrintCommandLineOptions();
 	}
 
+	GRFCOMPILE grfcompile;
+	if (comline.FHasCommand("-printIR"))
+	{
+		grfcompile.AddFlags(FCOMPILE_PrintIR);
+	}
+
 	if (comline.m_pChzFilename)
 	{
 		u8 aBString[1024 * 100];
@@ -123,6 +132,11 @@ int main(int cpChzArg, const char * apChzArg[])
 
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		if (comline.FHasCommand("-release"))
+		{
+			work.m_optlevel = OPTLEVEL_Release;
+		}
 
 		InitLLVM();
 
@@ -136,7 +150,7 @@ int main(int cpChzArg, const char * apChzArg[])
 		work.m_pAlloc->SetAltrac(pAltrac);
 #endif
 
-		bool fSuccess = FCompileModule(&work, comline.m_pChzFilename);
+		bool fSuccess = FCompileModule(&work, grfcompile, comline.m_pChzFilename);
 		ShutdownLLVM();
 
 		// current linker command line:
@@ -144,19 +158,34 @@ int main(int cpChzArg, const char * apChzArg[])
 
 		if (fSuccess && !comline.FHasCommand("-nolink"))
 		{
-			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
 			//static const char * s_pChzCommandLine = "C:/Program Files (x86)/Microsoft Visual Studio 10.0/VC/bin/amd64/link.exe";
 
+			static const char * s_pChzPathDebug = "Debug";
+			static const char * s_pChzPathRelease = "Release";
+			const char * pChzOptPath = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzPathRelease : s_pChzPathDebug;
+
 			static const char * s_pChzCRTLibraries = "libcmt.lib libucrt.lib";
+			#if EWC_X64
+			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
+			static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/x64/%s\" ";
 			static const char * s_apChzDefaultPaths[] =
 			{
-				"c:/Code/jailang/x64/debug",
 				"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
 				"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
 				"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
 			};
-
-			static const char * s_pChzOptions = "/subsystem:console /machine:x64";
+			static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo";
+			#else
+			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
+			static const char * s_pChzLibraryFormat = "c:/Code/jailang/%s ";
+			static const char * s_apChzDefaultPaths[] =
+			{
+				"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86",
+				"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib",
+				"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x86",
+			};
+			static const char * s_pChzOptions = "/subsystem:console /nologo";
+			#endif
 
 			const char * s_pChzPath = "c:/Code/jailang/jaiSource";
 
@@ -171,6 +200,8 @@ int main(int cpChzArg, const char * apChzArg[])
 				work.m_pChzObjectFilename,
 				s_pChzCRTLibraries,
 				s_pChzOptions);
+
+			pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, s_pChzLibraryFormat, pChzOptPath);
 
 			CWorkspace::SFile ** ppFileMac = work.m_arypFile.PMac();
 			for (CWorkspace::SFile ** ppFile = work.m_arypFile.A(); ppFile != ppFileMac; ++ppFile)
