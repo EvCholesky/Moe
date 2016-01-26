@@ -533,7 +533,7 @@ static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
 		case TINK_Literal:
 		{
 			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
-			switch (pTinlit->m_stval.m_litty.m_litk)
+			switch (pTinlit->m_litty.m_litk)
 			{
 			case LITK_Integer:	return llvm::Type::getInt64Ty(lctx);
 			case LITK_Float:	return llvm::Type::getDoubleTy(lctx);
@@ -731,6 +731,74 @@ static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, SType
 
 CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 {
+	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
+	{
+		CSTValue * pStval = pStnod->m_pStval;
+		STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnod->m_pTin;
+		if (!pStval || !pTinlit || pTinlit->m_tink != TINK_Literal)
+			return nullptr;
+
+		if (!EWC_FVERIFY(pTinlit->m_fIsFinalized, "non-finalized literal type encountered during code gen"))
+			return nullptr;
+	
+		llvm::LLVMContext * pLctx = &llvm::getGlobalContext();
+		llvm::Constant * pLconst = nullptr;
+		LlvmIRBuilder * pLbuild = pBuild->m_pLbuild;
+
+		switch (pTinlit->m_litty.m_litk)
+		{
+		case LITK_Integer:
+			{
+				EWC_ASSERT(
+					(pStval->m_stvalk == STVALK_UnsignedInt) | (pStval->m_stvalk == STVALK_SignedInt),
+					"bad literal value");
+
+				switch (pTinlit->m_litty.m_cBit)
+				{
+				case 8:		pLconst = pLbuild->getInt8(U8Coerce(pStval->m_nUnsigned));		break;
+				case 16:	pLconst = pLbuild->getInt16(U16Coerce(pStval->m_nUnsigned));	break;
+				case 32:	pLconst = pLbuild->getInt32(U32Coerce(pStval->m_nUnsigned));	break;
+				case -1: // fall through
+				case 64:	pLconst = pLbuild->getInt64(pStval->m_nUnsigned);				break;
+				default:	EWC_ASSERT(false, "unhandled integer size");
+				}
+			}break;
+		case LITK_Float:
+			{
+				if (pTinlit->m_litty.m_cBit == 64)
+				{
+					pLconst = llvm::ConstantFP::get(Type::getDoubleTy(llvm::getGlobalContext()), pStval->m_g);
+				}
+				else
+				{
+					EWC_ASSERT(pTinlit->m_litty.m_cBit == 32, "unhandled float size");
+					pLconst = llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), pStval->m_g);
+				}
+			}break;
+		case LITK_Bool:
+			{
+				EWC_ASSERT(pStval->m_stvalk == STVALK_UnsignedInt, "bad literal value");
+				pLconst = (pStval->m_nUnsigned) ? 
+							llvm::ConstantInt::getTrue(*pLctx) :
+							llvm::ConstantInt::getFalse(*pLctx);
+			}break;
+		case LITK_Char:		EWC_ASSERT(false, "TBD"); return nullptr;
+		case LITK_String:	EWC_ASSERT(false, "TBD"); return nullptr;
+		case LITK_Null:		EWC_ASSERT(false, "TBD"); return nullptr;
+		}
+
+		if (!pLconst)
+		{
+			EWC_ASSERT(false, "unknown LITK in PValGenerate");
+			return nullptr;
+		}
+
+		CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+		pBuild->AddManagedVal(pConst);
+		pConst->m_pLval = pLconst;
+		return pConst;
+	}
+
 	switch (pStnod->m_park)
 	{
 	case PARK_List:
@@ -771,62 +839,8 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 		}break;
 	case PARK_Literal:
 		{
-			CSTValue * pStval = pStnod->m_pStval;
-			if (!pStval)
-				return nullptr;
-		
-			llvm::LLVMContext * pLctx = &llvm::getGlobalContext();
-			llvm::Constant * pLconst = nullptr;
-			LlvmIRBuilder * pLbuild = pBuild->m_pLbuild;
-
-			switch (pStval->m_litty.m_litk)
-			{
-			case LITK_Integer:
-				{
-					switch (pStval->m_litty.m_cBit)
-					{
-					case 8:		pLconst = pLbuild->getInt8(U8Coerce(pStval->m_nUnsigned));		break;
-					case 16:	pLconst = pLbuild->getInt16(U16Coerce(pStval->m_nUnsigned));	break;
-					case 32:	pLconst = pLbuild->getInt32(U32Coerce(pStval->m_nUnsigned));	break;
-					case -1: // fall through
-					case 64:	pLconst = pLbuild->getInt64(pStval->m_nUnsigned);				break;
-					default:	EWC_ASSERT(false, "unhandled integer size");
-					}
-				}break;
-			case LITK_Float:
-				{
-					if (pStval->m_litty.m_cBit == 64)
-					{
-						pLconst = llvm::ConstantFP::get(Type::getDoubleTy(llvm::getGlobalContext()), pStval->m_g);
-					}
-					else
-					{
-						EWC_ASSERT(pStval->m_litty.m_cBit == 32, "unhandled float size");
-						pLconst = llvm::ConstantFP::get(Type::getFloatTy(llvm::getGlobalContext()), pStval->m_g);
-					}
-				}break;
-			case LITK_Bool:
-				{
-					pLconst = (pStval->m_nUnsigned) ? 
-								llvm::ConstantInt::getTrue(*pLctx) :
-								llvm::ConstantInt::getFalse(*pLctx);
-				}break;
-			case LITK_Char:		EWC_ASSERT(false, "TBD"); return nullptr;
-			case LITK_String:	EWC_ASSERT(false, "TBD"); return nullptr;
-			case LITK_Null:		EWC_ASSERT(false, "TBD"); return nullptr;
-			}
-	
-			if (!pLconst)
-			{
-				EWC_ASSERT(false, "unknown LITK in PValGenerate");
-				return nullptr;
-			}
-
-			CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
-			pBuild->AddManagedVal(pConst);
-			pConst->m_pLval = pLconst;
-			return pConst;
-		}
+			EWC_ASSERT(false, "encountered literal AST node during codegen, should have encountered literal type first");
+		}break;
 	case PARK_ReservedWord:
 		{
 			if (!EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
@@ -1074,15 +1088,13 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			TINK tink = pTinOutput->m_tink;
 			if (pTinOutput->m_tink == TINK_Literal)
 			{
-				if (EWC_FVERIFY(pStnod->m_pStval, "literal with no value"))
+				STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTinOutput;
+				fIsSigned = pTinlit->m_litty.m_fIsSigned;
+				switch (pTinlit->m_litty.m_litk)
 				{
-					fIsSigned = pStnod->m_pStval->m_litty.m_fIsSigned;
-					switch (pStnod->m_pStval->m_litty.m_litk)
-					{
-					case LITK_Integer:	tink = TINK_Integer;	break;
-					case LITK_Float:	tink = TINK_Float;		break;
-					default:			tink = TINK_Nil;
-					}
+				case LITK_Integer:	tink = TINK_Integer;	break;
+				case LITK_Float:	tink = TINK_Float;		break;
+				default:			tink = TINK_Nil;
 				}
 			}
 			else if (pTinOutput->m_tink == TINK_Literal)

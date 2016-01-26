@@ -268,7 +268,7 @@ int main(int cpChzArg, const char * apChzArg[])
 		TestParse();
 		TestTypeCheck();
 		TestCodeGen();
-		return 0;
+		printf("passed unit tests\n");
 	}
 
 	return 0;

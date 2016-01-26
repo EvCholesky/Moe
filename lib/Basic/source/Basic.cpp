@@ -14,3 +14,8 @@ extern "C" void PrintByte(char n)
 {
 	printf("%d\n", n);
 }
+
+extern "C" void PrintBool(bool f)
+{
+	printf("%s\n", (f) ? "true" : "false");
+}

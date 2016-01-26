@@ -260,7 +260,8 @@ public:
 							if (entry.m_hv == hv)
 							{
 								EWC_ASSERT(key == entry.m_key, "hash collision! buy a lotto ticket!");
-								// BB - should we check that entry.m_value == value?
+								entry.m_value = value;
+
 								return FINS_AlreadyExisted;
 							}
 							else if (entry.FIsUnusedOrDeleted())

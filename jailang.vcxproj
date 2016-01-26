@@ -154,6 +154,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="source\BigMath.h" />
     <ClInclude Include="source\CodeGen.h" />
     <ClInclude Include="source\EwcArray.h" />
     <ClInclude Include="source\EwcHash.h" />

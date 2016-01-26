@@ -180,6 +180,7 @@ public:
 
 				CDynAry()
 				:CAry<T>(nullptr, 0, 0)
+				,m_pAlloc(nullptr)
 					{ ; }
 
 				~CDynAry()

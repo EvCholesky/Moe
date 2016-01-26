@@ -135,15 +135,22 @@ struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 	EWC::CDynAry<STypeInfo *>	m_arypTinReferences;
 };
 
+
+// NOTE: just documenting a subtle relationship: CSTVal stores a literal value and is enough to determine 
+// what the STypeInfoLiteral *could* be, (ie PTinlitDefault, PTinlitTightest) but the actual type is determined
+// by the nodes type passed down after type checkingbigmath
+
 struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 {
 	static const TINK s_tink = TINK_Literal;
 						STypeInfoLiteral()
 						:STypeInfo("", s_tink)
-						,m_stval()
+						,m_fIsFinalized(false)
+						,m_litty()
 							{ ; }
-
-	CSTValue		m_stval;
+	
+	bool			m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
+	SLiteralType	m_litty;
 };
 
 enum FMEMB

@@ -32,22 +32,33 @@ struct SSymbol;
 struct STypeInfo;
 struct STypeInfoEnum;
 struct STypeInfoForwardDecl;
+struct STypeInfoLiteral;
 struct STypeInfoProcedure;
 
-// syntax tree nodes
+// type should only indicate storage type - actual type info should come from STypeInfoLiteral
+enum STVALK
+{
+	STVALK_Nil = -1,
+	STVALK_Float,
+	STVALK_SignedInt,
+	STVALK_UnsignedInt,
+	STVALK_String,
+	STVALK_ReservedWord
+};
+
+// syntax tree value storage
 class CSTValue	// tag = stval
 {
 public:
 						CSTValue()
-						:m_litty()
+						:m_stvalk(STVALK_Nil)
 						,m_str()
 						,m_nUnsigned(0)
 						,m_rword(RWORD_Nil)
-						,m_tfnSigned(TFN_Nil)
+						,m_litkLex(LITK_Nil)
 							{ ; }
 
-	SLiteralType		m_litty;
-
+	STVALK				m_stvalk;
 	EWC::CString		m_str;
 	union
 	{
@@ -55,9 +66,37 @@ public:
 		u64					m_nUnsigned;
 		s64					m_nSigned;
 	};
-	RWORD				m_rword;
-	TFN					m_tfnSigned;
+
+	RWORD				m_rword;		// only valid iff park == PARK_ReservedWord
+	LITK				m_litkLex;		// literal type determined by lexing, 
+										// BB - should STVALK should be expanded to make this unnecessary?
 };
+
+inline void SetFloatValue(CSTValue * pStval, F64 g)
+{
+	pStval->m_stvalk = STVALK_Float;
+	pStval->m_g = g;
+}
+
+inline void SetSignedIntValue(CSTValue * pStval, s64 n)
+{
+	pStval->m_stvalk = STVALK_SignedInt;
+	pStval->m_nSigned = n;
+}
+
+inline void SetUnsignedIntValue(CSTValue * pStval, u64 n)
+{
+	pStval->m_stvalk = STVALK_UnsignedInt;
+	pStval->m_nUnsigned = n;
+}
+
+inline void SetBoolValue(CSTValue * pStval, bool f)
+{
+	pStval->m_stvalk = STVALK_UnsignedInt;
+	pStval->m_nUnsigned = f;
+}
+
+
 
 enum PARK // PARse Kind
 {
@@ -284,13 +323,13 @@ struct SSymbol	// tag = sym
 {
 	EWC::CString	m_strName;
 
-	int				m_cB;					// inline size of this symbol in bytes ie. CB(* s16) == 8;
 	CSTNode *		m_pStnodDefinition;
 	GRFSYM			m_grfsym;
 
 	STypeInfo *		m_pTin;
-	CSymbolTable *	m_pSymtab;	// should this be here? or in pTin?
 	CIRValue *		m_pVal;
+
+	SSymbol *		m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
 };
 
 enum FSYMTAB	// SYMbol LOOKup flags
@@ -328,7 +367,6 @@ public:
 	SSymbol *				PSymEnsure(
 								const EWC::CString & strName,
 								CSTNode * pStnodDefinition,
-								int cB = -1,
 								GRFSYM grfsym = FSYM_None);
 
 	SSymbol *				PSymLookup(
@@ -341,6 +379,8 @@ public:
 								GRFSYMLOOK grfsymlook = FSYMLOOK_Default,
 								SSymbol ** ppSym = nullptr);
 	STypeInfo *				PTinBuiltin( const EWC::CString & str);
+	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
+	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
 	STypeInfoForwardDecl *	PTinfwdLookup(const EWC::CString & str, GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
 
 	STypeInfoForwardDecl *	PTinfwdBegin(const EWC::CString & str);
@@ -363,6 +403,8 @@ public:
 	EWC::CHash<HV, STypeInfoForwardDecl *>
 								m_hashHvPTinfwd;	// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.
+	EWC::CDynAry<STypeInfoLiteral *>	
+								m_mpLitkArypTinlit[LITK_Max];	// all type info structs that need to be deleted.
 
 	CSymbolTable *				m_pSymtabParent;
 	SLexerLocation				m_lexlocParent;		// position that this table was defined relative to it's parent 

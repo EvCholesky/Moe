@@ -229,11 +229,12 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 						CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 						pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+						pStval->m_stvalk = STVALK_ReservedWord;
 						pStval->m_nUnsigned = (rword == RWORD_True) ? 1 : 0;
 						pStval->m_rword = rword;
+						pStval->m_litkLex = (rword == RWORD_Null) ? LITK_Null : LITK_Bool;
 						pStnod->m_pTin = nullptr;
 
-						pStval->m_litty.m_litk = (rword == RWORD_Null) ? LITK_Null : LITK_Bool;
 						pStnod->m_pStval = pStval;
 
 						JtokNextToken(pJlex);
@@ -254,16 +255,20 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 				CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 				pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+				pStval->m_litkLex = pJlex->m_litk;
 
 				if (pJlex->m_litk == LITK_Float)
 				{
-					pStval->m_g = pJlex->m_g;
+					SetFloatValue(pStval, pJlex->m_g);
+				}
+				else if ((pJlex->m_litk == LITK_String) || (pJlex->m_litk == LITK_Char))
+				{
+					pStval->m_stvalk = STVALK_String;
 				}
 				else
 				{
-					pStval->m_nUnsigned = pJlex->m_n;
+					SetUnsignedIntValue(pStval, pJlex->m_n);
 				}
-				pStval->m_litty = SLiteralType(pJlex->m_litk);
 
 				pStnod->m_pStval = pStval;
 
@@ -924,31 +929,39 @@ CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnodReturn;
 }
 
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtabProc)
 {
 	SLexerLocation lexloc(pJlex);
+	PushSymbolTable(pParctx, pSymtabProc, lexloc);
+
 	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList);
-	if (!pStnodParam)
-		return nullptr;
+	CSTNode * pStnodList = nullptr;
 
-	CSTNode * pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-
-	pStnodList->m_jtok = JTOK_Nil;
-	pStnodList->m_park = PARK_ParameterList;
-	pStnodList->IAppendChild(pStnodParam);
-
-	while (pJlex->m_jtok == JTOK(','))
+	if (pStnodParam)
 	{
-		JtokNextToken(pJlex);
+		pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 
-		pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList);
-		if (!pStnodParam)
-		{
-			ParseError(pParctx, pJlex, "Expected parameter before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
-			return pStnodList;
-		}
+		pStnodList->m_jtok = JTOK_Nil;
+		pStnodList->m_park = PARK_ParameterList;
+		pStnodList->m_pSymtab = pSymtabProc;
 		pStnodList->IAppendChild(pStnodParam);
+
+		while (pJlex->m_jtok == JTOK(','))
+		{
+			JtokNextToken(pJlex);
+
+			pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList);
+			if (!pStnodParam)
+			{
+				ParseError(pParctx, pJlex, "Expected parameter before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
+				break;
+			}
+			pStnodList->IAppendChild(pStnodParam);
+		}
 	}
+
+	CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+	EWC_ASSERT(pSymtabProc == pSymtabPop, "CSymbol table push/pop mismatch (list)");
 
 	return pStnodList;
 }
@@ -1068,7 +1081,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pStnodProc->m_pStproc = pStproc;
 				pStproc->m_iStnodProcName = pStnodProc->IAppendChild(pStnodIdent);
 
-				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pJlex);
+				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
+				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew();
+
+				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pJlex, pSymtabProc);
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 				Expect(pParctx, pJlex, JTOK(')'));
 
@@ -1100,8 +1116,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					pStnodReturns = pStnodVoid;
 				}
 
-				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
-				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew();
 				pStproc->m_iStnodBody = -1;
 				if (pJlex->m_jtok == JTOK_ReservedWord)
 				{
@@ -1125,13 +1139,13 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					Expect(pParctx, pJlex, JTOK(';'), "While parsing foreign directive");
 				}
 
+				const CString & strName = StrFromIdentifier(pStnodIdent);
 				if (pJlex->m_jtok == JTOK('{'))
 				{
 					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex, pSymtabProc);
 					pStproc->m_iStnodBody = pStnodProc->IAppendChild(pStnodBody);
 				}
 
-				const CString & strName = pStnodIdent->m_pStval->m_str;
 				if (pStproc->m_fIsForeign)
 				{
 					if (pStproc->m_iStnodBody != -1)
@@ -1678,7 +1692,15 @@ CSymbolTable::~CSymbolTable()
 	CHash<HV, SSymbol *>::CIterator iterPSym(&m_hashHvPSym);
 	while (SSymbol ** ppSym = iterPSym.Next())
 	{
-		m_pAlloc->EWC_DELETE(*ppSym);
+		SSymbol * pSym = *ppSym;
+		while (pSym)
+		{
+			SSymbol * pSymDelete = pSym;
+			pSym = pSym->m_pSymPrev;
+
+			m_pAlloc->EWC_DELETE(pSymDelete);
+		}
+
 		*ppSym = nullptr;
 	}
 
@@ -1714,6 +1736,25 @@ void AddBuiltInFloat(CSymbolTable * pSymtab, const CString & strName, u32 cBit)
 	pSymtab->AddNamedType(nullptr, nullptr, pTinfloat);
 }
 
+void AddBuiltInLiteral(CSymbolTable * pSymtab, const CString & strName, LITK litk, s8 cBit, bool fIsSigned)
+{
+	STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+	pTinlit->m_strName = strName;
+	pSymtab->AddNamedType(nullptr, nullptr, pTinlit);
+
+	pTinlit->m_litty.m_litk = litk;
+	pTinlit->m_litty.m_cBit = cBit;
+	pTinlit->m_litty.m_fIsSigned = fIsSigned;
+	pTinlit->m_fIsFinalized = true;
+
+	EWC::CDynAry<STypeInfoLiteral *> * paryPTinlit = &pSymtab->m_mpLitkArypTinlit[litk];
+	if (!paryPTinlit->m_pAlloc)
+	{
+		paryPTinlit->SetAlloc(pSymtab->m_pAlloc, 8);
+	}
+	paryPTinlit->Append(pTinlit);
+}
+
 void CSymbolTable::AddBuiltInSymbols()
 {
 	AddBuiltInType(this, "bool", TINK_Bool);
@@ -1734,31 +1775,63 @@ void CSymbolTable::AddBuiltInSymbols()
 
 	AddBuiltInFloat(this, "float", 32);
 	AddBuiltInFloat(this, "float64", 64);
+
+	AddBuiltInLiteral(this, "__bool_Literal", LITK_Bool, 8, false);
+	AddBuiltInLiteral(this, "__u8_Literal", LITK_Integer, 8, false);
+	AddBuiltInLiteral(this, "__u16_Literal", LITK_Integer, 16, false);
+	AddBuiltInLiteral(this, "__u32_Literal", LITK_Integer, 32, false);
+	AddBuiltInLiteral(this, "__u64_Literal", LITK_Integer, 64, false);
+	AddBuiltInLiteral(this, "__s8_Literal", LITK_Integer, 8, true);
+	AddBuiltInLiteral(this, "__s16_Literal", LITK_Integer, 16, true);
+	AddBuiltInLiteral(this, "__s32_Literal", LITK_Integer, 32, true);
+	AddBuiltInLiteral(this, "__s64_Literal", LITK_Integer, 64, true);
+	AddBuiltInLiteral(this, "__float_Literal", LITK_Float, 32, true);
+	AddBuiltInLiteral(this, "__float64_Literal", LITK_Float, 64, true);
+	AddBuiltInLiteral(this, "__string_Literal", LITK_String, -1, true);
+	AddBuiltInLiteral(this, "__char_Literal", LITK_Char, 32, true);
+	AddBuiltInLiteral(this, "__void_Literal", LITK_Null, -1, true);
 }
 
-SSymbol * CSymbolTable::PSymEnsure(const CString & strName, CSTNode * pStnodDefinition, int cB, GRFSYM grfsym)
+SSymbol * CSymbolTable::PSymEnsure(const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
 {
-	// This will shadow any other type by this name within this stack frame, is that ok?
-
-	SSymbol * pSym;
+	SSymbol * pSymPrev = nullptr;
+	SSymbol * pSym = nullptr;
 	SSymbol ** ppSym = m_hashHvPSym.Lookup(strName.Hv()); 
 	if (ppSym)
 	{
 		pSym = *ppSym;
+		if (pSym->m_pStnodDefinition != pStnodDefinition)
+		{
+			pSymPrev = pSym;
+			pSym = nullptr;
+
+			// TODO: should be error
+			EWC_ASSERT(m_grfsymtab.FIsSet(FSYMTAB_Ordered), "shadowing symbol in unordered symbol table");
+		}
 	}
-	else
+	
+	if (!pSym)
 	{
 		pSym = EWC_NEW(m_pAlloc, SSymbol) SSymbol;
 		(void) m_hashHvPSym.FinsEnsureKeyAndValue(strName.Hv(), pSym);
 	}
 
 	pSym->m_strName = strName;
-	pSym->m_cB = cB;
 	pSym->m_pStnodDefinition = pStnodDefinition;
 	pSym->m_grfsym = grfsym;
 	pSym->m_pTin = nullptr;
-	pSym->m_pSymtab = nullptr;
 	pSym->m_pVal = nullptr;
+	pSym->m_pSymPrev = pSymPrev;
+
+	SLexerLocation lexloc(pStnodDefinition->m_lexloc);
+	while (pSymPrev)
+	{
+		EWC_ASSERT(
+			pSymPrev->m_pStnodDefinition->m_lexloc <= lexloc,
+			"expected previous symbols sorted in reverse lexical order");
+		lexloc = pSymPrev->m_pStnodDefinition->m_lexloc;
+		pSymPrev = pSymPrev->m_pSymPrev;
+	}
 
 	return pSym;
 }
@@ -1771,9 +1844,15 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 		if (ppSym)
 		{
 			bool fIsOrdered = m_grfsymtab.FIsSet(FSYMTAB_Ordered);
-			if ((fIsOrdered == false) | ((*ppSym)->m_pStnodDefinition->m_lexloc <= lexloc))
+			SSymbol * pSym = *ppSym;
+
+			while (pSym)
 			{
-				return *ppSym;
+				if ((fIsOrdered == false) | (pSym->m_pStnodDefinition->m_lexloc <= lexloc))
+				{
+					return pSym;
+				}
+				pSym = pSym->m_pSymPrev;
 			}
 		}
 	}
@@ -1831,6 +1910,45 @@ STypeInfo *	CSymbolTable::PTinLookup(
 
 		pSymtab = pSymtab->m_pSymtabParent;
 	}
+	return nullptr;
+}
+
+STypeInfoLiteral * CSymbolTable::PTinlitFromLitk(LITK litk)
+{
+	if (!FIsValid(litk))
+		return nullptr;
+
+	// built in types are always in the root symbol table 
+	CSymbolTable * pSymtab = this;
+	while (pSymtab->m_pSymtabParent)
+		pSymtab = pSymtab->m_pSymtabParent;
+
+	const EWC::CDynAry<STypeInfoLiteral *> & mpLitkPTinlit = pSymtab->m_mpLitkArypTinlit[litk];
+	if (mpLitkPTinlit.C() == 0)
+		return nullptr;
+
+	return mpLitkPTinlit[0];
+}
+
+STypeInfoLiteral * CSymbolTable::PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned)
+{
+	if (FIsValid(litk))
+	{
+		// built in types are always in the root symbol table 
+		CSymbolTable * pSymtab = this;
+		while (pSymtab->m_pSymtabParent)
+			pSymtab = pSymtab->m_pSymtabParent;
+
+		EWC::CDynAry<STypeInfoLiteral *> & mpLitkPTinlit = pSymtab->m_mpLitkArypTinlit[litk];
+		STypeInfoLiteral ** ppTinlitMax = mpLitkPTinlit.PMac();
+		for (STypeInfoLiteral ** ppTinlit = mpLitkPTinlit.A(); ppTinlit != ppTinlitMax; ++ppTinlit)
+		{
+			STypeInfoLiteral * pTinlit = *ppTinlit;
+			if ((pTinlit->m_litty.m_cBit == cBit) & (pTinlit->m_litty.m_fIsSigned == fIsSigned))
+				return pTinlit;
+		}
+	}
+
 	return nullptr;
 }
 
@@ -1963,17 +2081,18 @@ void CSymbolTable::PrintDump()
 	EWC::CHash<HV, SSymbol *>::CIterator iter(&m_hashHvPSym);
 	while (SSymbol ** ppSym = iter.Next())
 	{
-		printf("%s, ",(*ppSym)->m_strName.PChz());
+		SSymbol * pSym = *ppSym;
+		printf("%p: %s : '%s'\n",pSym, pSym->m_strName.PChz(), (pSym->m_pTin) ? pSym->m_pTin->m_strName.PChz() : "Nill");
 	}
 
-	printf("\n\n");
+	printf("\n");
 	if (m_pSymtabParent)
 	{
 		printf("parent: \n");
 		m_pSymtabParent->PrintDump();
 	}
 
-	printf("\n\n");
+	printf("\n");
 }
 
 CString	CSTDecl::StrIdentifier(CSTNode * pStnod)
@@ -2102,7 +2221,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		{
 			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
 			char * pChWork = pCh;
-			const SLiteralType & litty = pTinlit->m_stval.m_litty;
+			const SLiteralType & litty = pTinlit->m_litty;
 
 			pChWork += CChCopy("Literal", pChWork, pChEnd - pChWork);
 			return pChWork - pCh;
@@ -2135,19 +2254,33 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
 	case PARK_Literal:				
 		{
-			switch (pStnod->m_pStval->m_litty.m_litk)
+			switch (pStnod->m_pStval->m_stvalk)
 			{
-			case LITK_String:		return CChFormat(pCh, pChEnd-pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
-			case LITK_Char:			return CChFormat(pCh, pChEnd-pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
-			case LITK_Integer:		return CChFormat(pCh, pChEnd-pCh, "%d", (pStnod->m_pStval->m_nSigned) ? 
-																				pStnod->m_pStval->m_nSigned : 
-																				pStnod->m_pStval->m_nUnsigned);
-			case LITK_Float:		return CChFormat(pCh, pChEnd-pCh, "%f", pStnod->m_pStval->m_g);
-			case LITK_Bool:			return CChFormat(pCh, pChEnd-pCh, "%s", (pStnod->m_pStval->m_nUnsigned) ? "true" : "false");
-			default: 
-				EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok)); 
+			case STVALK_String:			return CChFormat(pCh, pChEnd - pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
+			case STVALK_UnsignedInt:	return CChFormat(pCh, pChEnd - pCh, "%llu", pStnod->m_pStval->m_nUnsigned);
+			case STVALK_SignedInt:		return CChFormat(pCh, pChEnd - pCh, "%lld", pStnod->m_pStval->m_nSigned);
+			case STVALK_Float:			return CChFormat(pCh, pChEnd - pCh, "%f", pStnod->m_pStval->m_g);
+			default:
+				EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok));
 				return 0;
 			}
+			/*STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnod->m_pTin;
+			if (EWC_FVERIFY(pTinlit && pTinlit->m_tink == TINK_Literal, "bad literal type"))
+			{
+				switch (pTinlit->m_litty.m_litk)
+				{
+				case LITK_String:		return CChFormat(pCh, pChEnd - pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
+				case LITK_Char:			return CChFormat(pCh, pChEnd - pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
+				case LITK_Integer:		return CChFormat(pCh, pChEnd - pCh, "%d", (pStnod->m_pStval->m_stvalk == STVALK_SignedInt) ?
+												pStnod->m_pStval->m_nSigned :
+												pStnod->m_pStval->m_nUnsigned);
+				case LITK_Float:		return CChFormat(pCh, pChEnd - pCh, "%f", pStnod->m_pStval->m_g);
+				case LITK_Bool:			return CChFormat(pCh, pChEnd - pCh, "%s", (pStnod->m_pStval->m_nUnsigned) ? "true" : "false");
+				default:
+					EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok));
+					return 0;
+				}
+			}*/
 		}
 	case PARK_AdditiveOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
 	case PARK_MultiplicativeOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
@@ -2208,13 +2341,12 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 
 	if (grfdbgstr.FIsSet(FDBGSTR_LiteralSize))
 	{
-		if (pStnod->m_park == PARK_Literal && 
-			pStnod->m_pStval != nullptr)
+		if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 		{
-			const SLiteralType & litty = pStnod->m_pStval->m_litty;
+			const SLiteralType & litty = ((STypeInfoLiteral *)pStnod->m_pTin)->m_litty;
 
 			pChWork += CChFormat(pChWork, pChEnd - pChWork, ":%s", PChzFromLitk(litty.m_litk));
-			if (pStnod->m_pStval->m_litty.m_cBit >= 0)
+			if (litty.m_cBit >= 0)
 			{
 				pChWork += CChFormat(pChWork, pChEnd - pChWork, "%d", litty.m_cBit);
 			}

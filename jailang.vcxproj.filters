@@ -45,6 +45,9 @@
     <ClInclude Include="source\CodeGen.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="source\BigMath.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\EwcString.cpp">
