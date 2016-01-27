@@ -358,15 +358,143 @@ SBigInt BintFromStval(CSTValue * pStval)
 	{
 	case STVALK_SignedInt:		return BintFromInt(pStval->m_nSigned);
 	case STVALK_UnsignedInt:	return BintFromUint(pStval->m_nUnsigned, false);
+	case STVALK_ReservedWord:
+		{
+			switch (pStval->m_rword)
+			{
+			case RWORD_False:	return BintFromUint(0, false);
+			case RWORD_True:	return BintFromUint(1, false);
+			default:
+				EWC_ASSERT(false, "Can't create Bint from non reserved word");
+				return SBigInt();
+			}
+		}
 	default:
 		EWC_ASSERT(false, "Can't create Bint from non integer value");
 		return SBigInt();
 	}
 }
 
+inline void SetIntegerValue(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSTValue * pStval, const SBigInt bint)
+{
+	if (bint.m_fIsNegative)
+	{
+		if (bint.m_nAbs > LLONG_MAX)
+		{
+			EmitError(pTcwork, pStnod, "Literal value overflow. Value is too large for signed int.");
+		}
+		SetSignedIntValue(pStval, bint.S64Coerce());
+	}
+	else
+	{
+		SetUnsignedIntValue(pStval, bint.U64Coerce());
+	}
+}
+
+inline bool FComputeUnaryOpOnLiteral(
+	STypeCheckWorkspace * pTcwork,
+	JTOK jtokOperator,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodOperand,
+	STypeInfoLiteral ** ppTinOperand,
+	STypeInfoLiteral ** ppTinReturn,
+	CSTValue ** ppStval)
+{
+	STypeInfo * pTinOperand = pStnodOperand->m_pTin;
+
+	if ((pTinOperand->m_tink != TINK_Literal) | (pStnodOperand->m_pStval == nullptr))
+		return false;
+
+	STypeInfoLiteral * pTinlitOperand = (STypeInfoLiteral *)pTinOperand;
+	const SLiteralType & littyOperand = pTinlitOperand->m_litty;
+	CSTValue * pStvalOperand = pStnodOperand->m_pStval;
+
+	bool fOperandIsNumber = (littyOperand.m_litk == LITK_Float) | (littyOperand.m_litk == LITK_Integer);
+	if (!fOperandIsNumber)
+		return false;
+
+	int n = +(-3);
+
+	if (littyOperand.m_litk == LITK_Float)
+	{
+		bool fIsBoolOp;
+		bool f;
+		F64 g = GLiteralCast(pStvalOperand);
+		switch (jtokOperator)
+		{
+		case JTOK('-'):         fIsBoolOp = false;  g = -g; break;
+		case JTOK('!'):         fIsBoolOp = true;	f = !g; break;
+		default: return false;
+		}
+
+		CSTValue * pStvalStnod = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
+		*ppStval = pStvalStnod;
+
+		if (fIsBoolOp)
+		{
+			SetBoolValue(pStvalStnod, f);
+	
+			STypeInfoLiteral * pTinBool = pSymtab->PTinlitFromLitk(LITK_Bool);
+			EWC_ASSERT(!pTinBool || pTinBool->m_tink == TINK_Literal, "expected literal type");
+
+			*ppTinReturn = pTinBool;
+			*ppTinOperand = pTinlitOperand;
+		}
+		else
+		{
+			SetFloatValue(pStvalStnod, g);
+
+			EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Float);
+			*ppTinReturn = pTinlitOperand;
+			*ppTinOperand = pTinlitOperand;
+		}
+		return true;
+	} 
+	else // both LITK_Integer
+	{
+		EWC_ASSERT(littyOperand.m_cBit == -1, "expected unsized literal here");
+
+		SBigInt bintOperand(BintFromStval(pStvalOperand));
+
+		bool fIsBoolOp;
+		bool f;
+		switch (jtokOperator)
+		{
+		case JTOK('-'):         fIsBoolOp = false;  bintOperand.m_fIsNegative = !bintOperand.m_fIsNegative; break;
+		// we're not currently handling ~ Doing this properly requires a bunch of work on sign extending unsized literals
+		//case JTOK('~'):         fIsBoolOp = false;  bintOperand = ~bintOperand; break;
+		case JTOK('!'):         fIsBoolOp = true;	f = bintOperand.m_nAbs == 0; break;
+		default: return false;
+		}
+
+		CSTValue * pStvalStnod = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
+		*ppStval = pStvalStnod;
+
+		if (fIsBoolOp)
+		{
+			SetBoolValue(pStvalStnod, f);
+	
+			STypeInfoLiteral * pTinBool = pSymtab->PTinlitFromLitk(LITK_Bool);
+			EWC_ASSERT(!pTinBool || pTinBool->m_tink == TINK_Literal, "expected literal type");
+
+			*ppTinReturn = pTinBool;
+			*ppTinOperand = pTinlitOperand;
+		}
+		else
+		{
+			SetIntegerValue(pTcwork, pStnodOperand, pStvalStnod, bintOperand);
+
+			EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Integer);
+			*ppTinReturn = pTinlitOperand;
+			*ppTinOperand = pTinlitOperand;
+		}
+		return true;
+	}
+}
+
 inline bool FComputeBinaryOpOnLiterals(
 	STypeCheckWorkspace * pTcwork,
-	JTOK jtokOperand,
+	JTOK jtokOperator,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLhs,
 	CSTNode * pStnodRhs, 
@@ -388,8 +516,8 @@ inline bool FComputeBinaryOpOnLiterals(
 	CSTValue * pStvalLhs = pStnodLhs->m_pStval;
 	CSTValue * pStvalRhs = pStnodRhs->m_pStval;
 
-	bool fLhsIsNumber = (littyLhs.m_litk == LITK_Float) | (littyLhs.m_litk == LITK_Integer);
-	bool fRhsIsNumber = (littyRhs.m_litk == LITK_Float) | (littyRhs.m_litk == LITK_Integer);
+	bool fLhsIsNumber = (littyLhs.m_litk == LITK_Float) | (littyLhs.m_litk == LITK_Integer) | (littyLhs.m_litk == LITK_Bool);
+	bool fRhsIsNumber = (littyRhs.m_litk == LITK_Float) | (littyRhs.m_litk == LITK_Integer) | (littyRhs.m_litk == LITK_Bool);
 	if ((fLhsIsNumber == false) | (fRhsIsNumber == false))
 		return false;
 
@@ -404,7 +532,7 @@ inline bool FComputeBinaryOpOnLiterals(
 		bool f;
 		F64 gLhs = GLiteralCast(pStvalLhs);
 		F64 gRhs = GLiteralCast(pStvalRhs);
-		switch (jtokOperand)
+		switch (jtokOperator)
 		{
 		case JTOK('+'):         fIsBoolOp = false;	g = gLhs + gRhs; break;
 		case JTOK('-'):         fIsBoolOp = false;	g = gLhs - gRhs; break;
@@ -453,21 +581,23 @@ inline bool FComputeBinaryOpOnLiterals(
 		bool fIsBoolOp;
 		SBigInt bintOut;
 		bool f;
-		F64 gLhs = GLiteralCast(pStvalLhs);
-		F64 gRhs = GLiteralCast(pStvalRhs);
-		switch (jtokOperand)
+		switch (jtokOperator)
 		{
 		case JTOK('+'):         fIsBoolOp = false;	bintOut = BintAdd(bintLhs, bintRhs); break;
 		case JTOK('-'):         fIsBoolOp = false;	bintOut = BintSub(bintLhs, bintRhs); break;
 		case JTOK('*'):         fIsBoolOp = false;	bintOut = BintMul(bintLhs, bintRhs); break;
 		case JTOK('/'):         fIsBoolOp = false;  bintOut = BintDiv(bintLhs, bintRhs); break;
 		case JTOK('%'):         fIsBoolOp = false;  bintOut = BintRemainder(bintLhs, bintRhs); break;
-		case JTOK('>'):         fIsBoolOp = true;	f = gLhs > gRhs; break;
-		case JTOK('<'):         fIsBoolOp = true;	f = gLhs < gRhs; break;
-		case JTOK_EqualEqual:   fIsBoolOp = true;	f = gLhs == gRhs; break;
-		case JTOK_NotEqual:     fIsBoolOp = true;	f = gLhs != gRhs; break;
-		case JTOK_LessEqual:    fIsBoolOp = true;	f = gLhs <= gRhs; break;
-		case JTOK_GreaterEqual:	fIsBoolOp = true;	f = gLhs >= gRhs; break;
+		case JTOK('|'):         fIsBoolOp = false;  bintOut = BintBitwiseOr(bintLhs, bintRhs); break;
+		case JTOK('&'):         fIsBoolOp = false;  bintOut = BintBitwiseAnd(bintLhs, bintRhs); break;
+		case JTOK_ShiftRight:	fIsBoolOp = false;  bintOut = BintShiftRight(bintLhs, bintRhs); break;
+		case JTOK_ShiftLeft:	fIsBoolOp = false;  bintOut = BintShiftLeft(bintLhs, bintRhs); break;
+		case JTOK('>'):         fIsBoolOp = true;	f = bintLhs > bintRhs; break;
+		case JTOK('<'):         fIsBoolOp = true;	f = bintLhs < bintRhs; break;
+		case JTOK_EqualEqual:   fIsBoolOp = true;	f = bintLhs == bintRhs; break;
+		case JTOK_NotEqual:     fIsBoolOp = true;	f = bintLhs != bintRhs; break;
+		case JTOK_LessEqual:    fIsBoolOp = true;	f = bintLhs <= bintRhs; break;
+		case JTOK_GreaterEqual:	fIsBoolOp = true;	f = bintLhs >= bintRhs; break;
 		default: return false;
 		}
 
@@ -485,20 +615,9 @@ inline bool FComputeBinaryOpOnLiterals(
 		}
 		else
 		{
-			if (bintOut.m_fIsNegative)
-			{
-				if (bintOut.m_nAbs > LLONG_MAX)
-				{
-					EmitError(pTcwork, pStnodLhs, "Literal value overflow. Value is too large for signed int.");
-				}
-				SetSignedIntValue(pStvalStnod, bintOut.S64Coerce());
-			}
-			else
-			{
-				SetUnsignedIntValue(pStvalStnod, bintOut.U64Coerce());
-			}
+			SetIntegerValue(pTcwork, pStnodLhs, pStvalStnod, bintOut);
 
-			EWC_ASSERT(pTinlitLhs->m_litty.m_litk == LITK_Integer);
+			EWC_ASSERT(pTinlitLhs->m_litty.m_litk == LITK_Integer || pTinlitLhs->m_litty.m_litk == LITK_Bool);
 			*ppTinReturn = pTinlitLhs;
 			*ppTinOperand = pTinlitLhs;
 		}
@@ -1409,9 +1528,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 						STypeInfo * pTinRhs = pStnodRhs->m_pTin;
 
-						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 						if (EWC_FVERIFY((pTinLhs != nullptr) & (pTinRhs != nullptr), "unknown type in binary operation"))
 						{
+							CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 							if ((pTinLhs->m_tink == TINK_Literal) & (pTinRhs->m_tink == TINK_Literal))
 							{
 								// this needs to be explicitly handled, create a new literal with the result
@@ -1423,10 +1542,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 									//  it will be used for type inference from a literal, but this doesn't collapse
 									//  the operator into a constant. (yet)
 
-									// NOTE: Until we actually collapse the AST we'll potentially get the wrong values
-									//  as the calculations will be done in the resolved type (not in arbitrary precision)
-
-									CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 									STypeInfoLiteral * pTinReturn;
 									STypeInfoLiteral * pTinOperand;
 									CSTValue * pStval;
@@ -1446,7 +1561,14 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 									}
 									else
 									{
-										EWC_ASSERT(false, "failed to execute binary op on literals");
+										EmitError(
+											pTcwork, 
+											pStnod, 
+											"invalid opcode %s for %s literal and %s literal", 
+											PChzFromJtok(pStnod->m_jtok),
+											PChzFromLitk(((STypeInfoLiteral *)pTinLhs)->m_litty.m_litk),
+											PChzFromLitk(((STypeInfoLiteral *)pTinRhs)->m_litty.m_litk));
+										return TCRET_StoppingError;
 									}
 								}
 							}
@@ -1466,6 +1588,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 										PChzFromJtok(pStnod->m_jtok),
 										strLhs.PChz(),
 										strRhs.PChz());
+									return TCRET_StoppingError;
 								}
 
 								PARK park = pStnod->m_park;
@@ -1497,98 +1620,148 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						CSTNode * pStnodOperand = pStnod->PStnodChild(0);
 						STypeInfo * pTinOperand = pStnodOperand->m_pTin;
 
-						JTOK jtok = pStnod->m_jtok;
-						switch (jtok)
+						if (EWC_FVERIFY(pTinOperand != nullptr, "unknown type in unary operation"))
 						{
-							case JTOK('&'):		// dereference
+							if ((pTinOperand->m_tink == TINK_Literal))
 							{
-								if (pTinOperand->m_tink != TINK_Pointer)
+								// this needs to be explicitly handled, create a new literal with the result
+								if (EWC_FVERIFY(
+										pStnod->m_pTin == nullptr, 
+										"STypeInfoLiteral should be constructed during type checking"))
 								{
-									CString strOp = StrFromTypeInfo(pTinOperand);
-									EmitError(pTcwork, pStnod, "Cannot dereference type %s", strOp.PChz());
-									return TCRET_StoppingError;
-								}
-								else
-								{
-									STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTinOperand;
-									pStnod->m_pTin = pTinptr->m_pTinPointedTo;
-								}
-							}break;
-							case JTOK('*'):		// add reference
-							{
-								bool FCanTakeReference = pTinOperand->m_tink != TINK_Literal;
-								if (!FCanTakeReference)
-								{
-									CString strOp = StrFromTypeInfo(pTinOperand);
-									EmitError(pTcwork, pStnod, "Cannot take reference of type %s", strOp.PChz());
-									return TCRET_StoppingError;
-								}
+									// NOTE: This computes the proper value and type, but will not collapse the AST
+									//  The codegen pass will stop recursing when it gets to this finalized literal type
 
-								CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-								STypeInfoPointer * pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
-								pTinptr->m_pTinPointedTo = pTinOperand;
-								pSymtab->AddManagedTin(pTinptr);
-								pStnod->m_pTin = pTinptr;
-							}break;
-
-							case JTOK('!'):
-							{
-								STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinBuiltin("bool");
-								if (!EWC_FVERIFY(pTinBool, "missing bool type"))
-									return TCRET_StoppingError;
-								if (!FCanImplicitCast(pTinOperand, pTinBool))
-								{
-									CString strOp = StrFromTypeInfo(pTinOperand);
-									EmitError(pTcwork, pStnod, "Cannot convert type %s to bool", strOp.PChz());
-								}
-
-								pStnod->m_pTin = pTinBool;
-							}break;
-
-							case JTOK('~'):
-							case JTOK_PlusPlus:
-							case JTOK_MinusMinus:
-							case JTOK('+'):
-							case JTOK('-'):
-							{
-								TINK tinkOperand = pTinOperand->m_tink;
-								bool fIsInteger = tinkOperand == TINK_Integer;
-								bool fIsFloat = tinkOperand == TINK_Float;
-								if (tinkOperand == TINK_Literal && pStnodOperand->m_pStval)
-								{
-									LITK litk = ((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk;
-									fIsInteger |= litk == LITK_Integer;
-									fIsFloat |= litk == LITK_Float;
-								}
-
-								bool fIsValidPtrOp =	((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & 
-														(tinkOperand == TINK_Pointer);
-								bool fIsValidFloatOp =  ((jtok == JTOK('+')) | (jtok == JTOK('-'))) & fIsFloat;
-								bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp;
-
-								// BB - we should be checking for negating a signed literal here, but we can't really
-								//  do operations on literals until we know the resolved type
-								//  (Otherwise ~1 will always resolve to a u64)
-
-								pStnod->m_pTin = pTinOperand;
-								if (!fIsSupported)
-								{
-									CString strOp = StrFromTypeInfo(pTinOperand);
-									EmitError(pTcwork, pStnod, "invalid unary operator for type %s", strOp.PChz());
-								}
-								else
-								{
-									if (jtok == JTOK('-') && tinkOperand == TINK_Integer)
+									CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+									STypeInfoLiteral * pTinReturn;
+									STypeInfoLiteral * pTinOperand;
+									CSTValue * pStval;
+									if (FComputeUnaryOpOnLiteral(
+											pTcwork,
+											pStnod->m_jtok,
+											pSymtab,
+											pStnodOperand,
+											&pTinOperand,
+											&pTinReturn,
+											&pStval))
 									{
-										STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinOperand;
-										if (!pTinint->m_fIsSigned)
-										{
-											CString strOp = StrFromTypeInfo(pTinOperand);
-											EmitError(pTcwork, pStnod, "negate operand not valid for unsigned type %s", strOp.PChz());
-										}
+										pStnod->m_pTin = pTinReturn;
+										pStnod->m_pTinOperand = pTinOperand;
+										pStnod->m_pStval = pStval;
+									}
+									else
+									{
+										EmitError(
+											pTcwork, 
+											pStnod, 
+											"invalid unary operand %s for %s literal", 
+											PChzFromJtok(pStnod->m_jtok),
+											PChzFromLitk(((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk));
+										return TCRET_StoppingError;
 									}
 								}
-							}break;
+							}
+							else
+							{
+
+								JTOK jtok = pStnod->m_jtok;
+								switch (jtok)
+								{
+								case JTOK('&'):		// dereference
+									{
+										if (pTinOperand->m_tink != TINK_Pointer)
+										{
+											CString strOp = StrFromTypeInfo(pTinOperand);
+											EmitError(pTcwork, pStnod, "Cannot dereference type %s", strOp.PChz());
+											return TCRET_StoppingError;
+										}
+										else
+										{
+											STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTinOperand;
+											pStnod->m_pTin = pTinptr->m_pTinPointedTo;
+										}
+									}break;
+								case JTOK('*'):		// add reference
+									{
+										bool FCanTakeReference = pTinOperand->m_tink != TINK_Literal;
+										if (!FCanTakeReference)
+										{
+											CString strOp = StrFromTypeInfo(pTinOperand);
+											EmitError(pTcwork, pStnod, "Cannot take reference of type %s", strOp.PChz());
+											return TCRET_StoppingError;
+										}
+
+										CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+										STypeInfoPointer * pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
+										pTinptr->m_pTinPointedTo = pTinOperand;
+										pSymtab->AddManagedTin(pTinptr);
+										pStnod->m_pTin = pTinptr;
+									}break;
+
+								case JTOK('!'):
+									{
+										STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinBuiltin("bool");
+										if (!EWC_FVERIFY(pTinBool, "missing bool type"))
+											return TCRET_StoppingError;
+										if (!FCanImplicitCast(pTinOperand, pTinBool))
+										{
+											CString strOp = StrFromTypeInfo(pTinOperand);
+											EmitError(pTcwork, pStnod, "Cannot convert type %s to bool", strOp.PChz());
+										}
+
+										pStnod->m_pTin = pTinBool;
+									}break;
+
+								case JTOK('~'):
+								case JTOK_PlusPlus:
+								case JTOK_MinusMinus:
+								case JTOK('+'):
+								case JTOK('-'):
+									{
+										TINK tinkOperand = pTinOperand->m_tink;
+										bool fIsInteger = tinkOperand == TINK_Integer;
+										bool fIsFloat = tinkOperand == TINK_Float;
+										if (tinkOperand == TINK_Literal && pStnodOperand->m_pStval)
+										{
+											LITK litk = ((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk;
+											fIsInteger |= litk == LITK_Integer;
+											fIsFloat |= litk == LITK_Float;
+										}
+
+										bool fIsValidPtrOp = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) &
+											(tinkOperand == TINK_Pointer);
+										bool fIsValidFloatOp = ((jtok == JTOK('+')) | (jtok == JTOK('-'))) & fIsFloat;
+										bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp;
+
+										// BB - we should be checking for negating a signed literal here, but we can't really
+										//  do operations on literals until we know the resolved type
+										//  (Otherwise ~1 will always resolve to a u64)
+
+										pStnod->m_pTin = pTinOperand;
+										if (!fIsSupported)
+										{
+											CString strOp = StrFromTypeInfo(pTinOperand);
+											EmitError(pTcwork, pStnod, "invalid unary operator for type %s", strOp.PChz());
+										}
+										else
+										{
+											if (jtok == JTOK('-') && tinkOperand == TINK_Integer)
+											{
+												STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinOperand;
+												if (!pTinint->m_fIsSigned)
+												{
+													CString strOp = StrFromTypeInfo(pTinOperand);
+													EmitError(
+														pTcwork,
+														pStnod,
+														"negate operand not valid for unsigned type %s",
+														strOp.PChz());
+												}
+											}
+										}
+									}break;
+								}
+							}
 						}
 					}
 
@@ -1709,211 +1882,6 @@ STVALK StvalkFromTin(STypeInfo * pTin)
 	return STVALK_Nil;
 }
 
-#if 0 
-//Deprecated, remove after next check in
-void FlushResolvedLiterals(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, STypeInfo * pTinResolve)
-{
-	switch (pStnod->m_park)
-	{
-	case PARK_Literal:
-		{
-			CSTValue * pStval = pStnod->m_pStval;
-			if (EWC_FVERIFY(pStval && pTinResolve, "trying to flush resolved literal without type"))
-			{
-				STVALK stvalkNew = StvalkFromTin(pTinResolve);
-
-				if (stvalkNew != STVALK_Nil && stvalkNew != pStval->m_stvalk)
-				{
-					if (pStval->m_stvalk == STVALK_Float && 
-						(stvalkNew == STVALK_SignedInt || stvalkNew == STVALK_UnsignedInt))
-					{
-						EmitError(pTcwork, pStnod, "Initializing integer with float literal");
-					}
-
-					switch (stvalkNew)
-					{
-					case STVALK_Float:
-						pStval->m_g = GLiteralCast(pStval);
-						break;
-					case STVALK_SignedInt:
-						pStval->m_nSigned = NSignedLiteralCast(pTcwork, pStnod, pStval);
-						break;
-					case STVALK_UnsignedInt:
-						pStval->m_nUnsigned = NUnsignedLiteralCast(pTcwork, pStnod, pStval);
-						break;
-					}
-					pStval->m_stvalk = stvalkNew;
-				}
-			}
-		}break;
-	case PARK_Identifier:
-		return;
-	case PARK_StructDefinition:
-	case PARK_ParameterList:
-	case PARK_List:
-		{
-			for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
-			{
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnod), nullptr);
-			}
-		}break;
-	case PARK_ProcedureDefinition:
-		{
-			CSTProcedure * pStproc = pStnod->m_pStproc;
-			if (!EWC_FVERIFY(pStproc, "missing procedure parse data"))
-				return;
-
-			if (pStproc->m_iStnodParameterList >= 0)
-			{
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(pStproc->m_iStnodParameterList), nullptr);
-			}
-
-			if (pStproc->m_iStnodBody >= 0)
-			{
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(pStproc->m_iStnodBody), nullptr);
-			}
-		}break;
-	case PARK_ProcedureCall:
-		{
-			if (!EWC_FVERIFY(pStnod->m_pSym && pStnod->m_pSym->m_pStnodDefinition, "Unknown procedure in call"))
-				return;
-
-			CSTNode * pStnodDefinition = pStnod->m_pSym->m_pStnodDefinition;
-			STypeInfoProcedure * pTinproc = (STypeInfoProcedure *)pStnodDefinition->m_pTin;
-			if (!EWC_FVERIFY(pTinproc && pTinproc->m_tink == TINK_Procedure, "expected procedure type"))
-				return;
-
-			for (int iStnodArg = 1; iStnodArg < pStnod->CStnodChild(); ++iStnodArg)
-			{
-				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodArg);
-				STypeInfo * pTinParam = pTinproc->m_arypTinParams[iStnodArg - 1];
-
-				FlushResolvedLiterals(pTcwork, pStnodArg, pTinParam);
-			}
-		}break;
-	case PARK_EnumConstant:
-	case PARK_EnumDefinition:
-		{
-			EWC_ASSERT(false, "WIP Enum typeCheck not finished");
-			return;
-		}break;
-	case PARK_Decl:
-		{
-			CSTDecl * pStdecl = pStnod->m_pStdecl;
-			if (!EWC_FVERIFY(pStdecl, "missing decl parse data"))
-				return;
-			if (pStdecl->m_iStnodInit >= 0)
-			{
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(pStdecl->m_iStnodInit), pStnod->m_pTin);
-			}
-		}break;
-	case PARK_AssignmentOp:
-		{
-			if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to assignment op"))
-			{
-				CSTNode * pStnodRhs = pStnod->PStnodChild(1);
-				FlushResolvedLiterals(pTcwork, pStnodRhs, pStnod->m_pTin);
-			}
-		}break;
-	case PARK_ReservedWord:
-		{
-			if (EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
-			{
-				RWORD rword = pStnod->m_pStval->m_rword;
-				switch (rword)
-				{
-				case RWORD_If:
-					{
-						if (pStnod->CStnodChild() < 2)
-						{
-							EmitError(pTcwork, pStnod, "encountered if statement without expected predicate,child,[else]");
-							return;
-						}
-
-						STypeInfo * pTinBool = pStnod->m_pTin;
-						if (EWC_FVERIFY(pTinBool->m_tink == TINK_Bool, "expected bool type for predicate"))
-						{
-							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pTinBool);
-						}
-
-						for (int iStnodArg = 1; iStnodArg < pStnod->CStnodChild(); ++iStnodArg)
-						{
-							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnodArg), nullptr);
-						}
-					} break;
-				case RWORD_Else:
-					{
-						for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
-						{
-							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnod), nullptr);
-						}
-					} break;
-				case RWORD_Return:
-					{
-						for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
-						{
-							FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(iStnod), pStnod->m_pTin);
-						}
-					}break;
-				default:
-					EmitError(pTcwork, pStnod, "unhandled reserved word '%s' in FlushResolvedLiterals", PChzFromRword(rword));
-					return;
-				}
-			}
-		}break;
-	case PARK_AdditiveOp:
-	case PARK_MultiplicativeOp:
-	case PARK_ShiftOp:
-	case PARK_BitwiseAndOrOp:
-		{
-			// binary ops where the return type is the same as the operands
-			if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to binary ops"))
-			{
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pTinResolve);
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(1), pTinResolve);
-			}
-		}break;
-	case PARK_RelationalOp:
-	case PARK_EqualityOp:
-	case PARK_LogicalAndOrOp:
-		{
-			// binary ops where the return type is bool
-			if (EWC_FVERIFY(pStnod->CStnodChild() == 2, "expected two operands to binary ops"))
-			{
-				EWC_ASSERT(pStnod->m_pTinOperand, "expected operand type info");
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pStnod->m_pTinOperand);
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(1), pStnod->m_pTinOperand);
-			}
-		}break;
-	case PARK_UnaryOp:
-		{
-			if (EWC_FVERIFY(pStnod->CStnodChild() == 1, "expected one operand to unary operations"))
-			{
-				FlushResolvedLiterals(pTcwork, pStnod->PStnodChild(0), pTinResolve);
-			}
-		}break;
-	}
-}
-
-void PerformFlushResolvedLiteralsPass(
-	STypeCheckWorkspace * pTcwork,
-	CAry<CWorkspace::SEntry> * paryEntry)
-{
-	// Type checking has done a bottom up pass resolving literals (as tightly as possible, or using default rules)
-	// Now we need to push those resolved literal types down the tree. This could be avoided (maybe?) once the
-	// code to collapse literal expressions also collapses the AST nodes into a single constant.
-
-	// Note: this only sets CSTNode::m_pStval->m_litty's type info, not the STypeInfoLiteral::m_litty 
-	//  as they should be unique-ified literal values (?) (yuck!)
-
-	CWorkspace::SEntry * pEntryMac = paryEntry->PMac();
-	for (CWorkspace::SEntry * pEntry = paryEntry->A(); pEntry != pEntryMac; ++pEntry)
-	{
-		FlushResolvedLiterals(pTcwork, pEntry->m_pStnod, nullptr);
-	}
-}
-#endif // deprecated
-
 void PerformTypeCheck(
 	CAlloc * pAlloc,
 	CSymbolTable * pSymtabTop,
@@ -2004,6 +1972,8 @@ void AssertTestSigned65()
 	// values. It's not clear that this is the wrong behavior for literals... it should probably throw an overflow
 	// error (?)
 
+	s64 nTest = -1 >> 1;
+	AssertEquals(BintShiftRight(BintFromInt(-1), BintFromInt(1)), BintFromInt(-1 >> 1));
 	AssertEquals(BintSub(BintFromInt(0), BintFromInt(LLONG_MIN+1)), BintFromInt(LLONG_MAX));
 
 	for (int iNLhs = 0; iNLhs < EWC_DIM(s_aNSigned); ++iNLhs)
@@ -2015,6 +1985,15 @@ void AssertTestSigned65()
 			AssertEquals(BintAdd(BintFromInt(nLhs), BintFromInt(nRhs)), BintFromInt(nLhs + nRhs));
 			AssertEquals(BintSub(BintFromInt(nLhs), BintFromInt(nRhs)), BintFromInt(nLhs - nRhs));
 			AssertEquals(BintMul(BintFromInt(nLhs), BintFromInt(nRhs)), BintFromInt(nLhs * nRhs));
+
+			AssertEquals(BintBitwiseOr(BintFromInt(nLhs), BintFromInt(nRhs)), BintFromInt(nLhs | nRhs));
+			AssertEquals(BintBitwiseAnd(BintFromInt(nLhs), BintFromInt(nRhs)), BintFromInt(nLhs & nRhs));
+
+			if (nRhs >= 0)
+			{
+				AssertEquals(BintShiftRight(BintFromInt(nLhs), BintFromInt(nRhs)), BintFromInt(nLhs >> nRhs));
+				AssertEquals(BintShiftLeft(BintFromInt(nLhs), BintFromInt(nRhs)), BintFromInt(nLhs << nRhs));
+			}
 
 			if (nRhs != 0)
 			{
@@ -2033,6 +2012,15 @@ void AssertTestSigned65()
 			u64 nLhs = s_aNUnsigned[iNLhs];
 			u64 nRhs = s_aNUnsigned[iNRhs];
 			AssertEquals(BintAdd(BintFromUint(nLhs), BintFromUint(nRhs)), BintFromUint(nLhs + nRhs));
+
+			AssertEquals(BintBitwiseOr(BintFromUint(nLhs), BintFromUint(nRhs)), BintFromUint(nLhs | nRhs));
+			AssertEquals(BintBitwiseAnd(BintFromUint(nLhs), BintFromUint(nRhs)), BintFromUint(nLhs & nRhs));
+
+			if (nRhs >= 0)
+			{
+				AssertEquals(BintShiftRight(BintFromUint(nLhs), BintFromUint(nRhs)), BintFromUint(nLhs >> nRhs));
+				AssertEquals(BintShiftLeft(BintFromUint(nLhs), BintFromUint(nRhs)), BintFromUint(nLhs << nRhs));
+			}
 
 			// does not replicate unsigned underflow, because the sign bit is tracked seperately
 			if (nLhs >= nRhs)
@@ -2100,6 +2088,10 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "a:=2-2; n:=-2;";
+	pChzOut ="(int @a (Literal:Int64 Literal:Int Literal:Int)) (int @n (Literal:Int64 Literal:Int))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n; }"; 
 	pChzOut		= "(foo() @foo (Params (bool @n bool)) void) (s16 @n s16) "

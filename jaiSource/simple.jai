@@ -30,8 +30,15 @@ main :: () -> int
 
 	PrintBool(1 < 2);
 
+	PrintInt(1 | 0);
+	PrintBool(true & false);
+	PrintBool(true | false);
+	PrintInt(1 << 7);
+	PrintInt(256 >> 2);
+
+	PrintInt(-1);
+	PrintInt(-1 + 1);
 	PrintIf(1);
-	// PrintIf(-1); //doesn't work!
 	PrintIf(2);
 	PrintIf(30);
 

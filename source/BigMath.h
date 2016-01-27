@@ -118,6 +118,61 @@ inline SBigInt BintRemainder(const SBigInt & bintLhs, const SBigInt & bintRhs)
 	return BintFromUint(bintLhs.m_nAbs % bintRhs.m_nAbs, bintLhs.m_fIsNegative);
 }
 
+inline u64 NTwosCompliment(u64 n, bool fIsNegative)
+{
+	return (fIsNegative) ? (~n + 1) : n;
+}
+
+inline SBigInt BintBitwiseOr(const SBigInt & bintLhs, const SBigInt & bintRhs)
+{
+	u64 nLhs = NTwosCompliment(bintLhs.m_nAbs, bintLhs.m_fIsNegative);
+	u64 nRhs = NTwosCompliment(bintRhs.m_nAbs, bintRhs.m_fIsNegative);
+
+	bool fIsOutNegative = bintLhs.m_fIsNegative | bintRhs.m_fIsNegative;
+	u64 nOut = NTwosCompliment(nLhs | nRhs, fIsOutNegative);
+
+	return BintFromUint(nOut, fIsOutNegative);
+}
+
+inline SBigInt BintBitwiseAnd(const SBigInt & bintLhs, const SBigInt & bintRhs)
+{
+	u64 nLhs = NTwosCompliment(bintLhs.m_nAbs, bintLhs.m_fIsNegative);
+	u64 nRhs = NTwosCompliment(bintRhs.m_nAbs, bintRhs.m_fIsNegative);
+
+	bool fIsOutNegative = bintLhs.m_fIsNegative & bintRhs.m_fIsNegative;
+	u64 nOut = NTwosCompliment(nLhs & nRhs, fIsOutNegative);
+
+	return BintFromUint(nOut, fIsOutNegative);
+}
+
+inline SBigInt BintShiftRight(const SBigInt & bintLhs, const SBigInt & bintRhs)
+{
+	u64 nLhs = NTwosCompliment(bintLhs.m_nAbs, bintLhs.m_fIsNegative);
+	if (bintRhs.m_fIsNegative)
+	{
+		return BintFromUint(NTwosCompliment(nLhs << bintRhs.m_nAbs, bintLhs.m_fIsNegative), bintLhs.m_fIsNegative);
+	}
+	else
+	{
+		u64 nSignExtend = (bintLhs.m_fIsNegative) ? 0x8000000000000000 : 0;
+		return BintFromUint(NTwosCompliment((nLhs >> bintRhs.m_nAbs) | nSignExtend, bintLhs.m_fIsNegative), bintLhs.m_fIsNegative);
+	}
+}
+
+inline SBigInt BintShiftLeft(const SBigInt & bintLhs, const SBigInt & bintRhs)
+{
+	u64 nLhs = NTwosCompliment(bintLhs.m_nAbs, bintLhs.m_fIsNegative);
+	if (bintRhs.m_fIsNegative)
+	{
+		u64 nSignExtend = (bintLhs.m_fIsNegative) ? 0x8000000000000000 : 0;
+		return BintFromUint(NTwosCompliment((nLhs >> bintRhs.m_nAbs) | nSignExtend, bintLhs.m_fIsNegative), bintLhs.m_fIsNegative);
+	}
+	else
+	{
+		return BintFromUint(NTwosCompliment(nLhs << bintRhs.m_nAbs, bintLhs.m_fIsNegative), bintLhs.m_fIsNegative);
+	}
+}
+
 inline bool operator ==(const SBigInt & bintLhs, const SBigInt & bintRhs)
 {
 	return (bintLhs.m_nAbs == bintRhs.m_nAbs) & (bintLhs.m_fIsNegative == bintRhs.m_fIsNegative);
