@@ -179,6 +179,7 @@ static inline s8 COperand(IROP irop)
 		return 0;
 	if (((irop >= IROP_BinaryOpMin) & (irop < IROP_BinaryOpMax)) | 
 		((irop >= IROP_CmpOpMin) & (irop < IROP_CmpOpMax)) | 
+		((irop >= IROP_LogicOpMin) & (irop < IROP_LogicOpMax)) | 
 		(irop == IROP_Store))
 		return 2;
 	return 1;
@@ -359,6 +360,43 @@ CIRInstruction * CIRBuilder::PInstCreateGMul(CIRValue * pValLhs, CIRValue * pVal
 {
 	CIRInstruction * pInst = PInstCreate(IROP_GMul, pValLhs, pValRhs, pChzName);
 	pInst->m_pLval = m_pLbuild->CreateFMul(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNShr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_Shr, pValLhs, pValRhs, pChzName);
+
+	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
+	if (fSigned)
+	{
+		pInst->m_pLval = m_pLbuild->CreateAShr(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	}
+	else
+	{
+		pInst->m_pLval = m_pLbuild->CreateLShr(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	}
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNShl(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_Shl, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateShl(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNAnd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_And, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateAnd(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNOr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_Or, pValLhs, pValRhs, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateOr(pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
 	return pInst;
 }
 
@@ -1117,6 +1155,10 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 					case '-': 				pInstOp = pBuild->PInstCreateNSub(pValLhs, pValRhs, "nSubTmp", fIsSigned); break;
 					case '*': 				pInstOp = pBuild->PInstCreateNMul(pValLhs, pValRhs, "nMulTmp", fIsSigned); break;
 					case '/': 				pInstOp = pBuild->PInstCreateNDiv(pValLhs, pValRhs, "nDivTmp", fIsSigned); break;
+					case '&':				pInstOp = pBuild->PInstCreateNAnd(pValLhs, pValRhs, "nAndTmp"); break;
+					case '|':				pInstOp = pBuild->PInstCreateNOr(pValLhs, pValRhs, "nOrTmp"); break;
+					case JTOK_ShiftRight:	pInstOp = pBuild->PInstCreateNShr(pValLhs, pValRhs, "nShrTmp", fIsSigned); break;
+					case JTOK_ShiftLeft:	pInstOp = pBuild->PInstCreateNShl(pValLhs, pValRhs, "nShlTmp", fIsSigned); break;
 					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
 					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
 					case JTOK_LessEqual:
@@ -1726,7 +1768,7 @@ void TestCodeGen()
 
 	StaticInitStrings(&allocString);
 
-	u8 aB[1024 * 100];
+	u8 aB[1024 * 200];
 	CAlloc alloc(aB, sizeof(aB));
 
 	TestUniqueNames(&alloc);

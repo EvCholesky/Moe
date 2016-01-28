@@ -121,14 +121,17 @@ int main(int cpChzArg, const char * apChzArg[])
 		grfcompile.AddFlags(FCOMPILE_PrintIR);
 	}
 
+	static const int s_cBHeap = 500 * 1024;
+	u8 * aB = nullptr;
+
 	if (comline.m_pChzFilename)
 	{
 		u8 aBString[1024 * 100];
 		CAlloc allocString(aBString, sizeof(aBString));
 		StaticInitStrings(&allocString);
 
-		u8 aB[1024 * 100];
-		CAlloc alloc(aB, sizeof(aB));
+		aB = new u8[s_cBHeap];
+		CAlloc alloc(aB, s_cBHeap);
 
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
@@ -259,7 +262,10 @@ int main(int cpChzArg, const char * apChzArg[])
 		work.m_pAlloc->SetAltrac(nullptr);
 #endif
 		StaticShutdownStrings(&allocString);
-
+	}
+	if (aB)
+	{
+		delete[] aB;
 	}
 
 	if (comline.FHasCommand("-test"))

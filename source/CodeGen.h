@@ -287,12 +287,17 @@ public:
 
 	CIRInstruction *	PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+
 	CIRInstruction *	PInstCreateNSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
 	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateNShr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
+	CIRInstruction *	PInstCreateNShl(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
+	CIRInstruction *	PInstCreateNAnd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateNOr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
 	CIRInstruction *	PInstCreateNCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);

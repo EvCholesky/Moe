@@ -33,6 +33,18 @@ main :: () -> int
 	PrintInt(1 | 0);
 	PrintBool(true & false);
 	PrintBool(true | false);
+
+	nSeven := 7;
+	PrintInt(7 | 12);
+	PrintInt(7 & 9);
+
+	nFoo3 := nFoo & 1;
+	n128 := 128;
+	nFoo4 := n128 << 1;
+	nFoo5 := n128 >> 2;
+	PrintInt(nFoo4);
+	PrintInt(nFoo5);
+
 	PrintInt(1 << 7);
 	PrintInt(256 >> 2);
 
