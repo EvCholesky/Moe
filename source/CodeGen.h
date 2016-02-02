@@ -106,9 +106,14 @@ EWC_ENUM_UTILS(VALK);
 		OP(GDiv), \
 		OP_RANGE(BinaryOp, JumpOpMax), \
 		\
+		OP(NNeg), \
+		OP(GNeg), \
+		OP(Not), \
+		OP_RANGE(UnaryOp, BinaryOpMax), \
+		\
 		OP(NCmp), \
 		OP(GCmp), \
-		OP_RANGE(CmpOp, BinaryOpMax), \
+		OP_RANGE(CmpOp, UnaryOpMax), \
 		\
 		OP(Shl), \
 		OP(Shr), \
@@ -299,6 +304,10 @@ public:
 	CIRInstruction *	PInstCreateNAnd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateNOr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
+	CIRInstruction *	PInstCreateNNeg(CIRValue * pValOperand, const char * pChzName, bool fIsSigned);
+	CIRInstruction *	PInstCreateGNeg(CIRValue * pValOperand, const char * pChzName);
+	CIRInstruction *	PInstCreateFNot(CIRValue * pValOperand, const char * pChzName);
+
 	CIRInstruction *	PInstCreateNCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
@@ -310,8 +319,12 @@ public:
 
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
-	CIRInstruction *	PInstLoadSymbol(SSymbol * pSym, const char * pChzName);
-	CIRInstruction *	PInstCreateStore(CIRValue * pValDst, CIRValue * pValSrc);
+	CIRInstruction *	PInstFromSymbol(SSymbol * pSym);
+	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
+	CIRInstruction *	PInstCreateLoad(CIRValue * pValPT, const char * pChzName);
+
+	CIRInstruction *	PInstReference(SSymbol * pSym, const char * pChzName);
+	CIRInstruction *	PInstDereference(CIRValue * pValDst, CIRValue * pValSrc);
 
 	llvm::Module *			m_pLmoduleCur;
 	LlvmIRBuilder *			m_pLbuild;
@@ -325,7 +338,17 @@ public:
 
 };
 
-CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod);
+
+
+enum VALGENK
+{
+	VALGENK_Instance,
+	VALGENK_Reference	// return a reference for LHS store
+};
+
+CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk);
+
+
 
 void InitLLVM();
 void ShutdownLLVM();

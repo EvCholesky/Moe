@@ -19,3 +19,8 @@ extern "C" void PrintBool(bool f)
 {
 	printf("%s\n", (f) ? "true" : "false");
 }
+
+extern "C" void PrintString(const char * pChz)
+{
+	printf("%s\n", pChz);
+}

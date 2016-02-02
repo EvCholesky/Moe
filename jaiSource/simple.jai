@@ -16,6 +16,23 @@ PrintIf :: (n : int)
 		PrintInt(3);
 }
 
+TestPointers :: ()
+{
+	n : s64 = 4;
+	pN := *n;
+	ppN := *pN;
+	PrintInt(&pN);
+
+	n = 3;
+	PrintInt(&pN);
+
+	&pN = 6;
+	PrintInt(n);
+
+	&(&ppN) = 8;
+	PrintInt(n);
+}
+
 main :: () -> int 
 {
 //	nAck := NReturn();
@@ -23,10 +40,13 @@ main :: () -> int
 	nByte: s8 = 10 + 12;
 	PrintByte(nByte); 
 
+
 	nFoo : s64 = AddNums(2, 10);
 	gTest := 2.2;
 	PrintFloat(gTest);
+	PrintFloat(-gTest);
 	PrintInt(nFoo);
+	PrintInt(-nFoo);
 
 	PrintBool(1 < 2);
 
@@ -54,6 +74,10 @@ main :: () -> int
 	PrintIf(2);
 	PrintIf(30);
 
+	fTrue := true;
+	printBool(!fTrue);
+	printBool(!!fTrue);
+
+	TestPointers();
 	return 1;
-	//return 100 - nAck + nFoo;
 }

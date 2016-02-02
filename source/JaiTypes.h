@@ -40,7 +40,7 @@ enum TINK
 	EWC_MAX_MIN_NIL(TINK)
 };
 
-
+const char * PChzFromTink(TINK tink);
 
 struct STypeInfo	// tag = tin
 {

@@ -55,6 +55,10 @@ enum JTOK
 	JTOK_Min = 0,
 	JTOK_Nil = -1,
 
+	// token alias (for easy rebinding)
+	JTOK_Reference = '*',
+	JTOK_Dereference = '&',
+
 	JTOK_SimpleMax = JTOK_Eof,
 };
 

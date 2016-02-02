@@ -400,6 +400,27 @@ CIRInstruction * CIRBuilder::PInstCreateNOr(CIRValue * pValLhs, CIRValue * pValR
 	return pInst;
 }
 
+CIRInstruction * CIRBuilder::PInstCreateNNeg(CIRValue * pValOperand, const char * pChzName, bool fIsSigned)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_NNeg, pValOperand, nullptr, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateNeg(pValOperand->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGNeg(CIRValue * pValOperand, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_GNeg, pValOperand, nullptr, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateFNeg(pValOperand->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateFNot(CIRValue * pValOperand, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreate(IROP_Not, pValOperand, nullptr, pChzName);
+	pInst->m_pLval = m_pLbuild->CreateNot(pValOperand->m_pLval, pChzName);
+	return pInst;
+}
+
 CIRInstruction * CIRBuilder::PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
 {
 	CIRInstruction * pInst;
@@ -502,7 +523,7 @@ CIRInstruction * CIRBuilder::PInstCreateAlloca(llvm::Type * pLtype, const char *
 	return pInst;
 }
 
-CIRInstruction * CIRBuilder::PInstLoadSymbol(SSymbol * pSym, const char * pChzName)
+CIRInstruction * CIRBuilder::PInstFromSymbol(SSymbol * pSym)
 {
 	if (!EWC_FVERIFY(pSym->m_pVal && pSym->m_pVal->m_valk == VALK_Instruction, "expected alloca value for symbol"))
 		return nullptr;
@@ -511,24 +532,29 @@ CIRInstruction * CIRBuilder::PInstLoadSymbol(SSymbol * pSym, const char * pChzNa
 	if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
 		return nullptr;
 
-	CIRInstruction * pInstLoad = PInstCreate(IROP_Load, pInstSym, nullptr, pChzName);
-	pInstLoad->m_pLval = m_pLbuild->CreateLoad(pInstSym->m_pLval, pChzName);
+	return pInstSym;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateLoad(CIRValue * pValPT, const char * pChzName)
+{
+	CIRInstruction * pInstLoad = PInstCreate(IROP_Load, pValPT, nullptr, pChzName);
+	pInstLoad->m_pLval = m_pLbuild->CreateLoad(pValPT->m_pLval, pChzName);
 	return pInstLoad;
 }
 
-CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValDst, CIRValue * pValSrc)
+CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pValT)
 {
-	//store pValSrc -> pSym
+	//store t into address pointed at by pT
 
-	if (!EWC_FVERIFY(pValDst && pValDst->m_valk == VALK_Instruction, "expected alloca value for symbol"))
+	if (!EWC_FVERIFY(pValPT && pValPT->m_valk == VALK_Instruction, "expected alloca value for symbol"))
 		return nullptr;
 
-	CIRInstruction * pInstSym = (CIRInstruction *)pValDst;
-	if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
+	CIRInstruction * pInstPT = (CIRInstruction *)pValPT;
+	if (!EWC_FVERIFY(pInstPT->m_irop = IROP_Alloca, "expected alloca for symbol"))
 		return nullptr;
 
-	CIRInstruction * pInstStore = PInstCreate(IROP_Store, pInstSym, pValSrc, "store");
-    pInstStore->m_pLval = m_pLbuild->CreateStore(pValSrc->m_pLval, pInstSym->m_pLval);
+	CIRInstruction * pInstStore = PInstCreate(IROP_Store, pInstPT, pValT, "store");
+    pInstStore->m_pLval = m_pLbuild->CreateStore(pValT->m_pLval, pInstPT->m_pLval);
 	return pInstStore;
 }
 
@@ -544,6 +570,12 @@ static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
 		case TINK_Void:
 		{
 			return llvm::Type::getVoidTy(lctx);
+		}
+		case TINK_Pointer:
+		{
+			STypeInfoPointer * pTinptr = (STypeInfoPointer*)pTin;
+			auto pLtypePointedTo = PLtypeFromPTin(pTinptr->m_pTinPointedTo);
+			return pLtypePointedTo->getPointerTo();
 		}
 	    case TINK_Integer:	
 		{
@@ -657,6 +689,11 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	bool fSignedDst;
 	if (pTinSrc->m_tink == TINK_Literal)
 		return pValSrc;
+	if (pTinSrc->m_tink == TINK_Pointer)
+	{
+		if (EWC_FVERIFY(pTinDst->m_tink == TINK_Pointer, "trying to cast pointer to non-pointer. (non supported yet)"))
+			return pValSrc;
+	}
 
 	ExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc);
 	ExtractNumericInfo(pTinDst, &cBitDst, &fSignedDst);
@@ -742,7 +779,7 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	return pValSrc;
 }
 
-static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, STypeInfo * pTin)
+static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, STypeInfo * pTin, llvm::Type * pLtype)
 {
 	llvm::LLVMContext * pLctx = &llvm::getGlobalContext();
 	LlvmIRBuilder * pLbuild = pBuild->m_pLbuild;
@@ -753,6 +790,7 @@ static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, SType
 	case TINK_Integer:	pLconst = pLbuild->getInt64(0);									break;
 	case TINK_Float:	pLconst = llvm::ConstantFP::get(*pLctx, llvm::APFloat(0.0f));	break;
 	case TINK_Bool:		pLconst = llvm::ConstantInt::getFalse(*pLctx);					break;
+	case TINK_Pointer:	pLconst = Constant::getNullValue(pLtype);						break;
 	default:			break;
 	}
 
@@ -767,7 +805,7 @@ static inline CIRValue * PValCreateDefaultInitializer(CIRBuilder * pBuild, SType
 	return pConst;
 }
 
-CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
+CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
 {
 	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 	{
@@ -814,8 +852,17 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 				}
 			}break;
 		case LITK_Bool:
-			{
-				EWC_ASSERT(pStval->m_stvalk == STVALK_UnsignedInt, "bad literal value");
+		{
+				if (pStval->m_stvalk == STVALK_ReservedWord)
+				{
+					EWC_ASSERT(
+						((pStval->m_nUnsigned == 1) & (pStval->m_rword == RWORD_True)) | 
+						((pStval->m_nUnsigned == 0) & (pStval->m_rword == RWORD_False)), "bad boolean reserved word");
+				}
+				else
+				{
+					EWC_ASSERT(pStval->m_stvalk == STVALK_UnsignedInt, "bad literal value");
+				}
 				pLconst = (pStval->m_nUnsigned) ? 
 							llvm::ConstantInt::getTrue(*pLctx) :
 							llvm::ConstantInt::getFalse(*pLctx);
@@ -844,7 +891,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			int cStnodChild = pStnod->CStnodChild();
 			for (int iStnodChild = 0; iStnodChild < cStnodChild; ++iStnodChild)
 			{
-				CIRValue * pVal = PValGenerate(pBuild, pStnod->PStnodChild(iStnodChild));
+				CIRValue * pVal = PValGenerate(pWork, pBuild, pStnod->PStnodChild(iStnodChild), VALGENK_Instance);
 				// not adding 
 			}
 
@@ -866,11 +913,11 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			CIRValue * pValInit;
 			if (pStdecl->m_iStnodInit >= 0)
 			{
-				pValInit = PValGenerate(pBuild, pStnod->PStnodChild(pStdecl->m_iStnodInit));
+				pValInit = PValGenerate(pWork, pBuild, pStnod->PStnodChild(pStdecl->m_iStnodInit), VALGENK_Instance);
 			}
 			else
 			{
-				pValInit = PValCreateDefaultInitializer(pBuild, pStnod->m_pTin);	
+				pValInit = PValCreateDefaultInitializer(pBuild, pStnod->m_pTin, pLtype);	
 			}
 			pBuild->PInstCreateStore(pInstAlloca, pValInit);
 
@@ -925,7 +972,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 
 						CSTNode * pStnodIf = pStnodCur;
 						CSTNode * pStnodPred = pStnodIf->PStnodChild(0);
-						CIRValue * pValPred = PValGenerate(pBuild, pStnodPred);
+						CIRValue * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
 
 						STypeInfo * pTinBool = pStnodIf->m_pTin;
 						EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for if");
@@ -967,7 +1014,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 						(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockTrue, pBlockFalse);
 
 						pBuild->ActivateBlock(pBlockTrue);
-						auto pValThen = PValGenerate(pBuild, pStnodIf->PStnodChild(1));
+						auto pValThen = PValGenerate(pWork, pBuild, pStnodIf->PStnodChild(1), VALGENK_Instance);
 						(void) pBuild->PInstCreateBranch(pBlockPost);	
 						pBlockTrue = pBuild->m_pBlockCur;	// could have changed during this' codegen
 
@@ -978,7 +1025,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 
 						if (pStnodElseChild)
 						{
-							auto pValThen = PValGenerate(pBuild, pStnodElseChild);
+							auto pValThen = PValGenerate(pWork, pBuild, pStnodElseChild, VALGENK_Instance);
 							pBlockFalse = pBuild->m_pBlockCur;	// could have changed during else's codegen
 
 							(void) pBuild->PInstCreateBranch(pBlockPost);	
@@ -996,7 +1043,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 					CIRValue * pValRhs = nullptr;
 					if (pStnod->CStnodChild() == 1)
 					{
-						pValRhs = PValGenerate(pBuild, pStnod->PStnodChild(0));
+						pValRhs = PValGenerate(pWork, pBuild, pStnod->PStnodChild(0), VALGENK_Instance);
 					}
 
 					CIRInstruction * pInstRet = pBuild->PInstCreateRet(pValRhs);
@@ -1037,7 +1084,7 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			std::vector<llvm::Value *> aryPLvalArgs;
 			for (int iStnodChild = 1; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
-				CIRValue * pVal = PValGenerate(pBuild, pStnod->PStnodChild(iStnodChild));
+				CIRValue * pVal = PValGenerate(pWork, pBuild, pStnod->PStnodChild(iStnodChild), VALGENK_Instance);
 				aryPLvalArgs.push_back(pVal->m_pLval);
 				if (aryPLvalArgs.back() == 0)
 					return 0;
@@ -1046,28 +1093,30 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			CIRInstruction * pInst = pBuild->PInstCreate(IROP_Call, nullptr, nullptr, "RetTmp");
 			pInst->m_pLval = pBuild->m_pLbuild->CreateCall(pProc->m_pLfunc, aryPLvalArgs);
 
-			return pInst;
 
-		} break;
+			return pInst;
+		}
 	case PARK_Identifier:
 		{
-			if (EWC_FVERIFY(pStnod->m_pSym, "unknown identifier in codeGen"))
+			CIRInstruction * pInst = pBuild->PInstFromSymbol(pStnod->m_pSym);
+			if (EWC_FVERIFY(pInst, "unknown identifier in codegen") && 
+				valgenk != VALGENK_Reference)
 			{
-				return pBuild->PInstLoadSymbol(pStnod->m_pSym, pStnod->m_pSym->m_strName.PChz());
+				return pBuild->PInstCreateLoad(pInst, pStnod->m_pSym->m_strName.PChz());
 			}
-		} break;
+			return pInst;
+		}
 	case PARK_AssignmentOp:
 		{
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
-			CIRValue * pValRhs = PValGenerate(pBuild, pStnodRhs);
+			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Reference);
+			CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
 
 			if (!EWC_FVERIFY((pStnodLhs != nullptr) & (pValRhs != nullptr), "null operand"))
 				return nullptr;
 
-			SSymbol * pSymLhs = pStnodLhs->m_pSym;
-
-			if (!EWC_FVERIFY(pSymLhs && pSymLhs->m_pVal, "bad symbol in assignment") || 
+			if (!EWC_FVERIFY(pValLhs->m_pLval != nullptr, "null llvm operand") || 
 				!EWC_FVERIFY(pValRhs->m_pLval != nullptr, "null llvm operand"))
 				return nullptr;
 
@@ -1079,15 +1128,14 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 	
 			CIRValue * pValRhsCast = PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOutput);
 
-			auto pInstOp = pBuild->PInstCreateStore(pSymLhs->m_pVal, pValRhsCast);
+			auto pInstOp = pBuild->PInstCreateStore(pValLhs, pValRhsCast);
 			if ( EWC_FVERIFY(pBuild->m_pBlockCur, "missing current block"))
 			{
 				pBuild->m_pBlockCur->Append(pInstOp);
 			}
 
 			return pInstOp;
-
-		} break;
+		}
 	case PARK_AdditiveOp:
 	case PARK_MultiplicativeOp:
 	case PARK_ShiftOp:
@@ -1098,20 +1146,15 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 		{
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
-			CIRValue * pValLhs = PValGenerate(pBuild, pStnodLhs);
-			CIRValue * pValRhs = PValGenerate(pBuild, pStnodRhs);
+			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Instance);
+			CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
 			if (!EWC_FVERIFY((pValLhs != nullptr) & (pValRhs != nullptr), "null operand"))
 				return nullptr;
 
 			if (!EWC_FVERIFY((pValLhs->m_pLval != nullptr) & (pValRhs->m_pLval != nullptr), "null llvm operand"))
 				return nullptr;
 
-			STypeInfo * pTinOutput = pStnod->m_pTin;
-			if (pStnod->m_park == PARK_RelationalOp || pStnod->m_park == PARK_EqualityOp)
-			{
-				pTinOutput = pStnodLhs->m_pTin;
-			}
-
+			STypeInfo * pTinOutput = pStnod->m_pTinOperand;
 			STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 
 			STypeInfo * pTinRhs = pStnodRhs->m_pTin;
@@ -1135,9 +1178,9 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 				default:			tink = TINK_Nil;
 				}
 			}
-			else if (pTinOutput->m_tink == TINK_Literal)
+			else if (pTinOutput->m_tink == TINK_Integer)
 			{
-				fIsSigned = ((STypeInfoInteger *)pValLhs->m_pStnod->m_pTin)->m_fIsSigned;
+				fIsSigned = ((STypeInfoInteger *)pTinOutput)->m_fIsSigned;
 			}
 
 			switch (tink)
@@ -1203,13 +1246,114 @@ CIRValue * PValGenerate(CIRBuilder * pBuild, CSTNode * pStnod)
 			}
 
 			return pInstOp;
+		}
 
-		}break;
+	case PARK_UnaryOp:
+		{
+			CSTNode * pStnodOperand = pStnod->PStnodChild(0);
+
+			if (pStnod->m_jtok == JTOK_Reference)
+			{
+				return PValGenerate(pWork, pBuild, pStnodOperand, VALGENK_Reference);
+			}
+
+			CIRValue * pValOperand = PValGenerate(pWork, pBuild, pStnodOperand, VALGENK_Instance);
+			if (!EWC_FVERIFY(pValOperand != nullptr, "null operand"))
+				return nullptr;
+
+			if (!EWC_FVERIFY(pValOperand->m_pLval != nullptr, "null llvm operand"))
+				return nullptr;
+
+			STypeInfo * pTinOutput = pStnod->m_pTinOperand;
+			STypeInfo * pTinOperand = pStnodOperand->m_pTin;
+			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinOperand != nullptr), "bad cast"))
+				return nullptr;
+	
+			CIRValue * pValOperandCast = PValCreateCast(pBuild, pValOperand, pTinOperand, pTinOutput);
+			CIRValue * pValOp = nullptr;
+
+			bool fIsSigned = true;
+			TINK tink = pTinOutput->m_tink;
+			if (pTinOutput->m_tink == TINK_Literal)
+			{
+				STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTinOutput;
+				fIsSigned = pTinlit->m_litty.m_fIsSigned;
+				switch (pTinlit->m_litty.m_litk)
+				{
+				case LITK_Integer:	tink = TINK_Integer;	break;
+				case LITK_Float:	tink = TINK_Float;		break;
+				default:			tink = TINK_Nil;
+				}
+			}
+			else if (pTinOutput->m_tink == TINK_Integer)
+			{
+				fIsSigned = ((STypeInfoInteger *)pTinOutput)->m_fIsSigned;
+			}
+
+			switch (pStnod->m_jtok)
+			{
+			case '!':				
+				{
+					EWC_ASSERT(tink == TINK_Bool, "expected value ot be cast to bool for '!' operand");
+					pValOp = pBuild->PInstCreateFNot(pValOperand, "NCmpEq");
+				} break;
+			case '-':
+				{
+					switch (tink)
+					{
+					case TINK_Float:	pValOp = pBuild->PInstCreateGNeg(pValOperand, "GNeg"); break;
+					case TINK_Integer:	pValOp = pBuild->PInstCreateNNeg(pValOperand, "NNeg", fIsSigned); break;
+					default: EWC_ASSERT(false, "unexpected type '%s' for negate operator", PChzFromTink(tink));
+					}
+				} break;
+			case JTOK_Dereference:
+				{
+					if (valgenk != VALGENK_Reference)
+					{
+						pValOp = pBuild->PInstCreateLoad(pValOperand, "Deref");
+					}
+					else
+					{
+						pValOp = pValOperand;
+					}
+				} break;
+			default: break;
+			}
+
+			EWC_ASSERT(
+				pValOp != nullptr,
+				"bad operand '%s' for type '%s'",
+				PChzFromJtok(pStnod->m_jtok),
+				PChzFromTink(tink));
+
+			return pValOp;
+		}
 	default:
 		EWC_ASSERT(false, "unhandled PARK (%s) in code generation.", PChzFromPark(pStnod->m_park));
 	}
 	return nullptr;
 }
+
+/* deprecated - delete after it's added to source control
+CIRInstruction * PInstFindPointer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod)
+{
+	if (pStnod->m_park == PARK_Identifier)
+	{
+		SSymbol * pSym = pStnod->m_pSym;
+		if (!EWC_FVERIFY(pSym->m_pVal && pSym->m_pVal->m_valk == VALK_Instruction, "expected alloca value for symbol"))
+			return nullptr;
+
+		CIRInstruction * pInstSym = (CIRInstruction *)pSym->m_pVal;
+		if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
+			return nullptr;
+
+		return pInstSym;
+	}
+
+	EmitError(pWork, &pStnod->m_lexloc, "Cannot take the address of %s", PChzFromPark(pStnod->m_park));
+	return nullptr;
+}
+*/
 
 CIRBasicBlock * CIRBuilder::PBlockCreate(CIRProcedure * pProc, const char * pChzName)
 {
@@ -1366,12 +1510,13 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 
 
 void CodeGenEntryPoint(
-	CAlloc * pAlloc,
+	CWorkspace * pWork,
 	CIRBuilder * pBuild, 
 	CSymbolTable * pSymtabTop,
 	CAry<CWorkspace::SEntry> * paryEntry,
 	CAry<int> * paryiEntryOrder)
 {
+	CAlloc * pAlloc = pWork->m_pAlloc;
 	int * piEntryMax = paryiEntryOrder->PMac();
 	for (int * piEntry = paryiEntryOrder->A(); piEntry != piEntryMax; ++piEntry)
 	{
@@ -1424,7 +1569,7 @@ void CodeGenEntryPoint(
 		if (pProc && pStnodBody)
 		{
 			pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
-			(void) PValGenerate(pBuild, pStnodBody);
+			(void) PValGenerate(pWork, pBuild, pStnodBody, VALGENK_Instance);
 
 			llvm::verifyFunction(*pProc->m_pLfunc);
 			pBuild->ActivateProcedure(nullptr, nullptr);
@@ -1693,7 +1838,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 	if (pWork->m_pErrman->m_cError == 0)
 	{
 		CIRBuilder build(pWork->m_pAlloc);
-		CodeGenEntryPoint(pWork->m_pAlloc, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 		CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
 
@@ -1745,7 +1890,7 @@ void AssertTestCodeGen(
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	{
 		CIRBuilder build(pWork->m_pAlloc);
-		CodeGenEntryPoint(pWork->m_pAlloc, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	}
 
 	/*
@@ -1777,6 +1922,8 @@ void TestCodeGen()
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
 
+	pChzIn =	"{ n : int = 32; pN : * int; pN = *n; n2 := &pN; &pN = 6;}";
+	AssertTestCodeGen(&work, pChzIn);
 	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; else nRet =1; return nRet; }";
 	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet; }";
 	pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n == 4) nRet = 4; else if (n == 3) nRet =3; else nRet = 2; return nRet; }";

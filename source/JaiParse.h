@@ -141,6 +141,7 @@ enum PARK // PARse Kind
 const char * PChzFromPark(PARK park);
 const char * PChzFromLitk(LITK litk);
 EWC::CString StrFromIdentifier(CSTNode * pStnod);
+bool FDoesOperatorReturnBool(PARK park);
 
 
 

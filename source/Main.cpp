@@ -152,7 +152,6 @@ int main(int cpChzArg, const char * apChzArg[])
 		CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
 		work.m_pAlloc->SetAltrac(pAltrac);
 #endif
-
 		bool fSuccess = FCompileModule(&work, grfcompile, comline.m_pChzFilename);
 		ShutdownLLVM();
 

@@ -96,6 +96,35 @@ const char * PChzFromLitk(LITK litk)
 	return s_mpLitkPChz[litk];
 }
 
+const char * PChzFromTink(TINK tink)
+{
+	static const char * s_mpTinkPChz[] =
+	{
+		"integer",
+		"float",
+		"bool",
+		"string",
+		"pointer",
+		"procedure",
+		"void",
+		"struct",
+		"array",
+		"null",
+		"any",
+		"enum",
+		"forwardDecl",
+		"literal",
+	};
+	EWC_CASSERT(EWC_DIM(s_mpTinkPChz) == TINK_Max, "missing TINK string");
+	if (tink == TINK_Nil)
+		return "Nil";
+
+	if ((tink < TINK_Nil) | (tink >= TINK_Max))
+		return "Unknown TINK";
+
+	return s_mpTinkPChz[tink];
+}
+
 void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChz, ...)
 {
 	printf("%s(%d) parse error:", pJlex->m_pChzFilename, NLine(pJlex));
@@ -385,8 +414,8 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 {
 	switch(pJlex->m_jtok)
 	{
-	case JTOK('&'):
-	case JTOK('*'):
+	case JTOK_Dereference:
+	case JTOK_Reference:
 	case JTOK('+'):
 	case JTOK('-'):
 	case JTOK('~'):
@@ -399,7 +428,7 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 
 			JtokNextToken(pJlex); // consume unary operator
 
-			CSTNode * pStnodExp = PStnodParsePostfixExpression(pParctx, pJlex);
+			CSTNode * pStnodExp = PStnodParseUnaryExpression(pParctx, pJlex);
 			if (!pStnodExp)
 			{
 				ParseError(
@@ -713,13 +742,13 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 
 CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	if (pJlex->m_jtok == JTOK('*'))
+	if (pJlex->m_jtok == JTOK_Reference)
 	{
 		SLexerLocation lexloc(pJlex);
 		JtokNextToken(pJlex);
 		CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 
-		pStnod->m_jtok = JTOK('*');
+		pStnod->m_jtok = (JTOK)pJlex->m_jtok;
 		pStnod->m_park = PARK_Reference;
 
 	// Not doing nested pointer check, ParseTypeSpecifier will handle it
