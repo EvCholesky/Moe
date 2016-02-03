@@ -2278,7 +2278,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 {
 	switch (pStnod->m_park)
 	{
-	case PARK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "@%s", pStnod->m_pStval->m_str.PChz());
+	case PARK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "$%s", pStnod->m_pStval->m_str.PChz());
 	case PARK_ReservedWord:			return CChCopy(PChzFromRword(pStnod->m_pStval->m_rword), pCh, pChEnd - pCh); 
 	case PARK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
 	case PARK_Literal:				
@@ -2543,91 +2543,91 @@ void TestParse()
 		CWorkspace work(&alloc, &errman);
 
 		pChzIn = "x + 3*5;";
-		pChzOut = "(+ @x (* 3 5))";
+		pChzOut = "(+ $x (* 3 5))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "(ugh + foo) / ((x + 3)*5);";
-		pChzOut = "(/ (+ @ugh @foo) (* (+ @x 3) 5))";
+		pChzOut = "(/ (+ $ugh $foo) (* (+ $x 3) 5))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "ugh/foo/guh/ack;";
-		pChzOut = "(/ (/ (/ @ugh @foo) @guh) @ack)";
+		pChzOut = "(/ (/ (/ $ugh $foo) $guh) $ack)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "(5 + -x) * -(3 / foo);";
-		pChzOut = "(* (+ 5 (unary[-] @x)) (unary[-] (/ 3 @foo)))";
+		pChzOut = "(* (+ 5 (unary[-] $x)) (unary[-] (/ 3 $foo)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "ick * ack * -(3 / foo);";
-		pChzOut = "(* (* @ick @ack) (unary[-] (/ 3 @foo)))";
+		pChzOut = "(* (* $ick $ack) (unary[-] (/ 3 $foo)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "ick & (ack&&foo | 123) || guh;";
-		pChzOut = "(|| (& @ick (&& @ack (| @foo 123))) @guh)";
+		pChzOut = "(|| (& $ick (&& $ack (| $foo 123))) $guh)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "ick == ack < foo\n != 123 >= guh;";
-		pChzOut = "(!= (== @ick (< @ack @foo)) (>= 123 @guh))";
+		pChzOut = "(!= (== $ick (< $ack $foo)) (>= 123 $guh))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		// NOTE - weird ordering shouldn't matter as we will ensure lhs is l-value
 		pChzIn = "ick = 5 += foo *= guh;";
-		pChzOut = "(*= (+= (= @ick 5) @foo) @guh)";
+		pChzOut = "(*= (+= (= $ick 5) $foo) $guh)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "++foo.bah[23];";
-		pChzOut = "(unary[++] (elem (member @foo @bah) 23))";
+		pChzOut = "(unary[++] (elem (member $foo $bah) 23))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ i=5; foo.bah = ack; }";
-		pChzOut = "({} (= @i 5) (= (member @foo @bah) @ack))";
+		pChzOut = "({} (= $i 5) (= (member $foo $bah) $ack))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
-		pChzOut = "({} (if (== @i (member (member @foo @bar) @fug)) (= @ick 3) (else (= @ick 7))))";
+		pChzOut = "({} (if (== $i (member (member $foo $bar) $fug)) (= $ick 3) (else (= $ick 7))))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ break; continue; return foo=\"test\"; }";
-		pChzOut = "({} (break) (continue) (return (= @foo \"test\")))";
+		pChzOut = "({} (break) (continue) (return (= $foo \"test\")))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
-		pChzOut = "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
-			" ({} (decl @bah 3))";
+		pChzOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
+			" ({} (decl $bah 3))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "AddLocal :: (nA : int) -> int { nLocal := 2; return nA + nLocal; }";
-		pChzOut = "(func @AddLocal (params (decl @nA @int)) @int ({} (decl @nLocal 2) (return (+ @nA @nLocal))))";
+		pChzOut = "(func $AddLocal (params (decl $nA $int)) $int ({} (decl $nLocal 2) (return (+ $nA $nLocal))))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
-		pChzOut = "(func @AddNums (params (decl @a @int) (decl @b 1)) @int ({} (return (+ @a @b))))"
-			" ({} (procCall @AddNums 2 3))";
+		pChzOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
+			" ({} (procCall $AddNums 2 3))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ FooFunc(); n:=BarFunc(x+(ack)); }";
-		pChzOut = "({} (procCall @FooFunc) (decl @n (procCall @barFunc (+ @x @ack))))";
+		pChzOut = "({} (procCall $FooFunc) (decl $n (procCall $barFunc (+ $x $ack))))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ NopFunc :: () { guh := 2; } wha : * int; }";
-		pChzOut = "(func @NopFunc @void ({} (decl @guh 2) (return))) ({} (decl @wha (ptr @int)))";
+		pChzOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 }; a = 2; }";
-		pChzOut = "({} (enum @ENUMK @int ({} (enumConst @ENUMK_Nil (unary[-] 1)) (enumConst @ENUMK_Foo) (enumConst @ENUMK_Bah 3)))"
-			" (= @a 2))";
+		pChzOut = "({} (enum $ENUMK $int ({} (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
+			" (= $a 2))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "STest :: struct { m_a := 2; m_b : int; }; boo : int = 3;";
-		pChzOut = "(struct @STest ({} (decl @m_a 2) (decl @m_b @int))) (decl @boo @int 3)";
+		pChzOut = "(struct $STest ({} (decl $m_a 2) (decl $m_b $int))) (decl $boo $int 3)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "pChz := foo; guh : gur = 5; bah : s32 = woo;";
-		pChzOut = "(decl @pChz @foo) (decl @guh @gur 5) (decl @bah @s32 @woo)";
+		pChzOut = "(decl $pChz $foo) (decl $guh $gur 5) (decl $bah $s32 $woo)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "ForeignFunc :: () -> int #foreign;";
-		pChzOut = "(func @ForeignFunc @int)";
+		pChzOut = "(func $ForeignFunc $int)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 			
 		pChzIn = "#import \"foo/blah/ack\" #foreign_library \"foo/blah/ack\" "

@@ -21,15 +21,15 @@ TestPointers :: ()
 	n : s64 = 4;
 	pN := *n;
 	ppN := *pN;
-	PrintInt(&pN);
+	PrintInt(@pN);
 
 	n = 3;
-	PrintInt(&pN);
+	PrintInt(@pN);
 
-	&pN = 6;
+	@pN = 6;
 	PrintInt(n);
 
-	&(&ppN) = 8;
+	@@ppN = 8;
 	PrintInt(n);
 }
 

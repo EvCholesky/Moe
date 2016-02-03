@@ -2101,136 +2101,136 @@ void TestTypeCheck()
 	const char * pChzOut;
 
 	pChzIn = "PrintString :: (pCh : * u8) -> s32 #foreign;";
-	pChzOut ="(PrintString() @PrintString (Params (*u8 @pCh (*u8 u8))) s32)";
+	pChzOut ="(PrintString() $PrintString (Params (*u8 $pCh (*u8 u8))) s32)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "n:=7; pN:=*n; ppN:=*pN; pN2:=&ppN; n2:=&pN2;";
-	pChzOut ="(int @n Literal:Int64) (*int @pN (*int int)) (**int @ppN (**int *int)) "
-				"(*int @pN2 (*int **int)) (int @n2 (int *int))";
+	pChzIn = "n:=7; pN:=*n; ppN:=*pN; pN2:=@ppN; n2:=@pN2;";
+	pChzOut ="(int $n Literal:Int64) (*int $pN (*int int)) (**int $ppN (**int *int)) "
+				"(*int $pN2 (*int **int)) (int $n2 (int *int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "pN : * int; &pN = 2;";
-	pChzOut ="(*int @pN (*int int)) (int (int *int) Literal:Int64)";
+	pChzIn = "pN : * int; @pN = 2;";
+	pChzOut ="(*int $pN (*int int)) (int (int *int) Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "str:=\"teststring\"; ";
-	pChzOut ="(string @str Literal:String)";
+	pChzOut ="(string $str Literal:String)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "a:=2-2; n:=-2;";
-	pChzOut ="(int @a (Literal:Int64 Literal:Int Literal:Int)) (int @n (Literal:Int64 Literal:Int))";
+	pChzOut ="(int $a (Literal:Int64 Literal:Int Literal:Int)) (int $n (Literal:Int64 Literal:Int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n; }"; 
-	pChzOut		= "(foo() @foo (Params (bool @n bool)) void) (s16 @n s16) "
-					"(ack() @ack (Params (s32 @n s32)) void ({} (s32 @test s32) (s64 @n s64) (s64 @test2 s64) (void)))";
+	pChzOut		= "(foo() $foo (Params (bool $n bool)) void) (s16 $n s16) "
+					"(ack() $ack (Params (s32 $n s32)) void ({} (s32 $test s32) (s64 $n s64) (s64 $test2 s64) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=5; foo:=i; g:=g_g; } g_g:=2.2;";
-	pChzOut = "({} (int @i Literal:Int64) (int @foo int) (float @g float)) (float @g_g Literal:Float32)";
+	pChzOut = "({} (int $i Literal:Int64) (int $foo int) (float $g float)) (float $g_g Literal:Float32)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"i:= (5-4) + (5-6); g:=2.2 + (3.3*10);";
-	pChzOut = "(int @i (Literal:Int64 (Literal:Int Literal:Int Literal:Int) (Literal:Int Literal:Int Literal:Int))) "
-				"(float @g (Literal:Float32 Literal:Float (Literal:Float Literal:Float Literal:Int)))";
+	pChzOut = "(int $i (Literal:Int64 (Literal:Int Literal:Int Literal:Int) (Literal:Int Literal:Int Literal:Int))) "
+				"(float $g (Literal:Float32 Literal:Float (Literal:Float Literal:Float Literal:Int)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:=2; n = 100-n;";
-	pChzOut ="(int @n Literal:Int64) (int int (int Literal:Int64 int))";
+	pChzOut ="(int $n Literal:Int64) (int int (int Literal:Int64 int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : float64 = 2.2;";
-	pChzOut = "({} (s8 @i s8 Literal:Int8) (s8 @foo s8) (s16 @bar s16 s8) (float64 @g float64)) (float64 @g_g float64 Literal:Float64)";
+	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (s16 $bar s16 s8) (float64 $g float64)) (float64 $g_g float64 Literal:Float64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";
-	pChzOut = "({} (bool @i Literal:Bool8) (bool @foo bool) (bool @g bool)) (bool @g_g bool Literal:Bool8)";
+	pChzOut = "({} (bool $i Literal:Bool8) (bool $foo bool) (bool $g bool)) (bool $g_g bool Literal:Bool8)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
-	pChzOut		= "(ParamFunc() @ParamFunc (params (s32 @nA s32) (float @g float)) void ({} (s32 @foo s32) (float @bah float) (void)))";
+	pChzOut		= "(ParamFunc() $ParamFunc (params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : string = \"huzzah\";";
-	pChzOut = "({} (string @i Literal:String) (string @foo string) (string @g string)) (string @g_g string Literal:String)";
+	pChzOut = "({} (string $i Literal:String) (string $foo string) (string $g string)) (string $g_g string Literal:String)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ pN:* s8; pNInfer:=pN; pNTest:*s8=null;}";
-	pChzOut = "({} (*s8 @pN (*s8 s8)) (*s8 @pNInfer *s8) (*s8 @pNTest (*s8 s8) Literal:Null))";
+	pChzOut = "({} (*s8 $pN (*s8 s8)) (*s8 $pNInfer *s8) (*s8 $pNTest (*s8 s8) Literal:Null))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ pN:** s8; pNInfer:=pN; pNTest:**s8=null;}";
-	pChzOut = "({} (**s8 @pN (**s8 (*s8 s8))) (**s8 @pNInfer **s8) (**s8 @pNTest (**s8 (*s8 s8)) Literal:Null))";
+	pChzOut = "({} (**s8 $pN (**s8 (*s8 s8))) (**s8 $pNInfer **s8) (**s8 $pNTest (**s8 (*s8 s8)) Literal:Null))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; foo=6; i = foo; }";
-	pChzOut = "({} (s8 @i s8 Literal:Int8) (s8 @foo s8) (s8 s8 Literal:Int8) (s8 s8 s8))";
+	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (s8 s8 Literal:Int8) (s8 s8 s8))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; fBool:bool = foo==i; fBool = i<2; }";
-	pChzOut = "({} (s8 @i s8 Literal:Int8) (s8 @foo s8) (bool @fBool bool (bool s8 s8)) (bool bool (bool s8 Literal:Int8)))";
+	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (bool $fBool bool (bool s8 s8)) (bool bool (bool s8 Literal:Int8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i; }";
-	pChzOut = "({} (s8 @i s8) (s32 @foo s32) (s32 s32 (s32 s8 s32)) (s32 s32 (s32 s32 s8)))";
+	pChzOut = "({} (s8 $i s8) (s32 $foo s32) (s32 s32 (s32 s8 s32)) (s32 s32 (s32 s32 s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ n:s8; pN:=*n; n2:=&pN; }";
-	pChzOut = "({} (s8 @n s8) (*s8 @pN (*s8 s8)) (s8 @n2 (s8 *s8)))";
+	pChzIn =	"{ n:s8; pN:=*n; n2:=@pN; }";
+	pChzOut = "({} (s8 $n s8) (*s8 $pN (*s8 s8)) (s8 $n2 (s8 *s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s64; pN:*s8; fN := !pN; ++n; --n;}";
-	pChzOut = "({} (s64 @n s64) (*s8 @pN (*s8 s8)) (bool @fN (bool *s8)) (s64 s64) (s64 s64))";
+	pChzOut = "({} (s64 $n s64) (*s8 $pN (*s8 s8)) (bool $fN (bool *s8)) (s64 s64) (s64 s64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
-	pChzOut = "({} (s64 @n s64) (bool (bool s64 Literal:Int64) (s64 s64 Literal:Int64) (??? (s64 s64 Literal:Int64))))";
+	pChzOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) (s64 s64 Literal:Int64) (??? (s64 s64 Literal:Int64))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	//pChzIn =	"{ n:int; if (n < 2) n = 5; else n = 2; }";
 	//pChzIn =	"PrintIf :: (n : int) { if (n < 2) n = 5; else if (n == 2) n = 0; else n = 1; }";
-	//pChzOut = "({} (int @n int) (bool (bool int Literal:Int64) (int int Literal:Int64) (??? (int int Literal:Int64))))";
+	//pChzOut = "({} (int $n int) (bool (bool int Literal:Int64) (int int Literal:Int64) (??? (int int Literal:Int64))))";
 	//AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA); }";
-	pChzOut = "({} (s8 @nA s8) (s8 @nB s8) (bool @nC (bool (bool s8 s8) (bool s8 s8))))";
+	pChzOut = "({} (s8 $nA s8) (s8 $nB s8) (bool $nC (bool (bool s8 s8) (bool s8 s8))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s64; if n n = 5; else n = 6;}";
-	pChzOut = "({} (s64 @n s64) (bool s64 (s64 s64 Literal:Int64) (??? (s64 s64 Literal:Int64))))";
+	pChzOut = "({} (s64 $n s64) (bool s64 (s64 s64 Literal:Int64) (??? (s64 s64 Literal:Int64))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";
-	pChzOut		= "(AddNums() @AddNums (Params (int @a int) (int @b Literal:Int64)) int ({} (int (int int int))))"
-					" (int @n (int @AddNums Literal:Int64 Literal:Int64))";
+	pChzOut		= "(AddNums() $AddNums (Params (int $a int) (int $b Literal:Int64)) int ({} (int (int int int))))"
+					" (int $n (int $AddNums Literal:Int64 Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
-	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn Literal:Int64)";
+	pChzOut		= "(NoReturn() $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void $NoReturn Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
-	pChzOut		= "(NoReturn() @NoReturn (Params (int @a int)) void ({} (int @n int) (void))) (void @NoReturn Literal:Int64)";
+	pChzOut		= "(NoReturn() $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void $NoReturn Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { n:int=2; Foo :: () -> int { n2:=n; g:=Bar();}    Bar :: () -> float { n:=Foo(); } }";
-	pChzOut		=	"(Foo() @Foo int ({} (int @n2 int) (float @g (float @Bar))))"
-					" (Bar() @Bar float ({} (int @n (int @Foo))))"
-					" ({} (int @n int Literal:Int64))";
+	pChzOut		=	"(Foo() $Foo int ({} (int $n2 int) (float $g (float $Bar))))"
+					" (Bar() $Bar float ({} (int $n (int $Foo))))"
+					" ({} (int $n int Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		= "({} (int @ovr Literal:Int64) ({} (int @nNest int) (float @ovr float Literal:Float32) (float @g float)) (int @n int))";
+	pChzOut		= "({} (int $ovr Literal:Int64) ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float)) (int $n int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		=	"(Foo() @Foo void ({} (int @nNest int) (float @ovr float Literal:Float32) (float @g float) (void)))"
-					" ({} (int @ovr Literal:Int64) (int @n int))";
+	pChzOut		=	"(Foo() $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
+					" ({} (int $ovr Literal:Int64) (int $n int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "ack :: ( n : s32) { if (n < 2) foo(true); }  foo :: (n : bool) #foreign;"; 
-	pChzOut		= "(ack() @ack (Params (s32 @n s32)) void ({} (bool (bool s32 Literal:Int32) (void @foo Literal:Bool8)) (void))) "
-					"(foo() @foo (Params (bool @n bool)) void)";
+	pChzOut		= "(ack() $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) (void $foo Literal:Bool8)) (void))) "
+					"(foo() $foo (Params (bool $n bool)) void)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	StaticShutdownStrings(&allocString);
