@@ -561,7 +561,7 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
 {
 	if (!pTin)
-		return false;
+		return nullptr;
 
 	llvm::LLVMContext & lctx = llvm::getGlobalContext();
 
@@ -609,8 +609,8 @@ static inline llvm::Type * PLtypeFromPTin(STypeInfo * pTin)
 			case LITK_Float:	return llvm::Type::getDoubleTy(lctx);
 			case LITK_Bool:		return llvm::Type::getInt1Ty(lctx);
 			case LITK_Char:		return nullptr;
-			case LITK_String:	return nullptr;
-			case LITK_Null:		return nullptr;
+			case LITK_String:	return llvm::Type::getInt8Ty(lctx)->getPointerTo();
+			case LITK_Null:		return PLtypeFromPTin(pTinlit->m_pTinptrNull);
 			default:			return nullptr;
 			}
 		}
@@ -670,6 +670,13 @@ llvm::Value * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			}
 		} break;
 	case TINK_Bool:		return llvm::ConstantInt::getFalse(llvm::getGlobalContext());
+	case TINK_Pointer:
+		{
+			STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTin;
+			auto * pLtype = PLtypeFromPTin(pTinptr->m_pTinPointedTo);
+			if (pLtype)
+				return llvm::Constant::getNullValue(pLtype->getPointerTo());
+		} break;
 	default: break;
 	}
 
@@ -683,19 +690,24 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 		pInst->m_pLval = pBuild->m_pLbuild->CreateFunc(pValSrc->m_pLval, pLtypeDst, pChz); \
 		pInst
 
-	u32 cBitSrc;
+	u32 cBitSrc = 0;
 	u32 cBitDst;
-	bool fSignedSrc;
+	bool fSignedSrc = false;
 	bool fSignedDst;
 	if (pTinSrc->m_tink == TINK_Literal)
 		return pValSrc;
 	if (pTinSrc->m_tink == TINK_Pointer)
 	{
-		if (EWC_FVERIFY(pTinDst->m_tink == TINK_Pointer, "trying to cast pointer to non-pointer. (non supported yet)"))
-			return pValSrc;
+		if (pTinDst->m_tink != TINK_Bool)
+		{
+			if (EWC_FVERIFY(pTinDst->m_tink == TINK_Pointer, "trying to cast pointer to non-pointer. (not supported yet)"))
+				return pValSrc;
+		}
 	}
-
-	ExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc);
+	else
+	{
+		ExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc);
+	}
 	ExtractNumericInfo(pTinDst, &cBitDst, &fSignedDst);
 	auto pLtypeDst = PLtypeFromPTin(pTinDst);
 
@@ -753,14 +765,21 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 				{
 					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
 					pInst = pBuild->PInstCreate(IROP_NCmp, pValSrc, nullptr, "NCmp"); 
-					pInst->m_pLval = pBuild->m_pLbuild->CreateICmpNE(pValSrc->m_pLval, pLvalZero, "NCmpNE"); 
+					pInst->m_pLval = pBuild->m_pLbuild->CreateICmpNE(pValSrc->m_pLval, pLvalZero, "NToBool"); 
 					return pInst;
 				} 
 			case TINK_Float:
 				{
 					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
 					pInst = pBuild->PInstCreate(IROP_GCmp, pValSrc, nullptr, "GCmp");
-					pInst->m_pLval = pBuild->m_pLbuild->CreateFCmpONE(pValSrc->m_pLval, pLvalZero, "GCmpONE");
+					pInst->m_pLval = pBuild->m_pLbuild->CreateFCmpONE(pValSrc->m_pLval, pLvalZero, "GToBool");
+					return pInst;
+				}
+			case TINK_Pointer:
+				{
+					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
+					pInst = pBuild->PInstCreate(IROP_GCmp, pValSrc, nullptr, "NCmp");
+					pInst->m_pLval = pBuild->m_pLbuild->CreateICmpNE(pValSrc->m_pLval, pLvalZero, "PToBool");
 					return pInst;
 				}
 			case TINK_Literal:
@@ -866,10 +885,27 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				pLconst = (pStval->m_nUnsigned) ? 
 							llvm::ConstantInt::getTrue(*pLctx) :
 							llvm::ConstantInt::getFalse(*pLctx);
-			}break;
+			} break;
 		case LITK_Char:		EWC_ASSERT(false, "TBD"); return nullptr;
-		case LITK_String:	EWC_ASSERT(false, "TBD"); return nullptr;
-		case LITK_Null:		EWC_ASSERT(false, "TBD"); return nullptr;
+		case LITK_String:
+			{
+				if (!EWC_FVERIFY(pStval->m_stvalk == STVALK_String, "bad value in string literal"))
+					return nullptr;
+
+				// constant?
+				CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+				pBuild->AddManagedVal(pConst);
+				pConst->m_pLval = pLbuild->CreateGlobalStringPtr(pStval->m_str.PChz());
+				return pConst;
+			} break;
+		case LITK_Null:
+			{
+				llvm::Type * pLtype = PLtypeFromPTin(pTinlit->m_pTinptrNull);
+				if (!EWC_FVERIFY(pLtype, "could not find llvm type for null pointer"))
+					return nullptr;
+
+			    pLconst = llvm::ConstantPointerNull::get(llvm::cast<PointerType>(pLtype));
+			}
 		}
 
 		if (!pLconst)
@@ -1235,6 +1271,12 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					case '<': 				pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpOLT, pValLhs, pValRhs, "NCmpOLT"); break;
 					case '>': 				pInstOp = pBuild->PInstCreateGCmp(CMPPRED_GCmpOGT, pValLhs, pValRhs, "NCmpOGT"); break;
 				} break;
+			case TINK_Pointer:
+				switch (pStnod->m_jtok)
+				{
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(CMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+				}
 			default: 
 				break;
 			}
@@ -1269,7 +1311,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinOperand != nullptr), "bad cast"))
 				return nullptr;
 	
-			CIRValue * pValOperandCast = PValCreateCast(pBuild, pValOperand, pTinOperand, pTinOutput);
 			CIRValue * pValOp = nullptr;
 
 			bool fIsSigned = true;
@@ -1294,8 +1335,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			{
 			case '!':				
 				{
-					EWC_ASSERT(tink == TINK_Bool, "expected value ot be cast to bool for '!' operand");
-					pValOp = pBuild->PInstCreateFNot(pValOperand, "NCmpEq");
+					EWC_ASSERT(tink == TINK_Bool, "expected value cannot be cast to bool for '!' operand");
+
+					// OPTIMIZE: could probably save an instruction here by not comparing (for the cast to bool)
+					//  then inverting with a FNot
+
+					CIRValue * pValOperandCast = PValCreateCast(pBuild, pValOperand, pTinOperand, pTinOutput);
+					pValOp = pBuild->PInstCreateFNot(pValOperandCast, "NCmpEq");
 				} break;
 			case '-':
 				{
@@ -1921,6 +1967,12 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn =	"{ pN : * int; n := 2;   if (!pN) pN = *n;   if (pN) @pN = 2; }";
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn =	"{ pChz := \"testString\"; }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ n : int = 32; pN : * int; pN = *n; n2 := @pN; @pN = 6;}";
 	AssertTestCodeGen(&work, pChzIn);

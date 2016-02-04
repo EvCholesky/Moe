@@ -146,10 +146,13 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 						STypeInfoLiteral()
 						:STypeInfo("", s_tink)
 						,m_fIsFinalized(false)
+						,m_pTinptrNull(nullptr)
 						,m_litty()
 							{ ; }
 	
 	bool			m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
+	STypeInfoPointer *
+					m_pTinptrNull;	// reference type (for finalized null pointers)
 	SLiteralType	m_litty;
 };
 

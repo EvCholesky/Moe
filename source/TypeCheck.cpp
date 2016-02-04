@@ -649,9 +649,26 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTin, CSTNode * pSt
 		}break;
 	case TINK_Bool:		pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Bool);	break;
     case TINK_String:	pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_String);	break;
-    case TINK_Pointer:	pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Null);	break;
-	case TINK_Void: // fall through
+    case TINK_Pointer:
+		{
+			LITK litkPrev = LITK_Nil;
+			STypeInfoLiteral * pTinlitPrev = (STypeInfoLiteral *)pStnodLit->m_pTin;
+			STypeInfoLiteral * pTinlit = nullptr;
+			
+			switch (pTinlitPrev->m_litty.m_litk)
+			{
+			case LITK_String:	pTinlit = pSymtab->PTinlitFromLitk(LITK_String);	break;
+			case LITK_Null:		pTinlit = pSymtab->PTinlitFromLitk(LITK_Null);	break;
+			default: EWC_ASSERT(false, "unexpected literal type");
+			}
+			if (pTinlit)
+			{
+				pTinlit->m_pTinptrNull = (STypeInfoPointer*)pTin;
+				pStnodLit->m_pTin = pTinlit;
+			}
+		}break;
 	case TINK_Null: // fall through
+	case TINK_Void: // fall through
 	default:
 		EWC_ASSERT(false, "unexpected type");
 	}
@@ -682,7 +699,12 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 		}
 	case LITK_Float:	return pSymtab->PTinBuiltin("float");
 	case LITK_Char:		return pSymtab->PTinBuiltin("char");
-	case LITK_String:	return pSymtab->PTinBuiltin("string");
+	case LITK_String:
+	{
+		// right now string literals just promote to *u8, but will eventually promote to string
+		auto pTinU8 = pSymtab->PTinBuiltin("u8");
+		return pSymtab->PTinptrGetReference(pTinU8);
+	}
 	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
 	case LITK_Null:
 		{
@@ -734,7 +756,12 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 		}
 	case LITK_Float:	return pSymtab->PTinBuiltin("float");
 	case LITK_Char:		return pSymtab->PTinBuiltin("char");
-	case LITK_String:	return pSymtab->PTinBuiltin("string");
+	case LITK_String:
+	{
+		// right now string literals just promote to *u8, but will eventually promote to string
+		auto pTinU8 = pSymtab->PTinBuiltin("u8");
+		return pSymtab->PTinptrGetReference(pTinU8);
+	}
 	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
 	case LITK_Null:		
 		{
@@ -1703,10 +1730,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 										}
 
 										CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-										STypeInfoPointer * pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
-										pTinptr->m_pTinPointedTo = pTinOperand;
-										pSymtab->AddManagedTin(pTinptr);
-										pStnod->m_pTin = pTinptr;
+										pStnod->m_pTin = pSymtab->PTinptrGetReference(pTinOperand);
 									}break;
 
 								case JTOK('!'):
@@ -1721,6 +1745,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 										}
 
 										pStnod->m_pTin = pTinBool;
+										pStnod->m_pTinOperand = pTinBool;
 									}break;
 
 								case JTOK('~'):
@@ -2113,8 +2138,8 @@ void TestTypeCheck()
 	pChzOut ="(*int $pN (*int int)) (int (int *int) Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "str:=\"teststring\"; ";
-	pChzOut ="(string $str Literal:String)";
+	pChzIn = "pChz:*u8=\"teststring\"; ";
+	pChzOut ="(*u8 $pChz (*u8 u8) Literal:String)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "a:=2-2; n:=-2;";
@@ -2151,8 +2176,9 @@ void TestTypeCheck()
 	pChzOut		= "(ParamFunc() $ParamFunc (params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : string = \"huzzah\";";
-	pChzOut = "({} (string $i Literal:String) (string $foo string) (string $g string)) (string $g_g string Literal:String)";
+	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : *u8 = \"huzzah\";";
+	//pChzOut = "({} (string $i Literal:String) (string $foo string) (string $g string)) (string $g_g string Literal:String)";
+	pChzOut = "({} (*u8 $i Literal:String) (*u8 $foo *u8) (*u8 $g *u8)) (*u8 $g_g (*u8 u8) Literal:String)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ pN:* s8; pNInfer:=pN; pNTest:*s8=null;}";

@@ -1,4 +1,3 @@
-
 #import "Basic"
 
 AddNums :: (nA : int, nB : int) -> int
@@ -35,7 +34,23 @@ TestPointers :: ()
 
 main :: () -> int 
 {
-//	nAck := NReturn();
+	// pV : * void; doesn't work
+	pB : * u8 = null; 
+	PrintString(pB);
+	if !pB
+		pB = "Was Null";
+
+	PrintPointer(pB);
+	if pB != null
+		{PrintString("notnull");}
+	PrintString(pB);
+
+	PrintString("Hello World.");
+	pChz := "test string";
+	if pChz
+		PrintString(pChz);
+	else
+		printString("pChz == null");
 
 	nByte: s8 = 10 + 12;
 	PrintByte(nByte); 

@@ -3,7 +3,9 @@
 PrintFloat :: (g : float) #foreign;
 PrintInt :: (n : int) #foreign;
 PrintByte :: (n : s8) #foreign;
-PrintBool :: (n : bool) #foreign;
+PrintBool :: (f : bool) #foreign;
+PrintPointer :: (pB : * u8) #foreign;
+PrintString :: (pCh : * u8) #foreign;
 
 NReturn :: () -> int
 {

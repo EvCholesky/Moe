@@ -1984,7 +1984,7 @@ STypeInfoLiteral * CSymbolTable::PTinlitFromLitk(LITK litk, int cBit, bool fIsSi
 STypeInfo *	CSymbolTable::PTinBuiltin(const EWC::CString & str)
 {
 	SLexerLocation lexloc;
-	return  PTinLookup(str, lexloc);
+	return PTinLookup(str, lexloc);
 }
 
 STypeInfoForwardDecl * CSymbolTable::PTinfwdLookup(const CString & str, GRFSYMLOOK grfsymlook)
@@ -2006,6 +2006,17 @@ STypeInfoForwardDecl * CSymbolTable::PTinfwdLookup(const CString & str, GRFSYMLO
 		pSymtab = pSymtab->m_pSymtabParent;
 	}
 	return nullptr; 
+}
+
+STypeInfoPointer * CSymbolTable::PTinptrGetReference(STypeInfo * pTinPointedTo)
+{
+	// Note: I should unique'ify these
+
+	STypeInfoPointer * pTinptr = EWC_NEW(m_pAlloc, STypeInfoPointer) STypeInfoPointer();
+	AddManagedTin(pTinptr);
+
+	pTinptr->m_pTinPointedTo = pTinPointedTo;
+	return pTinptr;
 }
 
 STypeInfoForwardDecl * CSymbolTable::PTinfwdBegin(const CString & str)

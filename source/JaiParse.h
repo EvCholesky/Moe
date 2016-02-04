@@ -33,6 +33,7 @@ struct STypeInfo;
 struct STypeInfoEnum;
 struct STypeInfoForwardDecl;
 struct STypeInfoLiteral;
+struct STypeInfoPointer;
 struct STypeInfoProcedure;
 
 // type should only indicate storage type - actual type info should come from STypeInfoLiteral
@@ -384,6 +385,7 @@ public:
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
 	STypeInfoForwardDecl *	PTinfwdLookup(const EWC::CString & str, GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
+	STypeInfoPointer *		PTinptrGetReference(STypeInfo * pTinPointedTo);
 
 	STypeInfoForwardDecl *	PTinfwdBegin(const EWC::CString & str);
 	void					EndForwardDecl(
@@ -406,7 +408,7 @@ public:
 								m_hashHvPTinfwd;	// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.
 	EWC::CDynAry<STypeInfoLiteral *>	
-								m_mpLitkArypTinlit[LITK_Max];	// all type info structs that need to be deleted.
+								m_mpLitkArypTinlit[LITK_Max];
 
 	CSymbolTable *				m_pSymtabParent;
 	SLexerLocation				m_lexlocParent;		// position that this table was defined relative to it's parent 

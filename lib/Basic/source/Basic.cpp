@@ -20,7 +20,19 @@ extern "C" void PrintBool(bool f)
 	printf("%s\n", (f) ? "true" : "false");
 }
 
-extern "C" void PrintString(const char * pChz)
+
+extern "C" void PrintPointer(unsigned char * pB)
 {
+	printf("%p\n", pB);
+}
+
+extern "C" void PrintString(unsigned char * pChz)
+{
+	if (!pChz)
+	{
+		printf("<null>\n");
+		return;
+	}
+
 	printf("%s\n", pChz);
 }
