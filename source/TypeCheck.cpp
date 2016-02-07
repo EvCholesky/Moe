@@ -674,6 +674,34 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTin, CSTNode * pSt
 	}
 }
 
+STypeInfo *PTinPromoteVarArg(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfo * pTinIn)
+{
+	// C99 requires that all floats are promoted to double and all integers < 32 bit are promoted to 32 bit.
+
+	switch (pTinIn->m_tink)
+	{
+	case TINK_Integer:
+		{
+			STypeInfoInteger * pTinint = (STypeInfoInteger*)pTinIn;
+			if (pTinint->m_cBit < 32)
+			{
+				return pSymtab->PTinBuiltin((pTinint->m_fIsSigned) ? "int" : "uint");
+			}
+			return pTinIn;
+		}
+	case TINK_Float:
+		{
+			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTinIn;
+			if (pTinfloat->m_cBit < 64)
+			{
+				return pSymtab->PTinBuiltin("float64");
+			}
+			return pTinIn;
+		}
+	default: return pTinIn;
+	}
+}
+
 STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit)
 {
 	const STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
@@ -738,8 +766,10 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 			if (!EWC_FVERIFY(pStval, "literal without value"))
 				return nullptr;
 
-			bool fIsSigned = litty.m_fIsSigned;
-			if (fIsSigned == TFN_False)
+			bool fDestIsSigned = pTinDest->m_tink != TINK_Integer || ((STypeInfoInteger*)pTinDest)->m_fIsSigned;
+			bool fIsValNegative = pStval->m_stvalk == STVALK_SignedInt && pStval->m_nSigned < 0;
+
+			if (fDestIsSigned == false && fIsValNegative == false)
 			{
 				s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
 				if (nUnsigned < UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
@@ -925,8 +955,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						{
 							CSTNode * pStnodParamList = pStnod->PStnodChild(pStproc->m_iStnodParameterList);
 
-							EWC_ASSERT(pTinproc->m_arypTinParams.C() == pStnodParamList->CStnodChild(), "parameter child mismatch");
-							for (int iStnodArg = 0; iStnodArg < pStnodParamList->CStnodChild(); ++iStnodArg)
+							int cParamsExpected = pStnodParamList->CStnodChild() - pTinproc->m_fHasVarArgs;
+							EWC_ASSERT(pTinproc->m_arypTinParams.C() == cParamsExpected, "parameter child mismatch");
+							for (int iStnodArg = 0; iStnodArg < cParamsExpected; ++iStnodArg)
 							{
 								pTinproc->m_arypTinParams[iStnodArg] = pStnodParamList->PStnodChild(iStnodArg)->m_pTin;
 							}
@@ -1055,15 +1086,38 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					if (!EWC_FVERIFY(pTinproc && pTinproc->m_tink == TINK_Procedure, "bad procedure type info"))
 						return TCRET_StoppingError;
 
-					for (int iStnodArg = 1; iStnodArg < pStnod->CStnodChild(); ++iStnodArg)
+					// the first argument is index 1, (the procedure's identifier is element zero)
+					int iStnodArgMin = 1;
+
+					for (int iStnodArg = iStnodArgMin; iStnodArg < pStnod->CStnodChild(); ++iStnodArg)
 					{
 						CSTNode * pStnodArg = pStnod->PStnodChild(iStnodArg);
 						STypeInfo * pTinCall = pStnodArg->m_pTin;
-						STypeInfo * pTinParam = pTinproc->m_arypTinParams[iStnodArg - 1];
-						if (!EWC_FVERIFY(pTinParam, "unknown parameter type"))
-							continue;
+						STypeInfo * pTinParam = nullptr;
+						
+						int ipTinParam = iStnodArg - iStnodArgMin;
+						if (ipTinParam < pTinproc->m_arypTinParams.C())
+						{
+							pTinParam = pTinproc->m_arypTinParams[ipTinParam];
+							if (!EWC_FVERIFY(pTinParam, "unknown parameter type"))
+								continue;
 
-						pTinCall = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodArg, pTinParam);
+							pTinCall = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodArg, pTinParam);
+						}
+						else
+						{
+							if (!pTinproc->m_fHasVarArgs)
+							{
+								EmitError(pTcwork, pStnod, "expected %d arguments but encountered %d",
+									pTinproc->m_arypTinParams.C(),
+									pStnod->CStnodChild() - iStnodArgMin);
+								break;
+							}
+
+							pTinCall = PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodArg);
+							pTinParam = PTinPromoteVarArg(pTcwork, pSymtab, pTinCall);
+						}
+
 						if (!FCanImplicitCast(pTinCall, pTinParam))
 						{
 							//BB - need fullyQualifiedTypenames
@@ -1074,7 +1128,19 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								strTinParam.PChz());
 						}
 
-						FinalizeLiteralType(pSymtab, pTinParam, pStnodArg);
+						// if we have a literal, just expect the finalized type to be correct, otherwise
+						//  set the implicit cast type on the argument node
+						if (pStnodArg->m_pTin->m_tink == TINK_Literal)
+						{
+							FinalizeLiteralType(pSymtab, pTinParam, pStnodArg);
+							pStnodArg->m_pTinOperand = pStnodArg->m_pTin;
+						}
+						else
+						{
+							// BB - this should probably be replaced with an explicit cast AST node
+							pStnodArg->m_pTinOperand = pStnodArg->m_pTin;
+							pStnodArg->m_pTin = pTinParam;
+						}
 					}
 
 					STypeInfo * pTinReturn = nullptr;
@@ -1209,6 +1275,12 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 
 			}break;
+			case PARK_VariadicArg:
+			{
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram);
+				break;
+			}
 			case PARK_Decl:
 			{
 				CSTDecl * pStdecl = pStnod->m_pStdecl;
@@ -2125,8 +2197,12 @@ void TestTypeCheck()
 	const char * pChzIn;
 	const char * pChzOut;
 
-	pChzIn = "PrintString :: (pCh : * u8) -> s32 #foreign;";
-	pChzOut ="(PrintString() $PrintString (Params (*u8 $pCh (*u8 u8))) s32)";
+	pChzIn = "printf :: (pCh : * u8, ..) -> s32 #foreign;";
+	pChzOut ="(printf() $printf (Params (*u8 $pCh (*u8 u8)) (..)) s32)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000);";
+	pChzOut ="(Vararg() $Vararg (Params (..)) void) (void $Vararg Literal:Float64 Literal:Int64 Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:=7; pN:=*n; ppN:=*pN; pN2:=@ppN; n2:=@pN2;";

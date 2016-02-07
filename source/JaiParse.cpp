@@ -64,6 +64,7 @@ const char * PChzFromPark(PARK park)
 		"Enum Definition",
 		"Struct Definition",
 		"Enum Constant",
+		"Variadic Argument",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpParkPChz) == PARK_Max, "missing PARK string");
 	if (park == PARK_Nil)
@@ -818,6 +819,17 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
 
 CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK parkContext)
 {
+	SLexerLocation lexloc(pJlex);
+	if (pJlex->m_jtok == JTOK_PeriodPeriod && parkContext == PARK_ParameterList)
+	{
+		JtokNextToken(pJlex);
+
+		CSTNode * pStnodVarArgs = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+		pStnodVarArgs->m_jtok = (JTOK)pJlex->m_jtok;
+		pStnodVarArgs->m_park = PARK_VariadicArg;
+		return pStnodVarArgs;
+	}
+
 	if (pJlex->m_jtok != JTOK_Identifier)
 		return nullptr;
 
@@ -827,7 +839,6 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 	if ((jlexPeek.m_jtok != JTOK(':')) & (jlexPeek.m_jtok != JTOK_ColonEqual))
 		return nullptr;
 
-	SLexerLocation lexloc(pJlex);
 	CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pJlex);
 	if (!pStnodIdent)
 		return nullptr;
@@ -958,13 +969,17 @@ CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnodReturn;
 }
 
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtabProc)
+CSTNode * PStnodParseParameterList(
+	CParseContext * pParctx,
+	SJaiLexer * pJlex,
+	CSymbolTable * pSymtabProc)
 {
 	SLexerLocation lexloc(pJlex);
 	PushSymbolTable(pParctx, pSymtabProc, lexloc);
 
 	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList);
 	CSTNode * pStnodList = nullptr;
+	bool fHasVarArgs = pStnodParam && pStnodParam->m_park == PARK_VariadicArg;
 
 	if (pStnodParam)
 	{
@@ -980,12 +995,23 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, C
 			JtokNextToken(pJlex);
 
 			pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList);
+			fHasVarArgs |= pStnodParam->m_park == PARK_VariadicArg;
+
 			if (!pStnodParam)
 			{
 				ParseError(pParctx, pJlex, "Expected parameter before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
 				break;
 			}
 			pStnodList->IAppendChild(pStnodParam);
+		}
+	}
+
+	if (fHasVarArgs)
+	{
+		CSTNode * pStnodLast = pStnodList->PStnodChild(pStnodList->CStnodChild()-1);
+		if (pStnodLast->m_park != PARK_VariadicArg)
+		{
+			ParseError(pParctx, pJlex, "Variadic function argument found before the end of the argument list");
 		}
 	}
 
@@ -1216,7 +1242,11 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				for ( ; ppStnodParams != ppStnodParamMax; ++ppStnodParams)
 				{
 					CSTNode * pStnodParam = *ppStnodParams;
-					if (EWC_FVERIFY(pStnodParam->m_park == PARK_Decl, "Expected decl"))
+					if (pStnodParam->m_park == PARK_VariadicArg)
+					{
+						pTinproc->m_fHasVarArgs = true;
+					}
+					else if (EWC_FVERIFY(pStnodParam->m_park == PARK_Decl, "Expected decl"))
 					{
 						pTinproc->m_arypTinParams.Append(pStnodParam->m_pTin);
 					}
@@ -2221,6 +2251,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		case PARK_List:				return CChCopy("{}", pCh, pChEnd-pCh);
 		case PARK_Identifier:		return CChCopy("Ident", pCh, pChEnd-pCh);
 		case PARK_ParameterList:	return CChCopy("Params", pCh, pChEnd-pCh);
+		case PARK_VariadicArg:		return CChCopy("..",pCh, pChEnd-pCh);
 		default:					return CChCopy("???", pCh, pChEnd-pCh);
 		}
 	}
@@ -2253,7 +2284,6 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 				break;
 
 			}
-			//pChWork += CChPrintStnodType(pTinary->m_pTin, pCh, pChEnd);
 			return pChWork - pCh;
 		}break;
 
@@ -2345,6 +2375,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
 	case PARK_StructDefinition:		return CChCopy("struct", pCh, pChEnd - pCh);
 	case PARK_EnumConstant:			return CChCopy("enumConst", pCh, pChEnd - pCh);
+	case PARK_VariadicArg:			return CChCopy("..", pCh, pChEnd - pCh);
 	case PARK_Error:
 	default:						return CChCopy("error", pCh, pChEnd-pCh);
 	}
@@ -2600,6 +2631,10 @@ void TestParse()
 
 		pChzIn = "{ break; continue; return foo=\"test\"; }";
 		pChzOut = "({} (break) (continue) (return (= $foo \"test\")))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+		pChzIn = "VarArgs :: (a : int, ..) #foreign;";
+		pChzOut = "(func $VarArgs (params (decl $a $int) (..)) $void)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";

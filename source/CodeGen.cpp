@@ -683,12 +683,16 @@ llvm::Value * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 	return nullptr;
 }
 
+inline CIRInstruction * PInstCreateCast(CIRBuilder * pBuild, IROP irop, CIRValue * pValSrc, const char * pChz, llvm::Value * pLval)
+{
+	CIRInstruction * pInst = pBuild->PInstCreate(irop, pValSrc, nullptr, pChz); \
+	pInst->m_pLval = pLval;
+	return pInst;
+}
+
 CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
-#define PINST_CREATE_CAST(Irop, CreateFunc, pChz) \
-		pInst = pBuild->PInstCreate(Irop, pValSrc, nullptr, pChz); \
-		pInst->m_pLval = pBuild->m_pLbuild->CreateFunc(pValSrc->m_pLval, pLtypeDst, pChz); \
-		pInst
+#define PINST_CREATE_CAST(Irop, CreateFunc, pChz) PInstCreateCast(pBuild, Irop, pValSrc, pChz, pBuild->m_pLbuild->CreateFunc(pValSrc->m_pLval, pLtypeDst, pChz));
 
 	u32 cBitSrc = 0;
 	u32 cBitDst;
@@ -850,11 +854,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 				switch (pTinlit->m_litty.m_cBit)
 				{
-				case 8:		pLconst = pLbuild->getInt8(U8Coerce(pStval->m_nUnsigned));		break;
-				case 16:	pLconst = pLbuild->getInt16(U16Coerce(pStval->m_nUnsigned));	break;
-				case 32:	pLconst = pLbuild->getInt32(U32Coerce(pStval->m_nUnsigned));	break;
+				case 8:		pLconst = pLbuild->getInt8(U8Coerce(pStval->m_nUnsigned & 0xFF));			break;
+				case 16:	pLconst = pLbuild->getInt16(U16Coerce(pStval->m_nUnsigned & 0xFFFF));		break;
+				case 32:	pLconst = pLbuild->getInt32(U32Coerce(pStval->m_nUnsigned & 0xFFFFFFFF));	break;
 				case -1: // fall through
-				case 64:	pLconst = pLbuild->getInt64(pStval->m_nUnsigned);				break;
+				case 64:	pLconst = pLbuild->getInt64(pStval->m_nUnsigned);							break;
 				default:	EWC_ASSERT(false, "unhandled integer size");
 				}
 			}break;
@@ -892,7 +896,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				if (!EWC_FVERIFY(pStval->m_stvalk == STVALK_String, "bad value in string literal"))
 					return nullptr;
 
-				// constant?
+				// string literals aren't really constants in the eyes of llvm, but it'll work for now
 				CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
 				pBuild->AddManagedVal(pConst);
 				pConst->m_pLval = pLbuild->CreateGlobalStringPtr(pStval->m_str.PChz());
@@ -1121,8 +1125,12 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			for (int iStnodChild = 1; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
 				CIRValue * pVal = PValGenerate(pWork, pBuild, pStnod->PStnodChild(iStnodChild), VALGENK_Instance);
-				aryPLvalArgs.push_back(pVal->m_pLval);
-				if (aryPLvalArgs.back() == 0)
+
+				CSTNode * pStnodCall = pStnod->PStnodChild(iStnodChild);
+				CIRValue * pValRhsCast = PValCreateCast(pBuild, pVal, pStnodCall->m_pTinOperand, pStnodCall->m_pTin);
+
+				aryPLvalArgs.push_back(pValRhsCast->m_pLval);
+				if (!EWC_FVERIFY(aryPLvalArgs.back(), "missing argument value"))
 					return 0;
 			}
 
@@ -1454,6 +1462,7 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 		pStnodName = pStnod->PStnodChildSafe(pStproc->m_iStnodProcName);
 	}
 
+	bool fHasVarArgs = false;
 	std::vector<llvm::Type*> aryPLtype;
 	if (pStnodParamList && EWC_FVERIFY(pStnodParamList->m_park == PARK_ParameterList, "expected parameter list"))
 	{
@@ -1461,6 +1470,12 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 		for (int ipStnod = 0; ipStnod < cpStnodParams; ++ipStnod)
 		{
 			CSTNode * pStnodDecl = pStnodParamList->PStnodChild(ipStnod);
+			if (pStnodDecl->m_park == PARK_VariadicArg)
+			{
+				fHasVarArgs = true;
+				continue;
+			}
+
 			if (!EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl, "bad parameter"))
 				continue;
 
@@ -1500,7 +1515,7 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 	CAlloc * pAlloc = pBuild->m_pAlloc;
 	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 
-	llvm::FunctionType * pLfunctype = llvm::FunctionType::get(pLtypeReturn, aryPLtype, false);
+	llvm::FunctionType * pLfunctype = llvm::FunctionType::get(pLtypeReturn, aryPLtype, fHasVarArgs);
 	pProc->m_pLfunc = llvm::Function::Create(
 										pLfunctype,
 										llvm::Function::ExternalLinkage,
@@ -1530,6 +1545,9 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 		for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam, ++argIt)
 		{
 			CSTNode * pStnodParam = pStnodParamList->PStnodChild(ipStnodParam);
+			if (pStnodParam->m_park == PARK_VariadicArg)
+				continue;
+
 			if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 			{
 				const char * pChzArgName = pStnodParam->m_pSym->m_strName.PChz();
@@ -1967,6 +1985,9 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn = "printf :: (pCh : * u8, ..) -> s32 #foreign;";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ pN : * int; n := 2;   if (!pN) pN = *n;   if (pN) @pN = 2; }";
 	AssertTestCodeGen(&work, pChzIn);

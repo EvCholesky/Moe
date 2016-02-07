@@ -7,10 +7,11 @@ It currently can compile and statically link very simple programs. It doesn't do
 
 New:
   * Codegen for simple pointers
-
-Coming soon:
   * string literals
   * variadic functions (*cough* printf)
+
+Coming soon:
+  * switching to the C interface for LLVM.
   * loops.
  
 Deviations from current JAI syntax:

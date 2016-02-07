@@ -133,6 +133,7 @@ enum PARK // PARse Kind
 	PARK_EnumDefinition,
 	PARK_StructDefinition,
 	PARK_EnumConstant,
+	PARK_VariadicArg,
 	
 	PARK_Max,
 	PARK_Min = 0,
@@ -270,7 +271,7 @@ public:
 	CSTEnum *				m_pStenum;
 	SLexerLocation			m_lexloc;
 	STypeInfo *				m_pTin;	
-	STypeInfo *				m_pTinOperand;	
+	STypeInfo *				m_pTinOperand;		// used for implicit casts, could be replaced with an explicit PARK_Cast
 	CSymbolTable *			m_pSymtab;
 	SSymbol *				m_pSym;
 

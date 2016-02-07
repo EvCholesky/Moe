@@ -34,6 +34,8 @@ TestPointers :: ()
 
 main :: () -> int 
 {
+	printf("printf %d, %f\n\n", 2, 6.7);
+
 	// pV : * void; doesn't work
 	pB : * u8 = null; 
 	PrintString(pB);

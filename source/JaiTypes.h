@@ -116,10 +116,12 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 						:STypeInfo(pChzName, s_tink)
 						,m_arypTinParams()
 						,m_arypTinReturns()
+						,m_fHasVarArgs(false)
 							{ ; }
 
 	EWC::CAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;
+	bool					m_fHasVarArgs;
 
 	// BB - need names for named argument matching?
 };
