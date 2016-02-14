@@ -1096,7 +1096,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						STypeInfo * pTinParam = nullptr;
 						
 						int ipTinParam = iStnodArg - iStnodArgMin;
-						if (ipTinParam < pTinproc->m_arypTinParams.C())
+						if (ipTinParam < (int)pTinproc->m_arypTinParams.C())
 						{
 							pTinParam = pTinproc->m_arypTinParams[ipTinParam];
 							if (!EWC_FVERIFY(pTinParam, "unknown parameter type"))

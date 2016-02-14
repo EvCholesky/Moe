@@ -20,7 +20,8 @@
 #include "JaiLex.h"
 #include "JaiParse.h"
 #include "Workspace.h"
-#include "Windows.h"
+
+#include "WindowsStub.h"
 
 using namespace EWC;
 
@@ -179,7 +180,7 @@ int main(int cpChzArg, const char * apChzArg[])
 			static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo";
 			#else
 			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
-			static const char * s_pChzLibraryFormat = "c:/Code/jailang/%s ";
+			static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/%s\" ";
 			static const char * s_apChzDefaultPaths[] =
 			{
 				"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86",
@@ -251,7 +252,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				DWORD nErrorCode = GetLastError();
 			}
 
-			printf("\n\n%s\n\n", aChzCommandLine);
+			printf("\n%s\n", aChzCommandLine);
 		}
 
 		EndWorkspace(&work);

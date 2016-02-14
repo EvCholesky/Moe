@@ -18,14 +18,19 @@
 #include "EwcArray.h"
 #include "EwcHash.h"
 
-struct LLVMOpaqueBasicBlock;
-struct LLVMOpaqueBuilder;
-struct LLVMOpaqueModule;
-struct LLVMOpaqueType;
-struct LLVMOpaqueValue;
+namespace llvm
+{
+	class BasicBlock;
+	class Constant;
+	class Function;
+	class Module;
+	class Type;
+	class Value;
+}
 
 class CIRInstruction;
 class CSTNode;
+class LlvmIRBuilder; // wrapper class to avoid the forward decl template mess.
 class CWorkspace;
 struct SSymbol;
 
@@ -37,9 +42,10 @@ public:
 						CIRBasicBlock(EWC::CAlloc * pAlloc);
 						~CIRBasicBlock();
 
+	//void				Insert(CIRInstruction * pInst, int iInst);
 	void				Append(CIRInstruction * pInst);
 
-	LLVMOpaqueBasicBlock *			m_pLblock;
+	llvm::BasicBlock *				m_pLblock;
 	EWC::CDynAry<CIRInstruction *>	m_arypInst;		// BB - eventually this should be replaced with something that has 
 													// better random insertion performance.
 };
@@ -157,7 +163,7 @@ public:
 	virtual				~CIRValue()
 							{ ; }
 
-	LLVMOpaqueValue *	m_pLval;
+	llvm::Value *		m_pLval;
 	CSTNode *			m_pStnod;
 	VALK				m_valk;
 };
@@ -220,7 +226,7 @@ public:
 						CIRProcedure(EWC::CAlloc * pAlloc)
 						:CIRValue(VALK_ProcedureDefinition)
 						,m_pAlloc(pAlloc)
-						,m_pLvalFunction(nullptr)
+						,m_pLfunc(nullptr)
 						,m_pBlockEntry(nullptr)
 						,m_arypBlockManaged(pAlloc)
 						,m_arypValManaged(pAlloc)
@@ -229,7 +235,7 @@ public:
 						~CIRProcedure();
 
 	EWC::CAlloc *		m_pAlloc;
-	LLVMOpaqueValue *	m_pLvalFunction;		// null if anonymous function
+	llvm::Function *	m_pLfunc;		// null if anonymous function
 	CIRBasicBlock *		m_pBlockEntry;	
 
 	EWC::CDynAry<CIRBasicBlock *>
@@ -238,48 +244,33 @@ public:
 						m_arypValManaged;
 };
 
-#define NCMPPRED_LIST \
-	JAI_PRED(NCmpEQ)  LLVM_PRED(LLVMIntEQ) \
-	JAI_PRED(NCmpNE)  LLVM_PRED(LLVMIntNE) \
-	JAI_PRED(NCmpUGT) LLVM_PRED(LLVMIntUGE) \
-	JAI_PRED(NCmpUGE) LLVM_PRED(LLVMIntUGE) \
-	JAI_PRED(NCmpULT) LLVM_PRED(LLVMIntULT) \
-	JAI_PRED(NCmpULE) LLVM_PRED(LLVMIntULE) \
-	JAI_PRED(NCmpSGT) LLVM_PRED(LLVMIntSGE) \
-	JAI_PRED(NCmpSGE) LLVM_PRED(LLVMIntSGE) \
-	JAI_PRED(NCmpSLT) LLVM_PRED(LLVMIntSLT) \
-	JAI_PRED(NCmpSLE) LLVM_PRED(LLVMIntSLE)
+#define CMPPRED_LIST \
+	JAI_PRED(GCmpOEQ) LLVM_PRED(FCMP_OEQ) \
+	JAI_PRED(GCmpOGT) LLVM_PRED(FCMP_OGT) \
+	JAI_PRED(GCmpOGE) LLVM_PRED(FCMP_OGE) \
+	JAI_PRED(GCmpOLT) LLVM_PRED(FCMP_OLT) \
+	JAI_PRED(GCmpOLE) LLVM_PRED(FCMP_OLE) \
+	JAI_PRED(GCmpONE) LLVM_PRED(FCMP_ONE) \
+	JAI_PRED(NCmpEQ)  LLVM_PRED(ICMP_EQ) \
+	JAI_PRED(NCmpNE)  LLVM_PRED(ICMP_NE) \
+	JAI_PRED(NCmpUGT) LLVM_PRED(ICMP_UGE) \
+	JAI_PRED(NCmpUGE) LLVM_PRED(ICMP_UGE) \
+	JAI_PRED(NCmpULT) LLVM_PRED(ICMP_ULT) \
+	JAI_PRED(NCmpULE) LLVM_PRED(ICMP_ULE) \
+	JAI_PRED(NCmpSGT) LLVM_PRED(ICMP_SGE) \
+	JAI_PRED(NCmpSGE) LLVM_PRED(ICMP_SGE) \
+	JAI_PRED(NCmpSLT) LLVM_PRED(ICMP_SLT) \
+	JAI_PRED(NCmpSLE) LLVM_PRED(ICMP_SLE)
 
-#define GCMPPRED_LIST \
-	JAI_PRED(GCmpOEQ) LLVM_PRED(LLVMRealOEQ) \
-	JAI_PRED(GCmpOGT) LLVM_PRED(LLVMRealOGT) \
-	JAI_PRED(GCmpOGE) LLVM_PRED(LLVMRealOGE) \
-	JAI_PRED(GCmpOLT) LLVM_PRED(LLVMRealOLT) \
-	JAI_PRED(GCmpOLE) LLVM_PRED(LLVMRealOLE) \
-	JAI_PRED(GCmpONE) LLVM_PRED(LLVMRealONE) \
-
-#define JAI_PRED(X) GCMPPRED_##X,
+#define JAI_PRED(X) CMPPRED_##X,
 #define LLVM_PRED(X)
-enum GCMPPRED
+enum CMPPRED
 {
-	GCMPPRED_LIST
+	CMPPRED_LIST
 
-	GCMPPRED_Max,
-	GCMPPRED_Min = 0,
-	GCMPPRED_Nil = 1,
-};
-#undef JAI_PRED
-#undef LLVM_PRED
-
-#define JAI_PRED(X) NCMPPRED_##X,
-#define LLVM_PRED(X)
-enum NCMPPRED
-{
-	NCMPPRED_LIST
-
-	NCMPPRED_Max,
-	NCMPPRED_Min = 0,
-	NCMPPRED_Nil = 1,
+	CMPPRED_Max,
+	CMPPRED_Min = 0,
+	CMPPRED_Nil = 1,
 };
 #undef JAI_PRED
 #undef LLVM_PRED
@@ -317,14 +308,14 @@ public:
 	CIRInstruction *	PInstCreateGNeg(CIRValue * pValOperand, const char * pChzName);
 	CIRInstruction *	PInstCreateFNot(CIRValue * pValOperand, const char * pChzName);
 
-	CIRInstruction *	PInstCreateNCmp(NCMPPRED ncmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateGCmp(GCMPPRED gcmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateNCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateGCmp(CMPPRED cmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
 	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBasicBlock * pBlockTrue, CIRBasicBlock * pBlockFalse);
 	CIRInstruction *	PInstCreateBranch(CIRBasicBlock * pBlock);
 
 	CIRInstruction *	PInstCreateRet(CIRValue * pValRhs);
-	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, const char * pChzName);
+	CIRInstruction *	PInstCreateAlloca(llvm::Type * pLtype, const char * pChzName);
 
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
@@ -335,8 +326,8 @@ public:
 	CIRInstruction *	PInstReference(SSymbol * pSym, const char * pChzName);
 	CIRInstruction *	PInstDereference(CIRValue * pValDst, CIRValue * pValSrc);
 
-	LLVMOpaqueModule *		m_pLmoduleCur;
-	LLVMOpaqueBuilder *		m_pLbuild;
+	llvm::Module *			m_pLmoduleCur;
+	LlvmIRBuilder *			m_pLbuild;
 	EWC::CAlloc *			m_pAlloc;
 	SInsertPoint			m_inspt;
 

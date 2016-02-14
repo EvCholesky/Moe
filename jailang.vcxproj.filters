@@ -15,38 +15,41 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="source\EwcArray.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\EwcHash.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\EwcString.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\EwcTypes.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\JaiLex.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\JaiParse.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\JaiTypes.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\stb_malloc.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source\Workspace.h">
+    <ClInclude Include="source\BigMath.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="source\CodeGen.h">
-      <Filter>Source Files</Filter>
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source\BigMath.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="source\EwcHash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\EwcArray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\EwcString.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\EwcTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\JaiLex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\JaiParse.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\JaiTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\stb_malloc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\WindowsStub.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\Workspace.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

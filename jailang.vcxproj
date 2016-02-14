@@ -164,6 +164,7 @@
     <ClInclude Include="source\JaiParse.h" />
     <ClInclude Include="source\JaiTypes.h" />
     <ClInclude Include="source\stb_malloc.h" />
+    <ClInclude Include="source\WindowsStub.h" />
     <ClInclude Include="source\Workspace.h" />
   </ItemGroup>
   <ItemGroup>
