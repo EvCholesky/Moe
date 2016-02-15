@@ -25,8 +25,8 @@ SFoo :: struct { blah : int };
 }
 
 // cmake instructions so I don't have to figure it out again.
-c:\code\llvm\cmade\cmake ..\src\ -G "Visual Studio 14"
-c:\code\llvm\cmade64\cmake ..\src\ -G "Visual Studio 14 Win64"
+C:\code\llvm\cmade>cmake ..\src\ -G "Visual Studio 14"
+C:\code\llvm\cmade64>cmake ..\src\ -G "Visual Studio 14 Win64"
 
 DONE:
  [x] Move allocated TypeInfos into one array for ownership

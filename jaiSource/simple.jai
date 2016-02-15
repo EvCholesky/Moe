@@ -34,6 +34,17 @@ TestPointers :: ()
 
 main :: () -> int 
 {
+	;
+	i : s32;
+	while (i < 10)
+	{
+		printf("i=%d\n", i);
+		i = i+1;
+	}
+	return 1;
+}
+/*
+{
 	printf("printf %d, %f\n\n", 2, 6.7);
 
 	// pV : * void; doesn't work
@@ -98,3 +109,4 @@ main :: () -> int
 	TestPointers();
 	return 1;
 }
+*/

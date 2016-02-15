@@ -983,6 +983,39 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case RWORD_Else:
 				EWC_ASSERT(false, "Else reserved word should be handled during codegen for if");
 				return nullptr;
+			case RWORD_While:
+				{
+					if (pStnod->CStnodChild() < 2)
+						return nullptr;
+
+					CIRProcedure * pProc = pBuild->m_pProcCur;
+
+					CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "wpred");
+					CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "wbody");
+					CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "wpost");
+					(void) pBuild->PInstCreateBranch(pBlockPred);	
+
+					pBuild->ActivateBlock(pBlockPred);
+
+					// BB - should handle declarations inside conditional statement? ie, does it need a new block
+
+					CSTNode * pStnodWhile = pStnod;
+					CSTNode * pStnodPred = pStnodWhile->PStnodChild(0);
+					CIRValue * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
+
+					STypeInfo * pTinBool = pStnodWhile->m_pTin;
+					EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for while predicate");
+					CIRValue * pValPredCast = PValCreateCast(pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
+
+					(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockBody, pBlockPost);
+
+					pBuild->ActivateBlock(pBlockBody);
+					(void) PValGenerate(pWork, pBuild, pStnodWhile->PStnodChild(1), VALGENK_Instance);
+					(void) pBuild->PInstCreateBranch(pBlockPred);	
+
+					pBuild->ActivateBlock(pBlockPost);
+
+				} break;
 			case RWORD_Return:
 				{
 					CIRValue * pValRhs = nullptr;
@@ -1287,6 +1320,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			return pValOp;
 		}
+	case PARK_Nop: 
+		break;
 	default:
 		EWC_ASSERT(false, "unhandled PARK (%s) in code generation.", PChzFromPark(pStnod->m_park));
 	}
@@ -1652,12 +1687,19 @@ void CompileToObjectFile(CWorkspace * pWork, LLVMModuleRef pLmodule, const char 
 	LLVMTarget * pLtarget = nullptr;
 	//const char * pChzTriple = "x86_64-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
 	char * pChzTriple = LLVMGetDefaultTargetTriple();
-	size_t cBTriple = CCh(pChzTriple)+1;
-	char * pChzTripleCopy = (char*)pWork->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(char, cBTriple);
-	CChCopy(pChzTriple, pChzTripleCopy, cBTriple);
 
-	char * pChzOs;
-	TokenizeTripleString(pChzTripleCopy, nullptr, nullptr, &pChzOs, nullptr);
+	bool fUsingWindows;
+	{
+		size_t cBTriple = CCh(pChzTriple)+1;
+		char * pChzTripleCopy = (char*)pWork->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(char, cBTriple);
+		CChCopy(pChzTriple, pChzTripleCopy, cBTriple);
+
+		char * pChzOs;
+		TokenizeTripleString(pChzTripleCopy, nullptr, nullptr, &pChzOs, nullptr);
+		fUsingWindows = FAreSame(pChzOs, "windows");
+		
+		pWork->m_pAlloc->EWC_DELETE(pChzTripleCopy);
+	}
 
 	char * pChzError = nullptr;
 	LLVMBool fFailed = LLVMGetTargetFromTriple(pChzTriple, &pLtarget, &pChzError);
@@ -1687,7 +1729,7 @@ void CompileToObjectFile(CWorkspace * pWork, LLVMModuleRef pLmodule, const char 
 	auto pLtmachine = LLVMCreateTargetMachine(pLtarget, pChzTriple, pChzCPU, pChzFeatures, loptlevel, lrelocmode, lcodemodel);
 
 	const char * pChzExtension;
-	if (FAreSame(pChzOs, "windows"))
+	if (fUsingWindows)
       pChzExtension = ".obj";
     else
       pChzExtension = ".o";
@@ -1844,6 +1886,9 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn =	"{ i:=0; while i < 5 { i = i + 1; } }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "printf :: (pCh : * u8, ..) -> s32 #foreign;";
 	AssertTestCodeGen(&work, pChzIn);

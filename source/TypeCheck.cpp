@@ -1275,6 +1275,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 
 			}break;
+			case PARK_Nop:
 			case PARK_VariadicArg:
 			{
 				pStnod->m_strees = STREES_TypeChecked;
@@ -1508,6 +1509,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					RWORD rword = pStnod->m_pStval->m_rword;
 					switch (rword)
 					{
+					case RWORD_While:
 					case RWORD_If:
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())
@@ -1518,11 +1520,16 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 							if (pStnod->CStnodChild() < 2)
 							{
-								EmitError(pTcwork, pStnod, "encountered if statement without expected predicate,child");
+								EmitError(
+									pTcwork,
+									pStnod,
+									"encountered %s statement without expected predicate,child",
+									PChzFromRword(rword));
 								return TCRET_StoppingError;
 							}
 
 							// (if (predicate) (ifCase) (else (elseCase)))
+							// (while (predicate) (body))
 							CSTNode * pStnodPred = pStnod->PStnodChild(0);
 							STypeInfo * pTinPred = pStnodPred->m_pTin;
 
@@ -2197,6 +2204,10 @@ void TestTypeCheck()
 	const char * pChzIn;
 	const char * pChzOut;
 
+	pChzIn = "{ ; }";
+	pChzOut ="({} (Nop))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn = "printf :: (pCh : * u8, ..) -> s32 #foreign;";
 	pChzOut ="(printf() $printf (Params (*u8 $pCh (*u8 u8)) (..)) s32)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
@@ -2287,6 +2298,10 @@ void TestTypeCheck()
 
 	pChzIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
 	pChzOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) (s64 s64 Literal:Int64) (??? (s64 s64 Literal:Int64))))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn =	"{ n:s64 = 5; while n > 0 { --n; } }";
+	pChzOut = "({} (s64 $n s64 Literal:Int64) (bool (bool s64 Literal:Int64) ({} (s64 s64))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	//pChzIn =	"{ n:int; if (n < 2) n = 5; else n = 2; }";

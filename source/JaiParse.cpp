@@ -1610,11 +1610,13 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJl
 	}
 	if (rword == RWORD_While)
 	{
-		JtokNextToken(pJlex);
-		//while expression statement
-
-		EWC_ASSERT(false, "while loops statements are not supported yet");
-		return nullptr;
+		CSTNode * pStnodWhile = PStnodParseReservedWord(pParctx, pJlex, RWORD_While);
+		CSTNode * pStnodExp = PStnodParseExpression(pParctx, pJlex);
+		pStnodWhile->IAppendChild(pStnodExp);
+		
+		CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pJlex);
+		pStnodWhile->IAppendChild(pStnodStatement);
+		return pStnodWhile;
 	}
 	return nullptr;
 }
@@ -2252,6 +2254,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		case PARK_Identifier:		return CChCopy("Ident", pCh, pChEnd-pCh);
 		case PARK_ParameterList:	return CChCopy("Params", pCh, pChEnd-pCh);
 		case PARK_VariadicArg:		return CChCopy("..",pCh, pChEnd-pCh);
+		case PARK_Nop:				return CChCopy("Nop",pCh, pChEnd-pCh);
 		default:					return CChCopy("???", pCh, pChEnd-pCh);
 		}
 	}
@@ -2627,6 +2630,10 @@ void TestParse()
 
 		pChzIn = "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
 		pChzOut = "({} (if (== $i (member (member $foo $bar) $fug)) (= $ick 3) (else (= $ick 7))))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+		pChzIn = "{ while x > 0 { --x; } }";
+		pChzOut = "({} (while (> $x 0) ({} (unary[--] $x))))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ break; continue; return foo=\"test\"; }";
