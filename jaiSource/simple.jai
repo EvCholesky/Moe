@@ -34,13 +34,39 @@ TestPointers :: ()
 
 main :: () -> int 
 {
-	;
 	i : s32;
+	nDec : int;
+	g : float;
+	gDec : float64;
 	while (i < 10)
 	{
-		printf("i=%d\n", i);
-		i = i+1;
+		printf("i=%d, nDec=%d, g=%f, gDec = %f\n", i, nDec, g, gDec);
+		//i = i+1;
+		++i;
+		--nDec;
+		++g;
+		--gDec;
 	}
+
+	n : int;
+	nPreInc := ++n;
+	n = 0;
+	nPreDec := --n;
+	n = 0;
+	nPostInc := n++;
+	nPostPostInc := n;
+	n = 0;
+	nPostDec := n--;
+	nPostPostDec := n;
+	printf("preInc=%d preDec = %d,   postInc=%d->%d, postDec=%d->%d\n", nPreInc, nPreDec, nPostInc, nPostPostInc, nPostDec, nPostPostDec);
+
+	// for i : 2..4 {}
+	// for 2..4 {}
+	// for array {}
+	// for * array {}
+
+	
+
 	return 1;
 }
 /*

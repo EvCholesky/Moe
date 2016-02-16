@@ -10,15 +10,18 @@ New:
   * String literals
   * Variadic functions (*cough* printf)
   * Switched to the C interface for LLVM.
+  * Pre/post increment/decrement
+  * While loops
 
 Coming soon:
-  * Loops.
-  * default initialization of global variables
   * Arrays
+  * For Loops.
+  * default initialization of global variables
   * Structures
 
 Known Issues:
   * Void pointers are not supported (llvm wants to codegen them as *u8)
+  * No pointer arithmatic yet.
 
 Deviations from current JAI syntax:
   * currently using @ for a dereference operator, rather than <<

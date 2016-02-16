@@ -559,32 +559,39 @@ void ExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
 	}
 }
 
+inline LLVMOpaqueValue * PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned)
+{
+	switch (cBit)
+	{
+	case 8:	 return LLVMConstInt(LLVMInt8Type(), U8Coerce(nUnsigned & 0xFF), fIsSigned);
+	case 16: return LLVMConstInt(LLVMInt16Type(), U16Coerce(nUnsigned & 0xFFFF), fIsSigned);
+	case 32: return LLVMConstInt(LLVMInt32Type(), U32Coerce(nUnsigned & 0xFFFFFFFF), fIsSigned);
+	case -1: // fall through
+	case 64: return LLVMConstInt(LLVMInt64Type(), nUnsigned, fIsSigned);
+	default: EWC_ASSERT(false, "unhandled integer size");
+		return nullptr;
+	}
+}
+
+inline LLVMOpaqueValue * PLvalConstantFloat(int cBit, F64 g)
+{
+	switch (cBit)
+	{
+	case 32: return LLVMConstReal(LLVMFloatType(), g);
+	case 64: return LLVMConstReal(LLVMDoubleType(), g);
+	default:	EWC_ASSERT(false, "unhandled float size");
+		return nullptr;
+	}
+}
+
 LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 {
 	auto pLbuild = pBuild->m_pLbuild;
 	switch (pTin->m_tink)
 	{
 	case TINK_Bool:		return LLVMConstInt(LLVMInt1Type(), 0, false);
-	case TINK_Integer:	
-		{
-			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTin;
-			switch (pTinint->m_cBit)
-			{
-			case 8: return LLVMConstInt(LLVMInt8Type(), 0, false);
-			case 16: return LLVMConstInt(LLVMInt16Type(), 0, false);
-			case 32: return LLVMConstInt(LLVMInt32Type(), 0, false);
-			case 64: return LLVMConstInt(LLVMInt64Type(), 0, false);
-			}
-		} break;
-	case TINK_Float:	
-		{
-			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
-			switch (pTinfloat->m_cBit)
-			{
-			case 32: return LLVMConstReal(LLVMFloatType(), 0.0); 
-			case 64: return LLVMConstReal(LLVMDoubleType(), 0.0);
-			}
-		} break;
+	case TINK_Integer:	return PLvalConstantInt(((STypeInfoInteger *)pTin)->m_cBit, false, 0);
+	case TINK_Float:	return PLvalConstantFloat(((STypeInfoFloat *)pTin)->m_cBit, 0.0);
 	case TINK_Pointer:
 		{
 			STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTin;
@@ -760,28 +767,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					(pStval->m_stvalk == STVALK_UnsignedInt) | (pStval->m_stvalk == STVALK_SignedInt),
 					"bad literal value");
 
-				bool fIsSigned = pTinlit->m_litty.m_fIsSigned;
-				switch (pTinlit->m_litty.m_cBit)
-				{
-				case 8:		pLval = LLVMConstInt(LLVMInt8Type(), U8Coerce(pStval->m_nUnsigned & 0xFF), fIsSigned);			break;
-				case 16:	pLval = LLVMConstInt(LLVMInt16Type(), U16Coerce(pStval->m_nUnsigned & 0xFFFF), fIsSigned);		break;
-				case 32:	pLval = LLVMConstInt(LLVMInt32Type(), U32Coerce(pStval->m_nUnsigned & 0xFFFFFFFF), fIsSigned);	break;
-				case -1: // fall through
-				case 64:	pLval = LLVMConstInt(LLVMInt64Type(), pStval->m_nUnsigned, fIsSigned);							break;
-				default:	EWC_ASSERT(false, "unhandled integer size");
-				}
+				pLval = PLvalConstantInt(pTinlit->m_litty.m_cBit, pTinlit->m_litty.m_fIsSigned, pStval->m_nUnsigned);
 			}break;
 		case LITK_Float:
 			{
-				if (pTinlit->m_litty.m_cBit == 64)
-				{
-					pLval = LLVMConstReal(LLVMDoubleType(), pStval->m_g);
-				}
-				else
-				{
-					EWC_ASSERT(pTinlit->m_litty.m_cBit == 32, "unhandled float size");
-					pLval = LLVMConstReal(LLVMFloatType(), pStval->m_g);
-				}
+				pLval = PLvalConstantFloat(pTinlit->m_litty.m_cBit, pStval->m_g);
 			}break;
 		case LITK_Bool:
 		{
@@ -1236,6 +1226,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			return pInstOp;
 		}
 
+	case PARK_PostfixUnaryOp:
 	case PARK_UnaryOp:
 		{
 			CSTNode * pStnodOperand = pStnod->PStnodChild(0);
@@ -1245,7 +1236,9 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return PValGenerate(pWork, pBuild, pStnodOperand, VALGENK_Reference);
 			}
 
-			CIRValue * pValOperand = PValGenerate(pWork, pBuild, pStnodOperand, VALGENK_Instance);
+			JTOK jtok = pStnod->m_jtok;
+			VALGENK valgenkUnary = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) ? VALGENK_Reference : VALGENK_Instance;
+			CIRValue * pValOperand = PValGenerate(pWork, pBuild, pStnodOperand, valgenkUnary);
 			if (!EWC_FVERIFY(pValOperand != nullptr, "null operand"))
 				return nullptr;
 
@@ -1309,6 +1302,53 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						pValOp = pValOperand;
 					}
 				} break;
+			case JTOK_PlusPlus:
+			case JTOK_MinusMinus:
+				{
+					if (!EWC_FVERIFY((pTinOutput == pTinOperand), "increment type mismatch (?)"))
+						return nullptr;
+			
+					CIRInstruction * pInstLoad = pBuild->PInstCreateLoad(pValOperand, "IncLoad");
+					CIRInstruction * pInstAdd = nullptr;
+					switch (tink)
+					{
+					case TINK_Float:	
+						{
+							CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+							pBuild->AddManagedVal(pConst);
+							pConst->m_pLval = PLvalConstantFloat(((STypeInfoFloat *)pTinOperand)->m_cBit, 1.0);
+
+							if (pStnod->m_jtok == JTOK_PlusPlus)
+								pInstAdd = pBuild->PInstCreateGAdd(pInstLoad, pConst, "gInc");
+							else
+								pInstAdd = pBuild->PInstCreateGSub(pInstLoad, pConst, "gDec");
+
+						} break;
+					case TINK_Integer:
+						{
+							STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinOperand;
+							CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+							pBuild->AddManagedVal(pConst);
+							pConst->m_pLval = PLvalConstantInt(pTinint->m_cBit, fIsSigned, 1);
+
+							if (pStnod->m_jtok == JTOK_PlusPlus)
+								pInstAdd = pBuild->PInstCreateNAdd(pInstLoad, pConst, "gInc", fIsSigned);
+							else
+								pInstAdd = pBuild->PInstCreateNSub(pInstLoad, pConst, "gDec", fIsSigned);
+						} break;
+					default: EWC_ASSERT(false, "unexpected type '%s' for increment/decrement operator", PChzFromTink(tink));
+					}
+
+					auto pInstStore = pBuild->PInstCreateStore(pValOperand, pInstAdd);
+					pValOp = (pStnod->m_park == PARK_PostfixUnaryOp) ? pInstLoad : pInstAdd;
+
+					if ( EWC_FVERIFY(pBuild->m_pBlockCur, "missing current block"))
+					{
+						pBuild->m_pBlockCur->Append(pInstLoad);
+						pBuild->m_pBlockCur->Append(pInstAdd);
+						pBuild->m_pBlockCur->Append(pInstStore);
+					}
+				}
 			default: break;
 			}
 

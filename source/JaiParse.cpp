@@ -48,6 +48,7 @@ const char * PChzFromPark(PARK park)
 		"LogicalAndOr Operator",
 		"Assignment Operator",
 		"Unary Operator",
+		"Postfix Unary Operator",
 		"Uninitializer",
 
 		"Array Element",		// [array, index]
@@ -403,9 +404,22 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 					pStnodMember->IAppendChild(pStnodIdent);
 					pStnod = pStnodMember;
 				}
-			}break;
-		// not supporting post increment
-		// not supporting post decrement
+			} break;
+		case JTOK_PlusPlus:
+		case JTOK_MinusMinus:
+			{
+				SLexerLocation lexloc(pJlex);
+
+				JTOK jtokPrev = JTOK(pJlex->m_jtok);	
+				JtokNextToken(pJlex); // consume '++' or '--'
+
+				CSTNode * pStnodUnary = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodUnary->m_jtok = jtokPrev;
+				pStnodUnary->m_park = PARK_PostfixUnaryOp;
+				pStnodUnary->IAppendChild(pStnod);
+
+				pStnod = pStnodUnary;
+			} break;
 		default: return pStnod;
 		}
 	}
@@ -2363,6 +2377,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_BitwiseAndOrOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
 	case PARK_LogicalAndOrOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
 	case PARK_UnaryOp:			    return CChFormat(pCh, pChEnd-pCh, "unary[%s]", PChzFromJtok(pStnod->m_jtok));
+	case PARK_PostfixUnaryOp:		return CChFormat(pCh, pChEnd-pCh, "postUnary[%s]", PChzFromJtok(pStnod->m_jtok));
 	case PARK_AssignmentOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
 	case PARK_ArrayElement:		    return CChCopy("elem", pCh, pChEnd - pCh);
 	case PARK_MemberLookup:		    return CChCopy("member", pCh, pChEnd - pCh);

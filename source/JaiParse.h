@@ -115,6 +115,7 @@ enum PARK // PARse Kind
 	PARK_LogicalAndOrOp,
 	PARK_AssignmentOp,
 	PARK_UnaryOp,
+	PARK_PostfixUnaryOp,	// postfix increment, decrement
 	PARK_Uninitializer,
 
 	// non-terminals

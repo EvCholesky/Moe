@@ -1728,6 +1728,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
+		case PARK_PostfixUnaryOp:
 		case PARK_UnaryOp:
 			{
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
@@ -1845,7 +1846,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 										bool fIsValidPtrOp = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) &
 											(tinkOperand == TINK_Pointer);
-										bool fIsValidFloatOp = ((jtok == JTOK('+')) | (jtok == JTOK('-'))) & fIsFloat;
+										bool fIsValidFloatOp = ((jtok == JTOK('+')) | (jtok == JTOK('-')) | (jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & fIsFloat;
 										bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp;
 
 										// BB - we should be checking for negating a signed literal here, but we can't really
@@ -1886,6 +1887,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
+		default:
+			EWC_ASSERT(false, "unknown parse kind (%s) encountered during type check", PChzFromPark(pStnod->m_park));
+			break;
 		}
 	}
 
@@ -2203,6 +2207,10 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "n:s32=2; n++; n--;";
+	pChzOut ="(s32 $n s32 Literal:Int32) (s32 s32) (s32 s32)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ ; }";
 	pChzOut ="({} (Nop))";
