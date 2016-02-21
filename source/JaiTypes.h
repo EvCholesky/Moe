@@ -206,7 +206,7 @@ enum ARYK
 
 struct STypeInfoArray : public STypeInfo	// tag = tinary
 {
-	static const TINK s_tink = TINK_Enum;
+	static const TINK s_tink = TINK_Array;
 
 					STypeInfoArray()
 					:STypeInfo("", s_tink)
@@ -217,8 +217,8 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 					{ ; }
 
 	STypeInfo *		m_pTin;
+	u64				m_c;
 	s32				m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
-	s64				m_c;
 	ARYK			m_aryk;
 };
 

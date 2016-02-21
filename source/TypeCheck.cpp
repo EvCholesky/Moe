@@ -23,6 +23,12 @@
 
 using namespace EWC;
 
+enum TCCTX // tag = Type Check Context
+{
+	TCCTX_Normal,
+	TCCTX_TypeSpecification, // type checking is inside type spec, walking the tree to do literal op evaluation
+};
+
 struct STypeCheckStackEntry // tag = tcsent
 {
 	int				m_nState;
@@ -31,6 +37,7 @@ struct STypeCheckStackEntry // tag = tcsent
 										//  maybe swap out for fPushedStack?
 	CSTNode *		m_pStnodProcedure;	// definition node for current procedure
 	GRFSYMLOOK		m_grfsymlook;
+	TCCTX			m_tcctx;
 };
 
 struct STypeCheckFrame // tag = tcfram
@@ -131,7 +138,7 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 				pCh += CChCopy(pStnod->m_pStval->m_str.PChz(), pCh, pChEnd - pCh); 
 				pStnodIt = nullptr;
 			}break;
-			case PARK_Reference:
+			case PARK_ReferenceDecl:
 				pCh += CChCopy("* ", pCh, pChEnd - pCh); 
 
 				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
@@ -151,102 +158,6 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 	}
 
 	return CString(aCh);
-}
-
-STypeInfo * PTinFromTypeSpecification(CSymbolTable * pSymtab, CSTNode * pStnod, GRFSYMLOOK grfsymlook, SSymbol **ppSymType)
-{
-	// returns null if this is an instance of an unknown type, if this is a reference to an unknown type we will return
-	//  tinptr->tin(TINK_Unknown) because we need this to handle a struct with a pointer to an instance of itself.
-
-	// Essentially, any non-null returned from this should be enough to determine the size of this type spec and 
-	//  determine target type equivalence.
-
-	CAlloc * pAlloc = pSymtab->m_pAlloc;
-
-	STypeInfo * pTinReturn = nullptr;
-	STypeInfo ** ppTinCur = &pTinReturn;
-	bool fAllowForwardDecl = false;
-
-	// loop and find the concrete target type
-	STypeInfo * pTinFinal = nullptr;
-	CSTNode * pStnodIt = pStnod;
-	while (pStnodIt)
-	{
-		if (pStnodIt->m_park == PARK_Identifier)
-		{
-			if (!EWC_FVERIFY(pStnodIt->m_pStval, "identifier without value string detected"))
-				break;
-
-			pTinFinal = pSymtab->PTinLookup(pStnodIt->m_pStval->m_str, pStnodIt->m_lexloc, grfsymlook, ppSymType);
-
-			if ((pTinFinal == nullptr) & fAllowForwardDecl)
-			{
-				pTinFinal = pSymtab->PTinfwdLookup(pStnodIt->m_pStval->m_str, grfsymlook);
-				// NOTE: we're not setting pStnodIt->m_pTin to point at the forward decl because we won't know to update
-				//  the pointer
-			}
-			else
-			{
-				pStnodIt->m_pTin = pTinFinal;
-			}
-			break;
-		}
-		else
-		{
-			fAllowForwardDecl |= pStnodIt->m_park == PARK_Reference;
-			EWC_ASSERT(pStnodIt->m_park == PARK_Reference || pStnodIt->m_park == PARK_ArrayDecl);
-			EWC_ASSERT(pStnodIt->CStnodChild() == 1);
-			pStnodIt = pStnodIt->PStnodChild(0);
-		}
-	}
-
-	if (!pTinFinal)
-		return nullptr;
-
-	// build the fully qualified type info
-	pStnodIt = pStnod;
-	STypeInfo * pTinPrev = nullptr;
-	while (pStnodIt)
-	{
-		if (pStnodIt->m_park == PARK_Reference)
-		{
-			STypeInfoPointer * pTinptr = EWC_NEW(pAlloc, STypeInfoPointer) STypeInfoPointer();
-			pSymtab->AddManagedTin(pTinptr);
-			pStnodIt->m_pTin = pTinptr;
-
-			pTinPrev = pTinptr;
-			*ppTinCur = pTinptr;
-			ppTinCur = &pTinptr->m_pTinPointedTo;
-
-			EWC_ASSERT(pStnodIt->CStnodChild() == 1);
-			pStnodIt = pStnodIt->PStnodChild(0);
-		}
-		else if (pStnodIt->m_park == PARK_ArrayDecl)
-		{
-			EWC_ASSERT(false, "not handling arrays in typecheck yet");
-			//STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-			//*ppTinCur = pTinary;
-			//ppTinCur = &pTinary->m_pTin;
-
-			// Need a way to pass the [..] vs [] vs [constExpr] distinction 
-
-			// if this is a pointer an array of an unknown type, the array is the unknown. I guess that's TBD
-		}
-		if (pStnodIt->m_park == PARK_Identifier)
-		{
-			if (pTinFinal->m_tink == TINK_ForwardDecl &&
-				EWC_FVERIFY(pTinPrev != nullptr, "how did we get here without a prev type info?"))
-			{
-				STypeInfoForwardDecl * pTinfwd = (STypeInfoForwardDecl *)pTinFinal;
-				pTinfwd->m_arypTinReferences.Append(pTinPrev);
-			}
-
-			*ppTinCur = pTinFinal;
-			ppTinCur = nullptr;
-			break;
-		}
-	}
-	return pTinReturn;
 }
 
 CString StrFromTypeInfo(STypeInfo * pTin)
@@ -835,7 +746,25 @@ STypeInfo * PTinFindUpcast(
 	return nullptr;
 }
 
-bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
+inline bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
+{
+	if (pTinLhs == pTinRhs)
+		return true;
+
+	if (pTinLhs->m_tink != pTinRhs->m_tink)
+		return false;
+	
+	switch(pTinLhs->m_tink)
+	{
+	case TINK_Pointer:	return FTypesAreSame(
+								((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo, 
+								((STypeInfoPointer *)pTinRhs)->m_pTinPointedTo);
+	case TINK_Array:	return FTypesAreSame(((STypeInfoArray *)pTinLhs)->m_pTin, ((STypeInfoArray *)pTinRhs)->m_pTin);
+	default :			return false;
+	}
+}
+
+inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
 	EWC_ASSERT(pTinSrc->m_tink != TINK_Literal, "literals should be promoted before calling FCanImplicitCast()");
 
@@ -864,9 +793,11 @@ bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 			{
 				STypeInfoPointer * pTinptrSrc = (STypeInfoPointer *)pTinSrc;
 				STypeInfoPointer * pTinptrDst = (STypeInfoPointer *)pTinDst;
-				return pTinptrSrc->m_pTinPointedTo == pTinptrDst->m_pTinPointedTo;	// BB - not safe, type infos are not unique
+
+				return FTypesAreSame(pTinptrSrc->m_pTinPointedTo, pTinptrDst->m_pTinPointedTo);	
 			} break;
-		case TINK_Enum: return pTinSrc == pTinDst;	// BB - not safe, type infos are not unique
+		case TINK_Enum: 
+			return FTypesAreSame(pTinSrc, pTinDst);
 		default: return false;
 		}
 	}
@@ -894,6 +825,148 @@ bool FIsValidLhs(const CSTNode * pStnod)
 
 	TINK tink = pTin->m_tink;
 	return (tink != TINK_Null) & (tink != TINK_Void) & (tink != TINK_Literal);
+}
+
+STypeInfo * PTinFromTypeSpecification(
+	STypeCheckWorkspace *pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnod,
+	GRFSYMLOOK grfsymlook,
+	SSymbol **ppSymType)
+{
+	// returns null if this is an instance of an unknown type, if this is a reference to an unknown type we will return
+	//  tinptr->tin(TINK_Unknown) because we need this to handle a struct with a pointer to an instance of itself.
+
+	// Essentially, any non-null returned from this should be enough to determine the size of this type spec and 
+	//  determine target type equivalence.
+
+	CAlloc * pAlloc = pSymtab->m_pAlloc;
+
+	STypeInfo * pTinReturn = nullptr;
+	STypeInfo ** ppTinCur = &pTinReturn;
+	bool fAllowForwardDecl = false;
+
+	// loop and find the concrete target type
+	STypeInfo * pTinFinal = nullptr;
+	CSTNode * pStnodIt = pStnod;
+
+	EWC_ASSERT(pStnodIt->m_strees == STREES_TypeChecked, "Type specification should be type checked first, (for literal op eval)");
+
+	while (pStnodIt)
+	{
+		switch(pStnodIt->m_park)
+		{
+		case PARK_Identifier:
+			{
+				if (!EWC_FVERIFY(pStnodIt->m_pStval, "identifier without value string detected"))
+					break;
+
+				pTinFinal = pSymtab->PTinLookup(pStnodIt->m_pStval->m_str, pStnodIt->m_lexloc, grfsymlook, ppSymType);
+
+				if ((pTinFinal == nullptr) & fAllowForwardDecl)
+				{
+					pTinFinal = pSymtab->PTinfwdLookup(pStnodIt->m_pStval->m_str, grfsymlook);
+
+					// NOTE: we're not setting pStnodIt->m_pTin to point at the forward decl because we won't know
+					//  to update the pointer
+				}
+				else
+				{
+					pStnodIt->m_pTin = pTinFinal;
+				}
+				pStnodIt = nullptr;
+			} break;
+		case PARK_ArrayDecl:
+			{
+				EWC_ASSERT(pStnodIt->CStnodChild() == 2);
+				pStnodIt = pStnodIt->PStnodChild(1);
+			} break;
+		case PARK_ReferenceDecl:
+			{
+				fAllowForwardDecl |= true;
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				pStnodIt = pStnodIt->PStnodChild(0);
+			} break;
+		default: EWC_ASSERT(false, "unexpected parse node %s in PTinFromTypeSpecification", PChzFromPark(pStnod->m_park));
+			break;
+		}
+	}
+
+	if (!pTinFinal)
+		return nullptr;
+
+	// build the fully qualified type info
+	pStnodIt = pStnod;
+	STypeInfo * pTinPrev = nullptr;
+	while (pStnodIt)
+	{
+		if (pStnodIt->m_park == PARK_ReferenceDecl)
+		{
+			STypeInfoPointer * pTinptr = EWC_NEW(pAlloc, STypeInfoPointer) STypeInfoPointer();
+			pSymtab->AddManagedTin(pTinptr);
+			pStnodIt->m_pTin = pTinptr;
+
+			pTinPrev = pTinptr;
+			*ppTinCur = pTinptr;
+			ppTinCur = &pTinptr->m_pTinPointedTo;
+
+			EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+			pStnodIt = pStnodIt->PStnodChild(0);
+		}
+		else if (pStnodIt->m_park == PARK_ArrayDecl)
+		{
+			STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+			pSymtab->AddManagedTin(pTinary);
+			pStnodIt->m_pTin = pTinary;
+
+			*ppTinCur = pTinary;
+			ppTinCur = &pTinary->m_pTin;
+
+			CSTNode * pStnodDim = pStnodIt->PStnodChild(0);
+			STypeInfoLiteral * pTinlitDim = (STypeInfoLiteral *)pStnodDim->m_pTin;
+			CSTValue * pStvalDim = nullptr;
+			if (!pTinlitDim || pTinlitDim->m_tink != TINK_Literal)
+			{
+				EmitError(pTcwork, pStnodIt, "Only static sized arrays are currently supported");
+			}
+			else
+			{
+				STypeInfo * pTinCount = pSymtab->PTinBuiltin("u64");
+				STypeInfo * pTinPromoted = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
+				if (!FCanImplicitCast(pTinPromoted, pTinCount))
+				{
+					EmitError(pTcwork, pStnodIt, "Only static sized arrays are currently supported");
+				}
+				else
+				{
+					FinalizeLiteralType(pSymtab, pTinCount, pStnodDim);
+					pStvalDim = pStnodDim->m_pStval;
+				}
+			}
+
+			if (!pStvalDim)
+				return nullptr;
+
+			pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnodIt, pStvalDim);
+			pTinary->m_aryk = ARYK_Static;
+
+			pStnodIt = pStnodIt->PStnodChild(1);
+		}
+		if (pStnodIt->m_park == PARK_Identifier)
+		{
+			if (pTinFinal->m_tink == TINK_ForwardDecl &&
+				EWC_FVERIFY(pTinPrev != nullptr, "how did we get here without a prev type info?"))
+			{
+				STypeInfoForwardDecl * pTinfwd = (STypeInfoForwardDecl *)pTinFinal;
+				pTinfwd->m_arypTinReferences.Append(pTinPrev);
+			}
+
+			*ppTinCur = pTinFinal;
+			ppTinCur = nullptr;
+			break;
+		}
+	}
+	return pTinReturn;
 }
 
 STypeInfo * PTinReturnFromStnodProcedure(CSTNode * pStnod)
@@ -950,6 +1023,18 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						}
 					}break;
 				case 1:
+					{	// type check the return type
+						if (pStproc->m_iStnodReturnType >= 0)
+						{
+							CSTNode * pStnodReturn = pStnod->PStnodChild(pStproc->m_iStnodReturnType);
+
+							PushTcsent(pTcfram, pStnodReturn);
+							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+							pTcsentPushed->m_pSymtab = pStnodReturn->m_pSymtab;
+							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+						}
+					}break;
+				case 2:
 					{
 						if (pStproc->m_iStnodParameterList >= 0)
 						{
@@ -970,10 +1055,11 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							{
 								CSTNode * pStnodReturn = pStnod->PStnodChild(pStproc->m_iStnodReturnType);
 								STypeInfo * pTinReturn = PTinFromTypeSpecification(
-									pTcsentTop->m_pSymtab,
-									pStnodReturn,
-									pTcsentTop->m_grfsymlook,
-									nullptr);
+															pTcwork,
+															pTcsentTop->m_pSymtab,
+															pStnodReturn,
+															pTcsentTop->m_grfsymlook,
+															nullptr);
 								if (!pTinReturn)
 								{
 									EmitError(pTcwork, pStnod, "failed to parse return type");
@@ -1012,7 +1098,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							pTcsentPushed->m_pSymtab = pStnodBody->m_pSymtab;
 						}
 					}break;
-				case 2:
+				case 3:
 					{
 						SSymbol * pSymProc = nullptr;
 						CString strProcName;
@@ -1209,46 +1295,48 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					OnTypeComplete(pTcwork, pSymStruct);
 				}
 			}break;
-
 			case PARK_Identifier:
 			{
-				// Note: we're only expecting to get here for identifiers within statements.
-				//  Identifiers for function names, declaration names and types, should do their own type checking.
-
-				CSTValue * pStval = pStnod->m_pStval;
-				if (EWC_FVERIFY(pStval, "identifier node with no value"))
+				if (pTcsentTop->m_tcctx == TCCTX_Normal)
 				{
-					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-					SSymbol * pSym = pSymtab->PSymLookup(pStval->m_str, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
-					if (!pSym || !pSym->m_pStnodDefinition)
-					{
-						EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", pStval->m_str.PChz());
-						return TCRET_StoppingError;
-					}
+					// Note: we're only expecting to get here for identifiers within statements.
+					//  Identifiers for function names, declaration names and types, should do their own type checking.
 
-
-					CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
-					if (pStnodDefinition->m_park == PARK_Decl)
+					CSTValue * pStval = pStnod->m_pStval;
+					if (EWC_FVERIFY(pStval, "identifier node with no value"))
 					{
-						if (pStnodDefinition->m_strees >= STREES_TypeChecked)
+						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+						SSymbol * pSym = pSymtab->PSymLookup(pStval->m_str, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
+						if (!pSym || !pSym->m_pStnodDefinition)
 						{
-							EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
-							pStnod->m_pTin = pStnodDefinition->m_pTin;
-							pStnod->m_pSym = pSym;
+							EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", pStval->m_str.PChz());
+							return TCRET_StoppingError;
+						}
+
+
+						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
+						if (pStnodDefinition->m_park == PARK_Decl)
+						{
+							if (pStnodDefinition->m_strees >= STREES_TypeChecked)
+							{
+								EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
+								pStnod->m_pTin = pStnodDefinition->m_pTin;
+								pStnod->m_pSym = pSym;
+							}
+							else
+							{
+								// set up dependency for either the definition or the type...
+								
+								SSymbol * pSymDepend = pSym;
+								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
+								pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
+								return TCRET_WaitingForSymbolDefinition;
+							}
 						}
 						else
 						{
-							// set up dependency for either the definition or the type...
-							
-							SSymbol * pSymDepend = pSym;
-							SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
-							pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
-							return TCRET_WaitingForSymbolDefinition;
+							// TODO: handle function, enum, and struct definitions
 						}
-					}
-					else
-					{
-						// TODO: handle function, enum, and struct definitions
 					}
 				}
 
@@ -1256,6 +1344,8 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				pStnod->m_strees = STREES_TypeChecked;
 			}break;
 
+			case PARK_ArrayDecl:
+			case PARK_ReferenceDecl:
 			case PARK_ParameterList:
 			case PARK_List:
 			{
@@ -1295,7 +1385,19 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 					++pTcsentTop->m_nState;
 				}
-				else if (pTcsentTop->m_nState == 1) // resolve actual type
+				else if (pTcsentTop->m_nState == 1) // type check type specification (for literal op eval)
+				{
+					if (pStdecl->m_iStnodType >= 0)
+					{
+						CSTNode * pStnodReturn = pStnod->PStnodChild(pStdecl->m_iStnodType);
+
+						PushTcsent(pTcfram, pStnodReturn);
+						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+						pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+					}
+					++pTcsentTop->m_nState;
+				}
+				else if (pTcsentTop->m_nState == 2) // resolve actual type
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					if (pStdecl->m_iStnodType >= 0)
@@ -1304,6 +1406,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 						SSymbol * pSymType = nullptr;
 						STypeInfo * pTinType = PTinFromTypeSpecification(
+												pTcwork,
 												pSymtab,
 												pStnodType,
 												pTcsentTop->m_grfsymlook,
@@ -1501,7 +1604,58 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
-			}break;
+			} break;
+			case PARK_ArrayElement:
+			{
+				int cStnodChild = pStnod->CStnodChild();
+				if (!EWC_FVERIFY(cStnodChild == 2, "expected 2 children (array, index) for array element AST, found %d",  cStnodChild))
+					return TCRET_StoppingError;
+
+				if (pTcsentTop->m_nState < cStnodChild)
+				{
+					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					++pTcsentTop->m_nState;
+					break;
+				}
+
+				CSTNode * pStnodLhs = pStnod->PStnodChild(0);
+				CSTNode * pStnodIndex = pStnod->PStnodChild(1);
+				if (!EWC_FVERIFY(pStnodLhs && pStnodLhs->m_pTin, "Array element LHS has no type") ||
+					!EWC_FVERIFY(pStnodIndex && pStnodIndex->m_pTin, "Array index has no type"))
+					return TCRET_StoppingError;
+
+				switch (pStnodLhs->m_pTin->m_tink)
+				{
+				case TINK_Array:
+					{
+						auto pTinary = (STypeInfoArray *)pStnodLhs->m_pTin;
+						pStnod->m_pTin = pTinary->m_pTin;
+					} break;
+				case TINK_Pointer:
+					{
+						auto pTinptr = (STypeInfoPointer *)pStnodLhs->m_pTin;
+						pStnod->m_pTin = pTinptr->m_pTinPointedTo;
+					} break;
+				default: 
+					CString strLhs = StrFromTypeInfo(pStnodLhs->m_pTin);
+					EmitError(pTcwork, pStnod, "%s cannot be indexed as an array", strLhs.PChz());
+					return TCRET_StoppingError;
+				}
+
+				auto pSymtab = pTcsentTop->m_pSymtab;
+
+				auto pTinIndex = PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodIndex);
+				if (pTinIndex->m_tink != TINK_Integer &&  pTinIndex->m_tink != TINK_Integer)
+				{
+					CString strTinIndex = StrFromTypeInfo(pTinIndex);
+					EmitError(pTcwork, pStnod, "Cannot convert %s to integer for array index", strTinIndex.PChz());
+				}
+
+				FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinIndex, pStnodIndex);
+				
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram);
+			} break;
 			case PARK_ReservedWord:
 			{
 				if (EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
@@ -2023,6 +2177,7 @@ void PerformTypeCheck(
 		pTcsent->m_pSymtab = pEntry->m_pSymtab;
 		pTcsent->m_pStnodProcedure = nullptr;
 		pTcsent->m_grfsymlook = FSYMLOOK_Default;
+		pTcsent->m_tcctx = TCCTX_Normal;
 
 		pTcwork->m_arypTcframPending.Append(pTcfram);
 	}
@@ -2207,6 +2362,14 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "aN : [4] s32; paN : * [4] s32 = *aN;";
+	pChzOut = "([]s32 $aN ([]s32 Literal:Int64 s32)) (*[]s32 $paN (*[]s32 ([]s32 Literal:Int64 s32)) (*[]s32 []s32))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "aN : [4] s32; n := aN[0];";
+	pChzOut = "([]s32 $aN ([]s32 Literal:Int64 s32)) (s32 $n (s32 []s32 Literal:Int64))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:s32=2; n++; n--;";
 	pChzOut ="(s32 $n s32 Literal:Int32) (s32 s32) (s32 s32)";

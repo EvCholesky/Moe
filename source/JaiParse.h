@@ -128,7 +128,7 @@ enum PARK // PARse Kind
 	PARK_If,
 	PARK_Else,
 
-	PARK_Reference,
+	PARK_ReferenceDecl,		// used in type specification, not used for the unary address-of operator
 	PARK_Decl,
 	PARK_ProcedureDefinition,
 	PARK_EnumDefinition,

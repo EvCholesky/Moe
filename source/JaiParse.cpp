@@ -59,7 +59,7 @@ const char * PChzFromPark(PARK park)
 		"Array Decl",
 		"If",
 		"Else",
-		"Reference",
+		"Reference Decl",
 		"Decl",
 		"Procedure Definition",
 		"Enum Definition",
@@ -725,7 +725,7 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 		JtokNextToken(pJlex);
 		CSTNode * pStnodArray = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 
-		pStnodArray->m_jtok = JTOK(' ');
+		pStnodArray->m_jtok = JTOK_Nil;
 		pStnodArray->m_park = PARK_ArrayDecl;
 		
 		STypeInfoArray * pTinary = EWC_NEW(pParctx->m_pAlloc, STypeInfoArray) STypeInfoArray();
@@ -764,27 +764,7 @@ CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 		CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 
 		pStnod->m_jtok = (JTOK)pJlex->m_jtok;
-		pStnod->m_park = PARK_Reference;
-
-	// Not doing nested pointer check, ParseTypeSpecifier will handle it
-	//CSTNode * pStnodNested = PStnodParsePointerDecl(pParctx, pJlex);
-	//if (pStnodNested)
-	//	pStnod->IAppendChild(pStnodNested);
-
-	// Note: We're not allocating a STypeInfoPointer here because we may not know the type it points at so we have  
-	//  to handle it in the type checker anyway.
-
-	//	STypeInfoPointer * pTinptr = EWC_NEW(pParctx->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
-	//	pParctx->m_pSymtab->m_arypTinManaged.Append(pTinptr);
-	//	pTinptr->m_soaPacking = -1;
-	//	pStnod->m_pTin = pTinptr;
-
-	// BB - should we set STypeInfo::m_strName to a string name containing our qualifier (ie "* s16") and add this 
-	//  to the symbol table? It would allow reuse of this struct...
-	//
-	//	CSymbolTable * pSymtab = pParctx->m_pSymtab;
-	//  pSymtab->AddNamedType(pParctx, pJlex, pTin);
-
+		pStnod->m_park = PARK_ReferenceDecl;
 		return pStnod;
 	}
 	return nullptr;
@@ -805,7 +785,6 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	{
 		pStnod = PStnodParseArrayDecl(pParctx, pJlex);
 	}
-
 	if (!pStnod)
 		return nullptr;
 
@@ -2291,16 +2270,17 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 			switch (pTinary->m_aryk)
 			{
 			case ARYK_Fixed:
-				pChWork += CChFormat(pChWork, pChEnd-pChWork, "[%d] ", pTinary->m_c);
+				pChWork += CChFormat(pChWork, pChEnd-pChWork, "[%d]", pTinary->m_c);
 				break;
 			case ARYK_Dynamic:
-				pChWork += CChCopy("[..] ", pChWork, pChEnd-pChWork);
+				pChWork += CChCopy("[..]", pChWork, pChEnd-pChWork);
 				break;
 			case ARYK_Static:
-				pChWork += CChCopy("[] ", pChWork, pChEnd-pChWork);
+				pChWork += CChCopy("[]", pChWork, pChEnd-pChWork);
 				break;
-
 			}
+
+			pChWork += CChPrintTypeInfo(pTinary->m_pTin, park, pChWork, pChEnd);
 			return pChWork - pCh;
 		}break;
 
@@ -2384,10 +2364,10 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_ProcedureCall:		return CChCopy("procCall", pCh, pChEnd - pCh);
 	case PARK_List:				    return CChCopy("{}", pCh, pChEnd - pCh);
 	case PARK_ParameterList:	    return CChCopy("params", pCh, pChEnd - pCh);
-	case PARK_ArrayDecl:		    return CChFormat(pCh, pChEnd - pCh, "[%s]", PChzFromJtok(pStnod->m_jtok));
+	case PARK_ArrayDecl:		    return CChCopy("[]", pCh, pChEnd - pCh);
 	case PARK_If:				    return CChCopy("if", pCh, pChEnd - pCh);
 	case PARK_Else:				    return CChCopy("else", pCh, pChEnd - pCh);
-	case PARK_Reference:			return CChCopy("ptr", pCh, pChEnd - pCh);
+	case PARK_ReferenceDecl:		return CChCopy("ptr", pCh, pChEnd - pCh);
 	case PARK_Decl:					return CChCopy("decl", pCh, pChEnd - pCh);
 	case PARK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
 	case PARK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
@@ -2601,6 +2581,14 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pChzIn = "paN : * [4] int;";
+		pChzOut = "(decl $paN (ptr ([] 4 $int)))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+		pChzIn = "aN : [4] int; n := aN[0];";
+		pChzOut = "(decl $aN ([] 4 $int)) (decl $n (elem $aN 0))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "x + 3*5;";
 		pChzOut = "(+ $x (* 3 5))";

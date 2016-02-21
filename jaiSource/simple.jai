@@ -1,5 +1,6 @@
 #import "Basic"
 
+/*
 AddNums :: (nA : int, nB : int) -> int
 {
 	return nA + nB;
@@ -31,9 +32,52 @@ TestPointers :: ()
 	@@ppN = 8;
 	PrintInt(n);
 }
+*/
 
 main :: () -> int 
 {
+	/*
+	n := 56;
+	pN := *n;
+	printf("%d\n", pN[0]);
+
+	pN[0] = 67;
+	printf("%d\n", n);
+	*/
+
+	aN : [4] s32;	
+
+	i : s32 = 0;
+	// compiler explodes with "s32 i := 0"
+
+	while i < 4
+	{
+		printf("init[%d] = %d\n", i, aN[i]);
+		aN[i] = i * 2;
+		++i;
+	}
+
+	apN : [4] * s32;
+	i = 0;
+	while i < 4
+	{
+		printf("%d\n", aN[i]);
+		apN[i] = *aN[i];
+		++i;
+	}
+
+	i = 0;
+	while i < 4
+	{
+		printf("%d\n", @apN[i]);	
+		++i;
+	}
+
+	paN : * [4] s32 = *aN; 
+	(@paN)[1] = 1;
+	printf("%d\n", aN[1]);
+
+/*
 	i : s32;
 	nDec : int;
 	g : float;
@@ -59,6 +103,7 @@ main :: () -> int
 	nPostDec := n--;
 	nPostPostDec := n;
 	printf("preInc=%d preDec = %d,   postInc=%d->%d, postDec=%d->%d\n", nPreInc, nPreDec, nPostInc, nPostPostInc, nPostDec, nPostPostDec);
+	*/
 
 	// for i : 2..4 {}
 	// for 2..4 {}

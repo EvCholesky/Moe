@@ -119,6 +119,7 @@ EWC_ENUM_UTILS(VALK);
 		OP(Alloca), \
 		OP(Load), \
 		OP(Store), \
+		OP(GEP), \
 		OP_RANGE(MemoryOp, LogicOpMax), \
 		\
 		OP(NTrunc), \
@@ -324,7 +325,8 @@ public:
 	CIRInstruction *	PInstCreateBranch(CIRBasicBlock * pBlock);
 
 	CIRInstruction *	PInstCreateRet(CIRValue * pValRhs);
-	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, const char * pChzName);
+	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
+	CIRInstruction *	PInstCreateGEP(CIRValue * pValLhs, LLVMOpaqueValue ** apLvalIndices, u32 cpIndices, const char * pChzName);
 
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 

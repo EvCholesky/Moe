@@ -12,16 +12,16 @@ New:
   * Switched to the C interface for LLVM.
   * Pre/post increment/decrement
   * While loops
+  * Arrays
 
 Coming soon:
-  * Arrays
+  * Pointer arithmatic.
   * For Loops.
   * default initialization of global variables
   * Structures
 
 Known Issues:
   * Void pointers are not supported (llvm wants to codegen them as *u8)
-  * No pointer arithmatic yet.
 
 Deviations from current JAI syntax:
   * currently using @ for a dereference operator, rather than <<
