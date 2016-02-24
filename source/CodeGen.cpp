@@ -60,6 +60,14 @@ static inline size_t CChGetTypeString(LLVMOpaqueType * pLtype, char * pCh, const
 	return CChCopy("unknown", pCh, pChEnd-pCh);
 }
 
+static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
+{
+	printf("%s: ", pChzLabel);
+
+	auto pLtype = LLVMTypeOf(pVal->m_pLval);
+	LLVMDumpType(pLtype);
+}
+
 
 
 CIRValue::CIRValue(VALK valk)
@@ -793,7 +801,6 @@ static inline void CreateDefaultInitializer(
 	CIRInstruction * pInstAlloca,
 	LLVMOpaqueType * pLtype)
 {
-
 	auto pLval = PLvalZeroInType(pBuild, pTin);
 
 	if (!EWC_FVERIFY(pLval, "unexpected type in PValGenerateDefaultInitializer"))
@@ -805,6 +812,31 @@ static inline void CreateDefaultInitializer(
 	pBuild->AddManagedVal(pConst);
 
 	pBuild->PInstCreateStore(pInstAlloca, pConst);
+}
+
+static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodRhs, STypeInfo * pTinOut)
+{
+	STypeInfo * pTinRhs = pStnodRhs->m_pTin;
+	if ( pTinRhs && pTinRhs->m_tink == TINK_Array)
+	{
+		CIRValue * pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
+
+		// special case for assigning arrays to pointers, need reference to the array type.
+		if (pTinRhs->m_tink == TINK_Array && pTinOut->m_tink == TINK_Pointer)
+		{
+			LLVMOpaqueValue * apLvalIndex[2] = {};
+			apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+			apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 0, false);
+
+			return pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
+		}
+
+		CIRValue * pValSrc = pBuild->PInstCreateLoad(pValRhsRef, "castLoad");
+		return PValCreateCast(pBuild, pValSrc, pTinRhs, pTinOut);
+	}
+
+	CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
+	return PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOut);
 }
 
 CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
@@ -909,10 +941,9 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			// need to generate code for local var, just running init, leg for now.
 			if (pStdecl->m_iStnodInit >= 0)
 			{
-
-				CIRValue * pValInit = PValGenerate(pWork, pBuild, pStnod->PStnodChild(pStdecl->m_iStnodInit), VALGENK_Instance);
-
-				pBuild->PInstCreateStore(pInstAlloca, pValInit);
+				CSTNode * pStnodRhs = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+				CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnod->m_pTin);
+				pBuild->PInstCreateStore(pInstAlloca, pValRhsCast);
 			}
 			else
 			{
@@ -1190,22 +1221,14 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Reference);
-			CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
+			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnod->m_pTin);
 
-			if (!EWC_FVERIFY((pStnodLhs != nullptr) & (pValRhs != nullptr), "null operand"))
+			if (!EWC_FVERIFY((pStnodLhs != nullptr) & (pValRhsCast != nullptr), "null operand"))
 				return nullptr;
 
 			if (!EWC_FVERIFY(pValLhs->m_pLval != nullptr, "null llvm operand") || 
-				!EWC_FVERIFY(pValRhs->m_pLval != nullptr, "null llvm operand"))
+				!EWC_FVERIFY(pValRhsCast->m_pLval != nullptr, "null llvm operand"))
 				return nullptr;
-
-			STypeInfo * pTinOutput = pStnod->m_pTin;
-			STypeInfo * pTinLhs = pStnodLhs->m_pTin;
-			STypeInfo * pTinRhs = pStnodRhs->m_pTin;
-			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinLhs != nullptr) & (pTinRhs != nullptr), "bad cast"))
-				return nullptr;
-	
-			CIRValue * pValRhsCast = PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOutput);
 
 			auto pInstOp = pBuild->PInstCreateStore(pValLhs, pValRhsCast);
 			if ( EWC_FVERIFY(pBuild->m_pBlockCur, "missing current block"))
@@ -1226,22 +1249,21 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Instance);
-			CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
-			if (!EWC_FVERIFY((pValLhs != nullptr) & (pValRhs != nullptr), "null operand"))
-				return nullptr;
-
-			if (!EWC_FVERIFY((pValLhs->m_pLval != nullptr) & (pValRhs->m_pLval != nullptr), "null llvm operand"))
-				return nullptr;
 
 			STypeInfo * pTinOutput = pStnod->m_pTinOperand;
-			STypeInfo * pTinLhs = pStnodLhs->m_pTin;
+			CIRValue * pValLhsCast = PValGenerateRefCast(pWork, pBuild, pStnodLhs, pTinOutput);
+			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pTinOutput);
+			if (!EWC_FVERIFY((pValLhsCast != nullptr) & (pValRhsCast != nullptr), "null operand"))
+				return nullptr;
 
+			if (!EWC_FVERIFY((pValLhsCast->m_pLval != nullptr) & (pValRhsCast->m_pLval != nullptr), "null llvm operand"))
+				return nullptr;
+
+			STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 			STypeInfo * pTinRhs = pStnodRhs->m_pTin;
 			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinLhs != nullptr) & (pTinRhs != nullptr), "bad cast"))
 				return nullptr;
 	
-			CIRValue * pValLhsCast = PValCreateCast(pBuild, pValLhs, pTinLhs, pTinOutput);
-			CIRValue * pValRhsCast = PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOutput);
 			CIRInstruction * pInstOp = nullptr;
 
 			bool fIsSigned = true;
@@ -1267,58 +1289,66 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case TINK_Bool:
 				switch (pStnod->m_jtok)
 				{
-					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
-					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhsCast, pValRhsCast, "NCmpEq"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhsCast, pValRhsCast, "NCmpNq"); break;
 				} break;
 			case TINK_Integer:
 				switch (pStnod->m_jtok)
 				{
-					case '+': 				pInstOp = pBuild->PInstCreateNAdd(pValLhs, pValRhs, "nAddTmp", fIsSigned); break;
-					case '-': 				pInstOp = pBuild->PInstCreateNSub(pValLhs, pValRhs, "nSubTmp", fIsSigned); break;
-					case '*': 				pInstOp = pBuild->PInstCreateNMul(pValLhs, pValRhs, "nMulTmp", fIsSigned); break;
-					case '/': 				pInstOp = pBuild->PInstCreateNDiv(pValLhs, pValRhs, "nDivTmp", fIsSigned); break;
-					case '&':				pInstOp = pBuild->PInstCreateNAnd(pValLhs, pValRhs, "nAndTmp"); break;
-					case '|':				pInstOp = pBuild->PInstCreateNOr(pValLhs, pValRhs, "nOrTmp"); break;
-					case JTOK_ShiftRight:	pInstOp = pBuild->PInstCreateNShr(pValLhs, pValRhs, "nShrTmp", fIsSigned); break;
-					case JTOK_ShiftLeft:	pInstOp = pBuild->PInstCreateNShl(pValLhs, pValRhs, "nShlTmp", fIsSigned); break;
-					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
-					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+					case '+': 				pInstOp = pBuild->PInstCreateNAdd(pValLhsCast, pValRhsCast, "nAddTmp", fIsSigned); break;
+					case '-': 				pInstOp = pBuild->PInstCreateNSub(pValLhsCast, pValRhsCast, "nSubTmp", fIsSigned); break;
+					case '*': 				pInstOp = pBuild->PInstCreateNMul(pValLhsCast, pValRhsCast, "nMulTmp", fIsSigned); break;
+					case '/': 				pInstOp = pBuild->PInstCreateNDiv(pValLhsCast, pValRhsCast, "nDivTmp", fIsSigned); break;
+					case '&':				pInstOp = pBuild->PInstCreateNAnd(pValLhsCast, pValRhsCast, "nAndTmp"); break;
+					case '|':				pInstOp = pBuild->PInstCreateNOr(pValLhsCast, pValRhsCast, "nOrTmp"); break;
+					case JTOK_ShiftRight:	pInstOp = pBuild->PInstCreateNShr(pValLhsCast, pValRhsCast, "nShrTmp", fIsSigned); break;
+					case JTOK_ShiftLeft:	pInstOp = pBuild->PInstCreateNShl(pValLhsCast, pValRhsCast, "nShlTmp", fIsSigned); break;
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhsCast, pValRhsCast, "NCmpEq"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhsCast, pValRhsCast, "NCmpNq"); break;
 					case JTOK_LessEqual:
-						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSLE, pValLhs, pValRhs, "NCmpSLE");
-						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULE, pValLhs, pValRhs, "NCmpULE");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSLE, pValLhsCast, pValRhsCast, "NCmpSLE");
+						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULE, pValLhsCast, pValRhsCast, "NCmpULE");
 						break;
 					case JTOK_GreaterEqual:
-						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSGE, pValLhs, pValRhs, "NCmpSGE");
-						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpUGE, pValLhs, pValRhs, "NCmpUGE");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSGE, pValLhsCast, pValRhsCast, "NCmpSGE");
+						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpUGE, pValLhsCast, pValRhsCast, "NCmpUGE");
 						break;
 					case '<':
-						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSLT, pValLhs, pValRhs, "NCmpSLT");
-						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULT, pValLhs, pValRhs, "NCmpULT");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSLT, pValLhsCast, pValRhsCast, "NCmpSLT");
+						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULT, pValLhsCast, pValRhsCast, "NCmpULT");
 						break;
 					case '>':
-						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSGT, pValLhs, pValRhs, "NCmpSGT");
-						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpUGT, pValLhs, pValRhs, "NCmpUGT");
+						if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSGT, pValLhsCast, pValRhsCast, "NCmpSGT");
+						else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpUGT, pValLhsCast, pValRhsCast, "NCmpUGT");
 						break;
 				} break;
 			case TINK_Float:
 				switch (pStnod->m_jtok)
 				{
-					case '+': 				pInstOp = pBuild->PInstCreateGAdd(pValLhs, pValRhs, "gAddTmp"); break;
-					case '-': 				pInstOp = pBuild->PInstCreateGSub(pValLhs, pValRhs, "gSubTmp"); break;
-					case '*': 				pInstOp = pBuild->PInstCreateGMul(pValLhs, pValRhs, "gMulTmp"); break;
-					case '/': 				pInstOp = pBuild->PInstCreateGDiv(pValLhs, pValRhs, "gDivTmp"); break;
-					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOEQ, pValLhs, pValRhs, "NCmpOEQ"); break;
-					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpONE, pValLhs, pValRhs, "NCmpONE"); break;
-					case JTOK_LessEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOLE, pValLhs, pValRhs, "NCmpOLE"); break;
-					case JTOK_GreaterEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOGE, pValLhs, pValRhs, "NCmpOGE"); break;
-					case '<': 				pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOLT, pValLhs, pValRhs, "NCmpOLT"); break;
-					case '>': 				pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOGT, pValLhs, pValRhs, "NCmpOGT"); break;
+					case '+': 				pInstOp = pBuild->PInstCreateGAdd(pValLhsCast, pValRhsCast, "gAddTmp"); break;
+					case '-': 				pInstOp = pBuild->PInstCreateGSub(pValLhsCast, pValRhsCast, "gSubTmp"); break;
+					case '*': 				pInstOp = pBuild->PInstCreateGMul(pValLhsCast, pValRhsCast, "gMulTmp"); break;
+					case '/': 				pInstOp = pBuild->PInstCreateGDiv(pValLhsCast, pValRhsCast, "gDivTmp"); break;
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOEQ, pValLhsCast, pValRhsCast, "NCmpOEQ"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpONE, pValLhsCast, pValRhsCast, "NCmpONE"); break;
+					case JTOK_LessEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOLE, pValLhsCast, pValRhsCast, "NCmpOLE"); break;
+					case JTOK_GreaterEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOGE, pValLhsCast, pValRhsCast, "NCmpOGE"); break;
+					case '<': 				pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOLT, pValLhsCast, pValRhsCast, "NCmpOLT"); break;
+					case '>': 				pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOGT, pValLhsCast, pValRhsCast, "NCmpOGT"); break;
 				} break;
 			case TINK_Pointer:
 				switch (pStnod->m_jtok)
 				{
-					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
-					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhsCast, pValRhsCast, "NCmpEq"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhsCast, pValRhsCast, "NCmpNq"); break;
+					case '-': 				
+						pValRhsCast = pBuild->PInstCreateNNeg(pValRhsCast, "NNeg", fIsSigned);
+						// fallthrough
+					case '+': 				
+					{
+						LLVMOpaqueValue * pLvalIndex = pValRhsCast->m_pLval;
+						pInstOp = pBuild->PInstCreateGEP(pValLhsCast, &pLvalIndex, 1, "ptrAdd"); break;
+					} break;
 				}
 			default: 
 				break;
@@ -1433,7 +1463,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						} break;
 					case TINK_Integer:
 						{
-							STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinOperand;
+							auto pTinint = (STypeInfoInteger *)pTinOperand;
 							CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
 							pBuild->AddManagedVal(pConst);
 							pConst->m_pLval = PLvalConstantInt(pTinint->m_cBit, fIsSigned, 1);
@@ -1442,6 +1472,14 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 								pInstAdd = pBuild->PInstCreateNAdd(pInstLoad, pConst, "gInc", fIsSigned);
 							else
 								pInstAdd = pBuild->PInstCreateNSub(pInstLoad, pConst, "gDec", fIsSigned);
+						} break;
+					case TINK_Pointer:
+						{
+							int nDelta = (pStnod->m_jtok == JTOK_PlusPlus) ? 1 : -1;
+							LLVMOpaqueValue * pLvalIndex = PLvalConstantInt(64, fIsSigned, nDelta);
+
+							auto pValLoad = pBuild->PInstCreateLoad(pValOperand, "incLoad");
+							pInstAdd = pBuild->PInstCreateGEP(pValLoad, &pLvalIndex, 1, "incGep");
 						} break;
 					default: EWC_ASSERT(false, "unexpected type '%s' for increment/decrement operator", PChzFromTink(tink));
 					}
@@ -2033,6 +2071,15 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn =	"{ aN : [4] s32;  pN : * s32; fTest := aN == pN; }";
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn =	"{ pN : * s32; ++pN; --pN; }";
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn =	"{ pN : * s32; pN = pN + 2; pN = pN - 2; }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ aN : [4] s32; n := aN[2]; }";
 	AssertTestCodeGen(&work, pChzIn);

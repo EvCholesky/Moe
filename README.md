@@ -13,12 +13,12 @@ New:
   * Pre/post increment/decrement
   * While loops
   * Arrays
+  * Pointer arithmetic.
 
 Coming soon:
-  * Pointer arithmatic.
+  * Structures
   * For Loops.
   * default initialization of global variables
-  * Structures
 
 Known Issues:
   * Void pointers are not supported (llvm wants to codegen them as *u8)

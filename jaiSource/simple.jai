@@ -73,6 +73,31 @@ main :: () -> int
 		++i;
 	}
 
+	//pN : * s32 = *aN[0];
+	pN : * s32 = aN;
+	pN2 := pN;
+	//pN = aN;
+	i = 0;
+	while i < 4
+	{
+		printf("*aN[i] = %p, pN = %p, pN2 = %p\n", *aN[i], pN, pN2);	
+		++i;
+		++pN;
+		pN2 = pN2 + 1;
+	}
+
+	pNTest : * s32 = aN + 4;
+	printf("test = %p\n", pNTest);
+
+	//pNBegin := aN;  // error - what should initialize to an array do?
+	pNBegin : * s32 = aN;
+	while pN2 != aN // can't compare pointer to array
+	{
+		printf("%p, %p\n", pN, pN2);
+		--pN;
+		pN2 = pN2 - 1;
+	}
+
 	paN : * [4] s32 = *aN; 
 	(@paN)[1] = 1;
 	printf("%d\n", aN[1]);
