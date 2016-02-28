@@ -19,6 +19,8 @@
 #include "EwcString.h"
 
 class CSymbolTable;
+class CSTNode;
+struct LLVMOpaqueType;
 
 enum TINK 
 {
@@ -191,11 +193,18 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 								STypeInfoStruct(const char * pChzName)
 								:STypeInfo(pChzName, s_tink)
+								,m_pLtype(nullptr)
+								,m_pStnodStruct(nullptr)
 								,m_aryTypememb()
 									{ ; }
 	
+	LLVMOpaqueType *				m_pLtype;			// llvm type reference, here to avoid infinite recursion in
+														//  self referential member pointers
+	CSTNode *						m_pStnodStruct;
 	EWC::CAry<STypeStructMember>	m_aryTypememb;
 };
+
+int ITypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
 
 enum ARYK
 {

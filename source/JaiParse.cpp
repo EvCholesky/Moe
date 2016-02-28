@@ -867,6 +867,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 			JtokNextToken(pJlex);
 			if (pJlex->m_jtok == JTOK_TripleMinus)
 			{
+				JtokNextToken(pJlex);
 				if (parkContext == PARK_ParameterList)
 				{
 					ParseError(pParctx, pJlex, "--- uninitializer not allowed in parameter lists");
@@ -928,7 +929,6 @@ CSTNode * PStnodParseDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 
 CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodList = nullptr;
 
 	while (1)
@@ -942,24 +942,19 @@ CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
 		if (!pStnod)
 			break;
 
-		if (pStnodReturn == nullptr)
+		if (pStnodList == nullptr)
 		{
-			pStnodReturn = pStnod;
+			pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+			pStnodList->m_jtok = JTOK('{');
+			pStnodList->m_park = PARK_List;
+			pStnodList->IAppendChild(pStnod);
 		}
 		else
 		{
-			if (pStnodList == nullptr)
-			{
-				pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodList->m_jtok = JTOK('{');
-				pStnodList->m_park = PARK_List;
-				pStnodList->IAppendChild(pStnodReturn);
-				pStnodReturn = pStnodList;
-			}
 			pStnodList->IAppendChild(pStnod);
 		}
 	}
-	return pStnodReturn;
+	return pStnodList;
 }
 
 CSTNode * PStnodParseParameterList(
@@ -1043,28 +1038,20 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnodConstant;
 }
 
-int CChildrenInList(CSTNode * pStnod, CSTNode **& ppStnodChildren, PARK parkkList)
+CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park)
 {
-	if (!pStnod)
+	if (!pStnod || pStnod->m_park != park)
 	{
-		ppStnodChildren = nullptr;
-		return 0;
+		*pCStnodChild = 0;
+		return nullptr;
 	}
 
-	if (pStnod->m_park != parkkList)
-	{
-		// assume the list of one was collapsed down
-		ppStnodChildren = &pStnod;
-		return 1;
-	}
-
-	ppStnodChildren = pStnod->m_arypStnodChild.A();
-	return (int)pStnod->m_arypStnodChild.C();
+	*pCStnodChild = pStnod->CStnodChild();
+	return pStnod->m_arypStnodChild.A();
 }
 
 CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodList = nullptr;
 
 	while (1)
@@ -1074,20 +1061,15 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex
 		if (!pStnod)
 			break;
 
-		if (pStnodReturn == nullptr)
+		if (pStnodList == nullptr)
 		{
-			pStnodReturn = pStnod;
+			pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+			pStnodList->m_jtok = JTOK('{');
+			pStnodList->m_park = PARK_List;
+			pStnodList->IAppendChild(pStnod);
 		}
 		else
 		{
-			if (pStnodList == nullptr)
-			{
-				pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodList->m_jtok = JTOK('{');
-				pStnodList->m_park = PARK_List;
-				pStnodList->IAppendChild(pStnodReturn);
-				pStnodReturn = pStnodList;
-			}
 			pStnodList->IAppendChild(pStnod);
 		}
 
@@ -1097,7 +1079,7 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex
 		}
 		JtokNextToken(pJlex);
 	}
-	return pStnodReturn;
+	return pStnodList;
 }
 
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
@@ -1211,10 +1193,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					ParseError(pParctx, pJlex, "Procedure definition for '%s' has no body", strName.PChz());
 				}
 
-				// type info procedure
+				int cStnodParams;
+				CSTNode ** ppStnodParams = PPStnodChildFromPark(pStnodParams, &cStnodParams, PARK_ParameterList);
 
-				CSTNode ** ppStnodParams;
-				int cStnodParams = CChildrenInList(pStnodParams, ppStnodParams, PARK_ParameterList);
 				//int cStnodReturns = CChildrenInList(pStnodReturns, ppStnodReturns, PARK_Uhhhh);
 				CSTNode ** ppStnodReturns = &pStnodReturns;
 				int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
@@ -1312,6 +1293,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSTNode * pStnodType = PStnodParseIdentifier(pParctx, pJlex);
 				pStenum->m_iStnodType = pStnodEnum->IAppendChild(pStnodType);
 				
+				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 				CSymbolTable * pSymtabEnum = pParctx->m_pWork->PSymtabNew();
 				CSTNode * pStnodConstantList = nullptr;
 				if (pJlex->m_jtok == JTOK('{'))
@@ -1333,21 +1315,21 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				}
 
 				// type info enum
+				int cStnodMember;
+				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodMember, PARK_List);
 
-				const CString & strName = pStnodIdent->m_pStval->m_str;
-				CSTNode ** ppStnodMember;
-				int cTypememb = CChildrenInList(pStnodConstantList, ppStnodMember, PARK_List);
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeStructMember)) + 
-								cTypememb * sizeof(STypeStructMember);
+								cStnodMember * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
-				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strName.PChz());
+				const CString & strIdent = StrFromIdentifier(pStnodIdent);
+				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent.PChz());
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
 																		pB + sizeof(STypeInfoEnum), 
 																		EWC_ALIGN_OF(STypeStructMember));
-				pTinenum->m_tinstructProduced.m_aryTypememb.SetArray(aTypememb, 0, cTypememb);
+				pTinenum->m_tinstructProduced.m_aryTypememb.SetArray(aTypememb, 0, cStnodMember);
 
-				CSTNode ** ppStnodMemberMax = &ppStnodMember[cTypememb];
+				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
 					STypeStructMember * pTypememb = pTinenum->m_tinstructProduced.m_aryTypememb.AppendNew();
@@ -1360,7 +1342,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					}
 				}
 
-				pParctx->m_pSymtab->AddManagedTin(pTinenum);
+				pSymtabParent->AddManagedTin(pTinenum);
+
+				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(strIdent, pStnodEnum);
+				pSymStruct->m_pTin = pTinenum;
 
 				return pStnodEnum;
 			}
@@ -1373,6 +1358,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pStnodStruct->m_jtok = JTOK_Nil;
 				pStnodStruct->m_park = PARK_StructDefinition;
 				pStnodStruct->IAppendChild(pStnodIdent);
+
+				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 
 				SLexerLocation lexlocChild(pJlex);
 				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew();
@@ -1389,22 +1376,23 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					pStnodStruct->IAppendChild(pStnodDeclList);
 				}
 
-				const CString & strName = pStnodIdent->m_pStval->m_str;
-
 				// type info struct
-				CSTNode ** ppStnodMember;
-				int cTypememb = CChildrenInList(pStnodDeclList, ppStnodMember, PARK_List);
+				int cStnodMember;
+				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodDeclList, &cStnodMember, PARK_List);
+
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
-								cTypememb * sizeof(STypeStructMember);
+								cStnodMember * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strName.PChz());
+				const CString & strIdent = StrFromIdentifier(pStnodIdent);
+				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent.PChz());
+				pTinstruct->m_pStnodStruct = pStnodStruct;
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
 																		pB + sizeof(STypeInfoStruct), 
 																		EWC_ALIGN_OF(STypeStructMember));
-				pTinstruct->m_aryTypememb.SetArray(aTypememb, 0, cTypememb);
+				pTinstruct->m_aryTypememb.SetArray(aTypememb, 0, cStnodMember);
 
-				CSTNode ** ppStnodMemberMax = &ppStnodMember[cTypememb];
+				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
 					STypeStructMember * pTypememb = pTinstruct->m_aryTypememb.AppendNew();
@@ -1417,8 +1405,11 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				pParctx->m_pSymtab->AddManagedTin(pTinstruct);
 
+				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(strIdent, pStnodStruct);
+				pSymStruct->m_pTin = pTinstruct;
+				pStnodStruct->m_pTin = pTinstruct;
+
 				Expect(pParctx, pJlex, JTOK('}'));
-				Expect(pParctx, pJlex, JTOK(';'));
 
 				return pStnodStruct;
 			}
@@ -2248,6 +2239,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		case PARK_ParameterList:	return CChCopy("Params", pCh, pChEnd-pCh);
 		case PARK_VariadicArg:		return CChCopy("..",pCh, pChEnd-pCh);
 		case PARK_Nop:				return CChCopy("Nop",pCh, pChEnd-pCh);
+		case PARK_Uninitializer:	return CChCopy("---",pCh, pChEnd-pCh);
 		default:					return CChCopy("???", pCh, pChEnd-pCh);
 		}
 	}
@@ -2295,15 +2287,19 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		}
     case TINK_Procedure:
 		{
-			STypeInfoProcedure * pTinproc = (STypeInfoProcedure *)pTin;
+			auto pTinproc = (STypeInfoProcedure *)pTin;
 			return CChFormat(pCh, pChEnd-pCh, "%s()", pTin->m_strName.PChz());
+		}break;
+    case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+			return CChFormat(pCh, pChEnd-pCh, "%s::struct", pTin->m_strName.PChz());
 		}break;
 	case TINK_Integer:		// fall through ...
     case TINK_Float:		// fall through ...
     case TINK_Bool:			// fall through ...
     case TINK_String:		// fall through ...
     case TINK_Void:			// fall through ...
-    case TINK_Struct:		// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
     case TINK_Enum:			// fall through ...
@@ -2331,23 +2327,6 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 				EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok));
 				return 0;
 			}
-			/*STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnod->m_pTin;
-			if (EWC_FVERIFY(pTinlit && pTinlit->m_tink == TINK_Literal, "bad literal type"))
-			{
-				switch (pTinlit->m_litty.m_litk)
-				{
-				case LITK_String:		return CChFormat(pCh, pChEnd - pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
-				case LITK_Char:			return CChFormat(pCh, pChEnd - pCh, "'%s'", pStnod->m_pStval->m_str.PChz());
-				case LITK_Integer:		return CChFormat(pCh, pChEnd - pCh, "%d", (pStnod->m_pStval->m_stvalk == STVALK_SignedInt) ?
-												pStnod->m_pStval->m_nSigned :
-												pStnod->m_pStval->m_nUnsigned);
-				case LITK_Float:		return CChFormat(pCh, pChEnd - pCh, "%f", pStnod->m_pStval->m_g);
-				case LITK_Bool:			return CChFormat(pCh, pChEnd - pCh, "%s", (pStnod->m_pStval->m_nUnsigned) ? "true" : "false");
-				default:
-					EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok));
-					return 0;
-				}
-			}*/
 		}
 	case PARK_AdditiveOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
 	case PARK_MultiplicativeOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
@@ -2582,6 +2561,10 @@ void TestParse()
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
 
+		pChzIn = "SFoo :: struct { m_n := 2; } foo : SFoo; foo.m_n = 1; ";
+		pChzOut = "(struct $SFoo ({} (decl $m_n 2))) (decl $foo $SFoo) (= (member $foo $m_n) 1)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
 		pChzIn = "paN : * [4] int;";
 		pChzOut = "(decl $paN (ptr ([] 4 $int)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
@@ -2674,7 +2657,7 @@ void TestParse()
 			" (= $a 2))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-		pChzIn = "STest :: struct { m_a := 2; m_b : int; }; boo : int = 3;";
+		pChzIn = "STest :: struct { m_a := 2; m_b : int; } boo : int = 3;";
 		pChzOut = "(struct $STest ({} (decl $m_a 2) (decl $m_b $int))) (decl $boo $int 3)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 

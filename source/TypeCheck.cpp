@@ -1065,6 +1065,17 @@ bool FDoesOperatorReturnBool(PARK park)
 	return  (park == PARK_RelationalOp) | (park == PARK_EqualityOp) | (park == PARK_LogicalAndOrOp);
 }
 
+int ITypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
+{
+	auto pTypemembMax = pTinstruct->m_aryTypememb.PMac();
+	for (auto pTypememb = pTinstruct->m_aryTypememb.A(); pTypememb != pTypemembMax; ++pTypememb)
+	{
+		if (pTypememb->m_strName == strMemberName)
+			return (int)(pTypememb - pTinstruct->m_aryTypememb.A());
+	}
+	return -1;
+}
+
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	int i = 2;
@@ -1343,6 +1354,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 			}break;
 			case PARK_StructDefinition:
 			{
+				auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pStnod->m_pTin);
+				if (!EWC_FVERIFY(pTinstruct, "missing struct type info"))
+					return TCRET_StoppingError;
+
 				// Note: there isn't struct value data, layout is just children[identifierName, DeclList]
 				SSymbol * pSymStruct = nullptr;
 				CString strStructName;
@@ -1368,12 +1383,34 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				{
 					if (pStnod->CStnodChild() >= 1)
 					{
-						PushTcsent(pTcfram, pStnod->PStnodChild(1));
+						CSTNode * pStnodMembers = pStnod->PStnodChild(1);
+						PushTcsent(pTcfram, pStnodMembers);
+
+						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
 					}
 					++pTcsentTop->m_nState;
 				}
 				else
 				{
+					int iStnod = 1;
+					if (pStnod->CStnodChild() >= 1)
+					{
+						CSTNode * pStnodMembers = pStnod->PStnodChild(1);
+						int cStnodMember = pStnodMembers->CStnodChild();
+						if (EWC_FVERIFY(
+								pStnodMembers->m_park == PARK_List && 
+								cStnodMember == pTinstruct->m_aryTypememb.C(), 
+							    "type info struct member mismatch"))
+						{
+							for (int iStnod = 0; iStnod < cStnodMember; ++iStnod)
+							{
+								pTinstruct->m_aryTypememb[iStnod].m_pTin = pStnodMembers->PStnodChild(iStnod)->m_pTin;
+							}
+						}
+					}
+
+
 					PopTcsent(pTcfram);
 
 					pStnod->m_strees = STREES_TypeChecked;
@@ -1445,11 +1482,14 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				if (pStnod->m_park == PARK_List)
 				{
 					STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
-					EWC_ASSERT(pStnod->m_pSymtab, "null symbol table");
-					pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
+					if (pStnod->m_pSymtab)
+					{
+						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
+					}
 				}
 
 			}break;
+			case PARK_Uninitializer:
 			case PARK_Nop:
 			case PARK_VariadicArg:
 			{
@@ -1533,7 +1573,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					if (pStdecl->m_iStnodInit >= 0)
 					{
 						CSTNode * pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
-						if (pStnod->m_pTin)
+						if (pStnod->m_pTin && pStnodInit->m_park != PARK_Uninitializer)
 						{
 							// just make sure the init type fits the specified one
 							STypeInfo * pTinInit = pStnodInit->m_pTin;
@@ -1575,19 +1615,20 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 					if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStval, "Declaration without identifier"))
 					{
+						CString strIdent = StrFromIdentifier(pStnodIdent);
 						SSymbol * pSymIdent = pSymtab->PSymLookup(
-														pStnodIdent->m_pStval->m_str,
+														strIdent,
 														pStnodIdent->m_lexloc,
 														pTcsentTop->m_grfsymlook);
 						if (!pSymIdent || pSymIdent->m_pStnodDefinition != pStnod)
 						{
 							SSymbol * pSymIdentTest = pSymtab->PSymLookup(
-															pStnodIdent->m_pStval->m_str,
+															strIdent,
 															pStnodIdent->m_lexloc,
 															pTcsentTop->m_grfsymlook);
 						}
 
-						EWC_ASSERT(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed");
+						EWC_ASSERT(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz());
 						pStnod->m_pSym = pSymIdent;
 						OnTypeComplete(pTcwork, pSymIdent);
 					}
@@ -1695,6 +1736,56 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+			} break;
+			case PARK_MemberLookup:
+			{
+				if (pTcsentTop->m_nState == 0)
+				{
+					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					++pTcsentTop->m_nState;
+					break;
+				}
+
+				CSTNode * pStnodLhs = pStnod->PStnodChild(0);
+				STypeInfoStruct * pTinstruct = nullptr;
+				auto pTinLhs = pStnodLhs->m_pTin;
+				if (pTinLhs)
+				{
+					if (pTinLhs->m_tink == TINK_Pointer)
+					{
+						pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+					}
+
+					pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
+				}
+
+				if (!pTinstruct)
+				{
+					CString strTin = StrFromTypeInfo(pTinLhs);
+					EmitError(pTcwork, pStnod, "Expected left hand side to be structure type but it is %s", strTin.PChz());
+					return TCRET_StoppingError;
+				}
+
+				CSTNode * pStnodRhs = pStnod->PStnodChildSafe(1);
+				if (!pStnodRhs || pStnodRhs->m_park != PARK_Identifier)
+				{
+					const char * pChzRhs = (pStnodRhs) ? PChzFromPark(pStnodRhs->m_park) : "(null)";
+					EmitError(pTcwork, pStnod, "Expected right hand side to identifier but it is %s", pChzRhs);
+					return TCRET_StoppingError;
+				}
+
+				CString strMemberName = StrFromIdentifier(pStnodRhs);
+				int iTypememb = ITypemembLookup(pTinstruct, strMemberName);
+				if (iTypememb < 0)
+				{
+					EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PChz(), pTinstruct->m_strName.PChz());
+					return TCRET_StoppingError;
+				}
+
+				pStnod->m_pTin = pTinstruct->m_aryTypememb[iTypememb].m_pTin;
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram);
+
 			} break;
 			case PARK_ArrayElement:
 			{
@@ -2455,6 +2546,24 @@ void TestTypeCheck()
 	const char * pChzIn;
 	const char * pChzOut;
 
+	pChzIn = "pUgh : * SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo; } SFoo :: struct { m_n : s8; }";
+	pChzOut = "(*SUgh::struct $pUgh (*SUgh::struct SUgh::struct)) (s8 (s8 (SFoo::struct *SUgh::struct $m_foo) $m_n) Literal:Int8) "
+		"(SUgh::struct $SUgh ({} (SFoo::struct $m_foo SFoo::struct))) "
+		"(SFoo::struct $SFoo ({} (s8 $m_n s8)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "pFoo : * SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8; }";
+	pChzOut = "(*SFoo::struct $pFoo (*SFoo::struct SFoo::struct)) (s8 (s8 *SFoo::struct $m_n) Literal:Int8) (SFoo::struct $SFoo ({} (s8 $m_n s8)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "foo : SFoo; foo.m_n = 1; SFoo :: struct { m_n : s8; }";
+	pChzOut = "(SFoo::struct $foo SFoo::struct) (s8 (s8 SFoo::struct $m_n) Literal:Int8) (SFoo::struct $SFoo ({} (s8 $m_n s8)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
+	pChzOut = "(SFoo::struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo::struct $foo SFoo::struct)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn = "aN : [4] s32; pN : * s32; fEq := aN == pN; ";
 	pChzOut = "([]s32 $aN ([]s32 Literal:Int64 s32)) (*s32 $pN (*s32 s32)) (bool $fEq (bool []s32 *s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
@@ -2471,8 +2580,8 @@ void TestTypeCheck()
 	pChzOut ="(s32 $n s32 Literal:Int32) (s32 s32) (s32 s32)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "{ ; }";
-	pChzOut ="({} (Nop))";
+	pChzIn = "{ ; n : s32 = ---;}";
+	pChzOut ="({} (Nop) (s32 $n s32 (---)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "printf :: (pCh : * u8, ..) -> s32 #foreign;";
@@ -2570,11 +2679,6 @@ void TestTypeCheck()
 	pChzIn =	"{ n:s64 = 5; while n > 0 { --n; } }";
 	pChzOut = "({} (s64 $n s64 Literal:Int64) (bool (bool s64 Literal:Int64) ({} (s64 s64))))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
-
-	//pChzIn =	"{ n:int; if (n < 2) n = 5; else n = 2; }";
-	//pChzIn =	"PrintIf :: (n : int) { if (n < 2) n = 5; else if (n == 2) n = 0; else n = 1; }";
-	//pChzOut = "({} (int $n int) (bool (bool int Literal:Int64) (int int Literal:Int64) (??? (int int Literal:Int64))))";
-	//AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA); }";
 	pChzOut = "({} (s8 $nA s8) (s8 $nB s8) (bool $nC (bool (bool s8 s8) (bool s8 s8))))";

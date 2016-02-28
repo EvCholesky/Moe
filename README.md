@@ -14,11 +14,19 @@ New:
   * While loops
   * Arrays
   * Pointer arithmetic.
+  * Structures
 
 Coming soon:
-  * Structures
+  * Constants
+  * Improved error handling and unit testing of error cases.
+  * Default initialization of global variables
+  * Enums
   * For Loops.
-  * default initialization of global variables
+
+Further out:
+  * Short-circuiting logical operators
+  * Function overloading
+  * UTF8 identifier support
 
 Known Issues:
   * Void pointers are not supported (llvm wants to codegen them as *u8)

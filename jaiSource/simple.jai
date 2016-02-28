@@ -34,17 +34,44 @@ TestPointers :: ()
 }
 */
 
+STest :: struct
+{
+	m_n : s8;
+}
+
 main :: () -> int 
 {
-	/*
-	n := 56;
-	pN := *n;
-	printf("%d\n", pN[0]);
+	SFoo :: struct
+	{
+		m_n : s8 = 7;
+		m_g := 2.2;
+	    m_aN : [2] STest;
+		m_pFoo : * SFoo;
+	}
 
-	pN[0] = 67;
-	printf("%d\n", n);
-	*/
+	foo : SFoo;
+	foo.m_aN[0].m_n = 3;
+	foo.m_aN[1].m_n = 5;
+	printf("aN[0] = %d, an[1] = %d\n", foo.m_aN[0].m_n, foo.m_aN[1].m_n);
+	
+	foo.m_pFoo = *foo;
 
+	printf("m_n = %d, m_g = %f\n", foo.m_n, foo.m_g);
+	foo.m_n = 12;
+	foo.m_g = 12.5;
+
+	printf("m_n = %d, m_g = %f\n", foo.m_n, foo.m_g);
+
+	pFoo : * SFoo = *foo;
+
+	pFoo.m_n = 22;
+	pFoo.m_g = 123.45;
+
+	printf("m_n = %d, m_g = %f\n", pFoo.m_n, pFoo.m_g);
+
+	printf("m_n = %d, m_g = %f\n", pFoo.m_pFoo.m_pFoo.m_n, pFoo.m_pFoo.m_pFoo.m_g);
+
+/*
 	aN : [4] s32;	
 
 	i : s32 = 0;
@@ -102,7 +129,6 @@ main :: () -> int
 	(@paN)[1] = 1;
 	printf("%d\n", aN[1]);
 
-/*
 	i : s32;
 	nDec : int;
 	g : float;

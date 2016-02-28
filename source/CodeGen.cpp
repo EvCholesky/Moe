@@ -497,6 +497,22 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 	CIRInstruction * pInstPT = (CIRInstruction *)pValPT;
 	if (!EWC_FVERIFY(pInstPT->m_irop = IROP_Alloca, "expected alloca for symbol"))
 		return nullptr;
+	
+	auto pLtypeT = LLVMTypeOf(pValT->m_pLval);
+	auto pLtypePT = LLVMTypeOf(pInstPT->m_pLval);
+	bool fIsPointerKind = LLVMGetTypeKind(pLtypePT) == LLVMPointerTypeKind;
+	bool fTypesMatch = false;
+	if (fIsPointerKind)
+	{
+		auto pLtypeElem = LLVMGetElementType(pLtypePT);
+		fTypesMatch = pLtypeElem == pLtypeT;
+	}
+	if (!fIsPointerKind || !fTypesMatch)
+	{
+		printf("bad store information");
+		printf("pLtypeT:"); LLVMDumpType(pLtypeT);
+		printf("pLtypePT: (dest)"); LLVMDumpType(pLtypePT);
+	}
 
 	CIRInstruction * pInstStore = PInstCreate(IROP_Store, pInstPT, pValT, "store");
     pInstStore->m_pLval = LLVMBuildStore(m_pLbuild, pValT->m_pLval, pInstPT->m_pLval);
@@ -554,7 +570,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 		}
 	    case TINK_Float:
 		{
-			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
+			auto pTinfloat = (STypeInfoFloat *)pTin;
 			switch (pTinfloat->m_cBit)
 			{
 			case 32:	return LLVMFloatType();
@@ -564,7 +580,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 		}
 		case TINK_Literal:
 		{
-			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
+			auto pTinlit = (STypeInfoLiteral *)pTin;
 			switch (pTinlit->m_litty.m_litk)
 			{
 			case LITK_Integer:	return LLVMInt64Type();
@@ -575,6 +591,33 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			case LITK_Null:		return PLtypeFromPTin(pTinlit->m_pTinptrNull);
 			default:			return nullptr;
 			}
+		}
+		case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+
+			if (pTinstruct->m_pLtype)
+			{
+				return pTinstruct->m_pLtype;
+			}
+
+			LLVMOpaqueType * pLtype = LLVMStructCreateNamed(LLVMGetGlobalContext(), pTinstruct->m_strName.PChz());
+			pTinstruct->m_pLtype = pLtype;
+
+			int cTypememb = (int)pTinstruct->m_aryTypememb.C();
+			auto apLtypeMember = (LLVMTypeRef *)(alloca(sizeof(LLVMTypeRef) * cTypememb));
+			LLVMTypeRef * ppLtypeMember = apLtypeMember;
+
+			auto pTypemembMac = pTinstruct->m_aryTypememb.PMac();
+			for ( auto pTypememb = pTinstruct->m_aryTypememb.A(); pTypememb != pTypemembMac; ++pTypememb)
+			{
+				auto pLtypeMember = PLtypeFromPTin(pTypememb->m_pTin);
+				EWC_ASSERT(pLtypeMember, "failed to compute type for structure member %s", pTypememb->m_strName.PChz());
+				*ppLtypeMember++ = pLtypeMember;
+			}
+
+			LLVMStructSetBody(pLtype, apLtypeMember, cTypememb, false);
+			return pLtype;
 		}
 		default: return nullptr;
 	}
@@ -654,6 +697,8 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, pTinary->m_c);
 
 			auto pLvalZero = PLvalZeroInType(pBuild, pTinary->m_pTin);
+			EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
+
 			for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
 			{
 				apLval[iElement] = pLvalZero;
@@ -664,10 +709,81 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			pBuild->m_pAlloc->EWC_DELETE(apLval);
 			return pLvalReturn;
 		}
+	case TINK_Struct:
+	{
+		auto pTinstruct = (STypeInfoStruct *)pTin;
+
+		int cpLvalMember = (int)pTinstruct->m_aryTypememb.C();
+		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalMember;
+		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
+
+		for (int ipLval = 0; ipLval < cpLvalMember; ++ipLval)
+		{
+			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypememb[ipLval].m_pTin);
+		}
+
+		return LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalMember);
+	}
+
 	default: break;
 	}
 
 	return nullptr;
+}
+
+LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinlit, CSTValue * pStval)
+{
+	LLVMOpaqueValue * pLval = nullptr;
+	switch (pTinlit->m_litty.m_litk)
+	{
+	case LITK_Integer:
+		{
+			EWC_ASSERT(
+				(pStval->m_stvalk == STVALK_UnsignedInt) | (pStval->m_stvalk == STVALK_SignedInt),
+				"bad literal value");
+
+			pLval = PLvalConstantInt(pTinlit->m_litty.m_cBit, pTinlit->m_litty.m_fIsSigned, pStval->m_nUnsigned);
+		}break;
+	case LITK_Float:
+		{
+			pLval = PLvalConstantFloat(pTinlit->m_litty.m_cBit, pStval->m_g);
+		}break;
+	case LITK_Bool:
+	{
+			if (pStval->m_stvalk == STVALK_ReservedWord)
+			{
+				EWC_ASSERT(
+					((pStval->m_nUnsigned == 1) & (pStval->m_rword == RWORD_True)) | 
+					((pStval->m_nUnsigned == 0) & (pStval->m_rword == RWORD_False)), "bad boolean reserved word");
+			}
+			else
+			{
+				EWC_ASSERT(pStval->m_stvalk == STVALK_UnsignedInt, "bad literal value");
+			}
+
+			pLval = LLVMConstInt(LLVMInt1Type(), pStval->m_nUnsigned, false);
+		} break;
+	case LITK_Char:		EWC_ASSERT(false, "TBD"); return nullptr;
+	case LITK_String:
+		{
+			if (!EWC_FVERIFY(pStval->m_stvalk == STVALK_String, "bad value in string literal"))
+				return nullptr;
+
+			// string literals aren't really constants in the eyes of llvm, but it'll work for now
+			pLval = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pStval->m_str.PChz(), "strlit");
+		} break;
+	case LITK_Null:
+		{
+			auto pLtype = PLtypeFromPTin(pTinlit->m_pTinptrNull);
+			if (!EWC_FVERIFY(pLtype, "could not find llvm type for null pointer"))
+				return nullptr;
+
+			pLval = LLVMConstNull(pLtype);
+		}
+	}
+
+	EWC_ASSERT(pLval, "unknown LITK in PLValueFromLiteral");
+	return pLval;
 }
 
 inline CIRInstruction * PInstCreateCast(
@@ -795,23 +911,100 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	return pValSrc;
 }
 
-static inline void CreateDefaultInitializer(
-	CIRBuilder * pBuild,
-	STypeInfo * pTin,
-	CIRInstruction * pInstAlloca,
-	LLVMOpaqueType * pLtype)
+static inline LLVMOpaqueValue * PLvalDefaultInitializer( CIRBuilder * pBuild, STypeInfo * pTin)
 {
-	auto pLval = PLvalZeroInType(pBuild, pTin);
+	LLVMOpaqueValue * pLval;
+	if (pTin->m_tink == TINK_Struct)
+	{
+		auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTin);
+
+		int cpLvalMember = (int)pTinstruct->m_aryTypememb.C();
+		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalMember;
+		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
+		EWC::ZeroAB(apLvalMember, cB);
+
+		bool fHasConstInitializer = true;
+		CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
+		EWC_ASSERT(pStnodStruct, "missing definition in struct type info");
+		CSTNode * pStnodList = pStnodStruct->PStnodChildSafe(1);
+
+		if (pStnodList && EWC_FVERIFY(pStnodList->m_park == PARK_List, "expected member list"))
+		{
+			int cpStnod = pStnodList->CStnodChild();
+			EWC_ASSERT(cpStnod == cpLvalMember, "AST decl mismatch for members");
+			for (int ipStnod = 0; ipStnod < cpStnod; ++ipStnod)
+			{
+				CSTNode * pStnodDecl = pStnodList->PStnodChild(ipStnod);
+				if (!EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl && pStnodDecl->m_pStdecl, "expected decl"))
+					continue;
+
+				auto pStdecl = pStnodDecl->m_pStdecl; 
+				auto pStnodInit = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
+				if (pStnodInit)
+				{
+					if (pStnodInit->m_pTin && pStnodInit->m_pTin->m_tink == TINK_Literal)
+					{
+						apLvalMember[ipStnod] = PLvalFromLiteral(
+													pBuild,
+													(STypeInfoLiteral*)pStnodInit->m_pTin,
+													pStnodInit->m_pStval);
+					}
+					else
+					{
+						fHasConstInitializer = false;
+					}
+				}
+			}
+		}
+
+		if (fHasConstInitializer)
+		{
+			// This method doesn't allow for uninitializing part of our struct
+
+			for (int ipLval = 0; ipLval < cpLvalMember; ++ipLval)
+			{
+				if (!apLvalMember[ipLval])
+				{
+					apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypememb[ipLval].m_pTin);
+				}
+			}
+
+			pLval = LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalMember);
+		}
+		else
+		{
+			// create an init function and call it
+			EWC_ASSERT(false, "tbd");
+		}
+	}
+	else if (pTin->m_tink == TINK_Array)
+	{
+		auto pTinary = (STypeInfoArray *)pTin;
+		auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
+
+		size_t cB = sizeof(LLVMOpaqueValue *) * pTinary->m_c;
+		auto apLval = (LLVMOpaqueValue **)(alloca(cB));
+
+		auto pLvalZero = PLvalDefaultInitializer(pBuild, pTinary->m_pTin);
+		EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
+
+		for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
+		{
+			apLval[iElement] = pLvalZero;
+		}
+
+		LLVMOpaqueType * pLtypeElement = PLtypeFromPTin(pTinary->m_pTin);
+		pLval = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
+	}
+	else
+	{
+		pLval = PLvalZeroInType(pBuild, pTin);
+	}
 
 	if (!EWC_FVERIFY(pLval, "unexpected type in PValGenerateDefaultInitializer"))
-		return;
+		return nullptr;
 
-	// BB - don't need a unique constant here...
-	CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
-	pConst->m_pLval = pLval;
-	pBuild->AddManagedVal(pConst);
-
-	pBuild->PInstCreateStore(pInstAlloca, pConst);
+	return pLval;
 }
 
 static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodRhs, STypeInfo * pTinOut)
@@ -851,61 +1044,9 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		if (!EWC_FVERIFY(pTinlit->m_fIsFinalized, "non-finalized literal type encountered during code gen"))
 			return nullptr;
 	
-		LLVMOpaqueValue * pLval = nullptr;
-
-		switch (pTinlit->m_litty.m_litk)
-		{
-		case LITK_Integer:
-			{
-				EWC_ASSERT(
-					(pStval->m_stvalk == STVALK_UnsignedInt) | (pStval->m_stvalk == STVALK_SignedInt),
-					"bad literal value");
-
-				pLval = PLvalConstantInt(pTinlit->m_litty.m_cBit, pTinlit->m_litty.m_fIsSigned, pStval->m_nUnsigned);
-			}break;
-		case LITK_Float:
-			{
-				pLval = PLvalConstantFloat(pTinlit->m_litty.m_cBit, pStval->m_g);
-			}break;
-		case LITK_Bool:
-		{
-				if (pStval->m_stvalk == STVALK_ReservedWord)
-				{
-					EWC_ASSERT(
-						((pStval->m_nUnsigned == 1) & (pStval->m_rword == RWORD_True)) | 
-						((pStval->m_nUnsigned == 0) & (pStval->m_rword == RWORD_False)), "bad boolean reserved word");
-				}
-				else
-				{
-					EWC_ASSERT(pStval->m_stvalk == STVALK_UnsignedInt, "bad literal value");
-				}
-
-				pLval = LLVMConstInt(LLVMInt1Type(), pStval->m_nUnsigned, false);
-			} break;
-		case LITK_Char:		EWC_ASSERT(false, "TBD"); return nullptr;
-		case LITK_String:
-			{
-				if (!EWC_FVERIFY(pStval->m_stvalk == STVALK_String, "bad value in string literal"))
-					return nullptr;
-
-				// string literals aren't really constants in the eyes of llvm, but it'll work for now
-				pLval = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pStval->m_str.PChz(), "strlit");
-			} break;
-		case LITK_Null:
-			{
-				auto pLtype = PLtypeFromPTin(pTinlit->m_pTinptrNull);
-				if (!EWC_FVERIFY(pLtype, "could not find llvm type for null pointer"))
-					return nullptr;
-
-				pLval = LLVMConstNull(pLtype);
-			}
-		}
-
+		auto pLval = PLvalFromLiteral(pBuild, pTinlit, pStval);
 		if (!pLval)
-		{
-			EWC_ASSERT(false, "unknown LITK in PValGenerate");
 			return nullptr;
-		}
 
 		CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
 		pBuild->AddManagedVal(pConst);
@@ -942,19 +1083,35 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (pStdecl->m_iStnodInit >= 0)
 			{
 				CSTNode * pStnodRhs = pStnod->PStnodChild(pStdecl->m_iStnodInit);
-				CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnod->m_pTin);
-				pBuild->PInstCreateStore(pInstAlloca, pValRhsCast);
+				if (pStnodRhs->m_park != PARK_Uninitializer)
+				{
+					CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnod->m_pTin);
+					pBuild->PInstCreateStore(pInstAlloca, pValRhsCast);
+				}
 			}
 			else
 			{
-				CreateDefaultInitializer(pBuild, pStnod->m_pTin, pInstAlloca, pLtype);	
+				auto pLvalDefault = PLvalDefaultInitializer(pBuild, pStnod->m_pTin);	
+				if (pLvalDefault)
+				{
+					CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+					pConst->m_pLval = pLvalDefault;
+					pBuild->AddManagedVal(pConst);
+					return pConst;
+
+					pBuild->PInstCreateStore(pInstAlloca, pConst);
+				}
 			}
 
-		}break;
+		} break;
+	case PARK_StructDefinition:
+		{
+			// nothing to do here yet...
+		} break;
 	case PARK_Literal:
 		{
 			EWC_ASSERT(false, "encountered literal AST node during codegen, should have encountered literal type first");
-		}break;
+		} break;
 	case PARK_ReservedWord:
 		{
 			if (!EWC_FVERIFY(pStnod->m_pStval, "reserved word without value"))
@@ -1170,6 +1327,42 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (EWC_FVERIFY(pInst, "unknown identifier in codegen") && valgenk != VALGENK_Reference)
 			{
 				return pBuild->PInstCreateLoad(pInst, pStnod->m_pSym->m_strName.PChz());
+			}
+			return pInst;
+		}
+	case PARK_MemberLookup:
+		{
+			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
+			STypeInfoStruct * pTinstruct = nullptr;
+			auto pTinLhs = pStnodLhs->m_pTin;
+
+			VALGENK valgenkLhs = VALGENK_Reference;
+			if (pTinLhs)
+			{
+				if (pTinLhs->m_tink == TINK_Pointer)
+				{
+					pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+					valgenkLhs = VALGENK_Instance;
+				}
+
+				pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
+			}
+			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, valgenkLhs);
+			
+			CString strMemberName = StrFromIdentifier(pStnod->PStnodChild(1));
+			int iTypememb = ITypemembLookup(pTinstruct, strMemberName);
+			if (!EWC_FVERIFY(iTypememb >= 0, "cannot find structure member %s", strMemberName.PChz()))
+				return nullptr;
+
+			LLVMOpaqueValue * apLvalIndex[3] = {};
+			int cpLvalIndex = 0;
+			apLvalIndex[cpLvalIndex++] = LLVMConstInt(LLVMInt32Type(), 0, false);
+			apLvalIndex[cpLvalIndex++] = LLVMConstInt(LLVMInt32Type(), iTypememb, false);
+			auto pInst = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, cpLvalIndex, "aryGep");
+
+			if (EWC_FVERIFY(pInst, "member dereference failure in codegen") && valgenk != VALGENK_Reference)
+			{
+				pInst = pBuild->PInstCreateLoad(pInst, "membLoad");
 			}
 			return pInst;
 		}
@@ -2071,6 +2264,12 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn = "SFoo :: struct { m_n : s32; } { foo : SFoo; pFoo := *foo; pFoo.m_n = 2; } ";
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ aN : [4] s32;  pN : * s32; fTest := aN == pN; }";
 	AssertTestCodeGen(&work, pChzIn);
