@@ -27,6 +27,7 @@ using namespace EWC;
 #include "llvm-c/TargetMachine.h"
 #include <stdio.h>
 
+CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodStruct);
 CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod);
 
 
@@ -911,7 +912,7 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	return pValSrc;
 }
 
-static inline LLVMOpaqueValue * PLvalDefaultInitializer( CIRBuilder * pBuild, STypeInfo * pTin)
+static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, STypeInfo * pTin)
 {
 	LLVMOpaqueValue * pLval;
 	if (pTin->m_tink == TINK_Struct)
@@ -923,7 +924,6 @@ static inline LLVMOpaqueValue * PLvalDefaultInitializer( CIRBuilder * pBuild, ST
 		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
 		EWC::ZeroAB(apLvalMember, cB);
 
-		bool fHasConstInitializer = true;
 		CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
 		EWC_ASSERT(pStnodStruct, "missing definition in struct type info");
 		CSTNode * pStnodList = pStnodStruct->PStnodChildSafe(1);
@@ -938,44 +938,32 @@ static inline LLVMOpaqueValue * PLvalDefaultInitializer( CIRBuilder * pBuild, ST
 				if (!EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl && pStnodDecl->m_pStdecl, "expected decl"))
 					continue;
 
-				auto pStdecl = pStnodDecl->m_pStdecl; 
-				auto pStnodInit = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
+				auto pStnodInit = pStnodDecl->PStnodChildSafe(pStnodDecl->m_pStdecl->m_iStnodInit);
+
 				if (pStnodInit)
 				{
-					if (pStnodInit->m_pTin && pStnodInit->m_pTin->m_tink == TINK_Literal)
+					auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnodInit->m_pTin);
+					if (!pTinlit || pStnodInit->m_park == PARK_Uninitializer)
 					{
-						apLvalMember[ipStnod] = PLvalFromLiteral(
-													pBuild,
-													(STypeInfoLiteral*)pStnodInit->m_pTin,
-													pStnodInit->m_pStval);
+						// needs initializer method
+						return nullptr;
 					}
-					else
-					{
-						fHasConstInitializer = false;
-					}
+
+					apLvalMember[ipStnod] = PLvalFromLiteral( pBuild, pTinlit, pStnodInit->m_pStval);
 				}
 			}
 		}
 
-		if (fHasConstInitializer)
+		// we're not uninitializing part of our struct so... carry on.
+		for (int ipLval = 0; ipLval < cpLvalMember; ++ipLval)
 		{
-			// This method doesn't allow for uninitializing part of our struct
-
-			for (int ipLval = 0; ipLval < cpLvalMember; ++ipLval)
-			{
-				if (!apLvalMember[ipLval])
-				{
-					apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypememb[ipLval].m_pTin);
-				}
-			}
-
-			pLval = LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalMember);
+			if (apLvalMember[ipLval])
+				continue;
+			
+			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypememb[ipLval].m_pTin);
 		}
-		else
-		{
-			// create an init function and call it
-			EWC_ASSERT(false, "tbd");
-		}
+
+		pLval = LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalMember);
 	}
 	else if (pTin->m_tink == TINK_Array)
 	{
@@ -985,12 +973,13 @@ static inline LLVMOpaqueValue * PLvalDefaultInitializer( CIRBuilder * pBuild, ST
 		size_t cB = sizeof(LLVMOpaqueValue *) * pTinary->m_c;
 		auto apLval = (LLVMOpaqueValue **)(alloca(cB));
 
-		auto pLvalZero = PLvalDefaultInitializer(pBuild, pTinary->m_pTin);
-		EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
+		auto pLvalInit = PLvalConstInitializer(pBuild, pTinary->m_pTin);
+		if (!pLvalInit)
+			return nullptr;
 
 		for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
 		{
-			apLval[iElement] = pLvalZero;
+			apLval[iElement] = pLvalInit;
 		}
 
 		LLVMOpaqueType * pLtypeElement = PLtypeFromPTin(pTinary->m_pTin);
@@ -1001,10 +990,97 @@ static inline LLVMOpaqueValue * PLvalDefaultInitializer( CIRBuilder * pBuild, ST
 		pLval = PLvalZeroInType(pBuild, pTin);
 	}
 
-	if (!EWC_FVERIFY(pLval, "unexpected type in PValGenerateDefaultInitializer"))
-		return nullptr;
-
+	EWC_ASSERT(pLval, "unexpected type in PLvalConstInitializer");
 	return pLval;
+}
+
+static inline CIRValue * PValInitializeToDefault(CWorkspace * pWork, CIRBuilder * pBuild, STypeInfo * pTin, CIRInstruction * pInstPT)
+{
+	auto pLvalConstInit = PLvalConstInitializer(pBuild, pTin);
+	if (pLvalConstInit)
+	{
+		CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+		pConst->m_pLval = pLvalConstInit;
+		pBuild->AddManagedVal(pConst);
+
+		return pBuild->PInstCreateStore(pInstPT, pConst);
+	}
+
+	switch (pTin->m_tink)
+	{
+	case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+
+			// create an init function and call it
+			if (!pTinstruct->m_pLvalInitMethod)
+			{
+				auto pProc = PProcCodegenInitializer(pWork, pBuild, pTinstruct->m_pStnodStruct);
+				pBuild->AddManagedVal(pProc);
+
+				if (!EWC_FVERIFY(pTinstruct->m_pLvalInitMethod, "failed to create init method"))
+					return nullptr;
+			}
+
+			auto pLvalFunction = pTinstruct->m_pLvalInitMethod;
+			if (!EWC_FVERIFY(LLVMCountParams(pLvalFunction) == 1, "unexpected number of arguments"))
+				return nullptr;
+
+			LLVMOpaqueValue * apLvalArgs[1];
+			apLvalArgs[0] = pInstPT->m_pLval;
+
+			CIRInstruction * pInst = pBuild->PInstCreate(IROP_Call, nullptr, nullptr, "RetTmp");
+			pInst->m_pLval = LLVMBuildCall( pBuild->m_pLbuild, pLvalFunction, apLvalArgs, 1, "");
+			return pInst;
+		} break;
+	case TINK_Array:
+		{
+			// BB - this code doesn't build a CIRValue structure representing the loop, if that system 
+			//  persists this will need to be rewritten.
+				
+			auto pLbuild = pBuild->m_pLbuild;
+			CIRProcedure * pProc = pBuild->m_pProcCur;
+			auto pTinary = (STypeInfoArray *)pTin;
+
+			auto pLvalZero = PLvalConstantInt(64, false, 0);
+			auto pLvalOne = PLvalConstantInt(64, false, 1);
+			auto pLvalCount = PLvalConstantInt(64, false, pTinary->m_c);
+			
+			auto pLvalAlloca = LLVMBuildAlloca(pLbuild, LLVMInt64Type(), "iInit");
+			LLVMBuildStore(pLbuild, pLvalZero, pLvalAlloca);
+
+			CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "initPred");
+			CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "initBody");
+			CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "initPost");
+
+			(void) pBuild->PInstCreateBranch(pBlockPred);	
+
+			pBuild->ActivateBlock(pBlockPred);
+			auto pLvalLoadIndex = LLVMBuildLoad(pLbuild, pLvalAlloca, "iLoad");
+			auto pLvalCmp = LLVMBuildICmp(pLbuild, LLVMIntULT, pLvalLoadIndex, pLvalCount, "NCmp");
+
+			LLVMBuildCondBr(pLbuild, pLvalCmp, pBlockBody->m_pLblock, pBlockPost->m_pLblock);
+
+			pBuild->ActivateBlock(pBlockBody);
+
+			LLVMOpaqueValue * apLvalIndex[2] = {};
+			apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+			apLvalIndex[1] = pLvalLoadIndex;
+			auto pInstGEP = pBuild->PInstCreateGEP(pInstPT, apLvalIndex, 2, "initGEP");
+			(void) PValInitializeToDefault(pWork, pBuild, pTinary->m_pTin, pInstGEP);
+
+			auto pLvalInc = LLVMBuildAdd(pLbuild, pLvalLoadIndex, pLvalOne, "iInc");
+			LLVMBuildStore(pLbuild, pLvalInc, pLvalAlloca);
+			LLVMBuildBr(pLbuild, pBlockPred->m_pLblock);
+
+			pBuild->ActivateBlock(pBlockPost);
+
+			return nullptr;
+		}
+	default:
+		EWC_ASSERT(false, "expected valid const init for type %s", PChzFromTink(pTin->m_tink));
+		return nullptr;
+	}
 }
 
 static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodRhs, STypeInfo * pTinOut)
@@ -1091,16 +1167,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			}
 			else
 			{
-				auto pLvalDefault = PLvalDefaultInitializer(pBuild, pStnod->m_pTin);	
-				if (pLvalDefault)
-				{
-					CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
-					pConst->m_pLval = pLvalDefault;
-					pBuild->AddManagedVal(pConst);
-					return pConst;
-
-					pBuild->PInstCreateStore(pInstAlloca, pConst);
-				}
+				return PValInitializeToDefault(pWork, pBuild, pStnod->m_pTin, pInstAlloca);
 			}
 
 		} break;
@@ -1295,17 +1362,22 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return nullptr;
 
 			auto pLvalFunction = pProc->m_pLvalFunction;
-			int cStnodArgs = pStnod->CStnodChild();
-			if (!EWC_FVERIFY(LLVMCountParams(pLvalFunction) != cStnodArgs, "unexpected number of arguments"))
-				return nullptr;
+			int cStnodArgs = pStnod->CStnodChild() - 1; // don't count the identifier
+
+			if (LLVMCountParams(pLvalFunction) != cStnodArgs)
+			{
+				auto pTinstruct = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
+				if (!EWC_FVERIFY(pTinstruct->m_fHasVarArgs, "unexpected number of arguments"))
+					return nullptr;
+			}
 
 			CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc);
-			for (int iStnodChild = 1; iStnodChild < cStnodArgs; ++iStnodChild)
+			for (int iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
-				CIRValue * pVal = PValGenerate(pWork, pBuild, pStnod->PStnodChild(iStnodChild), VALGENK_Instance);
+				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodChild + 1);
+				CIRValue * pVal = PValGenerate(pWork, pBuild, pStnodArg, VALGENK_Instance);
 
-				CSTNode * pStnodCall = pStnod->PStnodChild(iStnodChild);
-				CIRValue * pValRhsCast = PValCreateCast(pBuild, pVal, pStnodCall->m_pTinOperand, pStnodCall->m_pTin);
+				CIRValue * pValRhsCast = PValCreateCast(pBuild, pVal, pStnodArg->m_pTinOperand, pStnodArg->m_pTin);
 
 				arypLvalArgs.Append(pValRhsCast->m_pLval);
 				if (!EWC_FVERIFY(*arypLvalArgs.PLast(), "missing argument value"))
@@ -1742,6 +1814,100 @@ void CIRBuilder::ActivateBlock(CIRBasicBlock * pBlock)
 	}
 
 	m_pBlockCur = pBlock;
+}
+
+CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodStruct)
+{
+	STypeInfoStruct * pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pStnodStruct->m_pTin);
+	if (!pTinstruct)
+		return nullptr;
+
+	LLVMOpaqueType * pLtypeVoid = LLVMVoidType();
+	LLVMOpaqueType * apLtype[1];
+	apLtype[0] = LLVMPointerType(PLtypeFromPTin(pTinstruct), 0);
+	auto pLtypeFunction = LLVMFunctionType(pLtypeVoid, apLtype, 1, false);
+
+	char aChName[128];
+	size_t cChName = CChFormat(aChName, EWC_DIM(aChName), "_%s_INIT", pTinstruct->m_strName.PChz());
+
+	LLVMOpaqueValue * pLvalFunc = LLVMAddFunction(pBuild->m_pLmoduleCur, aChName, pLtypeFunction);
+	pTinstruct->m_pLvalInitMethod = pLvalFunc;
+
+	CAlloc * pAlloc = pBuild->m_pAlloc;
+	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
+	pProc->m_pLvalFunction = pLvalFunc;
+	
+	pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, aChName);
+
+	auto pBlockPrev = pBuild->m_pBlockCur;
+	auto pProcPrev = pBuild->m_pProcCur;
+
+	pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
+
+	// load our 'this' argument
+	int cpLvalParams = LLVMCountParams(pProc->m_pLvalFunction);
+	EWC_ASSERT(cpLvalParams == 1, "only expected 'this' parameter");
+
+	auto apLvalParam = (LLVMValueRef *)alloca(sizeof(LLVMValueRef) * cpLvalParams);
+	LLVMGetParams(pProc->m_pLvalFunction, apLvalParam);
+	LLVMSetValueName(apLvalParam[0], "this");
+
+	CIRArgument * pArgThis = EWC_NEW(pAlloc, CIRArgument) CIRArgument();
+	pArgThis->m_pLval = apLvalParam[0];
+	pBuild->AddManagedVal(pArgThis);
+
+	LLVMOpaqueValue * apLvalIndex[2] = {};
+	apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+
+	CSTNode * pStnodList = pStnodStruct->PStnodChildSafe(1);
+	if (pStnodList && !EWC_FVERIFY(pStnodList->m_park == PARK_List, "expected member decl list"))
+		pStnodList = nullptr;
+
+	int cTypememb = (int)pTinstruct->m_aryTypememb.C();
+	for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
+	{
+		apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), iTypememb, false);
+
+		CSTNode * pStnodInit = nullptr;
+		if (pStnodList)
+		{
+			CSTNode * pStnodDecl = pStnodList->PStnodChild(iTypememb);
+			if (EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl, "expected member declaration"))
+			{
+				CSTDecl * pStdecl = pStnodDecl->m_pStdecl;
+				pStnodInit = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
+			}
+		}
+
+		auto pTypememb = &pTinstruct->m_aryTypememb[iTypememb];
+
+		if (pStnodInit)
+		{
+			if (pStnodInit->m_park != PARK_Uninitializer)
+			{
+				auto pInstGEP = pBuild->PInstCreateGEP(pArgThis, apLvalIndex, 2, "initGEP");
+
+				CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodInit, pTypememb->m_pTin);
+				pBuild->PInstCreateStore(pInstGEP, pValRhsCast);
+			}
+		}
+		else
+		{
+			auto pInstGEP = pBuild->PInstCreateGEP(pArgThis, apLvalIndex, 2, "initGEP");
+			(void)PValInitializeToDefault(pWork, pBuild, pTypememb->m_pTin, pInstGEP);
+		}
+	}
+
+	LLVMBuildRetVoid(pBuild->m_pLbuild);
+	pBuild->ActivateProcedure(pProcPrev, pBlockPrev);
+
+	LLVMBool fFailed = LLVMVerifyFunction(pProc->m_pLvalFunction, LLVMPrintMessageAction);
+	if (fFailed)
+	{
+		pBuild->PrintDump();
+		EWC_ASSERT(false, "Code generation failed during creation of initializer for %s", pTinstruct->m_strName.PChz());
+	}
+	return pProc;
 }
 
 CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)

@@ -21,6 +21,7 @@
 class CSymbolTable;
 class CSTNode;
 struct LLVMOpaqueType;
+struct LLVMOpaqueValue;
 
 enum TINK 
 {
@@ -193,11 +194,13 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 								STypeInfoStruct(const char * pChzName)
 								:STypeInfo(pChzName, s_tink)
+								,m_pLvalInitMethod(nullptr)
 								,m_pLtype(nullptr)
 								,m_pStnodStruct(nullptr)
 								,m_aryTypememb()
 									{ ; }
 	
+	LLVMOpaqueValue *				m_pLvalInitMethod;
 	LLVMOpaqueType *				m_pLtype;			// llvm type reference, here to avoid infinite recursion in
 														//  self referential member pointers
 	CSTNode *						m_pStnodStruct;
