@@ -22,25 +22,30 @@
 
 using namespace EWC;
 
-void EmitError(SErrorManager * pErrman, SLexerLocation * pLexloc, const char * pChz, ...)
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
 {
 	s32 iLine;
-	s32 iCodepoint;
-	CalculateLinePosition(pLexloc, &iLine, &iCodepoint);
+	s32 iCol;
+	CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
 
-	printf("%s(%d) error:", pLexloc->m_strFilename.PChz(), iLine);
+	printf("%s(%d,%d) Error: ", pLexloc->m_strFilename.PChz(), iLine, iCol);
 	++pErrman->m_cError;
 	
 	if (pChz)
 	{
-		va_list ap;
-		va_start(ap, pChz);
 		vprintf(pChz, ap);
 		printf("\n");
 	}
 }
 
-void EmitError(CWorkspace * pWork, SLexerLocation * pLexloc, const char * pChz, ...)
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...)
+{
+	va_list ap;
+	va_start(ap, pChz);
+	EmitError(pErrman, pLexloc, pChz, ap);
+}
+
+void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pChz, ...)
 {
 	s32 iLine;
 	s32 iCodepoint;
@@ -65,6 +70,41 @@ void EmitError(CWorkspace * pWork, SLexerLocation * pLexloc, const char * pChz, 
 	}
 }
 
+void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCol)
+{
+	auto pFile = pWork->PFileLookup(pLexloc->m_strFilename.Hv(), CWorkspace::FILEK_Source);
+	if (!pFile)
+	{
+		*piLine = -1;
+		*piCol = -1;
+	}
+
+	int iLine = 0;
+	int iCol = 0;
+	const char *pChBegin = pFile->m_pChzFile;
+	for (const char * pCh = pChBegin; *pCh != '\0'; ++pCh)
+	{
+		s32 dB = s32(pCh - pChBegin);
+		if (dB >= pLexloc->m_dB)
+			break;
+
+		if (*pCh == '\n')
+		{
+			++iLine;
+			iCol = 1;
+		}
+		else if (*pCh == '\t')
+		{
+			iCol += 4;
+		}
+		else
+		{
+			++iCol;
+		}
+	}
+	*piLine = iLine;
+	*piCol = iCol;
+}
 
 
 CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
@@ -81,6 +121,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_cbFreePrev(-1)
 ,m_optlevel(OPTLEVEL_Debug)
 {
+	m_pErrman->m_pWork = this;
 }
 
 void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
@@ -237,8 +278,9 @@ void EndWorkspace(CWorkspace * pWork)
 	size_t cbFreePost = pAlloc->CB();
 	if (pWork->m_cbFreePrev != cbFreePost)
 	{
+		printf("\nWARNING: failed to free all bytes during compilation.\n");
+		printf("----------------------------------------------------------------------\n");
 		pAlloc->PrintAllocations();
-		EWC_ASSERT(pWork->m_cbFreePrev == cbFreePost, "failed to free all bytes");
 	}
 }
 

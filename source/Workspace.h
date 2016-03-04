@@ -32,14 +32,20 @@ struct SLexerLocation;
 struct SErrorManager	//  // tag = errman
 {
 				SErrorManager()
-				:m_cError(0)
+				:m_pWork(nullptr)
+				,m_cError(0)
 					{ ; }
 
-	int			m_cError;
+	void		Clear()
+					{ m_cError = 0; }
+
+	CWorkspace *	m_pWork;		// back pointer for SFile lookup inside EmitError
+	int				m_cError;
 };
 
-void EmitError(SErrorManager * pErrman, SLexerLocation * pLexloc, const char * pChz, ...);
-void EmitError(CWorkspace * pWork, SLexerLocation * pLexloc, const char * pChz, ...);
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...);
+void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pChz, ...);
 
 
 
@@ -129,8 +135,11 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn);
 void EndParse(CWorkspace * pWork, SJaiLexer * pJlex);
 void EndWorkspace(CWorkspace * pWork);
 
+void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint);
+
 void PerformTypeCheck(
 	EWC::CAlloc * pAlloc,
+	SErrorManager * pErrman, 
 	CSymbolTable * pSymtabTop,
 	EWC::CAry<CWorkspace::SEntry> * paryEntry,
 	EWC::CAry<int> * paryiEntryChecked);

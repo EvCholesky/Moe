@@ -53,10 +53,10 @@ struct SUnknownType // tag = untype
 
 struct STypeCheckWorkspace // tag = tcwork
 {
-					STypeCheckWorkspace(CAlloc * pAlloc, int cTcfram)
+					STypeCheckWorkspace(CAlloc * pAlloc, SErrorManager * pErrman, int cTcfram)
 					:m_pAlloc(pAlloc)
+					,m_pErrman(pErrman)
 					,m_nIdNext(0)
-					,m_cError(0)
 					,m_aryTcfram()
 					,m_hashPSymUntype(pAlloc)
 					,m_arypTcframPending()
@@ -74,8 +74,8 @@ struct STypeCheckWorkspace // tag = tcwork
 							m_pAlloc->EWC_FREE(m_aryTcfram.A());
 						}
 	CAlloc *								m_pAlloc;
+	SErrorManager *							m_pErrman;
 	int										m_nIdNext;
-	int										m_cError;
 	CAry<STypeCheckFrame>					m_aryTcfram;
 	CHash<const SSymbol *, SUnknownType>	m_hashPSymUntype;
 
@@ -102,22 +102,16 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
 // My (half-cooked) strategy for handling arbitrary ordering within non-global scopes is to insert TypeDefinitions 
 //  before any statements in their containing scope.
 
-void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pChz, ...)
+void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pChzFormat, ...)
 {
 	// BB - need to do file/line lookup from pStnod
-	//printf("%s(%d) error:", pJlex->m_pChzFilename, NLine(pJlex));
+	//printf("%s(%d) Error:", pJlex->m_pChzFilename, NLine(pJlex));
 	
 	const SLexerLocation & lexloc = pStnod->m_lexloc;
-	printf ("%s(%d) error: ", lexloc.m_strFilename.PChz(), -1);
-	++pTcwork->m_cError;
-	
-	if (pChz)
-	{
-		va_list ap;
-		va_start(ap, pChz);
-		vprintf(pChz, ap);
-		printf("\n");
-	}
+
+	va_list ap;
+	va_start(ap, pChzFormat);
+	EmitError(pTcwork->m_pErrman, &lexloc, pChzFormat, ap);
 }
 
 CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
@@ -1435,7 +1429,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							return TCRET_StoppingError;
 						}
 
-
 						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
 						if (pStnodDefinition->m_park == PARK_Decl)
 						{
@@ -2340,11 +2333,12 @@ STVALK StvalkFromTin(STypeInfo * pTin)
 
 void PerformTypeCheck(
 	CAlloc * pAlloc,
+	SErrorManager * pErrman,
 	CSymbolTable * pSymtabTop,
 	CAry<CWorkspace::SEntry> * paryEntry,
 	CAry<int> * paryiEntryChecked)
 {
-	STypeCheckWorkspace * pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, (s32)paryEntry->C());
+	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, (s32)paryEntry->C());
 
 	CWorkspace::SEntry * pEntryMax = paryEntry->PMac();
 	int ipTcfram = 0;
@@ -2370,15 +2364,21 @@ void PerformTypeCheck(
 		STypeCheckFrame * pTcfram = pTcwork->m_arypTcframPending[0];
 		TCRET tcret = TypeCheckSubtree(pTcwork, pTcfram);
 
-		if (tcret == TCRET_StoppingError || tcret == TCRET_Complete)
+		if (tcret == TCRET_StoppingError)
+		{
+			while (pTcfram->m_aryTcsent.C())
+			{
+				PopTcsent(pTcfram);
+			}
+
+			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);
+		}
+		else if (tcret == TCRET_Complete)
 		{
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);
 
-			if (tcret == TCRET_Complete)
-			{
-				size_t iEntry = pTcwork->m_aryTcfram.IFromP(pTcfram);
-				paryiEntryChecked->Append(S32Coerce(iEntry));
-			}
+			size_t iEntry = pTcwork->m_aryTcfram.IFromP(pTcfram);
+			paryiEntryChecked->Append(S32Coerce(iEntry));
 		}
 		else if (EWC_FVERIFY(tcret == TCRET_WaitingForSymbolDefinition))
 		{
@@ -2507,15 +2507,15 @@ void AssertTestTypeCheck(
 	BeginWorkspace(pWork);
 	BeginParse(pWork, &jlex, pChzIn);
 
-	EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
-	pWork->m_pParctx->m_cError = 0;
+	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
+	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &jlex, true);
 	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
 	EndParse(pWork, &jlex);
 
-	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 	char aCh[1024];
 	char * pCh = aCh;

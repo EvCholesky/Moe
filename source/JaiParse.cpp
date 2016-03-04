@@ -127,30 +127,24 @@ const char * PChzFromTink(TINK tink)
 	return s_mpTinkPChz[tink];
 }
 
-void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChz, ...)
+void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChzFormat, ...)
 {
-	printf("%s(%d) parse error:", pJlex->m_pChzFilename, NLine(pJlex));
-	++pParctx->m_cError;
-	
-	if (pChz)
-	{
-		va_list ap;
-		va_start(ap, pChz);
-		vprintf(pChz, ap);
-		printf("\n");
-	}
+	SLexerLocation lexloc(pJlex);
+	va_list ap;
+	va_start(ap, pChzFormat);
+	EmitError(pParctx->m_pWork->m_pErrman, &lexloc, pChzFormat, ap);
 }
 
 void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const char * pChzInfo = nullptr, ...)
 {
 	if (pJlex->m_jtok != jtokExpected)
 	{
+		char aB[1024] = {0};
 		if (pChzInfo)
 		{
 			va_list ap;
 			va_start(ap, pChzInfo);
-			vprintf(pChzInfo, ap);
-			printf("\n");
+			vsprintf_s(aB, EWC_DIM(aB), pChzInfo, ap);
 		}
 
 		CString strIdent;
@@ -161,7 +155,7 @@ void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const
 			pChzFound = strIdent.PChz();
 		}
 
-		ParseError( pParctx, pJlex, "Expected '%s' before '%s'", PChzFromJtok(jtokExpected), pChzFound);
+		ParseError(pParctx, pJlex, "Expected '%s' before '%s' %s", PChzFromJtok(jtokExpected), pChzFound, aB);
 	}
 
 	JtokNextToken(pJlex);
@@ -2493,8 +2487,8 @@ void AssertParseMatchTailRecurse(
 	BeginWorkspace(pWork);
 	BeginParse(pWork, &jlex, pChzIn);
 
-	EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
-	pWork->m_pParctx->m_cError = 0;
+	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
+	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &jlex, true);
 

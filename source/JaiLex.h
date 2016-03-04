@@ -199,12 +199,3 @@ int JtokNextToken(SJaiLexer * pJlex);
 RWORD RwordLookup(SJaiLexer * pJlex);
 const char * PChzFromJtok(JTOK jtok);
 const char * PChzFromRword(RWORD rword);
-
-inline void CalculateLinePosition(SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint)
-{
-	*piLine = -1;
-	*piCodepoint = -1;
-}
-
-inline int NLine(const SJaiLexer * pJlex)
-	{ return -1; }

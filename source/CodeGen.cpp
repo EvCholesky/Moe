@@ -2343,34 +2343,34 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		BeginParse(pWork, &jlex, pFile->m_pChzFile);
 		jlex.m_pChzFilename = pFile->m_strFilename.PChz();
 
-		EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
-		pWork->m_pParctx->m_cError = 0;
-
 		ParseGlobalScope(pWork, &jlex, true);
 		EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
 		EndParse(pWork, &jlex);
 	}
 
-	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
-
 	if (pWork->m_pErrman->m_cError == 0)
 	{
-		CIRBuilder build(pWork->m_pAlloc);
-		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+		PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
-		CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
-
-		if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+		if (pWork->m_pErrman->m_cError == 0)
 		{
-			build.PrintDump();
-		}
+			CIRBuilder build(pWork->m_pAlloc);
+			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
+			CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
+
+			if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+			{
+				build.PrintDump();
+			}
+		}
 	}
-	else
+
+	bool fSuccess = (pWork->m_pErrman->m_cError == 0);
+	if (!fSuccess)
 	{
 		printf("Compilation failed: %d errors\n", pWork->m_pErrman->m_cError);
-		return false;
 	}
 
 	for (size_t ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
@@ -2386,7 +2386,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		}
 	}
 
-	return true;
+	return fSuccess;
 }
 
 void AssertTestCodeGen(
@@ -2398,15 +2398,15 @@ void AssertTestCodeGen(
 	BeginWorkspace(pWork);
 	BeginParse(pWork, &jlex, pChzIn);
 
-	EWC_ASSERT(pWork->m_pParctx->m_cError == 0, "parse errors detected");
-	pWork->m_pParctx->m_cError = 0;
+	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
+	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &jlex, true);
 	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
 	EndParse(pWork, &jlex);
 
-	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	{
 		CIRBuilder build(pWork->m_pAlloc);
 		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);

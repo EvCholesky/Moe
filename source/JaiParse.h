@@ -28,6 +28,7 @@ class CParseContext;
 class CSTNode;
 class CSymbolTable;
 class CWorkspace;
+struct SErrorManager;
 struct SSymbol;
 struct STypeInfo;
 struct STypeInfoEnum;
@@ -430,14 +431,12 @@ public:
 						:m_pAlloc(pAlloc)
 						,m_pWork(pWork)
 						,m_pSymtab(nullptr)
-						,m_cError(0)
 						,m_grfsymlook(FSYMLOOK_Default)
 							{ ; }
 
 	EWC::CAlloc * 		m_pAlloc;
 	CWorkspace *		m_pWork;
 	CSymbolTable *		m_pSymtab;
-	int					m_cError;
 	GRFSYMLOOK			m_grfsymlook;
 };
 
