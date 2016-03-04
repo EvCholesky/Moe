@@ -24,11 +24,18 @@ using namespace EWC;
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
 {
-	s32 iLine;
-	s32 iCol;
-	CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
+	if (pLexloc)
+	{
+		s32 iLine;
+		s32 iCol;
+		CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
 
-	printf("%s(%d,%d) Error: ", pLexloc->m_strFilename.PChz(), iLine, iCol);
+		printf("%s(%d,%d) Error: ", pLexloc->m_strFilename.PChz(), iLine, iCol);
+	}
+	else
+	{
+		printf("Internal Error: ");
+	}
 	++pErrman->m_cError;
 	
 	if (pChz)
@@ -47,27 +54,9 @@ void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const ch
 
 void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pChz, ...)
 {
-	s32 iLine;
-	s32 iCodepoint;
-	CalculateLinePosition(pLexloc, &iLine, &iCodepoint);
-
-	if (pLexloc)
-	{
-		printf("%s(%d) error:", pLexloc->m_strFilename.PChz(), iLine);
-	}
-	else
-	{
-		printf("internal error:");
-	}
-	++pWork->m_pErrman->m_cError;
-	
-	if (pChz)
-	{
-		va_list ap;
-		va_start(ap, pChz);
-		vprintf(pChz, ap);
-		printf("\n");
-	}
+	va_list ap;
+	va_start(ap, pChz);
+	EmitError(pWork->m_pErrman, pLexloc, pChz, ap);
 }
 
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCol)
@@ -79,7 +68,7 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 		*piCol = -1;
 	}
 
-	int iLine = 0;
+	int iLine = 1;
 	int iCol = 0;
 	const char *pChBegin = pFile->m_pChzFile;
 	for (const char * pCh = pChBegin; *pCh != '\0'; ++pCh)
