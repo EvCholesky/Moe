@@ -1112,7 +1112,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 {
 	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 	{
-		CSTValue * pStval = pStnod->m_pStval;
+		// constant decl's don't actually generate anything until referenced.
+		if (pStnod->m_park == PARK_ConstantDecl)
+			return nullptr;
+
+		CSTNode * pStnodValue = pStnod;
+
+		CSTValue * pStval = pStnodValue->m_pStval;
 		STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnod->m_pTin;
 		if (!pStval || !pTinlit || pTinlit->m_tink != TINK_Literal)
 			return nullptr;
@@ -1137,7 +1143,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			int cStnodChild = pStnod->CStnodChild();
 			for (int iStnodChild = 0; iStnodChild < cStnodChild; ++iStnodChild)
 			{
-				CIRValue * pVal = PValGenerate(pWork, pBuild, pStnod->PStnodChild(iStnodChild), VALGENK_Instance);
+				PValGenerate(pWork, pBuild, pStnod->PStnodChild(iStnodChild), VALGENK_Instance);
 			}
 
 		}break;
@@ -1162,6 +1168,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				if (pStnodRhs->m_park != PARK_Uninitializer)
 				{
 					CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnod->m_pTin);
+					EWC_ASSERT(pValRhsCast, "bad cast");
 					pBuild->PInstCreateStore(pInstAlloca, pValRhsCast);
 				}
 			}
@@ -2430,6 +2437,9 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn = "{ SomeConst :: 0xFF; n:=SomeConst; }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "SFoo :: struct { m_n : s32; } { foo : SFoo; pFoo := *foo; pFoo.m_n = 2; } ";
 	AssertTestCodeGen(&work, pChzIn);

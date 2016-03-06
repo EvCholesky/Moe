@@ -61,6 +61,7 @@ const char * PChzFromPark(PARK park)
 		"Else",
 		"Reference Decl",
 		"Decl",
+		"Constant Decl",
 		"Procedure Definition",
 		"Enum Definition",
 		"Struct Definition",
@@ -172,13 +173,11 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	pStnod->m_jtok = JTOK(pJlex->m_jtok);
 	pStnod->m_park = PARK_Identifier;
 
-	CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
-	pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+	auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+	pStident->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+	pStnod->m_pStident = pStident;
 
-	pStval->m_rword = RWORD_Nil;
-	pStnod->m_pStval = pStval;
-
-	if (pStval->m_str.FIsEmpty())
+	if (pStident->m_str.FIsEmpty())
 	{
 		ParseError(pParctx, pJlex, "Identifier with no string");
 	}
@@ -884,12 +883,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 				pStnodInit = PStnodParseExpression(pParctx, pJlex);
 				if (!pStnodInit)
 					ParseError(pParctx, pJlex, "initial value expected before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
-				
-				// BB - pStnodInit->m_fExpectedConstant = true;
 			}
-
-			// Should we do any type inference in the parse phase?  (My current answer is no, the only 
-			//  stuff we need coming out of parse is a list of unknown types and symbols)
 		}
 	}
 
@@ -900,7 +894,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 	}
 
 	CSymbolTable * pSymtab = pParctx->m_pSymtab;
-	pSymtab->PSymEnsure(pStnodIdent->m_pStval->m_str, pStnodDecl);
+	pSymtab->PSymEnsure(StrFromIdentifier(pStnodIdent), pStnodDecl);
 
 	// check to see if our type is known
 	if (pStdecl->m_iStnodType >= 0)
@@ -1131,10 +1125,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					pStnodVoid->m_jtok = JTOK_Identifier;
 					pStnodVoid->m_park = PARK_Identifier;
 
-					CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
-					pStval->m_str = CString("void");
-					pStval->m_rword = RWORD_Nil;
-					pStnodVoid->m_pStval = pStval;
+					auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+					pStident->m_str = CString("void");
+					pStnodVoid->m_pStident = pStident;
 					pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodVoid);
 
 					pStnodReturns = pStnodVoid;
@@ -1252,7 +1245,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 								pStnodReturn->m_jtok = JTOK_ReservedWord;
 								pStnodReturn->m_park = PARK_ReservedWord;
 
-								CSTValue * pStvalReturn = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
+								auto pStvalReturn = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
 								pStvalReturn->m_str = CString("return");
 								pStvalReturn->m_rword = RWORD_Return;
 								pStnodReturn->m_pStval = pStvalReturn;
@@ -1263,7 +1256,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					}
 				}
 
-				SSymbol * pSymProc = pSymtabParent->PSymEnsure(pStnodIdent->m_pStval->m_str, pStnodProc);
+				SSymbol * pSymProc = pSymtabParent->PSymEnsure(StrFromIdentifier(pStnodIdent), pStnodProc);
 				pSymProc->m_pTin = pTinproc;
 
 				pSymtabParent->AddManagedTin(pTinproc);
@@ -1330,9 +1323,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					CSTNode * pStnodMember = *ppStnodMember;
 					EWC_ASSERT(pStnodMember->m_park == PARK_EnumConstant, "Expected enum constant");
 
-					if (EWC_FVERIFY(pStnodMember->m_pStdecl, "enum constant without decl info"))
+					auto pStdecl = pStnodMember->m_pStdecl;
+					if (EWC_FVERIFY(pStdecl, "enum constant without decl info"))
 					{
-						pTypememb->m_strName = pStnodMember->m_pStdecl->StrIdentifier(pStnodMember);
+						pTypememb->m_strName = StrFromIdentifier(pStnodMember->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
 					}
 				}
 
@@ -1393,7 +1387,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					CSTNode * pStnodMember = *ppStnodMember;
 					EWC_ASSERT(pStnodMember->m_park == PARK_Decl, "Expected decl");
 
-					pTypememb->m_strName = pStnodMember->m_pStdecl->StrIdentifier(pStnodMember);
+					auto pStnodIdentifier = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
+					pTypememb->m_strName = StrFromIdentifier(pStnodIdentifier);
 					pTypememb->m_pTin = pStnodMember->m_pTin;
 				}
 
@@ -1408,13 +1403,34 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				return pStnodStruct;
 			}
 
-			ParseError(
-				pParctx,
-				pJlex, 
-				"Unknown token before '%s', expected struct, enum or function definition",
-				PChzFromJtok(JTOK(pJlex->m_jtok)));
+			// constant decl
 
-			pParctx->m_pAlloc->EWC_DELETE(pStnodIdent);
+			auto pStnodInit = PStnodParseExpression(pParctx, pJlex);
+			Expect(pParctx, pJlex, JTOK(';'));
+			
+			CString strIdent = StrFromIdentifier(pStnodIdent);
+			if (!pStnodInit)
+			{
+				ParseError(pParctx, pJlex, "missing constant value for %s", strIdent.PChz());
+
+				pParctx->m_pAlloc->EWC_DELETE(pStnodIdent);
+				return nullptr;
+			}
+
+			CSTNode * pStnodConst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+			pStnodConst->m_jtok = JTOK_Nil;
+			pStnodConst->m_park = PARK_ConstantDecl;
+
+			CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+			pStnodConst->m_pStdecl = pStdecl;
+
+			pStdecl->m_iStnodIdentifier = pStnodConst->IAppendChild(pStnodIdent);
+			pStdecl->m_iStnodInit = pStnodConst->IAppendChild(pStnodInit);
+
+			CSymbolTable * pSymtab = pParctx->m_pSymtab;
+			pSymtab->PSymEnsure(strIdent, pStnodConst);
+
+			return pStnodConst;
 		}
 	}
 	return nullptr;
@@ -1813,7 +1829,9 @@ void CSymbolTable::AddBuiltInSymbols()
 	AddBuiltInInteger(this, "s64", 64, true);
 
 	AddBuiltInFloat(this, "float", 32);
-	AddBuiltInFloat(this, "float64", 64);
+	AddBuiltInFloat(this, "f32", 32);
+	AddBuiltInFloat(this, "double", 64);
+	AddBuiltInFloat(this, "f64", 64);
 
 	AddBuiltInLiteral(this, "__bool_Literal", LITK_Bool, 8, false);
 	AddBuiltInLiteral(this, "__u8_Literal", LITK_Integer, 8, false);
@@ -1824,8 +1842,8 @@ void CSymbolTable::AddBuiltInSymbols()
 	AddBuiltInLiteral(this, "__s16_Literal", LITK_Integer, 16, true);
 	AddBuiltInLiteral(this, "__s32_Literal", LITK_Integer, 32, true);
 	AddBuiltInLiteral(this, "__s64_Literal", LITK_Integer, 64, true);
-	AddBuiltInLiteral(this, "__float_Literal", LITK_Float, 32, true);
-	AddBuiltInLiteral(this, "__float64_Literal", LITK_Float, 64, true);
+	AddBuiltInLiteral(this, "__f32_Literal", LITK_Float, 32, true);
+	AddBuiltInLiteral(this, "__f64_Literal", LITK_Float, 64, true);
 	AddBuiltInLiteral(this, "__string_Literal", LITK_String, -1, true);
 	AddBuiltInLiteral(this, "__char_Literal", LITK_Char, 32, true);
 	AddBuiltInLiteral(this, "__void_Literal", LITK_Null, -1, true);
@@ -2145,14 +2163,6 @@ void CSymbolTable::PrintDump()
 	printf("\n");
 }
 
-CString	CSTDecl::StrIdentifier(CSTNode * pStnod)
-{
-	if (m_iStnodIdentifier < 0)
-		return CString("");
-
-	return pStnod->PStnodChild(m_iStnodIdentifier)->m_pStval->m_str;
-}
-
 
 
 // TypeInfo routines
@@ -2171,6 +2181,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_strees(STREES_Parsed)
 ,m_grfstnod()
 ,m_pStval(nullptr)
+,m_pStident(nullptr)
 ,m_pStdecl(nullptr)
 ,m_pStproc(nullptr)
 ,m_pStenum(nullptr)
@@ -2198,6 +2209,12 @@ CSTNode::~CSTNode()
 	{
 		pAlloc->EWC_DELETE(m_pStval);
 		m_pStval = nullptr;
+	}
+
+	if (m_pStident)
+	{
+		pAlloc->EWC_DELETE(m_pStident);
+		m_pStident = nullptr;
 	}
 
 	if (m_pStdecl)
@@ -2306,7 +2323,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 {
 	switch (pStnod->m_park)
 	{
-	case PARK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "$%s", pStnod->m_pStval->m_str.PChz());
+	case PARK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "$%s", StrFromIdentifier(pStnod).PChz());
 	case PARK_ReservedWord:			return CChCopy(PChzFromRword(pStnod->m_pStval->m_rword), pCh, pChEnd - pCh); 
 	case PARK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
 	case PARK_Literal:				
@@ -2342,6 +2359,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_Else:				    return CChCopy("else", pCh, pChEnd - pCh);
 	case PARK_ReferenceDecl:		return CChCopy("ptr", pCh, pChEnd - pCh);
 	case PARK_Decl:					return CChCopy("decl", pCh, pChEnd - pCh);
+	case PARK_ConstantDecl:			return CChCopy("const", pCh, pChEnd - pCh);
 	case PARK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
 	case PARK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
 	case PARK_StructDefinition:		return CChCopy("struct", pCh, pChEnd - pCh);
@@ -2400,41 +2418,41 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 
 size_t CSTNode::CChWriteDebugString(char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr)
 {
-	bool fIsOperand = (m_park == PARK_Identifier) | (m_park == PARK_Literal);
-	bool fIsOperator = !fIsOperand;
 
-	if (fIsOperator)
-	{
-		size_t cChMax = pChEnd - pCh;
-		size_t cCh = CChCopy("(", pCh, cChMax);
-		cCh += CChPrintStnod(this, &pCh[cCh], pChEnd, grfdbgstr);
-
-		for (size_t ipStnod = 0; ipStnod < m_arypStnodChild.C(); ++ipStnod)
-		{
-			if (EWC_FVERIFY(pChEnd - &pCh[cCh] >= 1, "debug string overflow"))
-			{
-				pCh[cCh++] = ' ';
-			}
-			if (EWC_FVERIFY(cCh < cChMax, "debug string storage overflow"))
-			{
-				CSTNode * pStnod = m_arypStnodChild[ipStnod];
-				cCh += pStnod->CChWriteDebugString(&pCh[cCh], pChEnd, grfdbgstr);
-			}
-		}
-
-		if (EWC_FVERIFY(pChEnd - &pCh[cCh] >= 2, "debug string overflow"))
-		{
-			pCh[cCh++] = ')';
-			pCh[cCh] = 0;
-		}
-		return cCh;
-	}
-	else if (fIsOperand)
+	if (m_park == PARK_Literal)
 	{
 		EWC_ASSERT(m_pStval, "operand without value struct");
 		return CChPrintStnod(this, pCh, pChEnd, grfdbgstr);
 	}
-	return 0;
+	if (m_park == PARK_Identifier)
+	{
+		EWC_ASSERT(m_pStident, "identifier operand without string struct");
+		return CChPrintStnod(this, pCh, pChEnd, grfdbgstr);
+	}
+
+	size_t cChMax = pChEnd - pCh;
+	size_t cCh = CChCopy("(", pCh, cChMax);
+	cCh += CChPrintStnod(this, &pCh[cCh], pChEnd, grfdbgstr);
+
+	for (size_t ipStnod = 0; ipStnod < m_arypStnodChild.C(); ++ipStnod)
+	{
+		if (EWC_FVERIFY(pChEnd - &pCh[cCh] >= 1, "debug string overflow"))
+		{
+			pCh[cCh++] = ' ';
+		}
+		if (EWC_FVERIFY(cCh < cChMax, "debug string storage overflow"))
+		{
+			CSTNode * pStnod = m_arypStnodChild[ipStnod];
+			cCh += pStnod->CChWriteDebugString(&pCh[cCh], pChEnd, grfdbgstr);
+		}
+	}
+
+	if (EWC_FVERIFY(pChEnd - &pCh[cCh] >= 2, "debug string overflow"))
+	{
+		pCh[cCh++] = ')';
+		pCh[cCh] = 0;
+	}
+	return cCh;
 }
 
 void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChMax, GRFDBGSTR grfdbgstr)
@@ -2458,10 +2476,11 @@ void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChMax
 
 CString StrFromIdentifier(CSTNode * pStnod)
 {
-	if (EWC_FVERIFY(pStnod->m_park == PARK_Identifier, "expected identifier") && 
-		EWC_FVERIFY(pStnod->m_pStval, "identifier encountered without string value"))
+	if (pStnod &&
+		EWC_FVERIFY(pStnod->m_park == PARK_Identifier, "expected identifier") && 
+		EWC_FVERIFY(pStnod->m_pStident, "identifier encountered without string value"))
 	{
-		return pStnod->m_pStval->m_str;
+		return pStnod->m_pStident->m_str;
 	}
 
 	return CString();
@@ -2554,6 +2573,10 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pChzIn = "SomeConst :: 0xFF; ";
+		pChzOut = "(const $SomeConst 255)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "SFoo :: struct { m_n := 2; } foo : SFoo; foo.m_n = 1; ";
 		pChzOut = "(struct $SFoo ({} (decl $m_n 2))) (decl $foo $SFoo) (= (member $foo $m_n) 1)";

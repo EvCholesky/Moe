@@ -8,8 +8,3 @@ PrintPointer :: (pB : * u8) #foreign;
 PrintString :: (pCh : * u8) #foreign;
 printf :: (pCh : *u8, ..) -> s32 #foreign;
 
-NReturn :: () -> int
-{
-	return 34;
-}
-

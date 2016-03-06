@@ -45,8 +45,9 @@ enum STVALK
 	STVALK_SignedInt,
 	STVALK_UnsignedInt,
 	STVALK_String,
-	STVALK_ReservedWord
+	STVALK_ReservedWord,
 };
+
 
 // syntax tree value storage
 class CSTValue	// tag = stval
@@ -131,6 +132,7 @@ enum PARK // PARse Kind
 
 	PARK_ReferenceDecl,		// used in type specification, not used for the unary address-of operator
 	PARK_Decl,
+	PARK_ConstantDecl,
 	PARK_ProcedureDefinition,
 	PARK_EnumDefinition,
 	PARK_StructDefinition,
@@ -158,8 +160,6 @@ public:
 					,m_iStnodInit(-1)
 					,m_pTin(nullptr)
 						{ ; }
-
-	EWC::CString	StrIdentifier(CSTNode * pStnod);
 
 	int				m_iStnodIdentifier;
 	int				m_iStnodType;
@@ -201,6 +201,17 @@ public:
 	int				m_iStnodType;
 	int				m_iStnodConstantList;
 	STypeInfoEnum * m_pTinenum;
+};
+
+// Syntax tree string values - used for identifiers and reserved words
+class CSTIdentifier // tag = stident
+{
+public:
+						CSTIdentifier()
+						:m_str()
+							{ ; }
+
+	EWC::CString		m_str;
 };
 
 enum STREES
@@ -268,6 +279,7 @@ public:
 	GRFSTNOD				m_grfstnod;
 
 	CSTValue *				m_pStval;
+	CSTIdentifier *			m_pStident;
 	CSTDecl *				m_pStdecl;
 	CSTProcedure *			m_pStproc;
 	CSTEnum *				m_pStenum;
@@ -293,10 +305,10 @@ inline bool FIsReservedWord(CSTNode * pStnod, RWORD rword)
 
 inline bool FIsIdentifier(CSTNode * pStnod, const char * pChzIdent)
 {
-	if ((pStnod->m_park != PARK_Identifier) | (pStnod->m_pStval == nullptr))
+	if ((pStnod->m_park != PARK_Identifier) | (pStnod->m_pStident == nullptr))
 		return false;
 
-	return pStnod->m_pStval->m_str == pChzIdent;
+	return pStnod->m_pStident->m_str == pChzIdent;
 }
 
 EWC::CString StrFromIdentifier(CSTNode * pStnod);

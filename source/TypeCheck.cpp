@@ -129,7 +129,7 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 			{
 				if (!EWC_FVERIFY(pStnod->m_pStval, "identifier without value string detected"))
 					break;
-				pCh += CChCopy(pStnod->m_pStval->m_str.PChz(), pCh, pChEnd - pCh); 
+				pCh += CChCopy(StrFromIdentifier(pStnod).PChz(), pCh, pChEnd - pCh); 
 				pStnodIt = nullptr;
 			}break;
 			case PARK_ReferenceDecl:
@@ -604,7 +604,7 @@ STypeInfo *PTinPromoteVarArg(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymt
 			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTinIn;
 			if (pTinfloat->m_cBit < 64)
 			{
-				return pSymtab->PTinBuiltin("float64");
+				return pSymtab->PTinBuiltin("f64");
 			}
 			return pTinIn;
 		}
@@ -925,14 +925,12 @@ STypeInfo * PTinFromTypeSpecification(
 		{
 		case PARK_Identifier:
 			{
-				if (!EWC_FVERIFY(pStnodIt->m_pStval, "identifier without value string detected"))
-					break;
-
-				pTinFinal = pSymtab->PTinLookup(pStnodIt->m_pStval->m_str, pStnodIt->m_lexloc, grfsymlook, ppSymType);
+				auto strIdent = StrFromIdentifier(pStnodIt);
+				pTinFinal = pSymtab->PTinLookup(strIdent, pStnodIt->m_lexloc, grfsymlook, ppSymType);
 
 				if ((pTinFinal == nullptr) & fAllowForwardDecl)
 				{
-					pTinFinal = pSymtab->PTinfwdLookup(pStnodIt->m_pStval->m_str, grfsymlook);
+					pTinFinal = pSymtab->PTinfwdLookup(strIdent, grfsymlook);
 
 					// NOTE: we're not setting pStnodIt->m_pTin to point at the forward decl because we won't know
 					//  to update the pointer
@@ -1070,6 +1068,16 @@ int ITypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
 	return -1;
 }
 
+CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
+{
+	if (!pStval)
+		return nullptr;
+
+	auto pStvalRet = EWC_NEW(pAlloc, CSTValue) CSTValue();
+	*pStvalRet = *pStval;
+	return pStvalRet;
+}
+
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	int i = 2;
@@ -1105,6 +1113,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							PushTcsent(pTcfram, pStnodParamList);
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_pSymtab = pStnodParamList->m_pSymtab;
+							EWC_ASSERT(pTcsentPushed->m_pSymtab, "null symbol table");
 						}
 					}break;
 				case 1:
@@ -1115,7 +1124,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 							PushTcsent(pTcfram, pStnodReturn);
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
-							pTcsentPushed->m_pSymtab = pStnodReturn->m_pSymtab;
 							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
 						}
 					}break;
@@ -1167,10 +1175,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								pStnodIdent = pStnod->PStnodChildSafe(pStproc->m_iStnodProcName);
 							}
 
-							if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStval, "Procedure without identifier"))
+							if (EWC_FVERIFY(pStnodIdent, "Procedure without identifier"))
 							{
 								SSymbol * pSymIdent = pTcsentTop->m_pSymtab->PSymLookup(
-																				pStnodIdent->m_pStval->m_str,
+																				StrFromIdentifier(pStnodIdent),
 																				pStnodIdent->m_lexloc, 
 																				pTcsentTop->m_grfsymlook);
 								OnTypeComplete(pTcwork, pSymIdent);
@@ -1413,30 +1421,41 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 			}break;
 			case PARK_Identifier:
 			{
-				if (pTcsentTop->m_tcctx == TCCTX_Normal)
+				// Note: we're only expecting to get here for identifiers within statements.
+				//  Identifiers for function names, declaration names and types, should do their own type checking.
+
+				CString strIdent = StrFromIdentifier(pStnod);
+				if (EWC_FVERIFY(!strIdent.FIsEmpty(), "identifier node with no value"))
 				{
-					// Note: we're only expecting to get here for identifiers within statements.
-					//  Identifiers for function names, declaration names and types, should do their own type checking.
-
-					CSTValue * pStval = pStnod->m_pStval;
-					if (EWC_FVERIFY(pStval, "identifier node with no value"))
+					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+					SSymbol * pSym;
+					auto pTin = pSymtab->PTinLookup(strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook, &pSym);
+					if (pTcsentTop->m_tcctx == TCCTX_TypeSpecification && pTin && !pSym)
 					{
-						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-						SSymbol * pSym = pSymtab->PSymLookup(pStval->m_str, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
-						if (!pSym || !pSym->m_pStnodDefinition)
-						{
-							EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", pStval->m_str.PChz());
-							return TCRET_StoppingError;
-						}
-
+						// We found a built in type.
+						pStnod->m_pTin = pTin;
+						pStnod->m_pSym = pSym;
+					}
+					else if (!pSym || !pSym->m_pStnodDefinition)
+					{
+						EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", strIdent.PChz());
+						return TCRET_StoppingError;
+					}
+					else
+					{
 						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
-						if (pStnodDefinition->m_park == PARK_Decl)
+						if (pStnodDefinition->m_park == PARK_Decl || pStnodDefinition->m_park == PARK_ConstantDecl)
 						{
 							if (pStnodDefinition->m_strees >= STREES_TypeChecked)
 							{
 								EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
 								pStnod->m_pTin = pStnodDefinition->m_pTin;
 								pStnod->m_pSym = pSym;
+
+								if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
+								{
+									pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pStnodDefinition->m_pStval);
+								}
 							}
 							else
 							{
@@ -1481,15 +1500,57 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 				}
 
-			}break;
+			} break;
 			case PARK_Uninitializer:
 			case PARK_Nop:
 			case PARK_VariadicArg:
 			{
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram);
-				break;
-			}
+			} break;
+			case PARK_ConstantDecl:
+			{
+				if (pTcsentTop->m_nState < 1)
+					pTcsentTop->m_nState = 1;	// skip the identifier
+
+				if (pTcsentTop->m_nState < pStnod->CStnodChild())
+				{
+					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+					break;
+				}
+
+				CSTDecl * pStdecl = pStnod->m_pStdecl;
+				CSTNode * pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+
+				if (!pStnodInit->m_pTin || pStnodInit->m_pTin->m_tink != TINK_Literal)
+				{
+					CString strIdent = StrFromIdentifier(pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
+					EmitError(pTcwork, pStnod, "non-constant value in declaration of constant '%s'", strIdent.PChz());
+					return TCRET_StoppingError;
+				}
+
+				pStnod->m_pStval = PStvalCopy(pTcwork->m_pAlloc, pStnodInit->m_pStval);
+				pStnod->m_pTin = pStnodInit->m_pTin;
+
+				// find our symbol and resolve any pending unknown types
+				CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
+				if (EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))
+				{
+					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+					CString strIdent = StrFromIdentifier(pStnodIdent);
+					SSymbol * pSymIdent = pSymtab->PSymLookup(
+													strIdent,
+													pStnodIdent->m_lexloc,
+													pTcsentTop->m_grfsymlook);
+
+					EWC_ASSERT(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz());
+					pStnod->m_pSym = pSymIdent;
+					OnTypeComplete(pTcwork, pSymIdent);
+				}
+
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram);
+			} break;
 			case PARK_Decl:
 			{
 				CSTDecl * pStdecl = pStnod->m_pStdecl;
@@ -1604,22 +1665,14 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 
 					// find our symbol and resolve any pending unknown types
-
 					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
-					if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStval, "Declaration without identifier"))
+					if (EWC_FVERIFY(pStnodIdent, "Declaration without identifier"))
 					{
 						CString strIdent = StrFromIdentifier(pStnodIdent);
 						SSymbol * pSymIdent = pSymtab->PSymLookup(
 														strIdent,
 														pStnodIdent->m_lexloc,
 														pTcsentTop->m_grfsymlook);
-						if (!pSymIdent || pSymIdent->m_pStnodDefinition != pStnod)
-						{
-							SSymbol * pSymIdentTest = pSymtab->PSymLookup(
-															strIdent,
-															pStnodIdent->m_lexloc,
-															pTcsentTop->m_grfsymlook);
-						}
 
 						EWC_ASSERT(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz());
 						pStnod->m_pSym = pSymIdent;
@@ -2344,6 +2397,7 @@ void PerformTypeCheck(
 	int ipTcfram = 0;
 	for (CWorkspace::SEntry * pEntry = paryEntry->A(); pEntry != pEntryMax; ++pEntry, ++ipTcfram)
 	{
+		EWC_ASSERT(pEntry->m_pSymtab, "entry point without symbol table");
 		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
 		pTcfram->m_ipTcframQueue = ipTcfram;
 
@@ -2546,6 +2600,10 @@ void TestTypeCheck()
 	const char * pChzIn;
 	const char * pChzOut;
 
+	pChzIn = "SomeConst :: 0xFF; n : s16 = SomeConst; n2 := SomeConst;";
+	pChzOut = "(Literal:Int $SomeConst Literal:Int) (s16 $n s16 Literal:Int16) (int $n2 Literal:Int64)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn = "pUgh : * SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo; } SFoo :: struct { m_n : s8; }";
 	pChzOut = "(*SUgh::struct $pUgh (*SUgh::struct SUgh::struct)) (s8 (s8 (SFoo::struct *SUgh::struct $m_foo) $m_n) Literal:Int8) "
 		"(SUgh::struct $SUgh ({} (SFoo::struct $m_foo SFoo::struct))) "
@@ -2627,8 +2685,8 @@ void TestTypeCheck()
 	pChzOut ="(int $n Literal:Int64) (int int (int Literal:Int64 int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : float64 = 2.2;";
-	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (s16 $bar s16 s8) (float64 $g float64)) (float64 $g_g float64 Literal:Float64)";
+	pChzIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : f64 = 2.2;";
+	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (s16 $bar s16 s8) (f64 $g f64)) (f64 $g_g f64 Literal:Float64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";

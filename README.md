@@ -15,9 +15,13 @@ New:
   * Arrays
   * Pointer arithmetic.
   * Structures
+  * Constants
+  	- Basic constants
 
 Coming soon:
   * Constants
+  	- member constants
+  	- typed constants
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables
   * Enums
@@ -34,3 +38,4 @@ Known Issues:
 Deviations from current JAI syntax:
   * currently using @ for a dereference operator, rather than <<
   * still support single quote character literals. (will add #char once the single char is used elsewhere)
+  * float types are: float, double, f32 and f64. because... why wouldn't they be?

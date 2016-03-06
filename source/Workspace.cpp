@@ -66,6 +66,7 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 	{
 		*piLine = -1;
 		*piCol = -1;
+		return;
 	}
 
 	int iLine = 1;

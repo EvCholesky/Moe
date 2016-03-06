@@ -32,15 +32,35 @@ TestPointers :: ()
 	@@ppN = 8;
 	PrintInt(n);
 }
-*/
 
 STest :: struct
 {
 	m_n : s8;
 }
+*/
+
 
 main :: () -> int 
 {
+	/*
+	FormatStr :: "SomeConst = %d, %d";
+	SomeConst :: -3*2;
+
+	//TypedConst : s32 : 16;
+	printf(FormatStr, SomeConst, -3*2);
+	*/
+
+	ArraySize :: ConstThree;
+	aN : [ArraySize] int;
+
+	iN : s32;	
+	while iN < ArraySize
+	{
+		printf("aN[%d] = %d\n", iN, aN[iN]);
+		++iN;
+	}
+
+/*
 	SFoo :: struct
 	{
 		m_n : s8 = 7;
@@ -53,7 +73,7 @@ main :: () -> int
 	foo.m_aN[0].m_n = 3;
 	foo.m_aN[1].m_n = 5;
 	printf("aN[0] = %d, an[1] = %d\n", foo.m_aN[0].m_n, foo.m_aN[1].m_n);
-	
+
 	foo.m_pFoo = *foo;
 
 	printf("m_n = %d, m_g = %f\n", foo.m_n, foo.m_g);
@@ -71,7 +91,6 @@ main :: () -> int
 
 	printf("m_n = %d, m_g = %f\n", pFoo.m_pFoo.m_pFoo.m_n, pFoo.m_pFoo.m_pFoo.m_g);
 
-/*
 	aN : [4] s32;	
 
 	i : s32 = 0;
@@ -165,6 +184,9 @@ main :: () -> int
 
 	return 1;
 }
+
+ConstThree :: 3;
+
 /*
 {
 	printf("printf %d, %f\n\n", 2, 6.7);
