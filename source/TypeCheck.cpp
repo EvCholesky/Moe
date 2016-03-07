@@ -537,6 +537,10 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTin, CSTNode * pSt
 	if (!pStnodLit->m_pTin || pStnodLit->m_pTin->m_tink != TINK_Literal)
 		return;
 
+	auto pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
+
+	// Note: we may re-finalize finalized literals here when using a typed constant (ie "SomeConst : s8 : 2;" )
+
 	// we've found the place the literal will become 'typed' - flush that type back down into the literal
 
 	EWC_ASSERT(pTin->m_tink != TINK_Literal, "cannot finalize literal with literal");
@@ -612,11 +616,69 @@ STypeInfo *PTinPromoteVarArg(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymt
 	}
 }
 
+inline STypeInfo * PTinFromLiteralFinalized(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	const STypeInfoLiteral * pTinlit)
+{
+	EWC_ASSERT(pTinlit->m_fIsFinalized, "Expected finalized literal type");
+
+	const SLiteralType & litty = pTinlit->m_litty;
+	switch (litty.m_litk)
+	{
+	case LITK_Integer:
+		{
+			if (litty.m_fIsSigned)
+			{
+				switch (litty.m_cBit)
+				{
+				case 8:		return pSymtab->PTinBuiltin("s8");
+				case 16:	return pSymtab->PTinBuiltin("s16");
+				case 32:	return pSymtab->PTinBuiltin("s32");
+				case 64:	return pSymtab->PTinBuiltin("s64");
+				}
+			}
+			else
+			{
+				switch (litty.m_cBit)
+				{
+				case 8:		return pSymtab->PTinBuiltin("u8");
+				case 16:	return pSymtab->PTinBuiltin("u16");
+				case 32:	return pSymtab->PTinBuiltin("u32");
+				case 64:	return pSymtab->PTinBuiltin("u64");
+				}
+			}
+		}break;
+	case LITK_Float:
+		{ 
+			switch (litty.m_cBit)
+			{
+			case 32:	return pSymtab->PTinBuiltin("f32");
+			case 64:	return pSymtab->PTinBuiltin("f64");
+			}
+		} break;
+	case LITK_Char:		return pSymtab->PTinBuiltin("char");
+	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
+	case LITK_String:
+		{
+			// right now string literals just promote to *u8, but will eventually promote to string
+			auto pTinU8 = pSymtab->PTinBuiltin("u8");
+			return pSymtab->PTinptrGetReference(pTinU8);
+		} break;
+	}
+
+	EWC_ASSERT(false, "Unknown literal kind");
+	return nullptr;
+}
+
 STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit)
 {
 	const STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 	if (!pTinlit || pTinlit->m_tink != TINK_Literal)
 		return pStnodLit->m_pTin;
+
+	if (pTinlit->m_fIsFinalized)
+		return PTinFromLiteralFinalized(pTcwork, pSymtab, pTinlit);
 
 	const CSTValue * pStval = pStnodLit->m_pStval;
 	if (!EWC_FVERIFY(pStval, "literal without value"))
@@ -664,8 +726,10 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 	if (!pTinlit || pTinlit->m_tink != TINK_Literal)
 		return pStnodLit->m_pTin;
 
-	const SLiteralType & litty = pTinlit->m_litty;
+	if (pTinlit->m_fIsFinalized)
+		return PTinFromLiteralFinalized(pTcwork, pSymtab, pTinlit);
 
+	const SLiteralType & litty = pTinlit->m_litty;
 	switch (litty.m_litk)
 	{
 	case LITK_Integer:
@@ -1002,7 +1066,7 @@ STypeInfo * PTinFromTypeSpecification(
 			}
 			else
 			{
-				STypeInfo * pTinCount = pSymtab->PTinBuiltin("u64");
+				STypeInfo * pTinCount = pSymtab->PTinBuiltin("s8");
 				STypeInfo * pTinPromoted = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
 				if (!FCanImplicitCast(pTinPromoted, pTinCount))
 				{
@@ -1513,20 +1577,63 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				if (pTcsentTop->m_nState < 1)
 					pTcsentTop->m_nState = 1;	// skip the identifier
 
+				CSTDecl * pStdecl = pStnod->m_pStdecl;
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+
+					if (pTcsentTop->m_nState == pStdecl->m_iStnodType)
+					{
+						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+						pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+					}
+					
+					++pTcsentTop->m_nState;
 					break;
 				}
 
-				CSTDecl * pStdecl = pStnod->m_pStdecl;
-				CSTNode * pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+				auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
 
 				if (!pStnodInit->m_pTin || pStnodInit->m_pTin->m_tink != TINK_Literal)
 				{
 					CString strIdent = StrFromIdentifier(pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
 					EmitError(pTcwork, pStnod, "non-constant value in declaration of constant '%s'", strIdent.PChz());
 					return TCRET_StoppingError;
+				}
+
+				auto pSymtab = pTcsentTop->m_pSymtab;
+				auto pStnodType = pStnod->PStnodChildSafe(pStdecl->m_iStnodType);
+				if (pStnodType)
+				{
+					CSTNode * pStnodType = pStnod->PStnodChild(pStdecl->m_iStnodType);
+
+					SSymbol * pSymType = nullptr;
+					bool fIsValidTypeSpec;
+					STypeInfo * pTinType = PTinFromTypeSpecification(
+											pTcwork,
+											pSymtab,
+											pStnodType,
+											pTcsentTop->m_grfsymlook,
+											&pSymType,
+											&fIsValidTypeSpec);
+
+					if (!fIsValidTypeSpec)
+						return TCRET_StoppingError;
+
+					// just make sure the init type fits the specified one
+					STypeInfo * pTinInit = pStnodInit->m_pTin;
+					pTinInit = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodInit, pTinType);
+					if (FCanImplicitCast(pTinInit, pTinType))
+					{
+						FinalizeLiteralType(pSymtab, pTinType, pStnodInit);
+						pTinInit = pStnod->m_pTin;
+					}
+					else
+					{
+						EmitError(pTcwork, pStnod, "Cannot initialize constant of type %s with %s",
+							StrFromTypeInfo(pTinType).PChz(),
+							StrFromTypeInfo(pTinInit).PChz());
+					}
 				}
 
 				pStnod->m_pStval = PStvalCopy(pTcwork->m_pAlloc, pStnodInit->m_pStval);
@@ -1536,7 +1643,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 				if (EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))
 				{
-					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					CString strIdent = StrFromIdentifier(pStnodIdent);
 					SSymbol * pSymIdent = pSymtab->PSymLookup(
 													strIdent,
@@ -1642,8 +1748,8 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								CString strLhs = StrFromTypeInfo(pStnod->m_pTin);
 								CString strInit = StrFromTypeInfo(pTinInit);
 								EmitError(pTcwork, pStnod, "Cannot initialize variable of type %s with %s",
-									strLhs.PChz(),
-									strInit.PChz());
+									StrFromTypeInfo(pStnod->m_pTin).PChz(),
+									StrFromTypeInfo(pTinInit).PChz());
 							}
 						}
 						else if (pStnodInit->m_pTin)
@@ -2583,7 +2689,7 @@ void AssertTestTypeCheck(
 }
 
 void TestTypeCheck()
-{
+{		
 	AssertTestSigned65();
 
 	u8 aBString[1024 * 100];
@@ -2599,6 +2705,10 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "SomeConst : s16 : 0xFF; n := SomeConst;";
+	pChzOut = "(Literal:Int16 $SomeConst s16 Literal:Int16) (s16 $n Literal:Int16)";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "SomeConst :: 0xFF; n : s16 = SomeConst; n2 := SomeConst;";
 	pChzOut = "(Literal:Int $SomeConst Literal:Int) (s16 $n s16 Literal:Int16) (int $n2 Literal:Int64)";
@@ -2623,15 +2733,15 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; pN : * s32; fEq := aN == pN; ";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int64 s32)) (*s32 $pN (*s32 s32)) (bool $fEq (bool []s32 *s32))";
+	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (*s32 $pN (*s32 s32)) (bool $fEq (bool []s32 *s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; paN : * [4] s32 = *aN;";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int64 s32)) (*[]s32 $paN (*[]s32 ([]s32 Literal:Int64 s32)) (*[]s32 []s32))";
+	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (*[]s32 $paN (*[]s32 ([]s32 Literal:Int8 s32)) (*[]s32 []s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; n := aN[0];";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int64 s32)) (s32 $n (s32 []s32 Literal:Int64))";
+	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (s32 $n (s32 []s32 Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:s32=2; n++; n--;";

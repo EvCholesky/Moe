@@ -50,9 +50,12 @@ main :: () -> int
 	printf(FormatStr, SomeConst, -3*2);
 	*/
 
+	ConstZero : s8 : 0;
+	ConstThree : s8 : 3;
 	ArraySize :: ConstThree;
 	aN : [ArraySize] int;
 
+	aN[ConstZero] = 2;
 	iN : s32;	
 	while iN < ArraySize
 	{
@@ -185,7 +188,6 @@ main :: () -> int
 	return 1;
 }
 
-ConstThree :: 3;
 
 /*
 {

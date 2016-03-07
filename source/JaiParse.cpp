@@ -885,6 +885,15 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 					ParseError(pParctx, pJlex, "initial value expected before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
 			}
 		}
+		else if (pJlex->m_jtok == JTOK(':'))
+		{
+			JtokNextToken(pJlex);
+
+			pStnodDecl->m_park = PARK_ConstantDecl;
+			pStnodInit = PStnodParseExpression(pParctx, pJlex);
+			if (!pStnodInit)
+				ParseError(pParctx, pJlex, "initial value expected before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
+		}
 	}
 
 	pStdecl->m_iStnodInit = pStnodDecl->IAppendChild(pStnodInit);
@@ -2576,6 +2585,10 @@ void TestParse()
 
 		pChzIn = "SomeConst :: 0xFF; ";
 		pChzOut = "(const $SomeConst 255)";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+		pChzIn = "SomeConst : s16 : 0xFF; ";
+		pChzOut = "(const $SomeConst $s16 255)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "SFoo :: struct { m_n := 2; } foo : SFoo; foo.m_n = 1; ";

@@ -810,6 +810,7 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	bool fSignedDst;
 	if (pTinSrc->m_tink == TINK_Literal)
 		return pValSrc;
+
 	if (pTinSrc->m_tink == TINK_Pointer)
 	{
 		if (pTinDst->m_tink != TINK_Bool)
@@ -1520,7 +1521,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		{
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
-			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Instance);
 
 			STypeInfo * pTinOutput = pStnod->m_pTinOperand;
 			CIRValue * pValLhsCast = PValGenerateRefCast(pWork, pBuild, pStnodLhs, pTinOutput);

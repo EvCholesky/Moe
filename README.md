@@ -17,14 +17,15 @@ New:
   * Structures
   * Constants
   	- Basic constants
+  	- typed constants
 
 Coming soon:
   * Constants
   	- member constants
-  	- typed constants
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables
   * Enums
+  * Explicit casting
   * For Loops.
 
 Further out:
@@ -34,6 +35,7 @@ Further out:
 
 Known Issues:
   * Void pointers are not supported (llvm wants to codegen them as *u8)
+  * static linking of C runtime into libraries won't be happy with two libraries.
 
 Deviations from current JAI syntax:
   * currently using @ for a dereference operator, rather than <<
