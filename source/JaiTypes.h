@@ -177,13 +177,13 @@ struct STypeStructMember	// tag = typememb
 					STypeStructMember()
 					:m_strName()
 					,m_pTin(nullptr)
-					,m_cBOffset(0)
+					,m_pStnod(nullptr)
 					,m_grfmemb(FMEMB_None)
 						{ ;}
 
 	EWC::CString	m_strName;
 	STypeInfo *		m_pTin;
-	s64				m_cBOffset;	
+	CSTNode *		m_pStnod;	// syntax tree node for this member
     
 	GRFMEMB			m_grfmemb;
 };
@@ -197,17 +197,20 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 								,m_pLvalInitMethod(nullptr)
 								,m_pLtype(nullptr)
 								,m_pStnodStruct(nullptr)
-								,m_aryTypememb()
+								,m_aryTypemembField()
+								,m_aryTypemembConstant()
 									{ ; }
 	
 	LLVMOpaqueValue *				m_pLvalInitMethod;
 	LLVMOpaqueType *				m_pLtype;			// llvm type reference, here to avoid infinite recursion in
 														//  self referential member pointers
+
 	CSTNode *						m_pStnodStruct;
-	EWC::CAry<STypeStructMember>	m_aryTypememb;
+	EWC::CAry<STypeStructMember>	m_aryTypemembField;
+	EWC::CAry<STypeStructMember>	m_aryTypemembConstant;
 };
 
-int ITypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
+STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
 
 enum ARYK
 {

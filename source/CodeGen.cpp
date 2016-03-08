@@ -605,19 +605,19 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			LLVMOpaqueType * pLtype = LLVMStructCreateNamed(LLVMGetGlobalContext(), pTinstruct->m_strName.PChz());
 			pTinstruct->m_pLtype = pLtype;
 
-			int cTypememb = (int)pTinstruct->m_aryTypememb.C();
-			auto apLtypeMember = (LLVMTypeRef *)(alloca(sizeof(LLVMTypeRef) * cTypememb));
+			int cTypemembField = (int)pTinstruct->m_aryTypemembField.C();
+			auto apLtypeMember = (LLVMTypeRef *)(alloca(sizeof(LLVMTypeRef) * cTypemembField));
 			LLVMTypeRef * ppLtypeMember = apLtypeMember;
 
-			auto pTypemembMac = pTinstruct->m_aryTypememb.PMac();
-			for ( auto pTypememb = pTinstruct->m_aryTypememb.A(); pTypememb != pTypemembMac; ++pTypememb)
+			auto pTypemembMac = pTinstruct->m_aryTypemembField.PMac();
+			for ( auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMac; ++pTypememb)
 			{
 				auto pLtypeMember = PLtypeFromPTin(pTypememb->m_pTin);
 				EWC_ASSERT(pLtypeMember, "failed to compute type for structure member %s", pTypememb->m_strName.PChz());
 				*ppLtypeMember++ = pLtypeMember;
 			}
 
-			LLVMStructSetBody(pLtype, apLtypeMember, cTypememb, false);
+			LLVMStructSetBody(pLtype, apLtypeMember, cTypemembField, false);
 			return pLtype;
 		}
 		default: return nullptr;
@@ -714,16 +714,16 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 	{
 		auto pTinstruct = (STypeInfoStruct *)pTin;
 
-		int cpLvalMember = (int)pTinstruct->m_aryTypememb.C();
-		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalMember;
+		int cpLvalField = (int)pTinstruct->m_aryTypemembField.C();
+		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalField;
 		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
 
-		for (int ipLval = 0; ipLval < cpLvalMember; ++ipLval)
+		for (int ipLval = 0; ipLval < cpLvalField; ++ipLval)
 		{
-			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypememb[ipLval].m_pTin);
+			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypemembField[ipLval].m_pTin);
 		}
 
-		return LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalMember);
+		return LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalField);
 	}
 
 	default: break;
@@ -920,8 +920,8 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 	{
 		auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTin);
 
-		int cpLvalMember = (int)pTinstruct->m_aryTypememb.C();
-		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalMember;
+		int cpLvalField = (int)pTinstruct->m_aryTypemembField.C();
+		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalField;
 		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
 		EWC::ZeroAB(apLvalMember, cB);
 
@@ -931,12 +931,12 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 
 		if (pStnodList && EWC_FVERIFY(pStnodList->m_park == PARK_List, "expected member list"))
 		{
-			int cpStnod = pStnodList->CStnodChild();
-			EWC_ASSERT(cpStnod == cpLvalMember, "AST decl mismatch for members");
-			for (int ipStnod = 0; ipStnod < cpStnod; ++ipStnod)
+			auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
+			int ipLvalMember = 0;
+			for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb, ++ipLvalMember)
 			{
-				CSTNode * pStnodDecl = pStnodList->PStnodChild(ipStnod);
-				if (!EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl && pStnodDecl->m_pStdecl, "expected decl"))
+				CSTNode * pStnodDecl = pTypememb->m_pStnod;
+				if (!EWC_FVERIFY(pStnodDecl->m_pStdecl, "expected decl"))
 					continue;
 
 				auto pStnodInit = pStnodDecl->PStnodChildSafe(pStnodDecl->m_pStdecl->m_iStnodInit);
@@ -950,21 +950,21 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 						return nullptr;
 					}
 
-					apLvalMember[ipStnod] = PLvalFromLiteral( pBuild, pTinlit, pStnodInit->m_pStval);
+					apLvalMember[ipLvalMember] = PLvalFromLiteral( pBuild, pTinlit, pStnodInit->m_pStval);
 				}
 			}
 		}
 
 		// we're not uninitializing part of our struct so... carry on.
-		for (int ipLval = 0; ipLval < cpLvalMember; ++ipLval)
+		for (int ipLval = 0; ipLval < cpLvalField; ++ipLval)
 		{
 			if (apLvalMember[ipLval])
 				continue;
 			
-			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypememb[ipLval].m_pTin);
+			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypemembField[ipLval].m_pTin);
 		}
 
-		pLval = LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalMember);
+		pLval = LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalField);
 	}
 	else if (pTin->m_tink == TINK_Array)
 	{
@@ -1430,14 +1430,14 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, valgenkLhs);
 			
 			CString strMemberName = StrFromIdentifier(pStnod->PStnodChild(1));
-			int iTypememb = ITypemembLookup(pTinstruct, strMemberName);
-			if (!EWC_FVERIFY(iTypememb >= 0, "cannot find structure member %s", strMemberName.PChz()))
+			auto pTypememb = PTypemembLookup(pTinstruct, strMemberName);
+			if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s", strMemberName.PChz()))
 				return nullptr;
 
 			LLVMOpaqueValue * apLvalIndex[3] = {};
 			int cpLvalIndex = 0;
 			apLvalIndex[cpLvalIndex++] = LLVMConstInt(LLVMInt32Type(), 0, false);
-			apLvalIndex[cpLvalIndex++] = LLVMConstInt(LLVMInt32Type(), iTypememb, false);
+			apLvalIndex[cpLvalIndex++] = LLVMConstInt(LLVMInt32Type(), pTinstruct->m_aryTypemembField.IFromP(pTypememb), false);
 			auto pInst = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, cpLvalIndex, "aryGep");
 
 			if (EWC_FVERIFY(pInst, "member dereference failure in codegen") && valgenk != VALGENK_Reference)
@@ -1870,8 +1870,8 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 	if (pStnodList && !EWC_FVERIFY(pStnodList->m_park == PARK_List, "expected member decl list"))
 		pStnodList = nullptr;
 
-	int cTypememb = (int)pTinstruct->m_aryTypememb.C();
-	for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
+	int cTypemembField = (int)pTinstruct->m_aryTypemembField.C();
+	for (int iTypememb = 0; iTypememb < cTypemembField; ++iTypememb)
 	{
 		apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), iTypememb, false);
 
@@ -1886,7 +1886,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 			}
 		}
 
-		auto pTypememb = &pTinstruct->m_aryTypememb[iTypememb];
+		auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 
 		if (pStnodInit)
 		{

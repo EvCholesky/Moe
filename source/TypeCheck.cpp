@@ -1121,15 +1121,22 @@ bool FDoesOperatorReturnBool(PARK park)
 	return  (park == PARK_RelationalOp) | (park == PARK_EqualityOp) | (park == PARK_LogicalAndOrOp);
 }
 
-int ITypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
+STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
 {
-	auto pTypemembMax = pTinstruct->m_aryTypememb.PMac();
-	for (auto pTypememb = pTinstruct->m_aryTypememb.A(); pTypememb != pTypemembMax; ++pTypememb)
+	auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
+	for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb)
 	{
 		if (pTypememb->m_strName == strMemberName)
-			return (int)(pTypememb - pTinstruct->m_aryTypememb.A());
+			return pTypememb;
 	}
-	return -1;
+
+	pTypemembMax = pTinstruct->m_aryTypemembConstant.PMac();
+	for (auto pTypememb = pTinstruct->m_aryTypemembConstant.A(); pTypememb != pTypemembMax; ++pTypememb)
+	{
+		if (pTypememb->m_strName == strMemberName)
+			return pTypememb;
+	}
+	return nullptr;
 }
 
 CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
@@ -1464,15 +1471,17 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					{
 						CSTNode * pStnodMembers = pStnod->PStnodChild(1);
 						int cStnodMember = pStnodMembers->CStnodChild();
-						if (EWC_FVERIFY(
-								pStnodMembers->m_park == PARK_List && 
-								cStnodMember == pTinstruct->m_aryTypememb.C(), 
-							    "type info struct member mismatch"))
+
+						auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
+						for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb)
 						{
-							for (int iStnod = 0; iStnod < cStnodMember; ++iStnod)
-							{
-								pTinstruct->m_aryTypememb[iStnod].m_pTin = pStnodMembers->PStnodChild(iStnod)->m_pTin;
-							}
+							pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
+						}
+
+						pTypemembMax = pTinstruct->m_aryTypemembConstant.PMac();
+						for (auto pTypememb = pTinstruct->m_aryTypemembConstant.A(); pTypememb != pTypemembMax; ++pTypememb)
+						{
+							pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
 						}
 					}
 
@@ -1508,7 +1517,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					else
 					{
 						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
-						if (pStnodDefinition->m_park == PARK_Decl || pStnodDefinition->m_park == PARK_ConstantDecl)
+						if (pStnodDefinition->m_park == PARK_Decl || 
+							pStnodDefinition->m_park == PARK_ConstantDecl ||
+							pStnodDefinition->m_park == PARK_StructDefinition )
 						{
 							if (pStnodDefinition->m_strees >= STREES_TypeChecked)
 							{
@@ -1516,7 +1527,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								pStnod->m_pTin = pStnodDefinition->m_pTin;
 								pStnod->m_pSym = pSym;
 
-								if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
+								if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal && pStnodDefinition->m_pStval )
 								{
 									pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pStnodDefinition->m_pStval);
 								}
@@ -1927,15 +1938,21 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 
 				CString strMemberName = StrFromIdentifier(pStnodRhs);
-				int iTypememb = ITypemembLookup(pTinstruct, strMemberName);
-				if (iTypememb < 0)
+				auto pTypememb = PTypemembLookup(pTinstruct, strMemberName);
+				if (!pTypememb)
 				{
 					EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PChz(), pTinstruct->m_strName.PChz());
 					return TCRET_StoppingError;
 				}
 
-				pStnod->m_pTin = pTinstruct->m_aryTypememb[iTypememb].m_pTin;
+				pStnod->m_pTin = pTypememb->m_pTin;
 				pStnod->m_strees = STREES_TypeChecked;
+
+				if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal && pTypememb->m_pStnod)
+				{
+					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+					pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pTypememb->m_pStnod->m_pStval);
+				}
 				PopTcsent(pTcfram);
 
 			} break;

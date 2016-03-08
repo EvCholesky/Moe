@@ -18,10 +18,10 @@ New:
   * Constants
   	- Basic constants
   	- typed constants
+  	- member constants
 
 Coming soon:
-  * Constants
-  	- member constants
+  * Type aliasing (typedefs)
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables
   * Enums

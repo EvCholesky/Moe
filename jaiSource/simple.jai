@@ -50,6 +50,18 @@ main :: () -> int
 	printf(FormatStr, SomeConst, -3*2);
 	*/
 
+	SFoo :: struct
+	{
+		NumElements :: 5;
+		ConstConst : s8 : 55;
+
+		aN : [NumElements] int;
+	}
+
+	foo : SFoo;
+	cElements := SFoo.NumElements;
+	printf("NumElements = %d, %d\n", cElements, SFoo.ConstConst);
+
 	ConstZero : s8 : 0;
 	ConstThree : s8 : 3;
 	ArraySize :: ConstThree;

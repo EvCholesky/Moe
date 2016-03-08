@@ -1323,12 +1323,12 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
 																		pB + sizeof(STypeInfoEnum), 
 																		EWC_ALIGN_OF(STypeStructMember));
-				pTinenum->m_tinstructProduced.m_aryTypememb.SetArray(aTypememb, 0, cStnodMember);
+				pTinenum->m_tinstructProduced.m_aryTypemembConstant.SetArray(aTypememb, 0, cStnodMember);
 
 				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
-					STypeStructMember * pTypememb = pTinenum->m_tinstructProduced.m_aryTypememb.AppendNew();
+					STypeStructMember * pTypememb = pTinenum->m_tinstructProduced.m_aryTypemembConstant.AppendNew();
 					CSTNode * pStnodMember = *ppStnodMember;
 					EWC_ASSERT(pStnodMember->m_park == PARK_EnumConstant, "Expected enum constant");
 
@@ -1374,28 +1374,43 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				}
 
 				// type info struct
+				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				int cStnodMember;
 				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodDeclList, &cStnodMember, PARK_List);
+
+				int cStnodField = 0;
+				int cStnodConstant = 0;
+				CSTNode * const * ppStnodMemberMax = &ppStnodMember[cStnodMember];
+				for (auto ppStnodMemberIt = ppStnodMember; ppStnodMemberIt != ppStnodMemberMax; ++ppStnodMemberIt)
+				{
+					switch ((*ppStnodMemberIt)->m_park)
+					{
+					case PARK_Decl:			++cStnodField; break;
+					case PARK_ConstantDecl: ++cStnodConstant; break;
+					default: EWC_ASSERT(false, "Unexpected member in structure %s", strIdent.PChz());
+					}
+				}
 
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
 								cStnodMember * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent.PChz());
 				pTinstruct->m_pStnodStruct = pStnodStruct;
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
 																		pB + sizeof(STypeInfoStruct), 
 																		EWC_ALIGN_OF(STypeStructMember));
-				pTinstruct->m_aryTypememb.SetArray(aTypememb, 0, cStnodMember);
+				pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cStnodField);
+				pTinstruct->m_aryTypemembConstant.SetArray(aTypememb + cStnodField, 0, cStnodConstant);
 
-				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
-					STypeStructMember * pTypememb = pTinstruct->m_aryTypememb.AppendNew();
 					CSTNode * pStnodMember = *ppStnodMember;
-					EWC_ASSERT(pStnodMember->m_park == PARK_Decl, "Expected decl");
+					STypeStructMember * pTypememb = (pStnodMember->m_park == PARK_ConstantDecl) ? 
+														pTinstruct->m_aryTypemembConstant.AppendNew() :
+														pTinstruct->m_aryTypemembField.AppendNew();
 
+					pTypememb->m_pStnod = pStnodMember;
 					auto pStnodIdentifier = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
 					pTypememb->m_strName = StrFromIdentifier(pStnodIdentifier);
 					pTypememb->m_pTin = pStnodMember->m_pTin;
