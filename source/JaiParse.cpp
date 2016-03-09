@@ -1237,16 +1237,16 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 						fReturnsVoid = FIsIdentifier(pStnodReturn, "void");
 					}
 
-					if (fReturnsVoid)
+					CSTNode * pStnodBody = pStnodProc->PStnodChild(pStproc->m_iStnodBody);
+
+					if (EWC_FVERIFY( pStnodBody->m_park == PARK_List, "Expected body list"))
 					{
-						CSTNode * pStnodBody = pStnodProc->PStnodChild(pStproc->m_iStnodBody);
+						CSTNode * pStnodLast = pStnodBody->PStnodChildSafe(pStnodBody->CStnodChild()-1);
 
-						if (EWC_FVERIFY( pStnodBody->m_park == PARK_List, "Expected body list"))
+						bool fHasReturn = pStnodLast && FIsReservedWord(pStnodLast, RWORD_Return);
+						if (!fHasReturn)
 						{
-							CSTNode * pStnodLast = pStnodBody->PStnodChildSafe(pStnodBody->CStnodChild()-1);
-
-							bool fHasReturn = pStnodLast && FIsReservedWord(pStnodLast, RWORD_Return);
-							if (!fHasReturn)
+							if (fReturnsVoid)
 							{
 								SLexerLocation lexloc(pJlex);
 								CSTNode * pStnodReturn = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
@@ -1260,6 +1260,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 								pStnodReturn->m_pStval = pStvalReturn;
 
 								(void) pStnodBody->IAppendChild(pStnodReturn);
+							}
+							else
+							{
+								ParseError(pParctx, pJlex, "Procedure '%s' is missing return statement", strName.PChz());
 							}
 						}
 					}

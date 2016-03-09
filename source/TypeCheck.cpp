@@ -37,6 +37,7 @@ struct STypeCheckStackEntry // tag = tcsent
 										//  maybe swap out for fPushedStack?
 	CSTNode *		m_pStnodProcedure;	// definition node for current procedure
 	GRFSYMLOOK		m_grfsymlook;
+	bool			m_fAllowForwardDecl;
 	TCCTX			m_tcctx;
 };
 
@@ -740,6 +741,12 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 			if (!EWC_FVERIFY(pStval, "literal without value"))
 				return nullptr;
 
+			if (pTinDest->m_tink == TINK_Float)
+			{
+				// integer literals can be used to initialize floating point numbers
+				return pSymtab->PTinBuiltin("f32");
+			}
+
 			bool fDestIsSigned = pTinDest->m_tink != TINK_Integer || ((STypeInfoInteger*)pTinDest)->m_fIsSigned;
 			bool fIsValNegative = pStval->m_stvalk == STVALK_SignedInt && pStval->m_nSigned < 0;
 
@@ -1151,10 +1158,6 @@ CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
 
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
-	int i = 2;
-	i = - + 2;
-	int b = ~i;
-
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
 	while (paryTcsent->C())
 	{
@@ -1503,6 +1506,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					SSymbol * pSym;
 					auto pTin = pSymtab->PTinLookup(strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook, &pSym);
+
 					if (pTcsentTop->m_tcctx == TCCTX_TypeSpecification && pTin && !pSym)
 					{
 						// We found a built in type.
@@ -1521,7 +1525,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							pStnodDefinition->m_park == PARK_ConstantDecl ||
 							pStnodDefinition->m_park == PARK_StructDefinition )
 						{
-							if (pStnodDefinition->m_strees >= STREES_TypeChecked)
+							if (pStnodDefinition->m_strees >= STREES_TypeChecked || pTcsentTop->m_fAllowForwardDecl)
 							{
 								EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
 								pStnod->m_pTin = pStnodDefinition->m_pTin;
@@ -1566,13 +1570,17 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
 
+				STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 				if (pStnod->m_park == PARK_List)
 				{
-					STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 					if (pStnod->m_pSymtab)
 					{
 						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
 					}
+				}
+				if (pStnod->m_park == PARK_ReferenceDecl)
+				{
+					pTcsentPushed->m_fAllowForwardDecl = true;
 				}
 
 			} break;
@@ -2531,6 +2539,7 @@ void PerformTypeCheck(
 		pTcsent->m_pSymtab = pEntry->m_pSymtab;
 		pTcsent->m_pStnodProcedure = nullptr;
 		pTcsent->m_grfsymlook = FSYMLOOK_Default;
+		pTcsent->m_fAllowForwardDecl = false;
 		pTcsent->m_tcctx = TCCTX_Normal;
 
 		pTcwork->m_arypTcframPending.Append(pTcfram);
@@ -2578,7 +2587,7 @@ void PerformTypeCheck(
 			const STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
 			const STypeCheckStackEntry * pTcsent = tcfram.m_aryTcsent.PLast();
 
-			EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type (%s) reference found here", (*ppSym)->m_strName.PChz());
+			EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type '%s' reference found here", (*ppSym)->m_strName.PChz());
 		}
 	}
 
@@ -2886,9 +2895,9 @@ void TestTypeCheck()
 	pChzOut		= "(NoReturn() $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void $NoReturn Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
-	pChzIn		= " { n:int=2; Foo :: () -> int { n2:=n; g:=Bar();}    Bar :: () -> float { n:=Foo(); } }";
-	pChzOut		=	"(Foo() $Foo int ({} (int $n2 int) (float $g (float $Bar))))"
-					" (Bar() $Bar float ({} (int $n (int $Foo))))"
+	pChzIn		= " { n:int=2; Foo :: () -> int { n2:=n; g:=Bar(); return 1;}    Bar :: () -> float { n:=Foo(); return 1;} }";
+	pChzOut		=	"(Foo() $Foo int ({} (int $n2 int) (float $g (float $Bar)) (int Literal:Int64)))"
+					" (Bar() $Bar float ({} (int $n (int $Foo)) (float Literal:Float32)))"
 					" ({} (int $n int Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 

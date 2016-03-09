@@ -913,6 +913,47 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	return pValSrc;
 }
 
+bool FHasConstInitializer(STypeInfo * pTin)
+{
+	if (!EWC_FVERIFY(pTin, "bad type in FHasConstInitializer"))
+		return true;
+
+	if (pTin->m_tink == TINK_Struct)
+	{
+		auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTin);
+
+		CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
+		EWC_ASSERT(pStnodStruct, "missing definition in struct type info");
+		CSTNode * pStnodList = pStnodStruct->PStnodChildSafe(1);
+
+		if (pStnodList && EWC_FVERIFY(pStnodList->m_park == PARK_List, "expected member list"))
+		{
+			auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
+			int ipLvalMember = 0;
+			for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb, ++ipLvalMember)
+			{
+				CSTNode * pStnodDecl = pTypememb->m_pStnod;
+				if (!EWC_FVERIFY(pStnodDecl->m_pStdecl, "expected decl"))
+					continue;
+
+				auto pStnodInit = pStnodDecl->PStnodChildSafe(pStnodDecl->m_pStdecl->m_iStnodInit);
+				if (pStnodInit && pStnodInit->m_park == PARK_Uninitializer)
+					return false;
+
+				if (!FHasConstInitializer(pStnodDecl->m_pTin))
+					return false;
+			}
+		}
+	}
+	else if (pTin->m_tink == TINK_Array)
+	{
+		auto pTinary = (STypeInfoArray *)pTin;
+		return FHasConstInitializer(pTinary->m_pTin);
+	}
+
+	return true;
+}
+
 static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, STypeInfo * pTin)
 {
 	LLVMOpaqueValue * pLval;
@@ -961,7 +1002,8 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 			if (apLvalMember[ipLval])
 				continue;
 			
-			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypemembField[ipLval].m_pTin);
+			apLvalMember[ipLval] = PLvalConstInitializer(pBuild, pTinstruct->m_aryTypemembField[ipLval].m_pTin);
+			EWC_ASSERT(apLvalMember[ipLval], "expected valid initializer");
 		}
 
 		pLval = LLVMConstNamedStruct(pTinstruct->m_pLtype, apLvalMember, cpLvalField);
@@ -975,7 +1017,7 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 		auto apLval = (LLVMOpaqueValue **)(alloca(cB));
 
 		auto pLvalInit = PLvalConstInitializer(pBuild, pTinary->m_pTin);
-		if (!pLvalInit)
+		if (!EWC_FVERIFY(pLvalInit, "expected valid initializer"))
 			return nullptr;
 
 		for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
@@ -997,9 +1039,10 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 
 static inline CIRValue * PValInitializeToDefault(CWorkspace * pWork, CIRBuilder * pBuild, STypeInfo * pTin, CIRInstruction * pInstPT)
 {
-	auto pLvalConstInit = PLvalConstInitializer(pBuild, pTin);
-	if (pLvalConstInit)
+	bool fHasConstInit = FHasConstInitializer(pTin);
+	if (fHasConstInit)
 	{
+		auto pLvalConstInit = PLvalConstInitializer(pBuild, pTin);
 		CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
 		pConst->m_pLval = pLvalConstInit;
 		pBuild->AddManagedVal(pConst);

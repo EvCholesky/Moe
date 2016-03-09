@@ -20,7 +20,7 @@
 
 namespace FastHash
 {
-	u32 NSuperFastHashLower (const char * data, size_t len);
+	u32 NSuperFastHash(const char * data, size_t len);
 }
 
 namespace EWC
@@ -35,12 +35,12 @@ inline u32		HvFromPChz(const char * pChz, size_t cB = 0)
 						if (cB == 0)
 							cB = CCh(pChz);
 
-						return FastHash::NSuperFastHashLower(pChz, cB);
+						return FastHash::NSuperFastHash(pChz, cB);
 					}
 
 inline u32		HvFromAB(const void * aB, size_t cB)
 					{
-						return FastHash::NSuperFastHashLower((const char *)aB, cB);
+						return FastHash::NSuperFastHash((const char *)aB, cB);
 					}
 
 inline u32		HvFromP(void * pV)
