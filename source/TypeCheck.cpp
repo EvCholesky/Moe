@@ -191,8 +191,11 @@ void PushTcsent(STypeCheckFrame * pTcfram, CSTNode * pStnod)
 	pTcsent->m_pStnod = pStnod;
 }
 
-void PopTcsent(STypeCheckFrame * pTcfram)
+void PopTcsent(STypeCheckFrame * pTcfram, CSTNode * pStnodDebug)
 {
+	STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
+	EWC_ASSERT(pTcsentTop->m_pStnod == pStnodDebug || pStnodDebug == nullptr);
+
 	pTcfram->m_aryTcsent.PopLast();
 }
 enum TCRET
@@ -979,14 +982,11 @@ STypeInfo * PTinFromTypeSpecification(
 	//  determine target type equivalence.
 
 	CAlloc * pAlloc = pSymtab->m_pAlloc;
-
-	STypeInfo * pTinReturn = nullptr;
-	STypeInfo ** ppTinCur = &pTinReturn;
 	bool fAllowForwardDecl = false;
 
 	// loop and find the concrete target type
 	STypeInfo * pTinFinal = nullptr;
-	CSTNode * pStnodIt = pStnod;
+	auto pStnodIt = pStnod;
 
 	EWC_ASSERT(pStnodIt->m_strees == STREES_TypeChecked, "Type specification should be type checked first, (for literal op eval)");
 
@@ -994,22 +994,35 @@ STypeInfo * PTinFromTypeSpecification(
 	{
 		switch(pStnodIt->m_park)
 		{
+		case PARK_MemberLookup:
+			{
+				EWC_ASSERT(pStnodIt->CStnodChild() == 2, "Expected Lhs.Rhs in PARK_MemberLookup");
+				CSTNode * pStnodIdent = pStnodIt->PStnodChild(0);
+				auto strIdent = StrFromIdentifier(pStnodIdent);
+				auto pSym = pSymtab->PSymLookup(strIdent, pStnodIdent->m_lexloc, grfsymlook);
+				EWC_ASSERT(pSym && pSym->m_pStnodDefinition, "bad outer type in type specification");
+
+				CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
+				if (EWC_FVERIFY(pStnodDefinition->m_pSymtab, "Struct without symbol table"))
+				{
+					pSymtab = pStnodDefinition->m_pSymtab;
+				}
+
+				pStnodIt = pStnodIt->PStnodChild(1);
+			} break;
 		case PARK_Identifier:
 			{
 				auto strIdent = StrFromIdentifier(pStnodIt);
-				pTinFinal = pSymtab->PTinLookup(strIdent, pStnodIt->m_lexloc, grfsymlook, ppSymType);
-
-				if ((pTinFinal == nullptr) & fAllowForwardDecl)
+				auto pSym = pSymtab->PSymLookup(strIdent, pStnodIt->m_lexloc, grfsymlook);
+				EWC_ASSERT(pSym && pSym->m_pTin, "bad type identifier in type specification");
+				
+				if (ppSymType)
 				{
-					pTinFinal = pSymtab->PTinfwdLookup(strIdent, grfsymlook);
+					*ppSymType = pSym;
+				}
 
-					// NOTE: we're not setting pStnodIt->m_pTin to point at the forward decl because we won't know
-					//  to update the pointer
-				}
-				else
-				{
-					pStnodIt->m_pTin = pTinFinal;
-				}
+				pTinFinal = pSym->m_pTin;
+				pStnodIt->m_pTin = pTinFinal;
 				pStnodIt = nullptr;
 			} break;
 		case PARK_ArrayDecl:
@@ -1036,77 +1049,89 @@ STypeInfo * PTinFromTypeSpecification(
 	if (!pTinFinal)
 		return nullptr;
 
+	STypeInfo * pTinReturn = nullptr;
+	STypeInfo ** ppTinCur = &pTinReturn;
+
 	// build the fully qualified type info
 	pStnodIt = pStnod;
 	STypeInfo * pTinPrev = nullptr;
 	while (pStnodIt)
 	{
-		if (pStnodIt->m_park == PARK_ReferenceDecl)
+		switch (pStnodIt->m_park)
 		{
-			STypeInfoPointer * pTinptr = EWC_NEW(pAlloc, STypeInfoPointer) STypeInfoPointer();
-			pSymtab->AddManagedTin(pTinptr);
-			pStnodIt->m_pTin = pTinptr;
-
-			pTinPrev = pTinptr;
-			*ppTinCur = pTinptr;
-			ppTinCur = &pTinptr->m_pTinPointedTo;
-
-			EWC_ASSERT(pStnodIt->CStnodChild() == 1);
-			pStnodIt = pStnodIt->PStnodChild(0);
-		}
-		else if (pStnodIt->m_park == PARK_ArrayDecl)
-		{
-			STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-			pSymtab->AddManagedTin(pTinary);
-			pStnodIt->m_pTin = pTinary;
-
-			*ppTinCur = pTinary;
-			ppTinCur = &pTinary->m_pTin;
-
-			CSTNode * pStnodDim = pStnodIt->PStnodChild(0);
-			STypeInfoLiteral * pTinlitDim = (STypeInfoLiteral *)pStnodDim->m_pTin;
-			CSTValue * pStvalDim = nullptr;
-			if (!pTinlitDim || pTinlitDim->m_tink != TINK_Literal)
+		case PARK_ReferenceDecl:
 			{
-				EmitError(pTcwork, pStnodIt, "Only static sized arrays are currently supported");
-				*pFIsValidTypeSpec = false;
-			}
-			else
+				STypeInfoPointer * pTinptr = EWC_NEW(pAlloc, STypeInfoPointer) STypeInfoPointer();
+				pSymtab->AddManagedTin(pTinptr);
+				pStnodIt->m_pTin = pTinptr;
+
+				pTinPrev = pTinptr;
+				*ppTinCur = pTinptr;
+				ppTinCur = &pTinptr->m_pTinPointedTo;
+
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				pStnodIt = pStnodIt->PStnodChild(0);
+			} break;
+		case PARK_ArrayDecl:
 			{
-				STypeInfo * pTinCount = pSymtab->PTinBuiltin("s8");
-				STypeInfo * pTinPromoted = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
-				if (!FCanImplicitCast(pTinPromoted, pTinCount))
+				STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+				pSymtab->AddManagedTin(pTinary);
+				pStnodIt->m_pTin = pTinary;
+
+				*ppTinCur = pTinary;
+				ppTinCur = &pTinary->m_pTin;
+
+				CSTNode * pStnodDim = pStnodIt->PStnodChild(0);
+				STypeInfoLiteral * pTinlitDim = (STypeInfoLiteral *)pStnodDim->m_pTin;
+				CSTValue * pStvalDim = nullptr;
+				if (!pTinlitDim || pTinlitDim->m_tink != TINK_Literal)
 				{
-					EmitError(pTcwork, pStnodIt, "static integer array size expected");
+					EmitError(pTcwork, pStnodIt, "Only static sized arrays are currently supported");
 					*pFIsValidTypeSpec = false;
 				}
 				else
 				{
-					FinalizeLiteralType(pSymtab, pTinCount, pStnodDim);
-					pStvalDim = pStnodDim->m_pStval;
+					STypeInfo * pTinCount = pSymtab->PTinBuiltin("s8");
+					STypeInfo * pTinPromoted = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
+					if (!FCanImplicitCast(pTinPromoted, pTinCount))
+					{
+						EmitError(pTcwork, pStnodIt, "static integer array size expected");
+						*pFIsValidTypeSpec = false;
+					}
+					else
+					{
+						FinalizeLiteralType(pSymtab, pTinCount, pStnodDim);
+						pStvalDim = pStnodDim->m_pStval;
+					}
 				}
-			}
 
-			if (!pStvalDim)
-				return nullptr;
+				if (!pStvalDim)
+					return nullptr;
 
-			pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnodIt, pStvalDim);
-			pTinary->m_aryk = ARYK_Static;
+				pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnodIt, pStvalDim);
+				pTinary->m_aryk = ARYK_Static;
 
-			pStnodIt = pStnodIt->PStnodChild(1);
-		}
-		if (pStnodIt->m_park == PARK_Identifier)
-		{
-			if (pTinFinal->m_tink == TINK_ForwardDecl &&
-				EWC_FVERIFY(pTinPrev != nullptr, "how did we get here without a prev type info?"))
+				pStnodIt = pStnodIt->PStnodChild(1);
+			} break;
+		case PARK_MemberLookup:
 			{
-				STypeInfoForwardDecl * pTinfwd = (STypeInfoForwardDecl *)pTinFinal;
-				pTinfwd->m_arypTinReferences.Append(pTinPrev);
-			}
+				// don't need to update pSymtab, already have pTinFinal
+				EWC_ASSERT(pStnodIt->CStnodChild() == 2, "Expected Lhs.Rhs in PARK_MemberLookup");
+				pStnodIt = pStnodIt->PStnodChild(1);
+			} break;
+		case PARK_Identifier:
+			{
+				if (pTinFinal->m_tink == TINK_ForwardDecl &&
+					EWC_FVERIFY(pTinPrev != nullptr, "how did we get here without a prev type info?"))
+				{
+					STypeInfoForwardDecl * pTinfwd = (STypeInfoForwardDecl *)pTinFinal;
+					pTinfwd->m_arypTinReferences.Append(pTinPrev);
+				}
 
-			*ppTinCur = pTinFinal;
-			ppTinCur = nullptr;
-			break;
+				*ppTinCur = pTinFinal;
+				ppTinCur = nullptr;
+				pStnodIt = nullptr;
+			} break;
 		}
 	}
 	return pTinReturn;
@@ -1130,6 +1155,7 @@ bool FDoesOperatorReturnBool(PARK park)
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
 {
+	// BB - could just store the members in a contiguous array... simplify this loop
 	auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
 	for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb)
 	{
@@ -1139,6 +1165,13 @@ STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString 
 
 	pTypemembMax = pTinstruct->m_aryTypemembConstant.PMac();
 	for (auto pTypememb = pTinstruct->m_aryTypemembConstant.A(); pTypememb != pTypemembMax; ++pTypememb)
+	{
+		if (pTypememb->m_strName == strMemberName)
+			return pTypememb;
+	}
+
+	pTypemembMax = pTinstruct->m_aryTypemembStruct.PMac();
+	for (auto pTypememb = pTinstruct->m_aryTypemembStruct.A(); pTypememb != pTypemembMax; ++pTypememb)
 	{
 		if (pTypememb->m_strName == strMemberName)
 			return pTypememb;
@@ -1154,6 +1187,32 @@ CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
 	auto pStvalRet = EWC_NEW(pAlloc, CSTValue) CSTValue();
 	*pStvalRet = *pStval;
 	return pStvalRet;
+}
+
+bool FIsType(CSTNode * pStnod)
+{
+	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
+		return false;
+
+	auto pSym = pStnod->m_pSym;
+	if (!pSym)
+	{
+		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
+		return false;
+	}
+
+	return pSym->m_grfsym.FIsSet(FSYM_IsType);
+}
+
+bool FVerifyIsInstance(STypeCheckWorkspace * pTcwork, CSTNode * pStnod)
+{
+	if (FIsType(pStnod))
+	{
+		CString strLhs = StrFromTypeInfo(pStnod->m_pTin);
+		EmitError(pTcwork, pStnod, "Invalid use of type '%s' as an instance type", strLhs.PChz());
+		return false;
+	}
+	return true;
 }
 
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
@@ -1255,7 +1314,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 																				StrFromIdentifier(pStnodIdent),
 																				pStnodIdent->m_lexloc, 
 																				pTcsentTop->m_grfsymlook);
-								OnTypeComplete(pTcwork, pSymIdent);
 							}
 						}
 
@@ -1294,7 +1352,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							return TCRET_StoppingError;
 
 						pStnod->m_pSym = pSymProc;
-						PopTcsent(pTcfram);
+						EWC_ASSERT(pStnod->m_pSym, "null symbol");
+
+						PopTcsent(pTcfram, pStnod);
 
 						pStnod->m_strees = STREES_TypeChecked;
 						OnTypeComplete(pTcwork, pSymProc);
@@ -1413,7 +1473,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 					pStnod->m_pTin = pTinReturn;
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram);
+					PopTcsent(pTcfram, pStnod);
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
@@ -1486,10 +1546,16 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						{
 							pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
 						}
+
+						pTypemembMax = pTinstruct->m_aryTypemembStruct.PMac();
+						for (auto pTypememb = pTinstruct->m_aryTypemembStruct.A(); pTypememb != pTypemembMax; ++pTypememb)
+						{
+							pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
+						}
 					}
 
 
-					PopTcsent(pTcfram);
+					PopTcsent(pTcfram, pStnod);
 
 					pStnod->m_strees = STREES_TypeChecked;
 					OnTypeComplete(pTcwork, pSymStruct);
@@ -1504,21 +1570,19 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				if (EWC_FVERIFY(!strIdent.FIsEmpty(), "identifier node with no value"))
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-					SSymbol * pSym;
-					auto pTin = pSymtab->PTinLookup(strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook, &pSym);
-
-					if (pTcsentTop->m_tcctx == TCCTX_TypeSpecification && pTin && !pSym)
-					{
-						// We found a built in type.
-						pStnod->m_pTin = pTin;
-						pStnod->m_pSym = pSym;
-					}
-					else if (!pSym || !pSym->m_pStnodDefinition)
+					auto pSym = pSymtab->PSymLookup(strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
+					if (!pSym)
 					{
 						EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", strIdent.PChz());
 						return TCRET_StoppingError;
 					}
-					else
+
+					if (pSym->m_grfsym.FIsSet(FSYM_IsBuiltIn))
+					{
+						pStnod->m_pTin = pSym->m_pTin;
+						pStnod->m_pSym = pSym;
+					}
+					else if (EWC_FVERIFY(pSym->m_pStnodDefinition, "Non-built-in types must have a STNode"))
 					{
 						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
 						if (pStnodDefinition->m_park == PARK_Decl || 
@@ -1553,7 +1617,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 				}
 
-				PopTcsent(pTcfram);
+				PopTcsent(pTcfram, pStnod);
 				pStnod->m_strees = STREES_TypeChecked;
 			}break;
 
@@ -1565,7 +1629,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 				{
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram);
+					PopTcsent(pTcfram, pStnod);
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
@@ -1589,7 +1653,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 			case PARK_VariadicArg:
 			{
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram);
+				PopTcsent(pTcfram, pStnod);
 			} break;
 			case PARK_ConstantDecl:
 			{
@@ -1626,14 +1690,13 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				{
 					CSTNode * pStnodType = pStnod->PStnodChild(pStdecl->m_iStnodType);
 
-					SSymbol * pSymType = nullptr;
 					bool fIsValidTypeSpec;
 					STypeInfo * pTinType = PTinFromTypeSpecification(
 											pTcwork,
 											pSymtab,
 											pStnodType,
 											pTcsentTop->m_grfsymlook,
-											&pSymType,
+											nullptr,
 											&fIsValidTypeSpec);
 
 					if (!fIsValidTypeSpec)
@@ -1674,7 +1737,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram);
+				PopTcsent(pTcfram, pStnod);
 			} break;
 			case PARK_Decl:
 			{
@@ -1805,7 +1868,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram);
+					PopTcsent(pTcfram, pStnod);
 				}
 			}break;
 			case PARK_Literal:
@@ -1824,7 +1887,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 				
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram);
+				PopTcsent(pTcfram, pStnod);
 			}break;
 
 			case PARK_AssignmentOp:
@@ -1838,13 +1901,15 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 						STypeInfo * pTinRhs = pStnodRhs->m_pTin;
 
+						if (!FVerifyIsInstance(pTcwork, pStnodLhs) || !FVerifyIsInstance(pTcwork, pStnodRhs))
+							return TCRET_StoppingError;
+
 						TINK tinkLhs = TINK_Nil;
 						if (EWC_FVERIFY(pTinLhs, "unexpected unknown type in assignment op LHS"))
 						{
 							bool fIsValidLhs = FIsValidLhs(pStnodLhs);
 							if (!fIsValidLhs)
 							{
-								(void) FIsValidLhs(pStnod);
 								CString strLhs = StrFromTypeInfo(pTinLhs);
 								EmitError(pTcwork, pStnod, "%s does not provide an assignment operator", strLhs.PChz());
 								return TCRET_StoppingError;
@@ -1903,7 +1968,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram);
+					PopTcsent(pTcfram, pStnod);
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
@@ -1961,7 +2026,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pTypememb->m_pStnod->m_pStval);
 				}
-				PopTcsent(pTcfram);
+				PopTcsent(pTcfram, pStnod);
 
 			} break;
 			case PARK_ArrayElement:
@@ -2013,7 +2078,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinIndex, pStnodIndex);
 				
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram);
+				PopTcsent(pTcfram, pStnod);
 			} break;
 			case PARK_ReservedWord:
 			{
@@ -2063,7 +2128,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinBool, pStnodPred);
 
 							pStnod->m_strees = STREES_TypeChecked;
-							PopTcsent(pTcfram);
+							PopTcsent(pTcfram, pStnod);
 						} break;
 					case RWORD_Else:
 						{
@@ -2074,7 +2139,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							}
 
 							pStnod->m_strees = STREES_TypeChecked;
-							PopTcsent(pTcfram);
+							PopTcsent(pTcfram, pStnod);
 						} break;
 					case RWORD_Return:
 						{
@@ -2132,7 +2197,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								}
 
 								pStnod->m_strees = STREES_TypeChecked;
-								PopTcsent(pTcfram);
+								PopTcsent(pTcfram, pStnod);
 								break;
 							}
 							PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
@@ -2159,6 +2224,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						CSTNode * pStnodRhs = pStnod->PStnodChild(1);
 						STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 						STypeInfo * pTinRhs = pStnodRhs->m_pTin;
+
+						if (!FVerifyIsInstance(pTcwork, pStnodLhs) || !FVerifyIsInstance(pTcwork, pStnodRhs))
+							return TCRET_StoppingError;
 
 						if (EWC_FVERIFY((pTinLhs != nullptr) & (pTinRhs != nullptr), "unknown type in binary operation"))
 						{
@@ -2237,7 +2305,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram);
+					PopTcsent(pTcfram, pStnod);
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
@@ -2252,6 +2320,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						CSTNode * pStnodOperand = pStnod->PStnodChild(0);
 						STypeInfo * pTinOperand = pStnodOperand->m_pTin;
 						pStnod->m_pTinOperand = pTinOperand;
+
+						if (!FVerifyIsInstance(pTcwork, pStnodOperand))
+							return TCRET_StoppingError;
 
 						if (EWC_FVERIFY(pTinOperand != nullptr, "unknown type in unary operation"))
 						{
@@ -2396,7 +2467,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram);
+					PopTcsent(pTcfram, pStnod);
 					break;
 				}
 				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
@@ -2552,9 +2623,16 @@ void PerformTypeCheck(
 
 		if (tcret == TCRET_StoppingError)
 		{
+			// make sure we've reported at least one error.
+			if (pErrman->m_cError == 0)
+			{
+				SLexerLocation lexloc;
+				EmitError(pErrman, &lexloc, "Unknown error in type checker, quitting.");
+			}
+
 			while (pTcfram->m_aryTcsent.C())
 			{
-				PopTcsent(pTcfram);
+				PopTcsent(pTcfram, nullptr);
 			}
 
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);

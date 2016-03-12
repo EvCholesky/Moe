@@ -189,6 +189,8 @@ struct SLexerLocation // tag = lexloc
 
 						return m_strFilename.Hv() <= lexlocRhs.m_strFilename.Hv();
 					}
+	bool			FIsValid() const
+						{ return m_dB >= 0;}
 
 	EWC::CString	m_strFilename;
 	s32				m_dB;

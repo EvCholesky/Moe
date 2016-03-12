@@ -79,6 +79,25 @@ TestNestedMethod :: (n : s32)
 	printf("return = %f\n", g);
 }
 
+TestIfElse :: ()
+{
+	printf("\nIf/Else:\n");
+
+	CLoop :: 4;
+	n := 0;
+	while n < CLoop
+	{
+		if n == 0
+			printf("(if) %d == 0\n",n);
+		else if n < 2
+			printf("(else if) %d < 2\n",n);
+		else
+			printf("(else) %d\n",n);
+		++n;
+	}
+
+}
+
 TestInitializers :: ()
 {
 	printf("\nInitializers:\n");	
@@ -132,12 +151,92 @@ TestInitializers :: ()
 	}
 }
 
+TestStructures :: ()
+{
+	printf("\nStructures:\n");
+
+	SChild :: struct
+	{
+		m_n : s32;
+		m_childSelf : * SChild; 	
+	}
+
+	SRoot :: struct
+	{
+		m_child : SChild;
+		m_rootSelf : * SRoot;
+	}
+
+	root : SRoot;
+	root.m_rootSelf = *root;
+	root.m_child.m_childSelf = *root.m_child;
+
+	root.m_child.m_n = 1234;
+
+	printf("%d = %d", root.m_child.m_n, root.m_rootSelf.m_rootSelf.m_child.m_childSelf.m_childSelf.m_n);
+
+
+	SOuter :: struct
+	{
+	 	m_n : s8;	
+
+	 	SNested :: struct
+	 	{
+	 		NestedCount :: 3;
+	 		m_nNested := 17;
+	 	}
+	}
+
+	aNest : [SOuter.SNested.NestedCount] SOuter.SNested;
+
+	iNest := 0;
+	while iNest < SOuter.SNested.NestedCount
+	{
+		printf("aNest[%d] = %d\n", iNest, aNest[iNest].m_nNested);
+		++iNest;
+	}
+}
+
+TestRecursion :: ()
+{
+	printf("\nRecursion:\n");
+
+	NFactorial :: (n : int) -> int
+	{
+		if n > 1
+		{
+			return n * NFactorial(n-1);
+		}
+		return 1;
+	}
+
+	printf("4! = %d (24)\n", NFactorial(4));
+
+	MethodA :: (n : int)
+	{
+		if (n > 0)	
+			MethodB(n-1);
+
+	}
+
+	MethodB :: (n : int)
+	{
+		printf("MethodB = %d\n", n);
+		MethodA(n);
+	}
+
+	MethodA(5);
+}
+
 main :: () -> int 
 {
 	TestOperators();
 	TestPointers();
-	TestInitializers();
+	TestIfElse();
 	TestNestedMethod(20);
+	TestInitializers();
+	TestStructures();
+	TestRecursion();
 
 	return 1;
 }

@@ -765,11 +765,30 @@ CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 
 CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	// TODO: not supporting nested types here
-
 	CSTNode * pStnod = PStnodParseIdentifier(pParctx, pJlex);
 	if (pStnod)
 	{
+		while ( pJlex->m_jtok == JTOK('.'))
+		{
+			JtokNextToken(pJlex); // consume '.'
+			SLexerLocation lexloc(pJlex);
+
+			JTOK jtokPrev = JTOK(pJlex->m_jtok);	
+			CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pJlex);
+			if (!pStnodIdent)
+			{
+				ParseError(pParctx, pJlex, "Expected identifier after '.' before %s", PChzFromJtok(jtokPrev));
+			}
+			else
+			{
+				CSTNode * pStnodMember = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodMember->m_jtok = jtokPrev;
+				pStnodMember->m_park = PARK_MemberLookup;
+				pStnodMember->IAppendChild(pStnod);
+				pStnodMember->IAppendChild(pStnodIdent);
+				pStnod = pStnodMember;
+			}
+		}
 		return pStnod;
 	}
 
@@ -903,7 +922,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 	}
 
 	CSymbolTable * pSymtab = pParctx->m_pSymtab;
-	pSymtab->PSymEnsure(StrFromIdentifier(pStnodIdent), pStnodDecl);
+	pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
 
 	// check to see if our type is known
 	if (pStdecl->m_iStnodType >= 0)
@@ -1269,7 +1288,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					}
 				}
 
-				SSymbol * pSymProc = pSymtabParent->PSymEnsure(StrFromIdentifier(pStnodIdent), pStnodProc);
+				auto pErrman = pParctx->m_pWork->m_pErrman;
+				SSymbol * pSymProc = pSymtabParent->PSymEnsure(pErrman, StrFromIdentifier(pStnodIdent), pStnodProc);
 				pSymProc->m_pTin = pTinproc;
 
 				pSymtabParent->AddManagedTin(pTinproc);
@@ -1345,7 +1365,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				pSymtabParent->AddManagedTin(pTinenum);
 
-				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(strIdent, pStnodEnum);
+				auto pErrman = pParctx->m_pWork->m_pErrman;
+				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType);
+				pSymStruct->m_grfsym.AddFlags(FSYM_IsType);
 				pSymStruct->m_pTin = pTinenum;
 
 				return pStnodEnum;
@@ -1384,17 +1406,20 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				int cStnodField = 0;
 				int cStnodConstant = 0;
+				int cStnodStruct = 0;
 				CSTNode * const * ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for (auto ppStnodMemberIt = ppStnodMember; ppStnodMemberIt != ppStnodMemberMax; ++ppStnodMemberIt)
 				{
 					switch ((*ppStnodMemberIt)->m_park)
 					{
-					case PARK_Decl:			++cStnodField; break;
-					case PARK_ConstantDecl: ++cStnodConstant; break;
+					case PARK_Decl:				++cStnodField; break;
+					case PARK_ConstantDecl:		++cStnodConstant; break;
+					case PARK_StructDefinition:	++cStnodStruct; break;
 					default: EWC_ASSERT(false, "Unexpected member in structure %s", strIdent.PChz());
 					}
 				}
 
+				EWC_ASSERT(cStnodMember >= (cStnodField + cStnodConstant + cStnodStruct), "bad member count");
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
 								cStnodMember * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
@@ -1406,23 +1431,48 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 																		EWC_ALIGN_OF(STypeStructMember));
 				pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cStnodField);
 				pTinstruct->m_aryTypemembConstant.SetArray(aTypememb + cStnodField, 0, cStnodConstant);
+				pTinstruct->m_aryTypemembStruct.SetArray(aTypememb + cStnodField + cStnodConstant, 0, cStnodStruct);
 
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
 					CSTNode * pStnodMember = *ppStnodMember;
-					STypeStructMember * pTypememb = (pStnodMember->m_park == PARK_ConstantDecl) ? 
-														pTinstruct->m_aryTypemembConstant.AppendNew() :
-														pTinstruct->m_aryTypemembField.AppendNew();
+					STypeStructMember * pTypememb;
+					switch (pStnodMember->m_park)
+					{
+					case PARK_Decl:				
+						{
+							pTypememb = pTinstruct->m_aryTypemembField.AppendNew();
+							auto pStnodIdentifier = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
+							pTypememb->m_strName = StrFromIdentifier(pStnodIdentifier);
+						} break;
+					case PARK_ConstantDecl:		
+						{
+							pTypememb = pTinstruct->m_aryTypemembConstant.AppendNew();
+							auto pStnodIdentifier = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
+							pTypememb->m_strName = StrFromIdentifier(pStnodIdentifier);
+						} break;
+					case PARK_StructDefinition:	
+						{
+							pTypememb = pTinstruct->m_aryTypemembStruct.AppendNew();
+							if (EWC_FVERIFY(pStnodMember->m_pSym, "nested structure with no symbol"))
+							{
+								pTypememb->m_strName = pStnodMember->m_pSym->m_strName;
+							}
+						} break;
+					default: 
+						EWC_ASSERT(false, "Unexpected member in structure %s", strIdent.PChz());
+						continue;
+					}
 
 					pTypememb->m_pStnod = pStnodMember;
-					auto pStnodIdentifier = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
-					pTypememb->m_strName = StrFromIdentifier(pStnodIdentifier);
 					pTypememb->m_pTin = pStnodMember->m_pTin;
 				}
 
 				pParctx->m_pSymtab->AddManagedTin(pTinstruct);
 
-				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(strIdent, pStnodStruct);
+				auto pErrman = pParctx->m_pWork->m_pErrman;
+				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodStruct, FSYM_IsType);
+				pStnodStruct->m_pSym = pSymStruct;
 				pSymStruct->m_pTin = pTinstruct;
 				pStnodStruct->m_pTin = pTinstruct;
 
@@ -1456,7 +1506,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 			pStdecl->m_iStnodInit = pStnodConst->IAppendChild(pStnodInit);
 
 			CSymbolTable * pSymtab = pParctx->m_pSymtab;
-			pSymtab->PSymEnsure(strIdent, pStnodConst);
+			auto pErrman = pParctx->m_pWork->m_pErrman;
+			pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst);
 
 			return pStnodConst;
 		}
@@ -1800,30 +1851,30 @@ CSymbolTable::~CSymbolTable()
 	}
 }
 
-void AddBuiltInType(CSymbolTable * pSymtab, const CString & strName, TINK tink)
+void AddSimpleBuiltInType(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, TINK tink)
 {
 	STypeInfo * pTin = EWC_NEW(pSymtab->m_pAlloc, STypeInfo) STypeInfo(strName.PChz(), tink);
 
-	pSymtab->AddNamedType(nullptr, nullptr, pTin);
+	pSymtab->AddBuiltInType(pErrman, nullptr, pTin);
 }
 
-void AddBuiltInInteger(CSymbolTable * pSymtab, const CString & strName, u32 cBit, bool fSigned)
+void AddBuiltInInteger(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, u32 cBit, bool fSigned)
 {
 	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strName.PChz(), cBit, fSigned);
-	pSymtab->AddNamedType(nullptr, nullptr, pTinint);
+	pSymtab->AddBuiltInType(pErrman, nullptr, pTinint);
 }
 
-void AddBuiltInFloat(CSymbolTable * pSymtab, const CString & strName, u32 cBit)
+void AddBuiltInFloat(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, u32 cBit)
 {
 	STypeInfoFloat * pTinfloat = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(strName.PChz(), cBit);
-	pSymtab->AddNamedType(nullptr, nullptr, pTinfloat);
+	pSymtab->AddBuiltInType(nullptr, nullptr, pTinfloat);
 }
 
-void AddBuiltInLiteral(CSymbolTable * pSymtab, const CString & strName, LITK litk, s8 cBit, bool fIsSigned)
+void AddBuiltInLiteral(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, LITK litk, s8 cBit, bool fIsSigned)
 {
 	STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
 	pTinlit->m_strName = strName;
-	pSymtab->AddNamedType(nullptr, nullptr, pTinlit);
+	pSymtab->AddBuiltInType(nullptr, nullptr, pTinlit);
 
 	pTinlit->m_litty.m_litk = litk;
 	pTinlit->m_litty.m_cBit = cBit;
@@ -1838,47 +1889,51 @@ void AddBuiltInLiteral(CSymbolTable * pSymtab, const CString & strName, LITK lit
 	paryPTinlit->Append(pTinlit);
 }
 
-void CSymbolTable::AddBuiltInSymbols()
+void CSymbolTable::AddBuiltInSymbols(SErrorManager * pErrman)
 {
-	AddBuiltInType(this, "bool", TINK_Bool);
-	AddBuiltInType(this, "void", TINK_Void);
-	AddBuiltInType(this, "string", TINK_String);
+	AddSimpleBuiltInType(pErrman, this, "bool", TINK_Bool);
+	AddSimpleBuiltInType(pErrman, this, "void", TINK_Void);
+	AddSimpleBuiltInType(pErrman, this, "string", TINK_String);
 
-	AddBuiltInInteger(this, "u8", 8, false);
-	AddBuiltInInteger(this, "u16", 16, false);
-	AddBuiltInInteger(this, "u32", 32, false);
-	AddBuiltInInteger(this, "uint", 64, false);
-	AddBuiltInInteger(this, "u64", 64, false);
+	AddBuiltInInteger(pErrman, this, "u8", 8, false);
+	AddBuiltInInteger(pErrman, this, "u16", 16, false);
+	AddBuiltInInteger(pErrman, this, "u32", 32, false);
+	AddBuiltInInteger(pErrman, this, "uint", 64, false);
+	AddBuiltInInteger(pErrman, this, "u64", 64, false);
 
-	AddBuiltInInteger(this, "s8", 8, true);
-	AddBuiltInInteger(this, "s16", 16, true);
-	AddBuiltInInteger(this, "s32", 32, true);
-	AddBuiltInInteger(this, "int", 64, true);
-	AddBuiltInInteger(this, "s64", 64, true);
+	AddBuiltInInteger(pErrman, this, "s8", 8, true);
+	AddBuiltInInteger(pErrman, this, "s16", 16, true);
+	AddBuiltInInteger(pErrman, this, "s32", 32, true);
+	AddBuiltInInteger(pErrman, this, "int", 64, true);
+	AddBuiltInInteger(pErrman, this, "s64", 64, true);
 
-	AddBuiltInFloat(this, "float", 32);
-	AddBuiltInFloat(this, "f32", 32);
-	AddBuiltInFloat(this, "double", 64);
-	AddBuiltInFloat(this, "f64", 64);
+	AddBuiltInFloat(pErrman, this, "float", 32);
+	AddBuiltInFloat(pErrman, this, "f32", 32);
+	AddBuiltInFloat(pErrman, this, "double", 64);
+	AddBuiltInFloat(pErrman, this, "f64", 64);
 
-	AddBuiltInLiteral(this, "__bool_Literal", LITK_Bool, 8, false);
-	AddBuiltInLiteral(this, "__u8_Literal", LITK_Integer, 8, false);
-	AddBuiltInLiteral(this, "__u16_Literal", LITK_Integer, 16, false);
-	AddBuiltInLiteral(this, "__u32_Literal", LITK_Integer, 32, false);
-	AddBuiltInLiteral(this, "__u64_Literal", LITK_Integer, 64, false);
-	AddBuiltInLiteral(this, "__s8_Literal", LITK_Integer, 8, true);
-	AddBuiltInLiteral(this, "__s16_Literal", LITK_Integer, 16, true);
-	AddBuiltInLiteral(this, "__s32_Literal", LITK_Integer, 32, true);
-	AddBuiltInLiteral(this, "__s64_Literal", LITK_Integer, 64, true);
-	AddBuiltInLiteral(this, "__f32_Literal", LITK_Float, 32, true);
-	AddBuiltInLiteral(this, "__f64_Literal", LITK_Float, 64, true);
-	AddBuiltInLiteral(this, "__string_Literal", LITK_String, -1, true);
-	AddBuiltInLiteral(this, "__char_Literal", LITK_Char, 32, true);
-	AddBuiltInLiteral(this, "__void_Literal", LITK_Null, -1, true);
+	AddBuiltInLiteral(pErrman, this, "__bool_Literal", LITK_Bool, 8, false);
+	AddBuiltInLiteral(pErrman, this, "__u8_Literal", LITK_Integer, 8, false);
+	AddBuiltInLiteral(pErrman, this, "__u16_Literal", LITK_Integer, 16, false);
+	AddBuiltInLiteral(pErrman, this, "__u32_Literal", LITK_Integer, 32, false);
+	AddBuiltInLiteral(pErrman, this, "__u64_Literal", LITK_Integer, 64, false);
+	AddBuiltInLiteral(pErrman, this, "__s8_Literal", LITK_Integer, 8, true);
+	AddBuiltInLiteral(pErrman, this, "__s16_Literal", LITK_Integer, 16, true);
+	AddBuiltInLiteral(pErrman, this, "__s32_Literal", LITK_Integer, 32, true);
+	AddBuiltInLiteral(pErrman, this, "__s64_Literal", LITK_Integer, 64, true);
+	AddBuiltInLiteral(pErrman, this, "__f32_Literal", LITK_Float, 32, true);
+	AddBuiltInLiteral(pErrman, this, "__f64_Literal", LITK_Float, 64, true);
+	AddBuiltInLiteral(pErrman, this, "__string_Literal", LITK_String, -1, true);
+	AddBuiltInLiteral(pErrman, this, "__char_Literal", LITK_Char, 32, true);
+	AddBuiltInLiteral(pErrman, this, "__void_Literal", LITK_Null, -1, true);
 }
 
-SSymbol * CSymbolTable::PSymEnsure(const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
+SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
 {
+	SLexerLocation lexloc;
+	if (pStnodDefinition)
+		lexloc = pStnodDefinition->m_lexloc;
+
 	SSymbol * pSymPrev = nullptr;
 	SSymbol * pSym = nullptr;
 	SSymbol ** ppSym = m_hashHvPSym.Lookup(strName.Hv()); 
@@ -1890,8 +1945,8 @@ SSymbol * CSymbolTable::PSymEnsure(const CString & strName, CSTNode * pStnodDefi
 			pSymPrev = pSym;
 			pSym = nullptr;
 
-			// TODO: should be error
-			EWC_ASSERT(m_grfsymtab.FIsSet(FSYMTAB_Ordered), "shadowing symbol in unordered symbol table");
+			// Should shadowing a symbol be an error?
+			//EmitError(pErrman, &lexloc, "Shadowing symbol '%s' in unordered symbol table", strName.PChz());
 		}
 	}
 	
@@ -1908,13 +1963,12 @@ SSymbol * CSymbolTable::PSymEnsure(const CString & strName, CSTNode * pStnodDefi
 	pSym->m_pVal = nullptr;
 	pSym->m_pSymPrev = pSymPrev;
 
-	SLexerLocation lexloc(pStnodDefinition->m_lexloc);
 	while (pSymPrev)
 	{
-		EWC_ASSERT(
-			pSymPrev->m_pStnodDefinition->m_lexloc <= lexloc,
-			"expected previous symbols sorted in reverse lexical order");
-		lexloc = pSymPrev->m_pStnodDefinition->m_lexloc;
+		SLexerLocation lexlocPrev = (pSymPrev->m_pStnodDefinition) ? pSymPrev->m_pStnodDefinition->m_lexloc : SLexerLocation();
+		EWC_ASSERT(lexlocPrev <= lexloc, "expected previous symbols sorted in reverse lexical order");
+
+		lexloc = lexlocPrev;
 		pSymPrev = pSymPrev->m_pSymPrev;
 	}
 
@@ -1933,7 +1987,8 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 
 			while (pSym)
 			{
-				if ((fIsOrdered == false) | (pSym->m_pStnodDefinition->m_lexloc <= lexloc))
+				SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
+				if ((fIsOrdered == false) | (lexlocSym <= lexloc))
 				{
 					return pSym;
 				}
@@ -1951,7 +2006,8 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 		if (ppSym)
 		{
 			bool fIsOrdered = pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered);
-			if ((fIsOrdered == false) | ((*ppSym)->m_pStnodDefinition->m_lexloc <= lexlocChild))
+			SLexerLocation lexlocSym = ((*ppSym)->m_pStnodDefinition) ? (*ppSym)->m_pStnodDefinition->m_lexloc : SLexerLocation();
+			if ((fIsOrdered == false) | (lexlocSym <= lexlocChild))
 			{
 				return *ppSym;
 			}
@@ -1960,42 +2016,6 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 		pSymtab = pSymtab->m_pSymtabParent;
 	}
 	return nullptr; 
-}
-
-STypeInfo *	CSymbolTable::PTinLookup(
-	const CString & str,
-	const SLexerLocation & lexloc,
-	GRFSYMLOOK grfsymlook,
-	SSymbol ** ppSym)
-{
-	// look for a symbol by this name (symbols can shadow type decls)
-	SSymbol * pSym = PSymLookup(str, lexloc, grfsymlook);
-	if (ppSym)
-		*ppSym = pSym;
-
-	if (pSym)
-	{
-		return pSym->m_pTin;
-	}
-
-	// look for a named type
-	if (grfsymlook.FIsSet(FSYMLOOK_Local))
-	{
-		STypeInfo ** ppTin = m_hashHvPTin.Lookup(str.Hv()); 
-		if (ppTin)
-			return *ppTin;
-	}
-
-	CSymbolTable * pSymtab = (grfsymlook.FIsSet(FSYMLOOK_Ancestors)) ? m_pSymtabParent : nullptr;
-	while (pSymtab)
-	{
-		STypeInfo ** ppTin = pSymtab->m_hashHvPTin.Lookup(str.Hv()); 
-		if (ppTin)
-			return *ppTin;
-
-		pSymtab = pSymtab->m_pSymtabParent;
-	}
-	return nullptr;
 }
 
 STypeInfoLiteral * CSymbolTable::PTinlitFromLitk(LITK litk)
@@ -2040,28 +2060,10 @@ STypeInfoLiteral * CSymbolTable::PTinlitFromLitk(LITK litk, int cBit, bool fIsSi
 STypeInfo *	CSymbolTable::PTinBuiltin(const EWC::CString & str)
 {
 	SLexerLocation lexloc;
-	return PTinLookup(str, lexloc);
-}
-
-STypeInfoForwardDecl * CSymbolTable::PTinfwdLookup(const CString & str, GRFSYMLOOK grfsymlook)
-{
-	if (grfsymlook.FIsSet(FSYMLOOK_Local))
-	{
-		STypeInfoForwardDecl ** ppTinfwd = m_hashHvPTinfwd.Lookup(str.Hv()); 
-		if (ppTinfwd)
-			return *ppTinfwd;
-	}
-
-	CSymbolTable * pSymtab = (grfsymlook.FIsSet(FSYMLOOK_Ancestors)) ? m_pSymtabParent : nullptr;
-	while (pSymtab)
-	{
-		STypeInfoForwardDecl ** ppTinfwd = pSymtab->m_hashHvPTinfwd.Lookup(str.Hv()); 
-		if (ppTinfwd)
-			return *ppTinfwd;
-
-		pSymtab = pSymtab->m_pSymtabParent;
-	}
-	return nullptr; 
+	auto pSym = PSymLookup(str, lexloc);
+	if (pSym)
+		return pSym->m_pTin;
+	return nullptr;
 }
 
 STypeInfoPointer * CSymbolTable::PTinptrGetReference(STypeInfo * pTinPointedTo)
@@ -2073,60 +2075,6 @@ STypeInfoPointer * CSymbolTable::PTinptrGetReference(STypeInfo * pTinPointedTo)
 
 	pTinptr->m_pTinPointedTo = pTinPointedTo;
 	return pTinptr;
-}
-
-STypeInfoForwardDecl * CSymbolTable::PTinfwdBegin(const CString & str)
-{
-	STypeInfoForwardDecl * pTinfwd = EWC_NEW(m_pAlloc, STypeInfoForwardDecl) STypeInfoForwardDecl(m_pAlloc, str.PChz());
-
-	m_arypTinManaged.Append(pTinfwd);
-
-	STypeInfoForwardDecl ** ppTinfwd = nullptr;
-	FINS fins = m_hashHvPTinfwd.FinsEnsureKey(str.Hv(), &ppTinfwd);
-	if (fins == FINS_AlreadyExisted)
-	{
-		if (!EWC_FASSERT(false, "trying to begin forward declaration that is already registered"))
-			return *ppTinfwd;
-	}
-
-	*ppTinfwd = pTinfwd;
-	return pTinfwd;
-}
-
-void CSymbolTable::EndForwardDecl(const CString & str, STypeInfoForwardDecl * pTinfwd, STypeInfo * pTinResolved)
-{
-	//STypeInfoForwardDecl * pTinfwd = PTinfwdLookup(str, FSYMLOOK_Local);
-	//if (!EWC_FVERIFY(pTinfwd, "failed to find forward declaration for resolution"))
-	//	return;
-
-	// loop over all the references to this forward decl and redirect them to point at the actual type
-
-	STypeInfo ** ppTinMac = pTinfwd->m_arypTinReferences.PMac();
-	for (STypeInfo ** ppTin = pTinfwd->m_arypTinReferences.A(); ppTin != ppTinMac; ++ppTin)
-	{
-		switch ((*ppTin)->m_tink)
-		{
-		case TINK_Pointer:
-			{
-				STypeInfoPointer * pTinptr = (STypeInfoPointer *)*ppTin;
-				if (EWC_FVERIFY(pTinptr->m_pTinPointedTo == pTinfwd, "bad reference in forward declaration"))
-				{
-					pTinptr->m_pTinPointedTo = pTinResolved;
-				} 
-			}break;
-		case TINK_Array:
-			{
-				STypeInfoArray * pTinary = (STypeInfoArray *)*ppTin;
-				if (EWC_FVERIFY(pTinary->m_pTin == pTinfwd, "bad reference in forward declaration"))
-				{
-					pTinary->m_pTin = pTinResolved;
-				} 
-			}break;
-		default: EWC_ASSERT(false, "unexpected type info kind in EndForwardDecl()");
-			break;
-		}
-	}
-	pTinfwd->m_arypTinReferences.Clear();
 }
 
 void CSymbolTable::AddManagedTin(STypeInfo * pTin)
@@ -2142,11 +2090,10 @@ void CSymbolTable::AddManagedSymtab(CSymbolTable * pSymtab)
 	m_pSymtabNextManaged = pSymtab;
 }
 
-void CSymbolTable::AddNamedType(CParseContext * pParctx, SJaiLexer * pJlex, STypeInfo * pTin)
+void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SJaiLexer * pJlex, STypeInfo * pTin)
 {
-	// NOTE: This function should only be used to add types without symbols because we can't check lexical
-	//  ordering for raw STypeInfos
-	EWC_ASSERT(!m_grfsymtab.FIsSet(FSYMTAB_Ordered), "adding type without symbol to ordered symbol table");
+	// NOTE: This function is for built-in types without a lexical order, so we shouldn't be calling it on an ordered table
+	EWC_ASSERT(!m_grfsymtab.FIsSet(FSYMTAB_Ordered), "Cannot add built-in types to ordered symbol table.");
 
 	m_arypTinManaged.Append(pTin);
 	const CString & strName = pTin->m_strName;
@@ -2160,14 +2107,14 @@ void CSymbolTable::AddNamedType(CParseContext * pParctx, SJaiLexer * pJlex, STyp
 	if (fins == FINS_Inserted)
 	{
 		*ppTinValue = pTin;
+
+		auto pSym = PSymEnsure(pErrman, strName, nullptr, FSYM_IsBuiltIn | FSYM_IsType);
+		pSym->m_pTin = pTin;
 	}
 	else
 	{
-		EWC_ASSERT(pParctx && pJlex,"Two types encountered with same name (%s)", strName.PChz()); 
-		if (pParctx && pJlex)
-		{
-			ParseError(pParctx, pJlex, "Two types encountered with same name (%s)", strName.PChz());
-		}
+		SLexerLocation lexloc = (pJlex) ? SLexerLocation(pJlex) : SLexerLocation();
+		EmitError(pErrman, &lexloc, "Two types encountered with same name (%s)", strName.PChz());
 	}
 }
 

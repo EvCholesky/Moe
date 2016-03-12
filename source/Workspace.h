@@ -34,14 +34,19 @@ struct SErrorManager	//  // tag = errman
 				SErrorManager()
 				:m_pWork(nullptr)
 				,m_cError(0)
+				,m_cWarning(0)
 					{ ; }
 
 	void		Clear()
-					{ m_cError = 0; }
+					{ m_cError = 0; m_cWarning = 0;}
 
 	CWorkspace *	m_pWork;		// back pointer for SFile lookup inside EmitError
 	int				m_cError;
+	int				m_cWarning;
 };
+
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...);
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...);

@@ -22,9 +22,39 @@
 
 using namespace EWC;
 
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
+{
+	if (pLexloc && pLexloc->FIsValid())
+	{
+		s32 iLine;
+		s32 iCol;
+		CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
+
+		printf("%s(%d,%d) Warning: ", pLexloc->m_strFilename.PChz(), iLine, iCol);
+	}
+	else
+	{
+		printf("Internal Warning: ");
+	}
+	++pErrman->m_cWarning;
+	
+	if (pChz)
+	{
+		vprintf(pChz, ap);
+		printf("\n");
+	}
+}
+
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...)
+{
+	va_list ap;
+	va_start(ap, pChz);
+	EmitWarning(pErrman, pLexloc, pChz, ap);
+}
+
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
 {
-	if (pLexloc)
+	if (pLexloc && pLexloc->FIsValid())
 	{
 		s32 iLine;
 		s32 iCol;
@@ -182,7 +212,7 @@ void BeginWorkspace(CWorkspace * pWork)
 
 	pWork->m_pSymtab = pWork->PSymtabNew();
 	pWork->m_pSymtab->m_grfsymtab.Clear(FSYMTAB_Ordered);
-	pWork->m_pSymtab->AddBuiltInSymbols();
+	pWork->m_pSymtab->AddBuiltInSymbols(pWork->m_pErrman);
 }
 
 void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn)

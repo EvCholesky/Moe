@@ -199,6 +199,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 								,m_pStnodStruct(nullptr)
 								,m_aryTypemembField()
 								,m_aryTypemembConstant()
+								,m_aryTypemembStruct()
 									{ ; }
 	
 	LLVMOpaqueValue *				m_pLvalInitMethod;
@@ -208,6 +209,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	CSTNode *						m_pStnodStruct;
 	EWC::CAry<STypeStructMember>	m_aryTypemembField;
 	EWC::CAry<STypeStructMember>	m_aryTypemembConstant;
+	EWC::CAry<STypeStructMember>	m_aryTypemembStruct;	// member structures
 };
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);

@@ -24,10 +24,13 @@ struct LLVMOpaqueModule;
 struct LLVMOpaqueType;
 struct LLVMOpaqueValue;
 
+class CIRBuilderErrorContext;
 class CIRInstruction;
 class CSTNode;
 class CWorkspace;
 struct SSymbol;
+struct SErrorManager;
+struct STypeInfo;
 
 
 
@@ -42,6 +45,8 @@ public:
 	LLVMOpaqueBasicBlock *			m_pLblock;
 	EWC::CDynAry<CIRInstruction *>	m_arypInst;		// BB - eventually this should be replaced with something that has 
 													// better random insertion performance.
+	bool				m_fIsTerminated;
+	bool				m_fHasErrors;
 };
 
 
@@ -77,50 +82,49 @@ EWC_ENUM_UTILS(VALK);
 
 
 #define OPCODE_LIST \
+		OP(Error), \
 		OP(Ret), \
-		OP_RANGE(TerminalOp, Ret), \
+		OP_RANGE(TerminalOp, Ret) \
 		\
 		OP(Call), \
 		OP(CondBranch), \
 		OP(Branch), \
 		OP(Phi), \
-		OP_RANGE(JumpOp, TerminalOpMax), \
+		OP_RANGE(JumpOp, TerminalOpMax) \
 		\
-		OP(SAdd), \
-		OP(UAdd), \
+		OP(NAdd), \
 		OP(GAdd), \
-		OP(SSub), \
-		OP(USub), \
+		OP(NSub), \
 		OP(GSub), \
-		OP(SMul), \
-		OP(UMul), \
+		OP(NMul), \
 		OP(GMul), \
 		OP(SDiv), \
 		OP(UDiv), \
 		OP(GDiv), \
-		OP_RANGE(BinaryOp, JumpOpMax), \
+		OP_RANGE(BinaryOp, JumpOpMax) \
 		\
 		OP(NNeg), \
 		OP(GNeg), \
 		OP(Not), \
-		OP_RANGE(UnaryOp, BinaryOpMax), \
+		OP_RANGE(UnaryOp, BinaryOpMax) \
 		\
 		OP(NCmp), \
 		OP(GCmp), \
-		OP_RANGE(CmpOp, UnaryOpMax), \
+		OP_RANGE(CmpOp, UnaryOpMax) \
 		\
 		OP(Shl), \
-		OP(Shr), \
+		OP(AShr), \
+		OP(LShr), \
 		OP(And), \
 		OP(Or), \
 		OP(Xor), \
-		OP_RANGE(LogicOp, CmpOpMax), \
+		OP_RANGE(LogicOp, CmpOpMax) \
 		\
 		OP(Alloca), \
 		OP(Load), \
 		OP(Store), \
 		OP(GEP), \
-		OP_RANGE(MemoryOp, LogicOpMax), \
+		OP_RANGE(MemoryOp, LogicOpMax) \
 		\
 		OP(NTrunc), \
 		OP(SignExt), \
@@ -133,10 +137,10 @@ EWC_ENUM_UTILS(VALK);
 		OP(GExtend), \
 		OP(PtrToInt), \
 		OP(IntToPtr), \
-		OP_RANGE(CastOp, MemoryOpMax), \
+		OP_RANGE(CastOp, MemoryOpMax) \
 
 #define OP(x) IROP_##x
-#define OP_RANGE(range, PREV_VAL) IROP_##range##Max, IROP_##range##Min = IROP_##PREV_VAL, IROP_##range##Last = IROP_##range##Max - 1
+#define OP_RANGE(range, PREV_VAL) IROP_##range##Max, IROP_##range##Min = IROP_##PREV_VAL, IROP_##range##Last = IROP_##range##Max - 1,
 	enum IROP
 	{
 		OPCODE_LIST
@@ -194,7 +198,8 @@ public:
 						,m_irop(irop)
 							{ ; }
 
-	s8					CpValOperandMax();
+	bool				FIsError() const
+							{ return (m_irop == IROP_Error); }
 
 	s8					m_cpValOperand;		// current opcode count
 	IROP				m_irop;
@@ -300,42 +305,25 @@ public:
 	void				ActivateBlock(CIRBasicBlock * pBlock);
 	void				AddManagedVal(CIRValue * pVal);
 
-	CIRInstruction *	PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
-	CIRInstruction *	PInstCreateGAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-
-	CIRInstruction *	PInstCreateNSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
-	CIRInstruction *	PInstCreateGSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateNMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
-	CIRInstruction *	PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
-	CIRInstruction *	PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateNShr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
-	CIRInstruction *	PInstCreateNShl(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned);
-	CIRInstruction *	PInstCreateNAnd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateNOr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-
-	CIRInstruction *	PInstCreateNNeg(CIRValue * pValOperand, const char * pChzName, bool fIsSigned);
-	CIRInstruction *	PInstCreateGNeg(CIRValue * pValOperand, const char * pChzName);
-	CIRInstruction *	PInstCreateFNot(CIRValue * pValOperand, const char * pChzName);
-
 	CIRInstruction *	PInstCreateNCmp(NCMPPRED ncmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGCmp(GCMPPRED gcmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
 	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBasicBlock * pBlockTrue, CIRBasicBlock * pBlockFalse);
 	CIRInstruction *	PInstCreateBranch(CIRBasicBlock * pBlock);
 
-	CIRInstruction *	PInstCreateRet(CIRValue * pValRhs);
 	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
 	CIRInstruction *	PInstCreateGEP(CIRValue * pValLhs, LLVMOpaqueValue ** apLvalIndices, u32 cpIndices, const char * pChzName);
 
+	CIRInstruction *	PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, const char * pChzName);
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateCast(IROP irop, CIRValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
 
 	CIRInstruction *	PInstFromSymbol(SSymbol * pSym);
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
-	CIRInstruction *	PInstCreateLoad(CIRValue * pValPT, const char * pChzName);
 
-	CIRInstruction *	PInstReference(SSymbol * pSym, const char * pChzName);
-	CIRInstruction *	PInstDereference(CIRValue * pValDst, CIRValue * pValSrc);
+	CIRBuilderErrorContext *
+							m_pBerrctx;
 
 	LLVMOpaqueModule *		m_pLmoduleCur;
 	LLVMOpaqueBuilder *		m_pLbuild;

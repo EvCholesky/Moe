@@ -32,6 +32,27 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod);
 
 
 
+const char * PChzFromIrop(IROP irop)
+{
+	if (!EWC_FVERIFY((irop >= IROP_Nil) & (irop < IROP_Max), "unknown IR operand"))
+		return "(unknown)";
+
+	if (irop <= IROP_Nil)
+		return "nil";
+
+	#define OP(x) #x
+	#define OP_RANGE(x, y)
+	const char * s_mpIropPChz[] =
+	{
+		OPCODE_LIST
+	};
+	#undef OP_RANGE
+	#undef op
+
+	EWC_CASSERT(EWC_DIM(s_mpIropPChz) == IROP_Max, "missing IROP string");
+	return s_mpIropPChz[irop];
+}
+
 static inline size_t CChGetTypeString(LLVMOpaqueType * pLtype, char * pCh, const char * pChEnd)
 {
 	switch (LLVMGetTypeKind(pLtype))
@@ -83,6 +104,7 @@ CIRValue::CIRValue(VALK valk)
 CIRBasicBlock::CIRBasicBlock(EWC::CAlloc * pAlloc)
 :m_pLblock(nullptr)
 ,m_arypInst(pAlloc)
+,m_fIsTerminated(false)
 {
 }
 
@@ -93,7 +115,11 @@ CIRBasicBlock::~CIRBasicBlock()
 
 void CIRBasicBlock::Append(CIRInstruction * pInst)
 {
+	if (!EWC_FVERIFY(!m_fIsTerminated, "Appending instruction to a terminated block"))
+		return;
+
 	m_arypInst.Append(pInst);
+	m_fIsTerminated = (pInst->m_irop == IROP_Ret) | (pInst->m_irop == IROP_CondBranch) | (pInst->m_irop == IROP_Branch);
 }
 
 static inline s8 COperand(IROP irop)
@@ -106,11 +132,6 @@ static inline s8 COperand(IROP irop)
 		(irop == IROP_Store))
 		return 2;
 	return 1;
-}
-
-s8 CIRInstruction::CpValOperandMax()
-{
-	return COperand(m_irop);
 }
 
 
@@ -132,11 +153,42 @@ CIRProcedure::~CIRProcedure()
 	m_arypValManaged.Clear();
 }
 
+class CIRBuilderErrorContext // tag = berrctx
+{
+public:
+					CIRBuilderErrorContext(SErrorManager * pErrman, CIRBuilder * pBuild, CSTNode * pStnod);
+					~CIRBuilderErrorContext();
+
+	SErrorManager * m_pErrman;
+	CIRBuilder *	m_pBuild;
+	SLexerLocation	m_lexloc;
+	CIRBuilderErrorContext * 
+					m_pBerrctxPrev;
+};
+
+
+CIRBuilderErrorContext::CIRBuilderErrorContext(SErrorManager * pErrman, CIRBuilder * pBuild, CSTNode * pStnod)
+:m_pErrman(pErrman)
+,m_pBuild(pBuild)
+,m_lexloc(pStnod->m_lexloc)
+,m_pBerrctxPrev(pBuild->m_pBerrctx)
+{
+	pBuild->m_pBerrctx = this;
+}
+
+CIRBuilderErrorContext::~CIRBuilderErrorContext()
+{
+	EWC_ASSERT(m_pBuild->m_pBerrctx == this, "bad error context in builder");
+	m_pBuild->m_pBerrctx = m_pBerrctxPrev;
+}
+
 
 
 // Builder class Methods
 CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc)
-:m_pLbuild(nullptr)
+:m_pBerrctx(nullptr)
+,m_pLmoduleCur(nullptr)
+,m_pLbuild(nullptr)
 ,m_pAlloc(pAlloc)
 ,m_inspt()
 ,m_pProcCur(nullptr)
@@ -210,314 +262,6 @@ void CIRBuilder::PrintDump()
 	}
 
 	LLVMDumpModule(m_pLmoduleCur);
-}
-
-CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
-{
-	int cpValOperand = COperand(irop);
-	size_t cB = sizeof(CIRInstruction) + ewcMax((cpValOperand - 1), 0) * sizeof(CIRValue *);
-
-	CIRInstruction * pInst = (CIRInstruction *)m_pAlloc->EWC_ALLOC(cB, EWC_ALIGN_OF(CIRInstruction));
-	new (pInst) CIRInstruction(irop);
-	AddManagedVal(pInst);
-
-	pInst->m_apValOperand[0] = pValLhs;
-	if (cpValOperand > 1)
-	{
-		pInst->m_apValOperand[1] = pValRhs;
-	}
-	else
-	{
-		EWC_ASSERT(pValRhs == nullptr, "unexpected second operand");
-	}
-	pInst->m_cpValOperand = cpValOperand;
-
-	return pInst;
-}
-
-void CIRBuilder::AddManagedVal(CIRValue * pVal)
-{
-	if (EWC_FVERIFY(m_pProcCur, "adding managed value with no active procedure"))
-	{
-		m_pProcCur->m_arypValManaged.Append(pVal);
-	}
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
-{
-	CIRInstruction * pInst = PInstCreate((fSigned) ? IROP_SAdd : IROP_UAdd, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateGAdd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_GAdd, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildFAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
-{
-	CIRInstruction * pInst = PInstCreate((fSigned) ? IROP_SSub : IROP_USub, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateGSub(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_GSub, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildFSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
-{
-	CIRInstruction * pInst = PInstCreate((fSigned) ? IROP_SMul : IROP_UMul, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateGMul(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_GMul, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildFMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNShr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_Shr, pValLhs, pValRhs, pChzName);
-
-	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
-	if (fSigned)
-	{
-		pInst->m_pLval = LLVMBuildAShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	}
-	else
-	{
-		pInst->m_pLval = LLVMBuildLShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	}
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNShl(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_Shl, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildShl(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNAnd(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_And, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildAnd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNOr(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_Or, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildOr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNNeg(CIRValue * pValOperand, const char * pChzName, bool fIsSigned)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_NNeg, pValOperand, nullptr, pChzName);
-	pInst->m_pLval = LLVMBuildNeg(m_pLbuild, pValOperand->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateGNeg(CIRValue * pValOperand, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_GNeg, pValOperand, nullptr, pChzName);
-	pInst->m_pLval = LLVMBuildFNeg(m_pLbuild, pValOperand->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateFNot(CIRValue * pValOperand, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_Not, pValOperand, nullptr, pChzName);
-	pInst->m_pLval = LLVMBuildNot(m_pLbuild, pValOperand->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName, bool fSigned)
-{
-	CIRInstruction * pInst;
-	if (fSigned)
-	{
-		pInst = PInstCreate(IROP_SDiv, pValLhs, pValRhs, pChzName);
-		pInst->m_pLval = LLVMBuildSDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	}
-	else
-	{
-		pInst = PInstCreate(IROP_UDiv, pValLhs, pValRhs, pChzName);
-		pInst->m_pLval = LLVMBuildUDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	}
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateGDiv(CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_GDiv, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildFDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-					
-CIRInstruction * CIRBuilder::PInstCreateCondBranch(
-	CIRValue * pValPred,
-	CIRBasicBlock * pBlockTrue,
-	CIRBasicBlock * pBlockFalse)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_CondBranch, pValPred, nullptr, "branch");
-	auto pLblockFalse = (pBlockFalse == nullptr) ? nullptr : pBlockFalse->m_pLblock;
-	pInst->m_pLval = LLVMBuildCondBr(m_pLbuild, pValPred->m_pLval, pBlockTrue->m_pLblock, pLblockFalse);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateNCmp(
-	NCMPPRED ncmppred,
-	CIRValue * pValLhs,
-	CIRValue * pValRhs,
-	const char * pChzName)
-{
-#define JAI_PRED(X) 
-#define LLVM_PRED(X) X,
-	static const LLVMIntPredicate s_mpNcmpredLpredicate[] =
-	{
-		NCMPPRED_LIST
-	};
-#undef JAI_PRED
-#undef LLVM_PRED
-	EWC_CASSERT(EWC_DIM(s_mpNcmpredLpredicate) == NCMPPRED_Max, "missing elements in int predicate map");
-	auto lpredicate = s_mpNcmpredLpredicate[ncmppred];
-
-	CIRInstruction * pInst = PInstCreate(IROP_NCmp, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildICmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateGCmp(
-	GCMPPRED gcmppred,
-	CIRValue * pValLhs,
-	CIRValue * pValRhs,
-	const char * pChzName)
-{
-#define JAI_PRED(X) 
-#define LLVM_PRED(X) X,
-	static const LLVMRealPredicate s_mpGcmpredLpredicate[] =
-	{
-		GCMPPRED_LIST
-	};
-#undef JAI_PRED
-#undef LLVM_PRED
-	EWC_CASSERT(EWC_DIM(s_mpGcmpredLpredicate) == GCMPPRED_Max, "missing elements in int predicate map");
-	auto lpredicate = s_mpGcmpredLpredicate[gcmppred];
-
-	CIRInstruction * pInst = PInstCreate(IROP_GCmp, pValLhs, pValRhs, pChzName);
-	pInst->m_pLval = LLVMBuildFCmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateBranch(CIRBasicBlock * pBlock)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_Branch, nullptr, nullptr, "branch");
-	pInst->m_pLval = LLVMBuildBr(m_pLbuild, pBlock->m_pLblock);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateRet(CIRValue * pValRhs)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_Ret, pValRhs, nullptr, "RetTmp");
-	if (pValRhs)
-	{
-		pInst->m_pLval = LLVMBuildRet(m_pLbuild, pValRhs->m_pLval);
-	}
-	else
-	{
-		pInst->m_pLval = LLVMBuildRetVoid(m_pLbuild);
-	}
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_Alloca, nullptr, nullptr, pChzName);
-	if (cElement > 1)
-	{
-		auto pLvalCElement = LLVMConstInt(LLVMInt64Type(), cElement, false);
-		pInst->m_pLval = LLVMBuildArrayAlloca(m_pLbuild, pLtype, pLvalCElement, pChzName);
-	}
-	else
-	{
-		pInst->m_pLval = LLVMBuildAlloca(m_pLbuild, pLtype, pChzName);
-	}
-
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateGEP(
-	CIRValue * pValLhs,
-	LLVMOpaqueValue ** apLvalIndices,
-	u32 cpIndices,
-	const char * pChzName)
-{
-	CIRInstruction * pInst = PInstCreate(IROP_GEP, nullptr, nullptr, pChzName);
-	pInst->m_pLval = LLVMBuildGEP(m_pLbuild, pValLhs->m_pLval, apLvalIndices, cpIndices, pChzName);
-	return pInst;
-}
-
-CIRInstruction * CIRBuilder::PInstFromSymbol(SSymbol * pSym)
-{
-	if (!EWC_FVERIFY(pSym->m_pVal && pSym->m_pVal->m_valk == VALK_Instruction, "expected alloca value for symbol"))
-		return nullptr;
-
-	CIRInstruction * pInstSym = (CIRInstruction *)pSym->m_pVal;
-	if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
-		return nullptr;
-
-	return pInstSym;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateLoad(CIRValue * pValPT, const char * pChzName)
-{
-	CIRInstruction * pInstLoad = PInstCreate(IROP_Load, pValPT, nullptr, pChzName);
-	pInstLoad->m_pLval = LLVMBuildLoad(m_pLbuild, pValPT->m_pLval, pChzName);
-	return pInstLoad;
-}
-
-CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pValT)
-{
-	//store t into address pointed at by pT
-
-	if (!EWC_FVERIFY(pValPT && pValPT->m_valk == VALK_Instruction, "expected alloca value for symbol"))
-		return nullptr;
-
-	CIRInstruction * pInstPT = (CIRInstruction *)pValPT;
-	if (!EWC_FVERIFY(pInstPT->m_irop = IROP_Alloca, "expected alloca for symbol"))
-		return nullptr;
-	
-	auto pLtypeT = LLVMTypeOf(pValT->m_pLval);
-	auto pLtypePT = LLVMTypeOf(pInstPT->m_pLval);
-	bool fIsPointerKind = LLVMGetTypeKind(pLtypePT) == LLVMPointerTypeKind;
-	bool fTypesMatch = false;
-	if (fIsPointerKind)
-	{
-		auto pLtypeElem = LLVMGetElementType(pLtypePT);
-		fTypesMatch = pLtypeElem == pLtypeT;
-	}
-	if (!fIsPointerKind || !fTypesMatch)
-	{
-		printf("bad store information");
-		printf("pLtypeT:"); LLVMDumpType(pLtypeT);
-		printf("pLtypePT: (dest)"); LLVMDumpType(pLtypePT);
-	}
-
-	CIRInstruction * pInstStore = PInstCreate(IROP_Store, pInstPT, pValT, "store");
-    pInstStore->m_pLval = LLVMBuildStore(m_pLbuild, pValT->m_pLval, pInstPT->m_pLval);
-	return pInstStore;
 }
 
 static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement = nullptr)
@@ -622,6 +366,288 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 		}
 		default: return nullptr;
 	}
+}
+
+CIRInstruction * CIRBuilder::PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	if (!EWC_FVERIFY(m_pBlockCur, "creating instruction with no active block"))
+		return nullptr;
+
+	if (m_pBlockCur->m_fIsTerminated)
+	{
+		if (irop != IROP_Branch && EWC_FVERIFY(m_pBerrctx, "trying to throw warning with no error context"))
+		{
+			EmitWarning(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, "Unreachable instruction detected");
+		}
+		irop = IROP_Error;
+		pValLhs = nullptr;
+		pValRhs = nullptr;
+	}
+
+	int cpValOperand = COperand(irop);
+	size_t cB = sizeof(CIRInstruction) + ewcMax((cpValOperand - 1), 0) * sizeof(CIRValue *);
+
+	CIRInstruction * pInst = (CIRInstruction *)m_pAlloc->EWC_ALLOC(cB, EWC_ALIGN_OF(CIRInstruction));
+	new (pInst) CIRInstruction(irop);
+	AddManagedVal(pInst);
+
+	pInst->m_apValOperand[0] = pValLhs;
+	if (cpValOperand > 1)
+	{
+		pInst->m_apValOperand[1] = pValRhs;
+	}
+	else
+	{
+		EWC_ASSERT(pValRhs == nullptr, "unexpected second operand");
+	}
+	pInst->m_cpValOperand = cpValOperand;
+
+	if (irop != IROP_Error)
+	{
+		m_pBlockCur->Append(pInst);
+	}
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValOperand, const char * pChzName)
+{
+	// Unary Ops
+	CIRInstruction * pInst = PInstCreateRaw(irop, pValOperand, nullptr, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	switch (irop)
+	{
+	case IROP_Ret:
+	{
+		if (pValOperand)	pInst->m_pLval = LLVMBuildRet(m_pLbuild, pValOperand->m_pLval);
+		else				pInst->m_pLval = LLVMBuildRetVoid(m_pLbuild);
+	} break;
+
+	case IROP_NNeg:		pInst->m_pLval = LLVMBuildNeg(m_pLbuild, pValOperand->m_pLval, pChzName); break;
+	case IROP_GNeg:		pInst->m_pLval = LLVMBuildFNeg(m_pLbuild, pValOperand->m_pLval, pChzName); break;
+	case IROP_Not:		pInst->m_pLval = LLVMBuildNot(m_pLbuild, pValOperand->m_pLval, pChzName); break;
+	case IROP_Load:		pInst->m_pLval = LLVMBuildLoad(m_pLbuild, pValOperand->m_pLval, pChzName); break;
+	default: EWC_ASSERT(false, "%s is not a unary opcode supported by PInstCreate", PChzFromIrop(irop)); break;
+	}
+
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName)
+{
+	// Binary Ops
+	CIRInstruction * pInst = PInstCreateRaw(irop, pValLhs, pValRhs, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	switch (irop)
+	{
+	case IROP_NAdd:		pInst->m_pLval = LLVMBuildAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_GAdd:		pInst->m_pLval = LLVMBuildFAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_NSub:		pInst->m_pLval = LLVMBuildSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_GSub:		pInst->m_pLval = LLVMBuildFSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_NMul:		pInst->m_pLval = LLVMBuildMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_GMul:		pInst->m_pLval = LLVMBuildFMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_SDiv:		pInst->m_pLval = LLVMBuildSDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_UDiv:		pInst->m_pLval = LLVMBuildUDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_GDiv:		pInst->m_pLval = LLVMBuildFDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_Shl:		pInst->m_pLval = LLVMBuildShl(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_AShr:		pInst->m_pLval = LLVMBuildAShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_LShr:		pInst->m_pLval = LLVMBuildLShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_And:		pInst->m_pLval = LLVMBuildAnd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
+	case IROP_Or:		pInst->m_pLval = LLVMBuildOr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);	break;
+	default: EWC_ASSERT(false, "%s is not a binary opcode supported by PInstCreate", PChzFromIrop(irop)); break;
+	}
+
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateCast(IROP irop, CIRValue * pValLhs, STypeInfo * pTinDst, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreateRaw(irop, pValLhs, nullptr, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	auto pLtypeDst = PLtypeFromPTin(pTinDst);
+
+	switch (irop)
+	{
+	case IROP_NTrunc:		pInst->m_pLval = LLVMBuildTrunc(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_SignExt:		pInst->m_pLval = LLVMBuildSExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_ZeroExt:		pInst->m_pLval = LLVMBuildZExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_GToS:			pInst->m_pLval = LLVMBuildFPToSI(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_GToU:			pInst->m_pLval = LLVMBuildFPToUI(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_SToG:			pInst->m_pLval = LLVMBuildSIToFP(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_UToG:			pInst->m_pLval = LLVMBuildUIToFP(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_GTrunc:		pInst->m_pLval = LLVMBuildFPTrunc(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_GExtend:		pInst->m_pLval = LLVMBuildFPExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	default: EWC_ASSERT(false, "IROP not supported by PInstCreateCast"); break;
+	}
+
+	return pInst;
+}
+
+void CIRBuilder::AddManagedVal(CIRValue * pVal)
+{
+	if (EWC_FVERIFY(m_pProcCur, "adding managed value with no active procedure"))
+	{
+		m_pProcCur->m_arypValManaged.Append(pVal);
+	}
+}
+					
+CIRInstruction * CIRBuilder::PInstCreateCondBranch(
+	CIRValue * pValPred,
+	CIRBasicBlock * pBlockTrue,
+	CIRBasicBlock * pBlockFalse)
+{
+	CIRInstruction * pInst = PInstCreateRaw(IROP_CondBranch, pValPred, nullptr, "branch");
+	if (pInst->FIsError())
+		return pInst;
+
+	auto pLblockFalse = (pBlockFalse == nullptr) ? nullptr : pBlockFalse->m_pLblock;
+	pInst->m_pLval = LLVMBuildCondBr(m_pLbuild, pValPred->m_pLval, pBlockTrue->m_pLblock, pLblockFalse);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateNCmp(
+	NCMPPRED ncmppred,
+	CIRValue * pValLhs,
+	CIRValue * pValRhs,
+	const char * pChzName)
+{
+#define JAI_PRED(X) 
+#define LLVM_PRED(X) X,
+	static const LLVMIntPredicate s_mpNcmpredLpredicate[] =
+	{
+		NCMPPRED_LIST
+	};
+#undef JAI_PRED
+#undef LLVM_PRED
+	EWC_CASSERT(EWC_DIM(s_mpNcmpredLpredicate) == NCMPPRED_Max, "missing elements in int predicate map");
+	auto lpredicate = s_mpNcmpredLpredicate[ncmppred];
+
+	CIRInstruction * pInst = PInstCreateRaw(IROP_NCmp, pValLhs, pValRhs, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	pInst->m_pLval = LLVMBuildICmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGCmp(
+	GCMPPRED gcmppred,
+	CIRValue * pValLhs,
+	CIRValue * pValRhs,
+	const char * pChzName)
+{
+#define JAI_PRED(X) 
+#define LLVM_PRED(X) X,
+	static const LLVMRealPredicate s_mpGcmpredLpredicate[] =
+	{
+		GCMPPRED_LIST
+	};
+#undef JAI_PRED
+#undef LLVM_PRED
+	EWC_CASSERT(EWC_DIM(s_mpGcmpredLpredicate) == GCMPPRED_Max, "missing elements in int predicate map");
+	auto lpredicate = s_mpGcmpredLpredicate[gcmppred];
+
+	CIRInstruction * pInst = PInstCreateRaw(IROP_GCmp, pValLhs, pValRhs, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	pInst->m_pLval = LLVMBuildFCmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateBranch(CIRBasicBlock * pBlock)
+{
+	CIRInstruction * pInst = PInstCreateRaw(IROP_Branch, nullptr, nullptr, "branch");
+	if (pInst->FIsError())
+		return pInst;
+
+	pInst->m_pLval = LLVMBuildBr(m_pLbuild, pBlock->m_pLblock);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreateRaw(IROP_Alloca, nullptr, nullptr, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	if (cElement > 1)
+	{
+		auto pLvalCElement = LLVMConstInt(LLVMInt64Type(), cElement, false);
+		pInst->m_pLval = LLVMBuildArrayAlloca(m_pLbuild, pLtype, pLvalCElement, pChzName);
+	}
+	else
+	{
+		pInst->m_pLval = LLVMBuildAlloca(m_pLbuild, pLtype, pChzName);
+	}
+
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateGEP(
+	CIRValue * pValLhs,
+	LLVMOpaqueValue ** apLvalIndices,
+	u32 cpIndices,
+	const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreateRaw(IROP_GEP, nullptr, nullptr, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	pInst->m_pLval = LLVMBuildGEP(m_pLbuild, pValLhs->m_pLval, apLvalIndices, cpIndices, pChzName);
+	return pInst;
+}
+
+CIRInstruction * CIRBuilder::PInstFromSymbol(SSymbol * pSym)
+{
+	if (!EWC_FVERIFY(pSym->m_pVal && pSym->m_pVal->m_valk == VALK_Instruction, "expected alloca value for symbol"))
+		return nullptr;
+
+	CIRInstruction * pInstSym = (CIRInstruction *)pSym->m_pVal;
+	if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
+		return nullptr;
+
+	return pInstSym;
+}
+
+CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pValT)
+{
+	//store t into address pointed at by pT
+
+	if (!EWC_FVERIFY(pValPT && pValPT->m_valk == VALK_Instruction, "expected alloca value for symbol"))
+		return nullptr;
+
+	CIRInstruction * pInstPT = (CIRInstruction *)pValPT;
+	if (!EWC_FVERIFY(pInstPT->m_irop = IROP_Alloca, "expected alloca for symbol"))
+		return nullptr;
+
+	CIRInstruction * pInstStore = PInstCreateRaw(IROP_Store, pInstPT, pValT, "store");
+	if (pInstStore->FIsError())
+		return pInstStore;
+
+	auto pLtypeT = LLVMTypeOf(pValT->m_pLval);
+	auto pLtypePT = LLVMTypeOf(pInstPT->m_pLval);
+	bool fIsPointerKind = LLVMGetTypeKind(pLtypePT) == LLVMPointerTypeKind;
+	bool fTypesMatch = false;
+	if (fIsPointerKind)
+	{
+		auto pLtypeElem = LLVMGetElementType(pLtypePT);
+		fTypesMatch = pLtypeElem == pLtypeT;
+	}
+	if (!fIsPointerKind || !fTypesMatch)
+	{
+		printf("bad store information");
+		printf("pLtypeT:"); LLVMDumpType(pLtypeT);
+		printf("pLtypePT: (dest)"); LLVMDumpType(pLtypePT);
+	}
+
+    pInstStore->m_pLval = LLVMBuildStore(m_pLbuild, pValT->m_pLval, pInstPT->m_pLval);
+	return pInstStore;
 }
 
 void ExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
@@ -732,6 +758,15 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 	return nullptr;
 }
 
+CIRConstant * PConstZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
+{
+	CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+	pBuild->AddManagedVal(pConst);
+
+	pConst->m_pLval = PLvalZeroInType(pBuild, pTin);
+	return pConst;
+}
+
 LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinlit, CSTValue * pStval)
 {
 	LLVMOpaqueValue * pLval = nullptr;
@@ -787,23 +822,8 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 	return pLval;
 }
 
-inline CIRInstruction * PInstCreateCast(
-							CIRBuilder * pBuild,
-							IROP irop,
-							CIRValue * pValSrc,
-							const char * pChz,
-							LLVMOpaqueValue * pLval)
-{
-	CIRInstruction * pInst = pBuild->PInstCreate(irop, pValSrc, nullptr, pChz); \
-	pInst->m_pLval = pLval;
-	return pInst;
-}
-
 CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
-#define PINST_CREATE_CAST(IROP, CREATE_FUNC, PCHZ) \
-	PInstCreateCast(pBuild, IROP, pValSrc, PCHZ, CREATE_FUNC(pBuild->m_pLbuild, pValSrc->m_pLval, pLtypeDst, PCHZ));
-
 	u32 cBitSrc = 0;
 	u32 cBitDst;
 	bool fSignedSrc = false;
@@ -824,7 +844,7 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 		ExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc);
 	}
 	ExtractNumericInfo(pTinDst, &cBitDst, &fSignedDst);
-	auto pLtypeDst = PLtypeFromPTin(pTinDst);
+	//auto pLtypeDst = PLtypeFromPTin(pTinDst);
 
 	CIRInstruction * pInst = nullptr;
 	switch (pTinDst->m_tink)
@@ -836,14 +856,14 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 			case TINK_Integer: // fall through
 			case TINK_Bool:
 				{
-					if (cBitDst < cBitSrc)				{ return PINST_CREATE_CAST(IROP_NTrunc, LLVMBuildTrunc, "NTrunc"); }
-					else if (fSignedSrc & fSignedDst)	{ return PINST_CREATE_CAST(IROP_SignExt, LLVMBuildSExt, "SignExt"); }
-					else								{ return PINST_CREATE_CAST(IROP_ZeroExt, LLVMBuildZExt, "ZeroExt"); }
+					if (cBitDst < cBitSrc)				{ return pBuild->PInstCreateCast(IROP_NTrunc, pValSrc, pTinDst, "NTrunc"); }
+					else if (fSignedSrc & fSignedDst)	{ return pBuild->PInstCreateCast(IROP_SignExt, pValSrc, pTinDst, "SignExt"); }
+					else								{ return pBuild->PInstCreateCast(IROP_ZeroExt, pValSrc, pTinDst, "ZeroExt"); }
 				} break;
 			case TINK_Float:
 				{
-					if (fSignedSrc) { return PINST_CREATE_CAST(IROP_GToS, LLVMBuildFPToSI, "GToS"); }
-					else			{ return PINST_CREATE_CAST(IROP_GToU, LLVMBuildFPToUI, "GToU"); }
+					if (fSignedSrc) { return pBuild->PInstCreateCast(IROP_GToS, pValSrc, pTinDst, "GToS"); }
+					else			{ return pBuild->PInstCreateCast(IROP_GToU, pValSrc, pTinDst, "GToU"); }
 				} break;
 			case TINK_Literal:
 				{
@@ -858,12 +878,12 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 			case TINK_Integer: // fall through
 			case TINK_Bool:
 				{
-					if (fSignedSrc) { return PINST_CREATE_CAST(IROP_SToG, LLVMBuildSIToFP, "SToG"); }
-					else			{ return PINST_CREATE_CAST(IROP_UToG, LLVMBuildUIToFP, "UToG"); }
+					if (fSignedSrc) { return pBuild->PInstCreateCast(IROP_SToG, pValSrc, pTinDst, "SToG"); }
+					else			{ return pBuild->PInstCreateCast(IROP_UToG, pValSrc, pTinDst, "UToG"); }
 				}
 			case TINK_Float:
-					if (cBitDst > cBitSrc)	{ return PINST_CREATE_CAST(IROP_GExtend, LLVMBuildFPExt, "GExtend"); }
-					else					{ return PINST_CREATE_CAST(IROP_GTrunc, LLVMBuildFPTrunc, "GTrunc"); }
+					if (cBitDst > cBitSrc)	{ return pBuild->PInstCreateCast(IROP_GExtend, pValSrc, pTinDst, "GExtend"); }
+					else					{ return pBuild->PInstCreateCast(IROP_GTrunc, pValSrc, pTinDst, "GTrunc"); }
 			case TINK_Literal:
 				{
 					return pValSrc;
@@ -878,23 +898,24 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 				return pValSrc;
 			case TINK_Integer:
 				{
-					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreate(IROP_NCmp, pValSrc, nullptr, "NCmp"); 
-					pInst->m_pLval = LLVMBuildICmp(pBuild->m_pLbuild, LLVMIntNE, pValSrc->m_pLval, pLvalZero, "NToBool"); 
+					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
+					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValSrc, pConstZero, "NToBool"); break;
 					return pInst;
 				} 
 			case TINK_Float:
 				{
 					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreate(IROP_GCmp, pValSrc, nullptr, "GCmp");
+					pInst = pBuild->PInstCreateRaw(IROP_GCmp, pValSrc, nullptr, "GCmp");
+					if (pInst->FIsError())
+						return pInst;
+
 					pInst->m_pLval = LLVMBuildFCmp(pBuild->m_pLbuild, LLVMRealONE, pValSrc->m_pLval, pLvalZero, "GToBool");
 					return pInst;
 				}
 			case TINK_Pointer:
 				{
-					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreate(IROP_GCmp, pValSrc, nullptr, "NCmp");
-					pInst->m_pLval = LLVMBuildICmp(pBuild->m_pLbuild, LLVMIntNE, pValSrc->m_pLval, pLvalZero, "PToBool");
+					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
+					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValSrc, pConstZero, "PToBool");
 					return pInst;
 				}
 			case TINK_Literal:
@@ -908,7 +929,6 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	default:
 		EWC_ASSERT(false, "unsupported cast destination type in PValCreateCast");
 	}
-#undef PINST_CREATE_CAST
 
 	return pValSrc;
 }
@@ -1073,7 +1093,10 @@ static inline CIRValue * PValInitializeToDefault(CWorkspace * pWork, CIRBuilder 
 			LLVMOpaqueValue * apLvalArgs[1];
 			apLvalArgs[0] = pInstPT->m_pLval;
 
-			CIRInstruction * pInst = pBuild->PInstCreate(IROP_Call, nullptr, nullptr, "RetTmp");
+			CIRInstruction * pInst = pBuild->PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
+			if (pInst->FIsError())
+				return pInst;
+
 			pInst->m_pLval = LLVMBuildCall( pBuild->m_pLbuild, pLvalFunction, apLvalArgs, 1, "");
 			return pInst;
 		} break;
@@ -1144,7 +1167,7 @@ static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pB
 			return pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
 		}
 
-		CIRValue * pValSrc = pBuild->PInstCreateLoad(pValRhsRef, "castLoad");
+		CIRValue * pValSrc = pBuild->PInstCreate(IROP_Load, pValRhsRef, "castLoad");
 		return PValCreateCast(pBuild, pValSrc, pTinRhs, pTinOut);
 	}
 
@@ -1154,6 +1177,8 @@ static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pB
 
 CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
 {
+	CIRBuilderErrorContext berrctx(pWork->m_pErrman, pBuild, pStnod);
+
 	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 	{
 		// constant decl's don't actually generate anything until referenced.
@@ -1384,11 +1409,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						pValRhs = PValGenerate(pWork, pBuild, pStnod->PStnodChild(0), VALGENK_Instance);
 					}
 
-					CIRInstruction * pInstRet = pBuild->PInstCreateRet(pValRhs);
-					if (EWC_FVERIFY(pBuild->m_pBlockCur, "no current block"))
-					{
-						pBuild->m_pBlockCur->Append(pInstRet);
-					}
+					(void) pBuild->PInstCreate(IROP_Ret, pValRhs, "RetTmp");
 				}break;
 			default:
 				EWC_ASSERT(false, "Unhandled reserved word in code gen");
@@ -1435,7 +1456,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					return 0;
 			}
 
-			CIRInstruction * pInst = pBuild->PInstCreate(IROP_Call, nullptr, nullptr, "RetTmp");
+			CIRInstruction * pInst = pBuild->PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
+			if (pInst->FIsError())
+				return pInst;
+
 			pInst->m_pLval = LLVMBuildCall(
 								pBuild->m_pLbuild,
 								pProc->m_pLvalFunction,
@@ -1449,7 +1473,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CIRInstruction * pInst = pBuild->PInstFromSymbol(pStnod->m_pSym);
 			if (EWC_FVERIFY(pInst, "unknown identifier in codegen") && valgenk != VALGENK_Reference)
 			{
-				return pBuild->PInstCreateLoad(pInst, pStnod->m_pSym->m_strName.PChz());
+				return pBuild->PInstCreate(IROP_Load, pInst, pStnod->m_pSym->m_strName.PChz());
 			}
 			return pInst;
 		}
@@ -1485,7 +1509,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			if (EWC_FVERIFY(pInst, "member dereference failure in codegen") && valgenk != VALGENK_Reference)
 			{
-				pInst = pBuild->PInstCreateLoad(pInst, "membLoad");
+				pInst = pBuild->PInstCreate(IROP_Load, pInst, "membLoad");
 			}
 			return pInst;
 		}
@@ -1528,7 +1552,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			if (EWC_FVERIFY(pInst, "unknown identifier in codegen") && valgenk != VALGENK_Reference)
 			{
-				return pBuild->PInstCreateLoad(pInst, "aryLoad");
+				return pBuild->PInstCreate(IROP_Load, pInst, "aryLoad");
 			}
 			return pInst;
 		} break;
@@ -1542,16 +1566,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!EWC_FVERIFY((pStnodLhs != nullptr) & (pValRhsCast != nullptr), "null operand"))
 				return nullptr;
 
-			if (!EWC_FVERIFY(pValLhs->m_pLval != nullptr, "null llvm operand") || 
-				!EWC_FVERIFY(pValRhsCast->m_pLval != nullptr, "null llvm operand"))
-				return nullptr;
-
 			auto pInstOp = pBuild->PInstCreateStore(pValLhs, pValRhsCast);
-			if ( EWC_FVERIFY(pBuild->m_pBlockCur, "missing current block"))
-			{
-				pBuild->m_pBlockCur->Append(pInstOp);
-			}
-
 			return pInstOp;
 		}
 	case PARK_AdditiveOp:
@@ -1569,9 +1584,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CIRValue * pValLhsCast = PValGenerateRefCast(pWork, pBuild, pStnodLhs, pTinOutput);
 			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pTinOutput);
 			if (!EWC_FVERIFY((pValLhsCast != nullptr) & (pValRhsCast != nullptr), "null operand"))
-				return nullptr;
-
-			if (!EWC_FVERIFY((pValLhsCast->m_pLval != nullptr) & (pValRhsCast->m_pLval != nullptr), "null llvm operand"))
 				return nullptr;
 
 			STypeInfo * pTinLhs = pStnodLhs->m_pTin;
@@ -1610,14 +1622,23 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case TINK_Integer:
 				switch (pStnod->m_jtok)
 				{
-					case '+': 				pInstOp = pBuild->PInstCreateNAdd(pValLhsCast, pValRhsCast, "nAddTmp", fIsSigned); break;
-					case '-': 				pInstOp = pBuild->PInstCreateNSub(pValLhsCast, pValRhsCast, "nSubTmp", fIsSigned); break;
-					case '*': 				pInstOp = pBuild->PInstCreateNMul(pValLhsCast, pValRhsCast, "nMulTmp", fIsSigned); break;
-					case '/': 				pInstOp = pBuild->PInstCreateNDiv(pValLhsCast, pValRhsCast, "nDivTmp", fIsSigned); break;
-					case '&':				pInstOp = pBuild->PInstCreateNAnd(pValLhsCast, pValRhsCast, "nAndTmp"); break;
-					case '|':				pInstOp = pBuild->PInstCreateNOr(pValLhsCast, pValRhsCast, "nOrTmp"); break;
-					case JTOK_ShiftRight:	pInstOp = pBuild->PInstCreateNShr(pValLhsCast, pValRhsCast, "nShrTmp", fIsSigned); break;
-					case JTOK_ShiftLeft:	pInstOp = pBuild->PInstCreateNShl(pValLhsCast, pValRhsCast, "nShlTmp", fIsSigned); break;
+					case '+': 				pInstOp = pBuild->PInstCreate(IROP_NAdd, pValLhsCast, pValRhsCast, "nAddTmp"); break;
+					case '-': 				pInstOp = pBuild->PInstCreate(IROP_NSub, pValLhsCast, pValRhsCast, "nSubTmp"); break;
+					case '*': 				pInstOp = pBuild->PInstCreate(IROP_NMul, pValLhsCast, pValRhsCast, "nMulTmp"); break;
+					case '/': 				
+					{
+						IROP irop = (fIsSigned) ? IROP_SDiv : IROP_UDiv;
+						pInstOp = pBuild->PInstCreate(irop, pValLhsCast, pValRhsCast, "nDivTmp");
+					} break;
+					case '&':				pInstOp = pBuild->PInstCreate(IROP_And, pValLhsCast, pValRhsCast, "nAndTmp"); break;
+					case '|':				pInstOp = pBuild->PInstCreate(IROP_Or, pValLhsCast, pValRhsCast, "nOrTmp"); break;
+					case JTOK_ShiftRight:	
+					{
+						// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
+						IROP irop = (fIsSigned) ? IROP_AShr : IROP_LShr;
+						pInstOp = pBuild->PInstCreate(irop, pValLhsCast, pValRhsCast, "nShrTmp"); break;
+					} break;
+					case JTOK_ShiftLeft:	pInstOp = pBuild->PInstCreate(IROP_Shl, pValLhsCast, pValRhsCast, "nShlTmp"); break;
 					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhsCast, pValRhsCast, "NCmpEq"); break;
 					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhsCast, pValRhsCast, "NCmpNq"); break;
 					case JTOK_LessEqual:
@@ -1640,10 +1661,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case TINK_Float:
 				switch (pStnod->m_jtok)
 				{
-					case '+': 				pInstOp = pBuild->PInstCreateGAdd(pValLhsCast, pValRhsCast, "gAddTmp"); break;
-					case '-': 				pInstOp = pBuild->PInstCreateGSub(pValLhsCast, pValRhsCast, "gSubTmp"); break;
-					case '*': 				pInstOp = pBuild->PInstCreateGMul(pValLhsCast, pValRhsCast, "gMulTmp"); break;
-					case '/': 				pInstOp = pBuild->PInstCreateGDiv(pValLhsCast, pValRhsCast, "gDivTmp"); break;
+					case '+': 				pInstOp = pBuild->PInstCreate(IROP_GAdd, pValLhsCast, pValRhsCast, "gAddTmp"); break;
+					case '-': 				pInstOp = pBuild->PInstCreate(IROP_GSub, pValLhsCast, pValRhsCast, "gSubTmp"); break;
+					case '*': 				pInstOp = pBuild->PInstCreate(IROP_GMul, pValLhsCast, pValRhsCast, "gMulTmp"); break;
+					case '/': 				pInstOp = pBuild->PInstCreate(IROP_GDiv, pValLhsCast, pValRhsCast, "gDivTmp"); break;
 					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOEQ, pValLhsCast, pValRhsCast, "NCmpOEQ"); break;
 					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpONE, pValLhsCast, pValRhsCast, "NCmpONE"); break;
 					case JTOK_LessEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOLE, pValLhsCast, pValRhsCast, "NCmpOLE"); break;
@@ -1657,7 +1678,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhsCast, pValRhsCast, "NCmpEq"); break;
 					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhsCast, pValRhsCast, "NCmpNq"); break;
 					case '-': 				
-						pValRhsCast = pBuild->PInstCreateNNeg(pValRhsCast, "NNeg", fIsSigned);
+						pValRhsCast = pBuild->PInstCreate(IROP_NNeg, pValRhsCast, "NNeg");
 						// fallthrough
 					case '+': 				
 					{
@@ -1669,12 +1690,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				break;
 			}
 
-			if (EWC_FVERIFY(pInstOp, "%s operator unsupported in codegen", PChzFromJtok(pStnod->m_jtok)) &
-				EWC_FVERIFY(pBuild->m_pBlockCur, "missing current block"))
-			{
-				pBuild->m_pBlockCur->Append(pInstOp);
-			}
-
+			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PChzFromJtok(pStnod->m_jtok));
 			return pInstOp;
 		}
 
@@ -1732,14 +1748,14 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					//  then inverting with a FNot
 
 					CIRValue * pValOperandCast = PValCreateCast(pBuild, pValOperand, pTinOperand, pTinOutput);
-					pValOp = pBuild->PInstCreateFNot(pValOperandCast, "NCmpEq");
+					pValOp = pBuild->PInstCreate(IROP_Not, pValOperandCast, "NCmpEq");
 				} break;
 			case '-':
 				{
 					switch (tink)
 					{
-					case TINK_Float:	pValOp = pBuild->PInstCreateGNeg(pValOperand, "GNeg"); break;
-					case TINK_Integer:	pValOp = pBuild->PInstCreateNNeg(pValOperand, "NNeg", fIsSigned); break;
+					case TINK_Float:	pValOp = pBuild->PInstCreate(IROP_GNeg, pValOperand, "GNeg"); break;
+					case TINK_Integer:	pValOp = pBuild->PInstCreate(IROP_NNeg, pValOperand, "NNeg"); break;
 					default: EWC_ASSERT(false, "unexpected type '%s' for negate operator", PChzFromTink(tink));
 					}
 				} break;
@@ -1747,7 +1763,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				{
 					if (valgenk != VALGENK_Reference)
 					{
-						pValOp = pBuild->PInstCreateLoad(pValOperand, "Deref");
+						pValOp = pBuild->PInstCreate(IROP_Load, pValOperand, "Deref");
 					}
 					else
 					{
@@ -1760,7 +1776,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					if (!EWC_FVERIFY((pTinOutput == pTinOperand), "increment type mismatch (?)"))
 						return nullptr;
 			
-					CIRInstruction * pInstLoad = pBuild->PInstCreateLoad(pValOperand, "IncLoad");
+					CIRInstruction * pInstLoad = pBuild->PInstCreate(IROP_Load, pValOperand, "IncLoad");
 					CIRInstruction * pInstAdd = nullptr;
 					switch (tink)
 					{
@@ -1771,9 +1787,9 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 							pConst->m_pLval = PLvalConstantFloat(((STypeInfoFloat *)pTinOperand)->m_cBit, 1.0);
 
 							if (pStnod->m_jtok == JTOK_PlusPlus)
-								pInstAdd = pBuild->PInstCreateGAdd(pInstLoad, pConst, "gInc");
+								pInstAdd = pBuild->PInstCreate(IROP_GAdd, pInstLoad, pConst, "gInc");
 							else
-								pInstAdd = pBuild->PInstCreateGSub(pInstLoad, pConst, "gDec");
+								pInstAdd = pBuild->PInstCreate(IROP_GSub, pInstLoad, pConst, "gDec");
 
 						} break;
 					case TINK_Integer:
@@ -1784,16 +1800,16 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 							pConst->m_pLval = PLvalConstantInt(pTinint->m_cBit, fIsSigned, 1);
 
 							if (pStnod->m_jtok == JTOK_PlusPlus)
-								pInstAdd = pBuild->PInstCreateNAdd(pInstLoad, pConst, "gInc", fIsSigned);
+								pInstAdd = pBuild->PInstCreate(IROP_NAdd, pInstLoad, pConst, "gInc");
 							else
-								pInstAdd = pBuild->PInstCreateNSub(pInstLoad, pConst, "gDec", fIsSigned);
+								pInstAdd = pBuild->PInstCreate(IROP_NSub, pInstLoad, pConst, "gDec");
 						} break;
 					case TINK_Pointer:
 						{
 							int nDelta = (pStnod->m_jtok == JTOK_PlusPlus) ? 1 : -1;
 							LLVMOpaqueValue * pLvalIndex = PLvalConstantInt(64, fIsSigned, nDelta);
 
-							auto pValLoad = pBuild->PInstCreateLoad(pValOperand, "incLoad");
+							auto pValLoad = pBuild->PInstCreate(IROP_Load, pValOperand, "incLoad");
 							pInstAdd = pBuild->PInstCreateGEP(pValLoad, &pLvalIndex, 1, "incGep");
 						} break;
 					default: EWC_ASSERT(false, "unexpected type '%s' for increment/decrement operator", PChzFromTink(tink));
@@ -1801,13 +1817,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					auto pInstStore = pBuild->PInstCreateStore(pValOperand, pInstAdd);
 					pValOp = (pStnod->m_park == PARK_PostfixUnaryOp) ? pInstLoad : pInstAdd;
-
-					if ( EWC_FVERIFY(pBuild->m_pBlockCur, "missing current block"))
-					{
-						pBuild->m_pBlockCur->Append(pInstLoad);
-						pBuild->m_pBlockCur->Append(pInstAdd);
-						pBuild->m_pBlockCur->Append(pInstStore);
-					}
 				}
 			default: break;
 			}
@@ -2155,11 +2164,7 @@ void CodeGenEntryPoint(
 
 			if (fImplicitFunction)
 			{
-				CIRInstruction * pInstRet = pBuild->PInstCreateRet(nullptr);
-				if (EWC_FVERIFY(pBuild->m_pBlockCur, "no current block"))
-				{
-					pBuild->m_pBlockCur->Append(pInstRet);
-				}
+				(void) pBuild->PInstCreate(IROP_Ret, nullptr, "RetTmp");
 			}
 
 			LLVMBool fFailed = LLVMVerifyFunction(pProc->m_pLvalFunction, LLVMPrintMessageAction);

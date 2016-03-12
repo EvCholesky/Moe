@@ -381,8 +381,9 @@ protected:
 public:
 							~CSymbolTable();
 
-	void					AddBuiltInSymbols();
+	void					AddBuiltInSymbols(SErrorManager * pErrman);
 	SSymbol *				PSymEnsure(
+								SErrorManager * pErrman,
 								const EWC::CString & strName,
 								CSTNode * pStnodDefinition,
 								GRFSYM grfsym = FSYM_None);
@@ -391,24 +392,12 @@ public:
 								const EWC::CString & str,
 								const SLexerLocation & lexloc, 
 								GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
-	STypeInfo *				PTinLookup(
-								const EWC::CString & str,
-								const SLexerLocation & lexloc,
-								GRFSYMLOOK grfsymlook = FSYMLOOK_Default,
-								SSymbol ** ppSym = nullptr);
 	STypeInfo *				PTinBuiltin( const EWC::CString & str);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
-	STypeInfoForwardDecl *	PTinfwdLookup(const EWC::CString & str, GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
 	STypeInfoPointer *		PTinptrGetReference(STypeInfo * pTinPointedTo);
 
-	STypeInfoForwardDecl *	PTinfwdBegin(const EWC::CString & str);
-	void					EndForwardDecl(
-								const EWC::CString & str,
-								STypeInfoForwardDecl * pTinfwd,
-								STypeInfo * pTinResolved);
-
-	void					AddNamedType(CParseContext * pParctx, SJaiLexer * pJlex, STypeInfo * pTin);
+	void					AddBuiltInType(SErrorManager * pErrman, SJaiLexer * pJlex, STypeInfo * pTin);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
 
