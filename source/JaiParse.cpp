@@ -50,7 +50,6 @@ const char * PChzFromPark(PARK park)
 		"Unary Operator",
 		"Postfix Unary Operator",
 		"Uninitializer",
-
 		"Array Element",		// [array, index]
 		"Member Lookup",		// [struct, child]
 		"Argument Call",		// [procedure, arg0, arg1, ...]
@@ -61,6 +60,7 @@ const char * PChzFromPark(PARK park)
 		"Else",
 		"Reference Decl",
 		"Decl",
+		"Typedef",
 		"Constant Decl",
 		"Procedure Definition",
 		"Enum Definition",
@@ -1127,8 +1127,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pStnodProc->m_pStproc = pStproc;
 				pStproc->m_iStnodProcName = pStnodProc->IAppendChild(pStnodIdent);
 
+				const CString & strName = StrFromIdentifier(pStnodIdent);
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
-				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew();
+				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew(strName);
 
 				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pJlex, pSymtabProc);
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
@@ -1184,7 +1185,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					Expect(pParctx, pJlex, JTOK(';'), "While parsing foreign directive");
 				}
 
-				const CString & strName = StrFromIdentifier(pStnodIdent);
 				if (pJlex->m_jtok == JTOK('{'))
 				{
 					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex, pSymtabProc);
@@ -1313,8 +1313,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSTNode * pStnodType = PStnodParseIdentifier(pParctx, pJlex);
 				pStenum->m_iStnodType = pStnodEnum->IAppendChild(pStnodType);
 				
+				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
-				CSymbolTable * pSymtabEnum = pParctx->m_pWork->PSymtabNew();
+				CSymbolTable * pSymtabEnum = pParctx->m_pWork->PSymtabNew(strIdent);
 				CSTNode * pStnodConstantList = nullptr;
 				if (pJlex->m_jtok == JTOK('{'))
 				{
@@ -1342,7 +1343,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 								cStnodMember * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
-				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent.PChz());
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
 																		pB + sizeof(STypeInfoEnum), 
@@ -1384,8 +1384,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 
+				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				SLexerLocation lexlocChild(pJlex);
-				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew();
+				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew(strIdent);
+
+				// NOTE: struct symbol tables at the global scope should be unordered.
+				if (!pParctx->m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered))
+					pSymtabStruct->m_grfsymtab.Clear(FSYMTAB_Ordered);
+
 				PushSymbolTable(pParctx, pSymtabStruct, lexlocChild);
 				pStnodStruct->m_pSymtab = pSymtabStruct;
 
@@ -1400,13 +1406,13 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				}
 
 				// type info struct
-				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				int cStnodMember;
 				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodDeclList, &cStnodMember, PARK_List);
 
 				int cStnodField = 0;
 				int cStnodConstant = 0;
 				int cStnodStruct = 0;
+				int cStnodTypedef = 0;
 				CSTNode * const * ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for (auto ppStnodMemberIt = ppStnodMember; ppStnodMemberIt != ppStnodMemberMax; ++ppStnodMemberIt)
 				{
@@ -1415,6 +1421,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					case PARK_Decl:				++cStnodField; break;
 					case PARK_ConstantDecl:		++cStnodConstant; break;
 					case PARK_StructDefinition:	++cStnodStruct; break;
+					case PARK_Typedef:			++cStnodTypedef; break;
 					default: EWC_ASSERT(false, "Unexpected member in structure %s", strIdent.PChz());
 					}
 				}
@@ -1432,6 +1439,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cStnodField);
 				pTinstruct->m_aryTypemembConstant.SetArray(aTypememb + cStnodField, 0, cStnodConstant);
 				pTinstruct->m_aryTypemembStruct.SetArray(aTypememb + cStnodField + cStnodConstant, 0, cStnodStruct);
+				pTinstruct->m_aryTypemembTypedef.SetArray(aTypememb + cStnodField + cStnodConstant + cStnodStruct, 0, cStnodTypedef);
 
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
@@ -1442,19 +1450,27 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					case PARK_Decl:				
 						{
 							pTypememb = pTinstruct->m_aryTypemembField.AppendNew();
-							auto pStnodIdentifier = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
-							pTypememb->m_strName = StrFromIdentifier(pStnodIdentifier);
+							auto pStnodMemberIdent = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
+							pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
 						} break;
 					case PARK_ConstantDecl:		
 						{
 							pTypememb = pTinstruct->m_aryTypemembConstant.AppendNew();
-							auto pStnodIdentifier = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
-							pTypememb->m_strName = StrFromIdentifier(pStnodIdentifier);
+							auto pStnodMemberIdent = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
+							pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
 						} break;
 					case PARK_StructDefinition:	
 						{
 							pTypememb = pTinstruct->m_aryTypemembStruct.AppendNew();
 							if (EWC_FVERIFY(pStnodMember->m_pSym, "nested structure with no symbol"))
+							{
+								pTypememb->m_strName = pStnodMember->m_pSym->m_strName;
+							}
+						} break;
+					case PARK_Typedef:	
+						{
+							pTypememb = pTinstruct->m_aryTypemembTypedef.AppendNew();
+							if (EWC_FVERIFY(pStnodMember->m_pSym, "nested typedef with no symbol"))
 							{
 								pTypememb->m_strName = pStnodMember->m_pSym->m_strName;
 							}
@@ -1479,6 +1495,38 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				Expect(pParctx, pJlex, JTOK('}'));
 
 				return pStnodStruct;
+			}
+			else if (rword == RWORD_Typedef)
+			{
+				JtokNextToken(pJlex);
+
+				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
+				Expect(pParctx, pJlex, JTOK(';'));
+				
+				CString strIdent = StrFromIdentifier(pStnodIdent);
+				if (!pStnodType)
+				{
+					ParseError(pParctx, pJlex, "missing type value for typedef %s", strIdent.PChz());
+
+					pParctx->m_pAlloc->EWC_DELETE(pStnodIdent);
+					return nullptr;
+				}
+
+				CSTNode * pStnodTypedef = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodTypedef->m_jtok = JTOK_Nil;
+				pStnodTypedef->m_park = PARK_Typedef;
+
+				(void) pStnodTypedef->IAppendChild(pStnodIdent);
+				(void) pStnodTypedef->IAppendChild(pStnodType);
+
+				CSymbolTable * pSymtab = pParctx->m_pSymtab;
+				auto pErrman = pParctx->m_pWork->m_pErrman;
+
+				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef);
+				pSym->m_pStnodDefinition = pStnodTypedef;
+				pStnodTypedef->m_pSym = pSym;
+
+				return pStnodTypedef;
 			}
 
 			// constant decl
@@ -1549,7 +1597,7 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 
 		if (!pSymtab)
 		{
-			pSymtab = pParctx->m_pWork->PSymtabNew();
+			pSymtab = pParctx->m_pWork->PSymtabNew("anon");
 		}
 		PushSymbolTable(pParctx, pSymtab, lexloc);
 		JtokNextToken(pJlex);
@@ -2334,6 +2382,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_Else:				    return CChCopy("else", pCh, pChEnd - pCh);
 	case PARK_ReferenceDecl:		return CChCopy("ptr", pCh, pChEnd - pCh);
 	case PARK_Decl:					return CChCopy("decl", pCh, pChEnd - pCh);
+	case PARK_Typedef:				return CChCopy("typedef", pCh, pChEnd - pCh);
 	case PARK_ConstantDecl:			return CChCopy("const", pCh, pChEnd - pCh);
 	case PARK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
 	case PARK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
@@ -2548,6 +2597,14 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pChzIn = "SOut :: struct { SIn :: struct { ConstTwo :: 2; }} n := SOut.SIn.ConstTwo; ";
+		pChzOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $sIn) $ConstTwo))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+		pChzIn = "PtrType :: typedef * s16; ArrayType :: typedef [2] s8; ";
+		pChzOut = "(typedef $PtrType (ptr $s16)) (typedef $ArrayType ([] 2 $s8))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "SomeConst :: 0xFF; ";
 		pChzOut = "(const $SomeConst 255)";

@@ -132,6 +132,7 @@ enum PARK // PARse Kind
 
 	PARK_ReferenceDecl,		// used in type specification, not used for the unary address-of operator
 	PARK_Decl,
+	PARK_Typedef,
 	PARK_ConstantDecl,
 	PARK_ProcedureDefinition,
 	PARK_EnumDefinition,
@@ -367,8 +368,9 @@ protected:
 	friend class CWorkspace;
 
 							// protected constructor to force use of CWorkspace::PSymtabNew()
-							CSymbolTable(EWC::CAlloc * pAlloc)
-							:m_pAlloc(pAlloc)
+							CSymbolTable(const EWC::CString & strName, EWC::CAlloc * pAlloc)
+							:m_strName(strName)
+							,m_pAlloc(pAlloc)
 							,m_hashHvPSym(pAlloc)
 							,m_hashHvPTin(pAlloc)
 							,m_hashHvPTinfwd(pAlloc)
@@ -403,6 +405,7 @@ public:
 
 	void					PrintDump();
 
+	EWC::CString				m_strName;
 	EWC::CAlloc *				m_pAlloc;
 	EWC::CHash<HV, SSymbol *>	m_hashHvPSym;		// All the symbols defined within this scope, a full lookup requires
 													//  walking up the parent list
@@ -417,8 +420,6 @@ public:
 	CSymbolTable *				m_pSymtabParent;
 	SLexerLocation				m_lexlocParent;		// position that this table was defined relative to it's parent 
 
-	CSymbolTable *				m_pSymtabManager;		// top level symbol table - manages lifetime of all symbol 
-														//  tables. (null iff this table is the root)
 	CSymbolTable *				m_pSymtabNextManaged;	// next table in the global list
 	GRFSYMTAB					m_grfsymtab;
 };

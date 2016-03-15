@@ -153,9 +153,9 @@ void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 	pEntry->m_pProc = nullptr;
 }
 
-CSymbolTable * CWorkspace::PSymtabNew()
+CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strName)
 {
-	CSymbolTable * pSymtabNew = EWC_NEW(m_pAlloc, CSymbolTable) CSymbolTable(m_pAlloc);
+	CSymbolTable * pSymtabNew = EWC_NEW(m_pAlloc, CSymbolTable) CSymbolTable(strName, m_pAlloc);
 	if (m_pSymtab)
 	{
 		m_pSymtab->AddManagedSymtab(pSymtabNew);
@@ -210,7 +210,7 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_hashHvIPFileLibrary.Clear(0);
 	pWork->m_cbFreePrev = pAlloc->CB();
 
-	pWork->m_pSymtab = pWork->PSymtabNew();
+	pWork->m_pSymtab = pWork->PSymtabNew("global");
 	pWork->m_pSymtab->m_grfsymtab.Clear(FSYMTAB_Ordered);
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork->m_pErrman);
 }

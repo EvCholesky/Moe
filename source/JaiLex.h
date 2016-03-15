@@ -73,6 +73,7 @@ enum JTOK
 		RW(While) STR(while), \
 		RW(Enum) STR(enum), \
 		RW(Struct) STR(struct), \
+		RW(Typedef) STR(typedef), \
 		RW(Soa) STR(SOA), \
 		RW(Inline) STR(inline), \
 		RW(NoInline) STR(noinline), \

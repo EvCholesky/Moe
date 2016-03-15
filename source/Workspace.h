@@ -108,7 +108,7 @@ public:
 
 	char *					PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * pAlloc);
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
-	CSymbolTable *			PSymtabNew();
+	CSymbolTable *			PSymtabNew(const EWC::CString & strName);
 
 	void					EnsureFile(const char * pChzFile, FILEK filek);
 	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek) 

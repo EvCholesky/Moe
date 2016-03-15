@@ -1,7 +1,7 @@
 # JaiLang
 Work in progress JAI compiler
 
-Slowly building a LLVM frontend for Jon Blow's JAI language.
+Slowly building a LLVM frontend for a dialect of Jon Blow's JAI language.
 
 It currently can compile and statically link very simple programs. It doesn't do runtime code execution yet: the plan is to use LLVM's jit compiler.
 
@@ -19,12 +19,12 @@ New:
   	- Basic constants
   	- typed constants
   	- member constants
+  * Type aliasing (typedefs)
 
 Coming soon:
-  * Type aliasing (typedefs)
+  * Enums
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables
-  * Enums
   * Explicit casting
   * For Loops.
 
@@ -39,5 +39,10 @@ Known Issues:
 
 Deviations from current JAI syntax:
   * currently using @ for a dereference operator, rather than <<
-  * still support single quote character literals. (will add #char once the single char is used elsewhere)
+  * still support single quote character literals. (might #char once the single char is used elsewhere)
   * float types are: float, double, f32 and f64. because... why wouldn't they be?
+  * type aliasing uses the typedef keyword to disambiguate constant values from type aliases. (ie 'IntAlias :: typedef s32;')
+
+Q. Why are you deviating from the language at all? Aren't these all small changes that just amout to bikeshedding?
+
+A. Yes and no, I've gone back and forth on this a bit and feel comfortable deviating from Jon's design whenever I'm convinced that it's an improvement. It seems likely that the best shot for a new language comes from several different takes on the same ideas, than one monolithic language dictated from a single source.

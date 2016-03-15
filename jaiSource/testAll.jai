@@ -228,6 +228,21 @@ TestRecursion :: ()
 	MethodA(5);
 }
 
+TestTypedefs :: ()
+{
+	printf("\nTypedefs:\n");
+
+	n : SLater.IntAlias = 2;
+	aN : SLater.QuadArray;
+
+	n := 0;
+	while n < SLater.ConstFour
+	{
+		printf("aN[%d] = %d\n", aN[n], n);
+		++n;
+	}
+}
+
 main :: () -> int 
 {
 	TestOperators();
@@ -237,6 +252,18 @@ main :: () -> int
 	TestInitializers();
 	TestStructures();
 	TestRecursion();
+	TestTypedefs();
 
 	return 1;
 }
+
+SLater :: struct
+{
+	ConstFour :: 4;
+
+	IntAlias :: typedef s32;
+	QuadArray :: typedef [ConstFour] IntAlias;
+
+	// ArrayFail :: typedef [Four] IntAlias; // test this!
+}
+

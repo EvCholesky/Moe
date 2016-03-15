@@ -1830,6 +1830,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			return pValOp;
 		}
 	case PARK_Nop: 
+	case PARK_Typedef:
 		break;
 	default:
 		EWC_ASSERT(false, "unhandled PARK (%s) in code generation.", PChzFromPark(pStnod->m_park));

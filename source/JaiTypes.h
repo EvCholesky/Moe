@@ -18,7 +18,6 @@
 #include "EwcArray.h"
 #include "EwcString.h"
 
-class CSymbolTable;
 class CSTNode;
 struct LLVMOpaqueType;
 struct LLVMOpaqueValue;
@@ -200,6 +199,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 								,m_aryTypemembField()
 								,m_aryTypemembConstant()
 								,m_aryTypemembStruct()
+								,m_aryTypemembTypedef()
 									{ ; }
 	
 	LLVMOpaqueValue *				m_pLvalInitMethod;
@@ -210,6 +210,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	EWC::CAry<STypeStructMember>	m_aryTypemembField;
 	EWC::CAry<STypeStructMember>	m_aryTypemembConstant;
 	EWC::CAry<STypeStructMember>	m_aryTypemembStruct;	// member structures
+	EWC::CAry<STypeStructMember>	m_aryTypemembTypedef;
 };
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);

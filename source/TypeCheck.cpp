@@ -134,6 +134,7 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 				pStnodIt = nullptr;
 			}break;
 			case PARK_ReferenceDecl:
+
 				pCh += CChCopy("* ", pCh, pChEnd - pCh); 
 
 				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
@@ -1176,6 +1177,13 @@ STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString 
 		if (pTypememb->m_strName == strMemberName)
 			return pTypememb;
 	}
+
+	pTypemembMax = pTinstruct->m_aryTypemembTypedef.PMac();
+	for (auto pTypememb = pTinstruct->m_aryTypemembTypedef.A(); pTypememb != pTypemembMax; ++pTypememb)
+	{
+		if (pTypememb->m_strName == strMemberName)
+			return pTypememb;
+	}
 	return nullptr;
 }
 
@@ -1552,6 +1560,12 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						{
 							pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
 						}
+
+						pTypemembMax = pTinstruct->m_aryTypemembTypedef.PMac();
+						for (auto pTypememb = pTinstruct->m_aryTypemembTypedef.A(); pTypememb != pTypemembMax; ++pTypememb)
+						{
+							pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
+						}
 					}
 
 
@@ -1587,6 +1601,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
 						if (pStnodDefinition->m_park == PARK_Decl || 
 							pStnodDefinition->m_park == PARK_ConstantDecl ||
+							pStnodDefinition->m_park == PARK_Typedef ||
 							pStnodDefinition->m_park == PARK_StructDefinition )
 						{
 							if (pStnodDefinition->m_strees >= STREES_TypeChecked || pTcsentTop->m_fAllowForwardDecl)
@@ -1677,19 +1692,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 				auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
 
-				if (!pStnodInit->m_pTin || pStnodInit->m_pTin->m_tink != TINK_Literal)
-				{
-					CString strIdent = StrFromIdentifier(pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
-					EmitError(pTcwork, pStnod, "non-constant value in declaration of constant '%s'", strIdent.PChz());
-					return TCRET_StoppingError;
-				}
-
 				auto pSymtab = pTcsentTop->m_pSymtab;
 				auto pStnodType = pStnod->PStnodChildSafe(pStdecl->m_iStnodType);
 				if (pStnodType)
 				{
-					CSTNode * pStnodType = pStnod->PStnodChild(pStdecl->m_iStnodType);
-
 					bool fIsValidTypeSpec;
 					STypeInfo * pTinType = PTinFromTypeSpecification(
 											pTcwork,
@@ -1731,9 +1737,66 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 													pStnodIdent->m_lexloc,
 													pTcsentTop->m_grfsymlook);
 
-					EWC_ASSERT(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz());
-					pStnod->m_pSym = pSymIdent;
+					if (EWC_FVERIFY(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz()))
+					{
+						pStnod->m_pSym = pSymIdent;
+						if (pSymIdent->m_pTin == nullptr)
+						{
+							pSymIdent->m_pTin = pStnod->m_pTin;
+						}
+					}
 					OnTypeComplete(pTcwork, pSymIdent);
+				}
+
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram, pStnod);
+			} break;
+			case PARK_Typedef:
+			{
+				if (!EWC_FVERIFY(pStnod->CStnodChild() == 2, "typedef should have 2 children (ident, typespec)"))
+					return TCRET_StoppingError;
+
+				CSTNode * pStnodType = pStnod->PStnodChild(1);
+				if (pTcsentTop->m_nState == 0)
+				{
+					PushTcsent(pTcfram, pStnodType);
+					STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+					pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+					
+					++pTcsentTop->m_nState;
+					break;
+				}
+
+				SSymbol * pSymType = nullptr;
+				bool fIsValidTypeSpec;
+				auto pSymtab = pTcsentTop->m_pSymtab;
+				pStnod->m_pTin = PTinFromTypeSpecification(
+					pTcwork, 
+					pSymtab,
+					pStnodType,
+					pTcsentTop->m_grfsymlook,
+					&pSymType,
+					&fIsValidTypeSpec);
+
+				if (!fIsValidTypeSpec)
+					return TCRET_StoppingError;
+
+				// find our symbol and resolve any pending unknown types
+				CSTNode * pStnodIdent = pStnod->PStnodChild(0);
+				if (EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))
+				{
+					CString strIdent = StrFromIdentifier(pStnodIdent);
+					auto pSym = pSymtab->PSymLookup( strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook);
+
+					if (EWC_FVERIFY(pSym && pSym->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz()))
+					{
+						pStnod->m_pSym = pSym;
+						if (pSym->m_pTin == nullptr)
+						{
+							pSym->m_pTin = pStnod->m_pTin;
+						}
+					}
+					OnTypeComplete(pTcwork, pSym);
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
@@ -2000,6 +2063,19 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					CString strTin = StrFromTypeInfo(pTinLhs);
 					EmitError(pTcwork, pStnod, "Expected left hand side to be structure type but it is %s", strTin.PChz());
 					return TCRET_StoppingError;
+				}
+
+				
+				CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
+				if (EWC_FVERIFY(pStnodStruct && pStnodStruct->m_pSym, "Struct type missing symbol"))
+				{
+					if (pStnodStruct->m_strees != STREES_TypeChecked)
+					{
+						// wait for this type to be resolved.
+						SUnknownType * pUntype = PUntypeEnsure(pTcwork, pStnodStruct->m_pSym);
+						pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
+						return TCRET_WaitingForSymbolDefinition;
+					}
 				}
 
 				CSTNode * pStnodRhs = pStnod->PStnodChildSafe(1);
