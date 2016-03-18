@@ -337,6 +337,11 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			default:			return nullptr;
 			}
 		}
+		case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTin;
+			return PLtypeFromPTin(pTinenum->m_pTinLoose);
+		}
 		case TINK_Struct:
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTin;
@@ -767,6 +772,15 @@ CIRConstant * PConstZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 	return pConst;
 }
 
+LLVMOpaqueValue * PLvalFromEnumConstant(CIRBuilder * pBuild, STypeInfo * pTinLoose, CSTValue * pStval)
+{
+	auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTinLoose);
+	if (!EWC_FVERIFY(pTinint, "expected integer type for enum constant"))
+		return nullptr;
+
+	return PLvalConstantInt(pTinint->m_cBit, pTinint->m_fIsSigned, pStval->m_nUnsigned);
+}
+
 LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinlit, CSTValue * pStval)
 {
 	LLVMOpaqueValue * pLval = nullptr;
@@ -828,8 +842,21 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	u32 cBitDst;
 	bool fSignedSrc = false;
 	bool fSignedDst;
+	if (pTinSrc == pTinDst)
+		return pValSrc;
 	if (pTinSrc->m_tink == TINK_Literal)
 		return pValSrc;
+
+	if (pTinSrc->m_tink == TINK_Enum)
+	{
+		auto pTinenum = (STypeInfoEnum *)pTinSrc;
+		pTinSrc = pTinenum->m_pTinLoose;
+	}
+	if (pTinDst->m_tink == TINK_Enum)
+	{
+		auto pTinenum = (STypeInfoEnum *)pTinDst;
+		pTinDst = pTinenum->m_pTinLoose;
+	}
 
 	if (pTinSrc->m_tink == TINK_Pointer)
 	{
@@ -1251,6 +1278,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		{
 			// nothing to do here yet...
 		} break;
+	case PARK_EnumDefinition:
+		{
+			// nothing to do here yet...
+		} break;
 	case PARK_Literal:
 		{
 			EWC_ASSERT(false, "encountered literal AST node during codegen, should have encountered literal type first");
@@ -1479,6 +1510,22 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		}
 	case PARK_MemberLookup:
 		{
+			if (pStnod->m_pTinOperand && pStnod->m_pTinOperand->m_tink == TINK_Enum)
+			{
+				auto pTinenum = (STypeInfoEnum *)pStnod->m_pTinOperand;
+				if (EWC_FVERIFY(pStnod->m_pStval, "Enum constant lookup without value"))
+				{
+					auto pLval = PLvalFromEnumConstant(pBuild, pTinenum->m_pTinLoose, pStnod->m_pStval);
+					if (!pLval)
+						return nullptr;
+
+					CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+					pBuild->AddManagedVal(pConst);
+					pConst->m_pLval = pLval;
+					return pConst;
+				}
+			}
+
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			STypeInfoStruct * pTinstruct = nullptr;
 			auto pTinLhs = pStnodLhs->m_pTin;
@@ -2486,6 +2533,9 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } n := ENUMK.Ick; }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "{ SomeConst :: 0xFF; n:=SomeConst; }";
 	AssertTestCodeGen(&work, pChzIn);

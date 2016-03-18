@@ -293,6 +293,7 @@ public:
 	EWC::CDynAry<CSTNode *>	m_arypStnodChild;
 };
 
+CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
 size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd);
 void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
 

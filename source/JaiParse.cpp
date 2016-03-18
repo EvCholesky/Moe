@@ -1040,6 +1040,9 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 	pStnodConstant->m_pStdecl = pStdecl;
 	pStdecl->m_iStnodIdentifier = pStnodConstant->IAppendChild(pStnodIdent);
 
+	CSymbolTable * pSymtab = pParctx->m_pSymtab;
+	pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodConstant);
+
 	if (pJlex->m_jtok == JTOK(':'))
 	{
 		JtokNextToken(pJlex);
@@ -1048,7 +1051,6 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 		if (pStnodExp)
 		{
 			pStdecl->m_iStnodInit = pStnodConstant->IAppendChild(pStnodExp);
-			// BB pStnodExp->m_fExpectedConstant = true;
 		}
 	}
 	return pStnodConstant;
@@ -1332,12 +1334,15 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					EWC_ASSERT(pSymtabEnum == pSymtabPop, "CSymbol table push/pop mismatch (enum)");
 
 					Expect(pParctx, pJlex, JTOK('}'));
-					Expect(pParctx, pJlex, JTOK(';'));
 				}
 
 				// type info enum
-				int cStnodMember;
-				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodMember, PARK_List);
+				int cStnodChild;
+				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
+				int cStnodTypedef = 2; // loose, strict
+				int cStnodArray = 2; // names, values
+				int cStnodExtraConstants = 6; // count, min, max, nil, highest_value, lowest_value
+				int cStnodMember = cStnodChild; // + cStnodTypedef + cStnodArray + cStnodExtraConstants;
 
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeStructMember)) + 
 								cStnodMember * sizeof(STypeStructMember);
@@ -1348,6 +1353,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 																		pB + sizeof(STypeInfoEnum), 
 																		EWC_ALIGN_OF(STypeStructMember));
 				pTinenum->m_tinstructProduced.m_aryTypemembConstant.SetArray(aTypememb, 0, cStnodMember);
+				pTinenum->m_tinstructProduced.m_pStnodStruct = pStnodEnum;
 
 				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
@@ -1361,14 +1367,21 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					{
 						pTypememb->m_strName = StrFromIdentifier(pStnodMember->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
 					}
+
+					pStnodMember->m_pTin = pTinenum;
+					pTypememb->m_pTin = pTinenum;
+					pTypememb->m_pStnod = pStnodMember;
 				}
 
 				pSymtabParent->AddManagedTin(pTinenum);
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType);
-				pSymStruct->m_grfsym.AddFlags(FSYM_IsType);
-				pSymStruct->m_pTin = pTinenum;
+				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType);
+				pSymEnum->m_grfsym.AddFlags(FSYM_IsType);
+				pSymEnum->m_pTin = pTinenum;
+
+				pStnodEnum->m_pSym = pSymEnum;
+				pStnodEnum->m_pTin = pTinenum;
 
 				return pStnodEnum;
 			}
@@ -1411,8 +1424,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				int cStnodField = 0;
 				int cStnodConstant = 0;
-				int cStnodStruct = 0;
-				int cStnodTypedef = 0;
+				int cStnodType = 0;
 				CSTNode * const * ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for (auto ppStnodMemberIt = ppStnodMember; ppStnodMemberIt != ppStnodMemberMax; ++ppStnodMemberIt)
 				{
@@ -1420,13 +1432,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					{
 					case PARK_Decl:				++cStnodField; break;
 					case PARK_ConstantDecl:		++cStnodConstant; break;
-					case PARK_StructDefinition:	++cStnodStruct; break;
-					case PARK_Typedef:			++cStnodTypedef; break;
+					case PARK_StructDefinition:	++cStnodType; break;
+					case PARK_EnumDefinition:	++cStnodType; break;
+					case PARK_Typedef:			++cStnodType; break;
 					default: EWC_ASSERT(false, "Unexpected member in structure %s", strIdent.PChz());
 					}
 				}
 
-				EWC_ASSERT(cStnodMember >= (cStnodField + cStnodConstant + cStnodStruct), "bad member count");
+				EWC_ASSERT(cStnodMember >= (cStnodField + cStnodConstant + cStnodType), "bad member count");
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
 								cStnodMember * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
@@ -1438,8 +1451,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 																		EWC_ALIGN_OF(STypeStructMember));
 				pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cStnodField);
 				pTinstruct->m_aryTypemembConstant.SetArray(aTypememb + cStnodField, 0, cStnodConstant);
-				pTinstruct->m_aryTypemembStruct.SetArray(aTypememb + cStnodField + cStnodConstant, 0, cStnodStruct);
-				pTinstruct->m_aryTypemembTypedef.SetArray(aTypememb + cStnodField + cStnodConstant + cStnodStruct, 0, cStnodTypedef);
+				pTinstruct->m_aryTypemembType.SetArray(aTypememb + cStnodField + cStnodConstant, 0, cStnodType);
 
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
@@ -1459,18 +1471,12 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 							auto pStnodMemberIdent = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
 							pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
 						} break;
-					case PARK_StructDefinition:	
-						{
-							pTypememb = pTinstruct->m_aryTypemembStruct.AppendNew();
-							if (EWC_FVERIFY(pStnodMember->m_pSym, "nested structure with no symbol"))
-							{
-								pTypememb->m_strName = pStnodMember->m_pSym->m_strName;
-							}
-						} break;
 					case PARK_Typedef:	
+					case PARK_StructDefinition:	
+					case PARK_EnumDefinition:	
 						{
-							pTypememb = pTinstruct->m_aryTypemembTypedef.AppendNew();
-							if (EWC_FVERIFY(pStnodMember->m_pSym, "nested typedef with no symbol"))
+							pTypememb = pTinstruct->m_aryTypemembType.AppendNew();
+							if (EWC_FVERIFY(pStnodMember->m_pSym, "nested structure with no symbol"))
 							{
 								pTypememb->m_strName = pStnodMember->m_pSym->m_strName;
 							}
@@ -2329,6 +2335,11 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 			auto pTinstruct = (STypeInfoStruct *)pTin;
 			return CChFormat(pCh, pChEnd-pCh, "%s::struct", pTin->m_strName.PChz());
 		}break;
+    case TINK_Enum:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+			return CChFormat(pCh, pChEnd-pCh, "%s::enum", pTin->m_strName.PChz());
+		}break;
 	case TINK_Integer:		// fall through ...
     case TINK_Float:		// fall through ...
     case TINK_Bool:			// fall through ...
@@ -2336,7 +2347,6 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
     case TINK_Void:			// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
-    case TINK_Enum:			// fall through ...
 	default:
 		return CChFormat(pCh, pChEnd-pCh, "%s", pTin->m_strName.PChz());
 	}
@@ -2598,6 +2608,11 @@ void TestParse()
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
 
+		pChzIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo; }";
+		pChzOut = "({} (enum $ENUMK $int ({} (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
+			" (decl $enumk (member $ENUMK $Foo)))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
 		pChzIn = "SOut :: struct { SIn :: struct { ConstTwo :: 2; }} n := SOut.SIn.ConstTwo; ";
 		pChzOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $sIn) $ConstTwo))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
@@ -2703,11 +2718,6 @@ void TestParse()
 
 		pChzIn = "{ NopFunc :: () { guh := 2; } wha : * int; }";
 		pChzOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
-		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
-
-		pChzIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 }; a = 2; }";
-		pChzOut = "({} (enum $ENUMK $int ({} (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
-			" (= $a 2))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "STest :: struct { m_a := 2; m_b : int; } boo : int = 3;";

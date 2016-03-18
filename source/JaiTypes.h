@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "BigMath.h"
 #include "EwcArray.h"
 #include "EwcString.h"
 
@@ -198,8 +199,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 								,m_pStnodStruct(nullptr)
 								,m_aryTypemembField()
 								,m_aryTypemembConstant()
-								,m_aryTypemembStruct()
-								,m_aryTypemembTypedef()
+								,m_aryTypemembType()
 									{ ; }
 	
 	LLVMOpaqueValue *				m_pLvalInitMethod;
@@ -209,11 +209,28 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	CSTNode *						m_pStnodStruct;
 	EWC::CAry<STypeStructMember>	m_aryTypemembField;
 	EWC::CAry<STypeStructMember>	m_aryTypemembConstant;
-	EWC::CAry<STypeStructMember>	m_aryTypemembStruct;	// member structures
-	EWC::CAry<STypeStructMember>	m_aryTypemembTypedef;
+	EWC::CAry<STypeStructMember>	m_aryTypemembType;	// member structures, enums and typedefs
 };
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
+
+struct STypeInfoEnum : public STypeInfo	// tag = tinenum
+{
+	static const TINK s_tink = TINK_Enum;
+
+						STypeInfoEnum(const char * pChzName)
+						:STypeInfo(pChzName, s_tink)
+						,m_pTinLoose(nullptr)
+						,m_bintMin()
+						,m_bintMax()
+						,m_tinstructProduced(pChzName)
+							{ ; }
+
+	STypeInfo *			m_pTinLoose;
+	SBigInt				m_bintMin;
+	SBigInt				m_bintMax;
+	STypeInfoStruct 	m_tinstructProduced;
+};
 
 enum ARYK
 {
@@ -238,25 +255,6 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 	u64				m_c;
 	s32				m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
 	ARYK			m_aryk;
-};
-
-struct STypeInfoEnum : public STypeInfo	// tag = tinenum
-{
-	static const TINK s_tink = TINK_Enum;
-
-						STypeInfoEnum(const char * pChzName)
-						:STypeInfo(pChzName, s_tink)
-						,m_pTinInternal(nullptr)
-						,m_valueMin(0)
-						,m_valueLast(0)
-						,m_tinstructProduced(pChzName)
-							{ ; }
-						~STypeInfoEnum();
-
-	STypeInfo *			m_pTinInternal;
-	u64					m_valueMin;		// BB - won't handle signed 64-bit enums properly, need to replace with union
-	u64					m_valueLast;	// BB - won't handle signed 64-bit enums properly, need to replace with union
-	STypeInfoStruct 	m_tinstructProduced;
 };
 
 void DeleteTypeInfo(EWC::CAlloc * pAlloc, STypeInfo * pTin);
