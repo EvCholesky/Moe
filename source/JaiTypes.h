@@ -151,13 +151,12 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 						STypeInfoLiteral()
 						:STypeInfo("", s_tink)
 						,m_fIsFinalized(false)
-						,m_pTinptrNull(nullptr)
+						,m_pTinSource(nullptr)
 						,m_litty()
 							{ ; }
 	
 	bool			m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
-	STypeInfoPointer *
-					m_pTinptrNull;	// reference type (for finalized null pointers)
+	STypeInfo *		m_pTinSource;		// source type (for finalized null pointers or enum literals)
 	SLiteralType	m_litty;
 };
 
@@ -223,12 +222,14 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 						,m_pTinLoose(nullptr)
 						,m_bintMin()
 						,m_bintMax()
+						,m_bintLatest()
 						,m_tinstructProduced(pChzName)
 							{ ; }
 
 	STypeInfo *			m_pTinLoose;
 	SBigInt				m_bintMin;
 	SBigInt				m_bintMax;
+	SBigInt				m_bintLatest;
 	STypeInfoStruct 	m_tinstructProduced;
 };
 

@@ -184,6 +184,7 @@ SUnknownType * PUntypeEnsure(STypeCheckWorkspace * pTcwork, const SSymbol * pSym
 
 void PushTcsent(STypeCheckFrame * pTcfram, CSTNode * pStnod)
 {
+	EWC_ASSERT(pStnod->m_strees < STREES_TypeChecked, "Pushing syntax tree node that was already checked");
 	STypeCheckStackEntry * pTcsentPrev = pTcfram->m_aryTcsent.PLast();
 	STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
 	*pTcsent = *pTcsentPrev;
@@ -340,7 +341,7 @@ inline bool FComputeUnaryOpOnLiteral(
 	const SLiteralType & littyOperand = pTinlitOperand->m_litty;
 	CSTValue * pStvalOperand = pStnodOperand->m_pStval;
 
-	bool fOperandIsNumber = (littyOperand.m_litk == LITK_Float) | (littyOperand.m_litk == LITK_Integer);
+	bool fOperandIsNumber = (littyOperand.m_litk == LITK_Float) | (littyOperand.m_litk == LITK_Integer) | (littyOperand.m_litk == LITK_Enum);
 	if (!fOperandIsNumber)
 		return false;
 
@@ -416,9 +417,22 @@ inline bool FComputeUnaryOpOnLiteral(
 		{
 			SetIntegerValue(pTcwork, pStnodOperand, pStvalStnod, bintOperand);
 
-			EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Integer);
-			*ppTinReturn = pTinlitOperand;
-			*ppTinOperand = pTinlitOperand;
+			if (pTinlitOperand->m_litty.m_litk == LITK_Enum)
+			{
+				// We need to make an unfinalized integer literal
+				auto pTinlitInt = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+				pTinlitInt->m_litty.m_litk = LITK_Integer;
+				pSymtab->AddManagedTin(pTinlitInt);
+
+				*ppTinReturn = pTinlitInt;
+				*ppTinOperand = pTinlitOperand;
+			}
+			else
+			{
+				EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Integer);
+				*ppTinReturn = pTinlitOperand;
+				*ppTinOperand = pTinlitOperand;
+			}
 		}
 		return true;
 	}
@@ -448,8 +462,8 @@ inline bool FComputeBinaryOpOnLiterals(
 	CSTValue * pStvalLhs = pStnodLhs->m_pStval;
 	CSTValue * pStvalRhs = pStnodRhs->m_pStval;
 
-	bool fLhsIsNumber = (littyLhs.m_litk == LITK_Float) | (littyLhs.m_litk == LITK_Integer) | (littyLhs.m_litk == LITK_Bool);
-	bool fRhsIsNumber = (littyRhs.m_litk == LITK_Float) | (littyRhs.m_litk == LITK_Integer) | (littyRhs.m_litk == LITK_Bool);
+	bool fLhsIsNumber = (littyLhs.m_litk == LITK_Float) | (littyLhs.m_litk == LITK_Integer) | (littyLhs.m_litk == LITK_Bool) | (littyLhs.m_litk == LITK_Enum);
+	bool fRhsIsNumber = (littyRhs.m_litk == LITK_Float) | (littyRhs.m_litk == LITK_Integer) | (littyRhs.m_litk == LITK_Bool) | (littyRhs.m_litk == LITK_Enum);
 	if ((fLhsIsNumber == false) | (fRhsIsNumber == false))
 		return false;
 
@@ -550,15 +564,28 @@ inline bool FComputeBinaryOpOnLiterals(
 		{
 			SetIntegerValue(pTcwork, pStnodLhs, pStvalStnod, bintOut);
 
-			EWC_ASSERT(pTinlitLhs->m_litty.m_litk == LITK_Integer || pTinlitLhs->m_litty.m_litk == LITK_Bool);
-			*ppTinReturn = pTinlitLhs;
-			*ppTinOperand = pTinlitLhs;
+			if (pTinlitLhs->m_litty.m_litk == LITK_Enum)
+			{
+				// We need to make an unfinalized integer literal
+				auto pTinlitInt = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+				pTinlitInt->m_litty.m_litk = LITK_Integer;
+				pSymtab->AddManagedTin(pTinlitInt);
+
+				*ppTinReturn = pTinlitInt;
+				*ppTinOperand = pTinlitLhs;
+			}
+			else
+			{
+				EWC_ASSERT(pTinlitLhs->m_litty.m_litk == LITK_Integer || pTinlitLhs->m_litty.m_litk == LITK_Bool);
+				*ppTinReturn = pTinlitLhs;
+				*ppTinOperand = pTinlitLhs;
+			}
 		}
 		return true;
 	}
 }
 
-void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTin, CSTNode * pStnodLit)
+void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit)
 {
 	if (!pStnodLit->m_pTin || pStnodLit->m_pTin->m_tink != TINK_Literal)
 		return;
@@ -569,17 +596,17 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTin, CSTNode * pSt
 
 	// we've found the place the literal will become 'typed' - flush that type back down into the literal
 
-	EWC_ASSERT(pTin->m_tink != TINK_Literal, "cannot finalize literal with literal");
-	switch (pTin->m_tink)
+	EWC_ASSERT(pTinDst->m_tink != TINK_Literal, "cannot finalize literal with literal");
+	switch (pTinDst->m_tink)
 	{
 	case TINK_Integer:
 		{
-			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTin;
+			STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinDst;
 			pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Integer, pTinint->m_cBit, pTinint->m_fIsSigned);
 		}break;
     case TINK_Float:
 		{
-			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTin;
+			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTinDst;
 			pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Float, pTinfloat->m_cBit, true);
 		}break;
 	case TINK_Bool:		pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Bool);	break;
@@ -603,10 +630,20 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTin, CSTNode * pSt
 			}
 			if (pTinlit)
 			{
-				pTinlit->m_pTinptrNull = (STypeInfoPointer*)pTin;
+				pTinlit->m_pTinSource = (STypeInfoPointer*)pTinDst;
 				pStnodLit->m_pTin = pTinlit;
 			}
 		}break;
+	case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTinDst;
+
+			auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTinenum->m_pTinLoose);
+			if (EWC_FVERIFY(pTinint, "Expected integer 'loose' type for enum"))
+			{
+				pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Integer, pTinint->m_cBit, pTinint->m_fIsSigned);
+			}
+		} break;
 	case TINK_Null: // fall through
 	case TINK_Void: // fall through
 	default:
@@ -696,6 +733,10 @@ inline STypeInfo * PTinFromLiteralFinalized(
 			auto pTinU8 = pSymtab->PTinBuiltin("u8");
 			return pSymtab->PTinptrGetReference(pTinU8);
 		} break;
+	case LITK_Enum:
+		{
+			EWC_ASSERT(false, "enum literals should not be finalized");
+		} break;
 	}
 
 	EWC_ASSERT(false, "Unknown literal kind");
@@ -744,6 +785,12 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 		{
 			EmitError(pTcwork, pStnodLit, "Cannot infer type for null");
 		}break;
+	case LITK_Enum:
+		{
+			auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlit->m_pTinSource);
+			EWC_ASSERT(pTinenum, "Failed to infer type for enum literal");
+			return pTinenum;
+		}
 	case LITK_Nil: 
 		EWC_ASSERT(false, "Cannot infer type for LITK_Nil");
 	}
@@ -756,13 +803,6 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 	CSTNode * pStnodLit,	
 	STypeInfo * pTinDest)
 {
-	const STypeInfo * pTin = pStnodLit->m_pTin;
-	if (pTin->m_tink == TINK_Enum && pStnodLit->m_pStval)
-	{
-		SBigInt bintEnum = BintFromStval(pStnodLit->m_pStval);
-		return PTinFromBint(pTcwork, pSymtab, bintEnum);
-	}
-
 	const STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 	if (!pTinlit)
 		return pStnodLit->m_pTin;
@@ -776,6 +816,24 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 	const SLiteralType & litty = pTinlit->m_litty;
 	switch (litty.m_litk)
 	{
+	case LITK_Enum:
+		{
+			if (pTinDest->m_tink == TINK_Enum)
+			{
+				auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlit->m_pTinSource);
+				if (EWC_FVERIFY(pTinenum, "bad enum literal"))
+				{
+					return pTinenum;
+				}
+			}
+
+			SBigInt bintEnum = BintFromStval(pStnodLit->m_pStval);
+
+			bool fDestIsSigned = pTinDest->m_tink != TINK_Integer || ((STypeInfoInteger*)pTinDest)->m_fIsSigned;
+			bintEnum.m_fIsNegative |= fDestIsSigned;
+
+			return PTinFromBint(pTcwork, pSymtab, bintEnum);
+		}
 	case LITK_Integer:
 		{
 			// NOTE: We're casting the value to fit the type info here, not letting the value determine the type.
@@ -1020,10 +1078,6 @@ STypeInfo * PTinFromRange(
 	SBigInt bintMin,
 	SBigInt bintMax)
 {
-	printf("Enum range = %s%lld, %s%lld\n",
-				(bintMin.m_fIsNegative) ? "-" : "", bintMin.m_nAbs,
-				(bintMax.m_fIsNegative) ? "-" : "", bintMax.m_nAbs);
-
 	SBigInt bint = (bintMin.m_nAbs >= bintMax.m_nAbs) ? bintMin : bintMax;
 
 	if (bintMin.m_fIsNegative)
@@ -1040,7 +1094,6 @@ STypeInfo * PTinFromRange(
 	}
 
 	auto pTin = PTinFromBint(pTcwork, pSymtab, bint);
-	printf("enum type = %s\n", (pTin) ? pTin->m_strName.PChz() : "(null)");
 	return pTin;
 }
 
@@ -1568,30 +1621,29 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				if (pTcsentTop->m_nState == pStenum->m_iStnodIdentifier)
 					++pTcsentTop->m_nState;
 
-				if (pTcsentTop->m_nState < pStnod->CStnodChild())
+				if (pTcsentTop->m_nState == 1)
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
-					STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+					++pTcsentTop->m_nState;
+
+					// type spec
+					if (pStenum->m_iStnodType >= 0)
+					{
+						PushTcsent(pTcfram, pStnod->PStnodChild(pStenum->m_iStnodType));
+						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
 
-					if (pTcsentTop->m_nState == pStenum->m_iStnodType)
-					{
 						pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+						break;
 					}
-					++pTcsentTop->m_nState;
-					break;
 				}
 
-				auto pTinstruct = &pTinenum->m_tinstructProduced;
-				EWC_ASSERT(pTinstruct->m_aryTypemembField.C() == 0, "no fields expected in enum struct");
-				EWC_ASSERT(pTinstruct->m_aryTypemembType.C() == 0, "no fields expected in enum struct");
-
-				STypeInfo * pTinLoose = nullptr;
-				if (pStenum->m_iStnodType >= 0)
+				if (pTcsentTop->m_nState == 2)
 				{
-					auto pStnodType = pStnod->PStnodChild(pStenum->m_iStnodType);
-					bool fIsValidTypeSpec;
-					pTinLoose = PTinFromTypeSpecification(
+					if (pStenum->m_iStnodType >= 0)
+					{
+						auto pStnodType = pStnod->PStnodChild(pStenum->m_iStnodType);
+						bool fIsValidTypeSpec;
+						auto pTinLoose = PTinFromTypeSpecification(
 											pTcwork,
 											pTcsentTop->m_pSymtab,
 											pStnodType,
@@ -1599,9 +1651,31 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 											nullptr,
 											&fIsValidTypeSpec);
 
-					if (!fIsValidTypeSpec)
-						pTinLoose = nullptr;
+						if (fIsValidTypeSpec)
+						{
+							pTinenum->m_pTinLoose = pTinLoose;
+						}
+					}
+					++pTcsentTop->m_nState;
 				}
+
+				if (pTcsentTop->m_nState == 3)
+				{
+					if (pStenum->m_iStnodConstantList >= 0)
+					{
+						pTinenum->m_bintLatest = BintFromInt(-1);  // -1 so initial incremented value is zero
+
+						PushTcsent(pTcfram, pStnod->PStnodChild(pStenum->m_iStnodConstantList));
+						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
+						++pTcsentTop->m_nState;
+						break;
+					}
+				}
+
+				auto pTinstruct = &pTinenum->m_tinstructProduced;
+				EWC_ASSERT(pTinstruct->m_aryTypemembField.C() == 0, "no fields expected in enum struct");
+				EWC_ASSERT(pTinstruct->m_aryTypemembType.C() == 0, "no fields expected in enum struct");
 
 				int cStnodChild = 0;
 				CSTNode ** ppStnodMember = nullptr;
@@ -1618,13 +1692,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					SBigInt bintMin;
 					SBigInt bintMax;
 					auto pStnodMember = *ppStnodIt;
-					SBigInt bintLatest(BintFromInt(-1)); // -1 so initial incremented value is zero
 					if (cStnodChild && pStnodMember->m_pStval)
 					{
 						bintMin = BintFromStval(pStnodMember->m_pStval);
 						bintMax = bintMin;
-						bintLatest = bintMin;
-
 						++pTypememb;
 						++ppStnodIt;
 					}
@@ -1632,44 +1703,33 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					for ( ; pTypememb != pTypemembMax; ++pTypememb, ++ppStnodIt)
 					{
 						auto pStnodMember = *ppStnodIt;
-						if (pStnodMember->m_pStval)
+						if (EWC_FVERIFY(pStnodMember->m_pStval, "PARK_EnumConstant type check failed to set values"))
 						{
-							bintLatest = BintFromStval(pStnodMember->m_pStval);
+							auto bint = BintFromStval(pStnodMember->m_pStval);
 
-							if (bintLatest < bintMin)
-								bintMin = bintLatest;
-							if (bintLatest > bintMax)
-								bintMax = bintLatest;
-						}
-						else
-						{
-							bintLatest = BintAdd(bintLatest, BintFromUint(1));
-
-							auto pStval = EWC_NEW(pTcwork->m_pAlloc, CSTValue) CSTValue();
-							pStval->m_stvalk = (bintLatest.m_fIsNegative) ? STVALK_SignedInt : STVALK_UnsignedInt;
-							pStval->m_nUnsigned = bintLatest.m_nAbs;
-							pStnodMember->m_pStval = pStval;
+							if (bint < bintMin)
+								bintMin = bint;
+							if (bint > bintMax)
+								bintMax = bint;
 						}
 					}
 
 					pTinenum->m_bintMin = bintMin;
 					pTinenum->m_bintMax = bintMax;
 
-					if (!pTinLoose)
+					if (!pTinenum->m_pTinLoose)
 					{
-						pTinLoose = PTinFromRange(pTcwork, pTcsentTop->m_pSymtab, pStnod, bintMin, bintMax);
+						pTinenum->m_pTinLoose = PTinFromRange(pTcwork, pTcsentTop->m_pSymtab, pStnod, bintMin, bintMax);
 					}
 				}
 
-				if (!pTinLoose)
+				if (!pTinenum->m_pTinLoose)
 				{
 					EmitError(pTcwork, pStnod, "Unable to determine loose type for enum %s", pTinenum->m_strName.PChz());
 					return TCRET_StoppingError;
 				}
 				else
 				{
-					pTinenum->m_pTinLoose = pTinLoose;
-
 					// assign pTin and finalize literals
 					for (int iStnodMember = 0; iStnodMember < cStnodChild; ++iStnodMember)
 					{
@@ -1681,11 +1741,13 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						{
 							STypeInfo * pTinInit = pStnodMember->m_pTin;
 
-							pTinInit = PTinPromoteLiteralTightest(pTcwork, pTcsentTop->m_pSymtab, pStnodInit, pTinLoose);
-							if (!FCanImplicitCast(pTinInit, pTinLoose))
+							pTinInit = PTinPromoteLiteralTightest(pTcwork, pTcsentTop->m_pSymtab, pStnodInit, pTinenum->m_pTinLoose);
+							if (!FCanImplicitCast(pTinInit, pTinenum->m_pTinLoose))
 							{
-								EmitError(pTcwork, pStnod, "Cannot initialize constant of type %s with %s",
-									StrFromTypeInfo(pTinLoose).PChz(),
+
+							auto Test = PTinPromoteLiteralTightest(pTcwork, pTcsentTop->m_pSymtab, pStnodInit, pTinenum->m_pTinLoose);
+								EmitError(pTcwork, pStnodInit, "Cannot initialize constant of type %s with %s",
+									StrFromTypeInfo(pTinenum->m_pTinLoose).PChz(),
 									StrFromTypeInfo(pTinInit).PChz());
 							}
 						}
@@ -1721,16 +1783,22 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 
-				auto * pTinenum = PTinRtiCast<STypeInfoEnum *>(pStnod->m_pTin);
-				EWC_ASSERT(pTinenum, "expected enum typeinfo would be created during parse");
+				STypeInfoEnum * pTinenum = nullptr;
+				auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnod->m_pTin);
+				EWC_ASSERT(pTinlit, "expected enum literal typeinfo would be created during parse");
+				if (pTinlit)
+				{
+					pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlit->m_pTinSource);
+				}
+					
+				if (!EWC_FVERIFY(pTinenum, "expected enum literal"))
+					return TCRET_StoppingError;
 
 				// enum constants should be [ident] or [ident, init]
 				CSTNode * pStnodIdent = pStnod->PStnodChild(0);
 				if (!EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))				
 					return TCRET_StoppingError;
 					
-				// Just make sure we have a constant integer of some kind, the enum type will manage
-				//  computing a concrete type and assigning implicit enum values
 				auto pStnodInit = pStnod->PStnodChildSafe(1);
 				CString strIdent = StrFromIdentifier(pStnodIdent);
 				if (pStnodInit)
@@ -1745,6 +1813,16 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					}
 
 					pStnod->m_pStval = PStvalCopy(pTcwork->m_pAlloc, pStnodInit->m_pStval);
+					pTinenum->m_bintLatest = BintFromStval(pStnod->m_pStval);
+				}
+				else
+				{
+					pTinenum->m_bintLatest = BintAdd(pTinenum->m_bintLatest, BintFromUint(1));
+
+					auto pStval = EWC_NEW(pTcwork->m_pAlloc, CSTValue) CSTValue();
+					pStval->m_stvalk = (pTinenum->m_bintLatest.m_fIsNegative) ? STVALK_SignedInt : STVALK_UnsignedInt;
+					pStval->m_nUnsigned = pTinenum->m_bintLatest.m_nAbs;
+					pStnod->m_pStval = pStval;
 				}
 
 				// Find our symbol and resolve any pending unknown types - we don't have a concrete type yet
@@ -1862,7 +1940,9 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 								pStnod->m_pTin = pStnodDefinition->m_pTin;
 								pStnod->m_pSym = pSym;
 
-								if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal && pStnodDefinition->m_pStval )
+								if (pStnod->m_pTin && 
+									(pStnod->m_pTin->m_tink == TINK_Literal || pStnod->m_pTin->m_tink == TINK_Enum) &&
+									pStnodDefinition->m_pStval)
 								{
 									pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pStnodDefinition->m_pStval);
 								}
@@ -2187,7 +2267,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 			}break;
 			case PARK_Literal:
 			{
-				if (EWC_FVERIFY(pStnod->m_pTin == nullptr, "STypeInfoLiteral should be constructed during type checking"))
+				if (EWC_FVERIFY(pStnod->m_pTin == nullptr, "STypeInfoLiteral should not be constructed before type checking"))
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
@@ -2247,7 +2327,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						else
 						{
 							CString strLhs = StrFromTypeInfo(pTinLhs);
-							CString strRhs = StrFromTypeInfo(pTinRhs);
+							CString strRhs = StrFromTypeInfo(pTinRhsPromoted);
 							EmitError( pTcwork, pStnod,
 								"implicit cast from %s to %s is not allowed",
 								strRhs.PChz(),
@@ -3151,8 +3231,8 @@ void TestTypeCheck()
 	const char * pChzOut;
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
-	pChzOut = "({} (ENUMK::enum $ENUMK s32 ({} (ENUMK::enum $Ick Literal:Int) (ENUMK::enum $Foo) (ENUMK::enum $Bah Literal:Int))) "
-		"(ENUMK::enum $enumk (ENUMK::enum ENUMK::enum $Bah)))";
+	pChzOut = "({} (ENUMK::enum $ENUMK s32 ({} (Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
+		"(ENUMK::enum $enumk (Literal:Int32 ENUMK::enum $Bah)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "SomeConst : s16 : 0xFF; n := SomeConst;";

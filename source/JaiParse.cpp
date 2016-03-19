@@ -88,6 +88,7 @@ const char * PChzFromLitk(LITK litk)
 		"String",
 		"Bool",
 		"Null",
+		"Enum",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpLitkPChz) == LITK_Max, "missing LITK string");
 	if (litk == LITK_Nil)
@@ -1368,8 +1369,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 						pTypememb->m_strName = StrFromIdentifier(pStnodMember->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
 					}
 
-					pStnodMember->m_pTin = pTinenum;
-					pTypememb->m_pTin = pTinenum;
+					auto pTinlit = EWC_NEW(pSymtabParent->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+					pSymtabParent->AddManagedTin(pTinlit);
+					pTinlit->m_litty.m_litk = LITK_Enum;
+					pTinlit->m_pTinSource = pTinenum;
+
+					pStnodMember->m_pTin = pTinlit;
+					pTypememb->m_pTin = pTinlit;
+
 					pTypememb->m_pStnod = pStnodMember;
 				}
 

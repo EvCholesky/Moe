@@ -3,7 +3,7 @@ Work in progress JAI compiler
 
 Slowly building a LLVM frontend for a dialect of Jon Blow's JAI language.
 
-It currently can compile and statically link very simple programs. It doesn't do runtime code execution yet: the plan is to use LLVM's jit compiler.
+It currently can compile and statically link very simple programs. It doesn't do runtime code execution yet.
 
 New:
   * Codegen for simple pointers
@@ -16,16 +16,18 @@ New:
   * Pointer arithmetic.
   * Structures
   * Constants
-  	- Basic constants
-  	- typed constants
-  	- member constants
   * Type aliasing (typedefs)
+  * Enums (still need implicit members)
 
 Coming soon:
-  * Enums
+  * Optionals (ala swift)
+  * Advanced array support
+    - generic array references
+    - array literals
+    - dynamic arrays
+  * Explicit casting
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables
-  * Explicit casting
   * For Loops.
 
 Further out:

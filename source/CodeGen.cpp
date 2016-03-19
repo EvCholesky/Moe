@@ -333,7 +333,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			case LITK_Bool:		return LLVMInt1Type();
 			case LITK_Char:		return nullptr;
 			case LITK_String:	return LLVMPointerType(LLVMInt8Type(), 0);
-			case LITK_Null:		return PLtypeFromPTin(pTinlit->m_pTinptrNull);
+			case LITK_Null:		return PLtypeFromPTin(pTinlit->m_pTinSource);
 			default:			return nullptr;
 			}
 		}
@@ -714,6 +714,11 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 	case TINK_Bool:		return LLVMConstInt(LLVMInt1Type(), 0, false);
 	case TINK_Integer:	return PLvalConstantInt(((STypeInfoInteger *)pTin)->m_cBit, false, 0);
 	case TINK_Float:	return PLvalConstantFloat(((STypeInfoFloat *)pTin)->m_cBit, 0.0);
+	case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTin;
+			return PLvalZeroInType(pBuild, pTinenum->m_pTinLoose);
+		} 
 	case TINK_Pointer:
 		{
 			STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTin;
@@ -824,7 +829,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 		} break;
 	case LITK_Null:
 		{
-			auto pLtype = PLtypeFromPTin(pTinlit->m_pTinptrNull);
+			auto pLtype = PLtypeFromPTin(pTinlit->m_pTinSource);
 			if (!EWC_FVERIFY(pLtype, "could not find llvm type for null pointer"))
 				return nullptr;
 

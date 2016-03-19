@@ -187,6 +187,7 @@ TestStructures :: ()
 	 	}
 	}
 
+	printf("aNest count = %d\n", SOuter.SNested.NestedCount);
 	aNest : [SOuter.SNested.NestedCount] SOuter.SNested;
 
 	iNest := 0;
@@ -243,6 +244,43 @@ TestTypedefs :: ()
 	}
 }
 
+TestEnums :: ()
+{
+	printf("\nEnumerations:\n");
+
+	ENUMK :: enum
+	{
+		Ack : -1,
+		Bah : Ack+2,
+		Ugh,	
+		Guh : Bah + Ugh,
+		Four : SLater.ConstFour,
+		Last
+	}
+
+	enumkTest : ENUMK;
+	//enumkTest = 2; // should not work
+	//enumkTest = SOuter.MEMB.Two; // should not work
+
+
+	printf("SLater.MEMB.One = %d\n", SLater.MEMB.One);
+	printf("SLater.MEMB.Two = %d\n", SLater.MEMB.Two);
+	printf("SLater.MEMB.Three = %d\n", SLater.MEMB.Three);
+
+	printf("Ack = %d (-1)\n", ENUMK.Ack);
+	printf("Bah = %d (1)\n", ENUMK.Bah);
+	printf("Ugh = %d (2)\n", ENUMK.Ugh);
+	printf("Guh = %d (3)\n", ENUMK.Guh);
+	printf("Four = %d (4)\n", ENUMK.Four);
+	printf("Last = %d (5)\n", ENUMK.Last);
+
+	nBah : s32 = -ENUMK.Bah; 
+	printf("nBah = %d\n", nBah);
+
+	enumkAck := ENUMK.Ack;
+	printf("enumkAck = %d\n", enumkAck);
+}
+
 main :: () -> int 
 {
 	TestOperators();
@@ -253,6 +291,7 @@ main :: () -> int
 	TestStructures();
 	TestRecursion();
 	TestTypedefs();
+	TestEnums();
 
 	return 1;
 }
@@ -265,5 +304,12 @@ SLater :: struct
 	QuadArray :: typedef [ConstFour] IntAlias;
 
 	// ArrayFail :: typedef [Four] IntAlias; // test this!
+
+	MEMB :: enum
+	{
+		One : 1,
+		Two,
+		Three
+	}
 }
 

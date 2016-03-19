@@ -111,6 +111,7 @@ enum LITK
 	LITK_String,
 	LITK_Bool,
 	LITK_Null,
+	LITK_Enum,
 
 	EWC_MAX_MIN_NIL(LITK)
 };
