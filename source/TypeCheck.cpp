@@ -1347,6 +1347,22 @@ bool FVerifyIsInstance(STypeCheckWorkspace * pTcwork, CSTNode * pStnod)
 	return true;
 }
 
+void SetEnumConstantValue(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const SBigInt & bint)
+{
+	auto pStval = EWC_NEW(pTcwork->m_pAlloc, CSTValue) CSTValue();
+	if (bint.m_fIsNegative)
+	{
+		pStval->m_stvalk = STVALK_SignedInt;
+		pStval->m_nSigned = bint.S64Coerce();
+	}
+	else
+	{
+		pStval->m_stvalk = STVALK_UnsignedInt;
+		pStval->m_nUnsigned = bint.U64Coerce();
+	}
+	pStnod->m_pStval = pStval;
+}
+
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
@@ -1684,23 +1700,25 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					CSTNode * pStnodConstantList = pStnod->PStnodChild(pStenum->m_iStnodConstantList);
 
 					ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
-					CSTNode ** ppStnodIt = ppStnodMember;
+
+					if (!EWC_FVERIFY(cStnodChild >= ENUMIMP_Max, "missing implicit enum members"))
+						return TCRET_StoppingError;
 
 					// loop over our constants and find the min/max values
 					auto pTypemembMax = pTinstruct->m_aryTypemembConstant.PMac();
-					auto pTypememb = pTinstruct->m_aryTypemembConstant.A();
+					auto pTypemembIt = &pTinstruct->m_aryTypemembConstant.A()[ENUMIMP_Max];
+					CSTNode ** ppStnodIt = &ppStnodMember[ENUMIMP_Max];
 					SBigInt bintMin;
 					SBigInt bintMax;
-					auto pStnodMember = *ppStnodIt;
-					if (cStnodChild && pStnodMember->m_pStval)
+					if (pTypemembIt != pTypemembMax && (*ppStnodIt)->m_pStval)
 					{
-						bintMin = BintFromStval(pStnodMember->m_pStval);
+						bintMin = BintFromStval((*ppStnodIt)->m_pStval);
 						bintMax = bintMin;
-						++pTypememb;
+						++pTypemembIt;
 						++ppStnodIt;
 					}
 
-					for ( ; pTypememb != pTypemembMax; ++pTypememb, ++ppStnodIt)
+					for ( ; pTypemembIt != pTypemembMax; ++pTypemembIt, ++ppStnodIt)
 					{
 						auto pStnodMember = *ppStnodIt;
 						if (EWC_FVERIFY(pStnodMember->m_pStval, "PARK_EnumConstant type check failed to set values"))
@@ -1720,6 +1738,33 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					if (!pTinenum->m_pTinLoose)
 					{
 						pTinenum->m_pTinLoose = PTinFromRange(pTcwork, pTcsentTop->m_pSymtab, pStnod, bintMin, bintMax);
+					}
+
+					auto pTinLoose = pTinenum->m_pTinLoose;
+					if (EWC_FVERIFY(pTinLoose && pTinLoose->m_tink == TINK_Integer, "bad enum pTinLoose"))
+					{
+						auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTinLoose);
+						SBigInt bintNil;
+						if (pTinint->m_fIsSigned)
+						{
+							bintNil = BintFromInt(-1);
+						}
+						else
+						{
+							switch (pTinint->m_cBit)
+							{
+							case 8:		bintNil = BintFromInt(0xFF); break;
+							case 16:	bintNil = BintFromInt(0xFFFF); break;
+							case 32:	bintNil = BintFromInt(0xFFFFFFFF); break;
+							case 64:	bintNil = BintFromInt(0xFFFFFFFFFFFFFFFFULL); break;
+							default: EWC_ASSERT(false, "unexpected cBit");
+							}
+						}
+
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_NilChild], bintNil);
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MinChild], bintMin);
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_LastChild], bintMax);
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MaxChild], BintAdd(bintMax, BintFromInt(1)));
 					}
 				}
 
@@ -1783,24 +1828,24 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 
+				auto pStdecl = pStnod->m_pStdecl;
 				STypeInfoEnum * pTinenum = nullptr;
 				auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnod->m_pTin);
-				EWC_ASSERT(pTinlit, "expected enum literal typeinfo would be created during parse");
 				if (pTinlit)
 				{
 					pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlit->m_pTinSource);
 				}
 					
-				if (!EWC_FVERIFY(pTinenum, "expected enum literal"))
+				if (!EWC_FVERIFY(pTinenum, "expected enum literal") ||
+					!EWC_FVERIFY(pStdecl, "enum literal without syntax tree decl struct"))
 					return TCRET_StoppingError;
 
-				// enum constants should be [ident] or [ident, init]
-				CSTNode * pStnodIdent = pStnod->PStnodChild(0);
+				CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 				if (!EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))				
 					return TCRET_StoppingError;
 					
-				auto pStnodInit = pStnod->PStnodChildSafe(1);
 				CString strIdent = StrFromIdentifier(pStnodIdent);
+				auto pStnodInit = pStnod->PStnodChildSafe(pStdecl->m_iStnodInit);
 				if (pStnodInit)
 				{
 					STypeInfo * pTinInit = pStnodInit->m_pTin;
@@ -1815,14 +1860,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					pStnod->m_pStval = PStvalCopy(pTcwork->m_pAlloc, pStnodInit->m_pStval);
 					pTinenum->m_bintLatest = BintFromStval(pStnod->m_pStval);
 				}
-				else
+				else if (!pStnod->m_grfstnod.FIsSet(FSTNOD_ImplicitMember))
 				{
 					pTinenum->m_bintLatest = BintAdd(pTinenum->m_bintLatest, BintFromUint(1));
-
-					auto pStval = EWC_NEW(pTcwork->m_pAlloc, CSTValue) CSTValue();
-					pStval->m_stvalk = (pTinenum->m_bintLatest.m_fIsNegative) ? STVALK_SignedInt : STVALK_UnsignedInt;
-					pStval->m_nUnsigned = pTinenum->m_bintLatest.m_nAbs;
-					pStnod->m_pStval = pStval;
+					SetEnumConstantValue(pTcwork, pStnod, pTinenum->m_bintLatest);
 				}
 
 				// Find our symbol and resolve any pending unknown types - we don't have a concrete type yet

@@ -250,29 +250,32 @@ TestEnums :: ()
 
 	ENUMK :: enum
 	{
-		Ack : -1,
-		Bah : Ack+2,
+		Ack : 0,
+		Bah : Ack+1,
 		Ugh,	
 		Guh : Bah + Ugh,
 		Four : SLater.ConstFour,
-		Last
+		Final
 	}
 
 	enumkTest : ENUMK;
 	//enumkTest = 2; // should not work
 	//enumkTest = SOuter.MEMB.Two; // should not work
 
-
 	printf("SLater.MEMB.One = %d\n", SLater.MEMB.One);
 	printf("SLater.MEMB.Two = %d\n", SLater.MEMB.Two);
 	printf("SLater.MEMB.Three = %d\n", SLater.MEMB.Three);
 
-	printf("Ack = %d (-1)\n", ENUMK.Ack);
+	printf("Ack = %d (0)\n", ENUMK.Ack);
 	printf("Bah = %d (1)\n", ENUMK.Bah);
 	printf("Ugh = %d (2)\n", ENUMK.Ugh);
 	printf("Guh = %d (3)\n", ENUMK.Guh);
 	printf("Four = %d (4)\n", ENUMK.Four);
-	printf("Last = %d (5)\n", ENUMK.Last);
+	printf("Final = %d (5)\n", ENUMK.Final);
+	printf("(nil) = %d\n", ENUMK.nil);
+	printf("(min) = %d\n", ENUMK.min);
+	printf("(last) = %d\n", ENUMK.last);
+	printf("(max) = %d\n", ENUMK.max);
 
 	nBah : s32 = -ENUMK.Bah; 
 	printf("nBah = %d\n", nBah);

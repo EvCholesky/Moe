@@ -140,9 +140,7 @@ enum PARK // PARse Kind
 	PARK_EnumConstant,
 	PARK_VariadicArg,
 	
-	PARK_Max,
-	PARK_Min = 0,
-	PARK_Nil = -1,
+	EWC_MAX_MIN_NIL(PARK)
 };
 
 const char * PChzFromPark(PARK park);
@@ -204,6 +202,20 @@ public:
 	STypeInfoEnum * m_pTinenum;
 };
 
+enum ENUMIMP	// implicit enum members
+{
+	ENUMIMP_NilChild,	// -1 or max unsigned (not included in min)
+	ENUMIMP_MinChild,	// lowest user value
+	ENUMIMP_LastChild,	// highest user value 
+	ENUMIMP_MaxChild,	// one past the highest value
+	//ENUMIMP_Names,
+	//ENUMIMP_Values,
+
+	EWC_MAX_MIN_NIL(ENUMIMP)
+};
+
+const char * PChzFromEnumimp(ENUMIMP enumimp);
+
 // Syntax tree string values - used for identifiers and reserved words
 class CSTIdentifier // tag = stident
 {
@@ -228,9 +240,10 @@ enum STREES
 enum FSTNOD
 {
 	FSTNOD_EntryPoint	= 0x1,		// this should be inserted as a top level entry point, not in place (local function)
+	FSTNOD_ImplicitMember = 0x2,	// this node was created as an implicit member, did not come directly from the source
 
 	FSTNOD_None			= 0x0,
-	FSTNOD_All			= 0x1,
+	FSTNOD_All			= 0x3,
 };
 EWC_DEFINE_GRF(GRFSTNOD, FSTNOD, u8);
 

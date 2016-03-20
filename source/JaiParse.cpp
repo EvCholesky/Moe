@@ -129,6 +129,26 @@ const char * PChzFromTink(TINK tink)
 	return s_mpTinkPChz[tink];
 }
 
+const char * PChzFromEnumimp(ENUMIMP enumimp)
+{
+	static const char * s_mpEnumimpPChz[] =
+	{
+		"nil",	//ENUMIMP_NilChild,
+		"min",	//ENUMIMP_MinChild,	// lowest user value
+		"last",	//ENUMIMP_LastChild,	// highest user value 
+		"max",	//ENUMIMP_MaxChild,	// one past the highest value
+	};
+	EWC_CASSERT(EWC_DIM(s_mpEnumimpPChz) == ENUMIMP_Max, "missing ENUMIMP string");
+	if (enumimp == ENUMIMP_Max)
+		return "(Nil)";
+
+	if ((enumimp < ENUMIMP_Nil) | (enumimp >= ENUMIMP_Max))
+		return "unknown";
+
+	return s_mpEnumimpPChz[enumimp];
+}
+
+
 void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChzFormat, ...)
 {
 	SLexerLocation lexloc(pJlex);
@@ -163,22 +183,30 @@ void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const
 	JtokNextToken(pJlex);
 };
 
+CSTNode * PStnodAllocateIdentifier(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)
+{
+	CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+
+	pStnod->m_park = PARK_Identifier;
+
+	auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+	pStident->m_str = strIdent;
+	pStnod->m_pStident = pStident;
+
+	return pStnod;
+}
+
 CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 {
 	if (pJlex->m_jtok != JTOK_Identifier)
 		return nullptr;
 
 	SLexerLocation lexloc(pJlex);
-	CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-
+	CString strIdent(pJlex->m_pChString, pJlex->m_cChString);
+	auto pStnod = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
 	pStnod->m_jtok = JTOK(pJlex->m_jtok);
-	pStnod->m_park = PARK_Identifier;
 
-	auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
-	pStident->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
-	pStnod->m_pStident = pStident;
-
-	if (pStident->m_str.FIsEmpty())
+	if (strIdent.FIsEmpty())
 	{
 		ParseError(pParctx, pJlex, "Identifier with no string");
 	}
@@ -718,8 +746,6 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 		SLexerLocation lexloc(pJlex);
 		JtokNextToken(pJlex);
 		CSTNode * pStnodArray = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-
-		pStnodArray->m_jtok = JTOK_Nil;
 		pStnodArray->m_park = PARK_ArrayDecl;
 		
 		STypeInfoArray * pTinary = EWC_NEW(pParctx->m_pAlloc, STypeInfoArray) STypeInfoArray();
@@ -850,8 +876,6 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 		return nullptr;
 
 	CSTNode * pStnodDecl = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-
-	pStnodDecl->m_jtok = JTOK_Nil;
 	pStnodDecl->m_park = PARK_Decl;
 
 	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
@@ -989,8 +1013,6 @@ CSTNode * PStnodParseParameterList(
 	if (pStnodParam)
 	{
 		pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-
-		pStnodList->m_jtok = JTOK_Nil;
 		pStnodList->m_park = PARK_ParameterList;
 		pStnodList->m_pSymtab = pSymtabProc;
 		pStnodList->IAppendChild(pStnodParam);
@@ -1026,6 +1048,23 @@ CSTNode * PStnodParseParameterList(
 	return pStnodList;
 }
 
+CSTNode * PStnodeSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)
+{
+	CSTNode * pStnodConstant = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+	pStnodConstant->m_park = PARK_EnumConstant;
+	pStnodConstant->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
+
+	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+	pStnodConstant->m_pStdecl = pStdecl;
+
+	auto pStnodIdent = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
+	pStnodIdent->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
+	pStdecl->m_iStnodIdentifier = pStnodConstant->IAppendChild(pStnodIdent);
+
+	pStnodConstant->m_pSym = pParctx->m_pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, strIdent, pStnodConstant);
+	return pStnodConstant;
+}
+
 CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 {
 	SLexerLocation lexloc(pJlex);
@@ -1034,7 +1073,6 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 		return nullptr;
 
 	CSTNode * pStnodConstant = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-	pStnodConstant->m_jtok = JTOK_Nil;
 	pStnodConstant->m_park = PARK_EnumConstant;
 
 	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
@@ -1042,7 +1080,22 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 	pStdecl->m_iStnodIdentifier = pStnodConstant->IAppendChild(pStnodIdent);
 
 	CSymbolTable * pSymtab = pParctx->m_pSymtab;
-	pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodConstant);
+	CString strIdent = StrFromIdentifier(pStnodIdent);
+
+	// BB - we should change the interface here so we don't do multiple lookups
+	auto pErrman = pParctx->m_pWork->m_pErrman;
+	auto pSym = pSymtab->PSymLookup(strIdent, pStnodConstant->m_lexloc);
+	if (pSym)
+	{
+		s32 iLine;
+		s32 iCol;
+		CalculateLinePosition(pErrman->m_pWork, &pSym->m_pStnodDefinition->m_lexloc, &iLine, &iCol);
+
+		EmitError(pErrman, &pStnodConstant->m_lexloc, "Enum constant name '%s' has already been defined at (%d, %d)", strIdent.PChz(), iLine, iCol);
+	}
+
+	pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConstant);
+	pStnodConstant->m_pSym = pSym;
 
 	if (pJlex->m_jtok == JTOK(':'))
 	{
@@ -1071,26 +1124,26 @@ CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park)
 
 CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	CSTNode * pStnodList = nullptr;
+	SLexerLocation lexloc(pJlex);
+	auto pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+	pStnodList->m_jtok = JTOK('{');
+	pStnodList->m_park = PARK_List;
+
+	// add STNodes for implicit members: nil, min, max, etc.
+
+	for (int enumimp = ENUMIMP_Min; enumimp < ENUMIMP_Max; ++enumimp)
+	{
+		auto pStnodImplicit = PStnodeSpoofEnumConstant(pParctx, lexloc, PChzFromEnumimp((ENUMIMP)enumimp));
+		pStnodList->IAppendChild(pStnodImplicit);
+	}
 
 	while (1)
 	{
-		SLexerLocation lexloc(pJlex);
 		CSTNode * pStnod = PStnodParseEnumConstant(pParctx, pJlex);
 		if (!pStnod)
 			break;
 
-		if (pStnodList == nullptr)
-		{
-			pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-			pStnodList->m_jtok = JTOK('{');
-			pStnodList->m_park = PARK_List;
-			pStnodList->IAppendChild(pStnod);
-		}
-		else
-		{
-			pStnodList->IAppendChild(pStnod);
-		}
+		pStnodList->IAppendChild(pStnod);
 
 		if (pJlex->m_jtok != JTOK(','))
 		{
@@ -1122,7 +1175,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				JtokNextToken(pJlex);
 
 				CSTNode * pStnodProc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodProc->m_jtok = JTOK_Nil;
 				pStnodProc->m_park = PARK_ProcedureDefinition;
 				pStnodProc->m_grfstnod.AddFlags(FSTNOD_EntryPoint);
 
@@ -1306,7 +1358,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				SLexerLocation lexloc(pJlex);
 				JtokNextToken(pJlex);
 				CSTNode * pStnodEnum = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodEnum->m_jtok = JTOK_Nil;
 				pStnodEnum->m_park = PARK_EnumDefinition;
 
 				CSTEnum * pStenum = EWC_NEW(pParctx->m_pAlloc, CSTEnum) CSTEnum();
@@ -1398,7 +1449,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				Expect(pParctx, pJlex, JTOK('{'));
 
 				CSTNode * pStnodStruct = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodStruct->m_jtok = JTOK_Nil;
 				pStnodStruct->m_park = PARK_StructDefinition;
 				pStnodStruct->IAppendChild(pStnodIdent);
 
@@ -1526,7 +1576,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				}
 
 				CSTNode * pStnodTypedef = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodTypedef->m_jtok = JTOK_Nil;
 				pStnodTypedef->m_park = PARK_Typedef;
 
 				(void) pStnodTypedef->IAppendChild(pStnodIdent);
@@ -1557,7 +1606,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 			}
 
 			CSTNode * pStnodConst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-			pStnodConst->m_jtok = JTOK_Nil;
 			pStnodConst->m_park = PARK_ConstantDecl;
 
 			CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
