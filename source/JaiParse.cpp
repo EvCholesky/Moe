@@ -133,10 +133,10 @@ const char * PChzFromEnumimp(ENUMIMP enumimp)
 {
 	static const char * s_mpEnumimpPChz[] =
 	{
-		"nil",	//ENUMIMP_NilChild,
-		"min",	//ENUMIMP_MinChild,	// lowest user value
-		"last",	//ENUMIMP_LastChild,	// highest user value 
-		"max",	//ENUMIMP_MaxChild,	// one past the highest value
+		"nil",		//ENUMIMP_NilConstant,
+		"min",		//ENUMIMP_MinConstant,
+		"last",		//ENUMIMP_LastConstant,
+		"max",		//ENUMIMP_MaxConstant,
 	};
 	EWC_CASSERT(EWC_DIM(s_mpEnumimpPChz) == ENUMIMP_Max, "missing ENUMIMP string");
 	if (enumimp == ENUMIMP_Max)
@@ -1048,7 +1048,7 @@ CSTNode * PStnodParseParameterList(
 	return pStnodList;
 }
 
-CSTNode * PStnodeSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)
+CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)
 {
 	CSTNode * pStnodConstant = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 	pStnodConstant->m_park = PARK_EnumConstant;
@@ -1131,9 +1131,9 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex
 
 	// add STNodes for implicit members: nil, min, max, etc.
 
-	for (int enumimp = ENUMIMP_Min; enumimp < ENUMIMP_Max; ++enumimp)
+	for (int enumimp = ENUMIMP_ConstantMin; enumimp < ENUMIMP_ConstantMax; ++enumimp)
 	{
-		auto pStnodImplicit = PStnodeSpoofEnumConstant(pParctx, lexloc, PChzFromEnumimp((ENUMIMP)enumimp));
+		auto pStnodImplicit = PStnodSpoofEnumConstant(pParctx, lexloc, PChzFromEnumimp((ENUMIMP)enumimp));
 		pStnodList->IAppendChild(pStnodImplicit);
 	}
 
@@ -1371,6 +1371,11 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 				CSymbolTable * pSymtabEnum = pParctx->m_pWork->PSymtabNew(strIdent);
 				CSTNode * pStnodConstantList = nullptr;
+
+				auto pErrman = pParctx->m_pWork->m_pErrman;
+				(void) pSymtabEnum->PSymEnsure(pErrman, "loose", pStnodEnum);
+				(void) pSymtabEnum->PSymEnsure(pErrman, "strict", pStnodEnum);
+
 				if (pJlex->m_jtok == JTOK('{'))
 				{
 					SLexerLocation lexloc(pJlex);
@@ -1391,49 +1396,27 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				// type info enum
 				int cStnodChild;
 				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
-				int cStnodTypedef = 2; // loose, strict
 				int cStnodArray = 2; // names, values
-				int cStnodExtraConstants = 6; // count, min, max, nil, highest_value, lowest_value
-				int cStnodMember = cStnodChild; // + cStnodTypedef + cStnodArray + cStnodExtraConstants;
+				int cStnodMember = cStnodChild; // cStnodArray;
 
-				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeStructMember)) + 
-								cStnodMember * sizeof(STypeStructMember);
-				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
-
-				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent.PChz());
-				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
-																		pB + sizeof(STypeInfoEnum), 
-																		EWC_ALIGN_OF(STypeStructMember));
-				pTinenum->m_tinstructProduced.m_aryTypemembConstant.SetArray(aTypememb, 0, cStnodMember);
+				STypeInfoEnum * pTinenum = EWC_NEW(pParctx->m_pAlloc, STypeInfoEnum) STypeInfoEnum(strIdent.PChz());
 				pTinenum->m_tinstructProduced.m_pStnodStruct = pStnodEnum;
 
 				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
-					STypeStructMember * pTypememb = pTinenum->m_tinstructProduced.m_aryTypemembConstant.AppendNew();
 					CSTNode * pStnodMember = *ppStnodMember;
 					EWC_ASSERT(pStnodMember->m_park == PARK_EnumConstant, "Expected enum constant");
-
-					auto pStdecl = pStnodMember->m_pStdecl;
-					if (EWC_FVERIFY(pStdecl, "enum constant without decl info"))
-					{
-						pTypememb->m_strName = StrFromIdentifier(pStnodMember->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
-					}
 
 					auto pTinlit = EWC_NEW(pSymtabParent->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
 					pSymtabParent->AddManagedTin(pTinlit);
 					pTinlit->m_litty.m_litk = LITK_Enum;
 					pTinlit->m_pTinSource = pTinenum;
-
 					pStnodMember->m_pTin = pTinlit;
-					pTypememb->m_pTin = pTinlit;
-
-					pTypememb->m_pStnod = pStnodMember;
 				}
 
 				pSymtabParent->AddManagedTin(pTinenum);
 
-				auto pErrman = pParctx->m_pWork->m_pErrman;
 				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType);
 				pSymEnum->m_grfsym.AddFlags(FSYM_IsType);
 				pSymEnum->m_pTin = pTinenum;
@@ -1480,25 +1463,22 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodDeclList, &cStnodMember, PARK_List);
 
 				int cStnodField = 0;
-				int cStnodConstant = 0;
-				int cStnodType = 0;
 				CSTNode * const * ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for (auto ppStnodMemberIt = ppStnodMember; ppStnodMemberIt != ppStnodMemberMax; ++ppStnodMemberIt)
 				{
 					switch ((*ppStnodMemberIt)->m_park)
 					{
 					case PARK_Decl:				++cStnodField; break;
-					case PARK_ConstantDecl:		++cStnodConstant; break;
-					case PARK_StructDefinition:	++cStnodType; break;
-					case PARK_EnumDefinition:	++cStnodType; break;
-					case PARK_Typedef:			++cStnodType; break;
+					case PARK_ConstantDecl:		break;
+					case PARK_StructDefinition:	break;
+					case PARK_EnumDefinition:	break;
+					case PARK_Typedef:			break;
 					default: EWC_ASSERT(false, "Unexpected member in structure %s", strIdent.PChz());
 					}
 				}
 
-				EWC_ASSERT(cStnodMember >= (cStnodField + cStnodConstant + cStnodType), "bad member count");
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
-								cStnodMember * sizeof(STypeStructMember);
+								cStnodField * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
 				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent.PChz());
@@ -1507,42 +1487,16 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 																		pB + sizeof(STypeInfoStruct), 
 																		EWC_ALIGN_OF(STypeStructMember));
 				pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cStnodField);
-				pTinstruct->m_aryTypemembConstant.SetArray(aTypememb + cStnodField, 0, cStnodConstant);
-				pTinstruct->m_aryTypemembType.SetArray(aTypememb + cStnodField + cStnodConstant, 0, cStnodType);
 
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
 					CSTNode * pStnodMember = *ppStnodMember;
-					STypeStructMember * pTypememb;
-					switch (pStnodMember->m_park)
-					{
-					case PARK_Decl:				
-						{
-							pTypememb = pTinstruct->m_aryTypemembField.AppendNew();
-							auto pStnodMemberIdent = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
-							pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
-						} break;
-					case PARK_ConstantDecl:		
-						{
-							pTypememb = pTinstruct->m_aryTypemembConstant.AppendNew();
-							auto pStnodMemberIdent = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
-							pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
-						} break;
-					case PARK_Typedef:	
-					case PARK_StructDefinition:	
-					case PARK_EnumDefinition:	
-						{
-							pTypememb = pTinstruct->m_aryTypemembType.AppendNew();
-							if (EWC_FVERIFY(pStnodMember->m_pSym, "nested structure with no symbol"))
-							{
-								pTypememb->m_strName = pStnodMember->m_pSym->m_strName;
-							}
-						} break;
-					default: 
-						EWC_ASSERT(false, "Unexpected member in structure %s", strIdent.PChz());
+					if (pStnodMember->m_park != PARK_Decl)
 						continue;
-					}
 
+					auto pTypememb = pTinstruct->m_aryTypemembField.AppendNew();
+					auto pStnodMemberIdent = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
+					pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
 					pTypememb->m_pStnod = pStnodMember;
 					pTypememb->m_pTin = pStnodMember->m_pTin;
 				}
@@ -2091,7 +2045,7 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 		SSymbol ** ppSym = m_hashHvPSym.Lookup(str.Hv()); 
 		if (ppSym)
 		{
-			bool fIsOrdered = m_grfsymtab.FIsSet(FSYMTAB_Ordered);
+			bool fIsOrdered = m_grfsymtab.FIsSet(FSYMTAB_Ordered) && !grfsymlook.FIsSet(FSYMLOOK_IgnoreOrder);
 			SSymbol * pSym = *ppSym;
 
 			while (pSym)
@@ -2664,7 +2618,7 @@ void TestParse()
 		CWorkspace work(&alloc, &errman);
 
 		pChzIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo; }";
-		pChzOut = "({} (enum $ENUMK $int ({} (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
+		pChzOut = "({} (enum $ENUMK $int ({} (enumConst $nil) (enumConst $min) (enumConst $last) (enumConst $max) (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
 			" (decl $enumk (member $ENUMK $Foo)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 

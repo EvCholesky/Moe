@@ -1294,20 +1294,6 @@ STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString 
 		if (pTypememb->m_strName == strMemberName)
 			return pTypememb;
 	}
-
-	pTypemembMax = pTinstruct->m_aryTypemembConstant.PMac();
-	for (auto pTypememb = pTinstruct->m_aryTypemembConstant.A(); pTypememb != pTypemembMax; ++pTypememb)
-	{
-		if (pTypememb->m_strName == strMemberName)
-			return pTypememb;
-	}
-
-	pTypemembMax = pTinstruct->m_aryTypemembType.PMac();
-	for (auto pTypememb = pTinstruct->m_aryTypemembType.A(); pTypememb != pTypemembMax; ++pTypememb)
-	{
-		if (pTypememb->m_strName == strMemberName)
-			return pTypememb;
-	}
 	return nullptr;
 }
 
@@ -1361,6 +1347,25 @@ void SetEnumConstantValue(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const
 		pStval->m_nUnsigned = bint.U64Coerce();
 	}
 	pStnod->m_pStval = pStval;
+}
+
+void ResolveSpoofTypedef(
+	STypeCheckWorkspace * pTcwork, 
+	CSymbolTable * pSymtab,
+	CSTNode * pStnod,
+	const CString & strIdent,
+	STypeInfo * pTin,
+	GRFSYMLOOK grfsymlook)
+{
+	auto pSym = pSymtab->PSymLookup( strIdent, pStnod->m_lexloc, grfsymlook);
+
+	if (!EWC_FVERIFY(pSym && pSym->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz()))
+		return;
+	
+	EWC_ASSERT(pSym->m_pTin == nullptr, "spoof typedef already resolved");
+	pSym->m_pTin = pTin;
+
+	OnTypeComplete(pTcwork, pSym);
 }
 
 TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
@@ -1691,7 +1696,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 				auto pTinstruct = &pTinenum->m_tinstructProduced;
 				EWC_ASSERT(pTinstruct->m_aryTypemembField.C() == 0, "no fields expected in enum struct");
-				EWC_ASSERT(pTinstruct->m_aryTypemembType.C() == 0, "no fields expected in enum struct");
 
 				int cStnodChild = 0;
 				CSTNode ** ppStnodMember = nullptr;
@@ -1705,20 +1709,18 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						return TCRET_StoppingError;
 
 					// loop over our constants and find the min/max values
-					auto pTypemembMax = pTinstruct->m_aryTypemembConstant.PMac();
-					auto pTypemembIt = &pTinstruct->m_aryTypemembConstant.A()[ENUMIMP_Max];
 					CSTNode ** ppStnodIt = &ppStnodMember[ENUMIMP_Max];
+					CSTNode ** ppStnodMax = &ppStnodMember[cStnodChild];
 					SBigInt bintMin;
 					SBigInt bintMax;
-					if (pTypemembIt != pTypemembMax && (*ppStnodIt)->m_pStval)
+					if (ppStnodIt != ppStnodMax && (*ppStnodIt)->m_pStval)
 					{
 						bintMin = BintFromStval((*ppStnodIt)->m_pStval);
 						bintMax = bintMin;
-						++pTypemembIt;
 						++ppStnodIt;
 					}
 
-					for ( ; pTypemembIt != pTypemembMax; ++pTypemembIt, ++ppStnodIt)
+					for ( ; ppStnodIt!= ppStnodMax; ++ppStnodIt)
 					{
 						auto pStnodMember = *ppStnodIt;
 						if (EWC_FVERIFY(pStnodMember->m_pStval, "PARK_EnumConstant type check failed to set values"))
@@ -1761,10 +1763,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							}
 						}
 
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_NilChild], bintNil);
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MinChild], bintMin);
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_LastChild], bintMax);
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MaxChild], BintAdd(bintMax, BintFromInt(1)));
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_NilConstant], bintNil);
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MinConstant], bintMin);
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_LastConstant], bintMax);
+						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MaxConstant], BintAdd(bintMax, BintFromInt(1)));
 					}
 				}
 
@@ -1811,6 +1813,10 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					return TCRET_StoppingError;
 				if (!EWC_FVERIFY(pSymEnum->m_pTin, "expected structure type info to be created during parse"))
 					return TCRET_StoppingError;
+
+				auto grfsymlook = pTcsentTop->m_grfsymlook;
+				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "loose", pTinenum->m_pTinLoose, grfsymlook);
+				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "strict", pTinenum, grfsymlook);
 
 				OnTypeComplete(pTcwork, pSymEnum);
 				pStnod->m_strees = STREES_TypeChecked;
@@ -1910,18 +1916,6 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 
 				auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
 				for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb)
-				{
-					pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
-				}
-
-				pTypemembMax = pTinstruct->m_aryTypemembConstant.PMac();
-				for (auto pTypememb = pTinstruct->m_aryTypemembConstant.A(); pTypememb != pTypemembMax; ++pTypememb)
-				{
-					pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
-				}
-
-				pTypemembMax = pTinstruct->m_aryTypemembType.PMac();
-				for (auto pTypememb = pTinstruct->m_aryTypemembType.A(); pTypememb != pTypemembMax; ++pTypememb)
 				{
 					pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
 				}
@@ -2298,6 +2292,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 														pTcsentTop->m_grfsymlook);
 
 						EWC_ASSERT(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz());
+						pSymIdent->m_pTin = pStnod->m_pTin;
 						pStnod->m_pSym = pSymIdent;
 						OnTypeComplete(pTcwork, pSymIdent);
 					}
@@ -2467,24 +2462,25 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 
 				CString strMemberName = StrFromIdentifier(pStnodRhs);
-				auto pTypememb = PTypemembLookup(pTinstruct, strMemberName);
-				if (!pTypememb)
+				auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
+				if (!pSymMember)
 				{
 					EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PChz(), pTinstruct->m_strName.PChz());
 					return TCRET_StoppingError;
 				}
 
-				pStnod->m_pTin = pTypememb->m_pTin;
+				EWC_ASSERT(pSymMember->m_pTin, "expected symbol to have type");
+				pStnod->m_pTin = pSymMember->m_pTin;
 				pStnod->m_pTinOperand = pStnod->m_pTin;
 				pStnod->m_strees = STREES_TypeChecked;
 
-				if (pStnod->m_pTin && pTypememb->m_pStnod)
+				if (pStnod->m_pTin && pSymMember->m_pStnodDefinition)
 				{
 					TINK tink = pStnod->m_pTin->m_tink;
-					if (tink == TINK_Literal || tink == TINK_Enum)
+					if (tink == TINK_Literal)
 					{
 						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-						pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pTypememb->m_pStnod->m_pStval);
+						pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pSymMember->m_pStnodDefinition->m_pStval);
 					}
 				}
 				PopTcsent(pTcfram, pStnod);
@@ -2977,6 +2973,8 @@ void RelocateTcfram(
 
 void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 {
+	EWC_ASSERT(pSym->m_pTin, "expected type for completed symbol");
+
 	// BB - could replace this with a function that 'pops' a key/value pair from the hash and save a second lookup.
 	SUnknownType * pUntype = pTcwork->m_hashPSymUntype.Lookup(pSym);
 	if (!pUntype)
@@ -3272,8 +3270,14 @@ void TestTypeCheck()
 	const char * pChzOut;
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
-	pChzOut = "({} (ENUMK::enum $ENUMK s32 ({} (Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
+	pChzOut = "({} (ENUMK::enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
 		"(ENUMK::enum $enumk (Literal:Int32 ENUMK::enum $Bah)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick; }";
+	pChzOut = "({} (EEK::enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int))) "
+		"(EEK::enum $eek (EEK::enum EEK::enum EEK::enum) (Literal:Int16 EEK::enum $Ick)) "
+		"(s16 $n (s16 EEK::enum s16) (Literal:Int16 EEK::enum $Ick)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "SomeConst : s16 : 0xFF; n := SomeConst;";

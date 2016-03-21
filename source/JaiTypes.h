@@ -160,46 +160,30 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 	SLiteralType	m_litty;
 };
 
-enum FMEMB
-{
-    FMEMB_Constant = 0x1,
-    FMEMB_Imported = 0x2,
-
-	FMEMB_None = 0,
-	FMEMB_All = 3,
-};
-
-EWC_DEFINE_GRF(GRFMEMB, FMEMB, u32);
-
 struct STypeStructMember	// tag = typememb
 {
 					STypeStructMember()
 					:m_strName()
 					,m_pTin(nullptr)
 					,m_pStnod(nullptr)
-					,m_grfmemb(FMEMB_None)
 						{ ;}
 
 	EWC::CString	m_strName;
 	STypeInfo *		m_pTin;
 	CSTNode *		m_pStnod;	// syntax tree node for this member
-    
-	GRFMEMB			m_grfmemb;
 };
 
 struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 {
 	static const TINK s_tink = TINK_Struct;
 
-								STypeInfoStruct(const char * pChzName)
-								:STypeInfo(pChzName, s_tink)
-								,m_pLvalInitMethod(nullptr)
-								,m_pLtype(nullptr)
-								,m_pStnodStruct(nullptr)
-								,m_aryTypemembField()
-								,m_aryTypemembConstant()
-								,m_aryTypemembType()
-									{ ; }
+									STypeInfoStruct(const char * pChzName)
+									:STypeInfo(pChzName, s_tink)
+									,m_pLvalInitMethod(nullptr)
+									,m_pLtype(nullptr)
+									,m_pStnodStruct(nullptr)
+									,m_aryTypemembField()
+										{ ; }
 	
 	LLVMOpaqueValue *				m_pLvalInitMethod;
 	LLVMOpaqueType *				m_pLtype;			// llvm type reference, here to avoid infinite recursion in
@@ -207,8 +191,6 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 	CSTNode *						m_pStnodStruct;
 	EWC::CAry<STypeStructMember>	m_aryTypemembField;
-	EWC::CAry<STypeStructMember>	m_aryTypemembConstant;
-	EWC::CAry<STypeStructMember>	m_aryTypemembType;	// member structures, enums and typedefs
 };
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);

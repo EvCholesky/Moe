@@ -202,16 +202,21 @@ public:
 	STypeInfoEnum * m_pTinenum;
 };
 
-enum ENUMIMP	// implicit enum members
+enum ENUMIMP	// implicit enum members (added as STNodes during parse)
 {
-	ENUMIMP_NilChild,	// -1 or max unsigned (not included in min)
-	ENUMIMP_MinChild,	// lowest user value
-	ENUMIMP_LastChild,	// highest user value 
-	ENUMIMP_MaxChild,	// one past the highest value
+	ENUMIMP_NilConstant,	// -1 or max unsigned (not included in min)
+	ENUMIMP_MinConstant,	// lowest user value
+	ENUMIMP_LastConstant,	// highest user value 
+	ENUMIMP_MaxConstant,	// one past the highest value
 	//ENUMIMP_Names,
 	//ENUMIMP_Values,
 
-	EWC_MAX_MIN_NIL(ENUMIMP)
+	ENUMIMP_Max,
+	ENUMIMP_Min = 0,
+	ENUMIMP_Nil = -1,
+
+	ENUMIMP_ConstantMin = ENUMIMP_Min,
+	ENUMIMP_ConstantMax = ENUMIMP_MaxConstant+1,
 };
 
 const char * PChzFromEnumimp(ENUMIMP enumimp);
@@ -342,12 +347,13 @@ EWC_DEFINE_GRF(GRFSYM, FSYM, u32);
 
 enum FSYMLOOK	// SYMbol LOOKup flags
 {
-	FSYMLOOK_None		= 0x0,
-	FSYMLOOK_Local		= 0x1,
-	FSYMLOOK_Ancestors	= 0x2,
+	FSYMLOOK_None			= 0x0,
+	FSYMLOOK_Local			= 0x1,
+	FSYMLOOK_Ancestors		= 0x2,
+	FSYMLOOK_IgnoreOrder	= 0x4,
 
-	FSYMLOOK_All		= 0x3,
-	FSYMLOOK_Default	= FSYMLOOK_Local | FSYMLOOK_Ancestors,
+	FSYMLOOK_All			= 0x7,
+	FSYMLOOK_Default		= FSYMLOOK_Local | FSYMLOOK_Ancestors,
 };
 
 EWC_DEFINE_GRF(GRFSYMLOOK, FSYMLOOK, u32);
