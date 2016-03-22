@@ -26,8 +26,8 @@ TestPointers :: ()
 	printf("\nPointers:\n");
 
 	n : s64 = 456;
-	pN := *n;
-	ppN := *pN;
+	pN := &n;
+	ppN := &pN;
 	printf("@pN = %d, n = %d\n",@pN, n);
 
 	n = 123;
@@ -39,7 +39,7 @@ TestPointers :: ()
 	@@ppN = 890;
 	printf("@pN = %d, n = %d\n",@pN, n);
 
-	pB : * u8 = null; 
+	pB : & u8 = null; 
 	fIsNull := (pB == null);
 	fNotPtr := !pB;
 	printf("%p == null, fIsNull=%d, fNotPtr=%d\n", pB, fIsNull, fNotPtr);
@@ -53,7 +53,7 @@ TestPointers :: ()
 	}
 
 	pointstruct : PointStruct;
-	pPointstruct : * PointStruct = *pointstruct;
+	pPointstruct : & PointStruct = &pointstruct;
 
 	pointstruct.m_n = 1234;
 	printf("pointstruct.m_n = %d, pPointstruct.m_n = %d\n", pointstruct.m_n, pPointstruct.m_n);
@@ -113,7 +113,7 @@ TestInitializers :: ()
 		m_n : s8 = 7;
 		m_g := 2.2;
 	    m_aNest : [cNest] SNestedConst;
-		m_pInit : * SInitConst;
+		m_pInit : & SInitConst;
 	}
 
 	SNested :: struct // tag=nest
@@ -127,7 +127,7 @@ TestInitializers :: ()
 		m_n : s8 = 7;
 		m_g := 2.2;
 	    m_aNest : [cNest] SNested;
-		m_pInit : * SInit;
+		m_pInit : & SInit;
 	}
 
 	initc : SInitConst;
@@ -158,22 +158,22 @@ TestStructures :: ()
 	SChild :: struct
 	{
 		m_n : s32;
-		m_childSelf : * SChild; 	
+		m_pChildSelf : & SChild; 	
 	}
 
 	SRoot :: struct
 	{
 		m_child : SChild;
-		m_rootSelf : * SRoot;
+		m_pRootSelf : & SRoot;
 	}
 
 	root : SRoot;
-	root.m_rootSelf = *root;
-	root.m_child.m_childSelf = *root.m_child;
+	root.m_pRootSelf = &root;
+	root.m_child.m_pChildSelf = &root.m_child;
 
 	root.m_child.m_n = 1234;
 
-	printf("%d = %d", root.m_child.m_n, root.m_rootSelf.m_rootSelf.m_child.m_childSelf.m_childSelf.m_n);
+	printf("%d = %d", root.m_child.m_n, root.m_pRootSelf.m_pRootSelf.m_child.m_pChildSelf.m_pChildSelf.m_n);
 
 
 	SOuter :: struct

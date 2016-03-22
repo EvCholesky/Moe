@@ -56,7 +56,8 @@ enum JTOK
 	JTOK_Nil = -1,
 
 	// token alias (for easy rebinding)
-	JTOK_Reference = '*',
+	JTOK_Reference = '&',
+	JTOK_DoubleReference = JTOK_AndAnd,
 	JTOK_Dereference = '@',
 
 	JTOK_SimpleMax = JTOK_Eof,
@@ -200,6 +201,7 @@ struct SLexerLocation // tag = lexloc
 
 void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, u32 cChStorage);
 int JtokNextToken(SJaiLexer * pJlex);
+void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit);
 RWORD RwordLookup(SJaiLexer * pJlex);
 const char * PChzFromJtok(JTOK jtok);
 const char * PChzFromRword(RWORD rword);

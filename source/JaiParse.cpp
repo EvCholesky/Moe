@@ -777,6 +777,12 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 
 CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 {
+	// handle the mis-lexing of '&&' as one token here
+	if (pJlex->m_jtok == JTOK_DoubleReference)
+	{
+		SplitToken(pJlex, JTOK_Reference);
+	}
+
 	if (pJlex->m_jtok == JTOK_Reference)
 	{
 		SLexerLocation lexloc(pJlex);
@@ -787,6 +793,7 @@ CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 		pStnod->m_park = PARK_ReferenceDecl;
 		return pStnod;
 	}
+
 	return nullptr;
 }
 
@@ -2299,7 +2306,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		{
 			STypeInfoPointer * pTinptr = (STypeInfoPointer*)pTin;
 			char * pChWork = pCh;
-			pChWork += CChCopy("*", pChWork, pChEnd-pChWork);
+			pChWork += CChCopy(PChzFromJtok(JTOK_Reference), pChWork, pChEnd-pChWork);
 			pChWork += CChPrintTypeInfo(pTinptr->m_pTinPointedTo, park, pChWork, pChEnd);
 			return pChWork - pCh;
 		}break;
@@ -2342,12 +2349,12 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
     case TINK_Struct:
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTin;
-			return CChFormat(pCh, pChEnd-pCh, "%s::struct", pTin->m_strName.PChz());
+			return CChFormat(pCh, pChEnd-pCh, "%s_struct", pTin->m_strName.PChz());
 		}break;
     case TINK_Enum:
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTin;
-			return CChFormat(pCh, pChEnd-pCh, "%s::enum", pTin->m_strName.PChz());
+			return CChFormat(pCh, pChEnd-pCh, "%s_enum", pTin->m_strName.PChz());
 		}break;
 	case TINK_Integer:		// fall through ...
     case TINK_Float:		// fall through ...
@@ -2626,7 +2633,7 @@ void TestParse()
 		pChzOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $sIn) $ConstTwo))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-		pChzIn = "PtrType :: typedef * s16; ArrayType :: typedef [2] s8; ";
+		pChzIn = "PtrType :: typedef & s16; ArrayType :: typedef [2] s8; ";
 		pChzOut = "(typedef $PtrType (ptr $s16)) (typedef $ArrayType ([] 2 $s8))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
@@ -2642,7 +2649,7 @@ void TestParse()
 		pChzOut = "(struct $SFoo ({} (decl $m_n 2))) (decl $foo $SFoo) (= (member $foo $m_n) 1)";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-		pChzIn = "paN : * [4] int;";
+		pChzIn = "paN : & [4] int;";
 		pChzOut = "(decl $paN (ptr ([] 4 $int)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
@@ -2725,7 +2732,7 @@ void TestParse()
 		pChzOut = "({} (procCall $FooFunc) (decl $n (procCall $barFunc (+ $x $ack))))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
-		pChzIn = "{ NopFunc :: () { guh := 2; } wha : * int; }";
+		pChzIn = "{ NopFunc :: () { guh := 2; } wha : & int; }";
 		pChzOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 

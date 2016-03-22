@@ -218,6 +218,28 @@ static int JtokParseString(SJaiLexer * pJlex, const char * pChz)
 	return jtok;
 }
 
+// method used to split compound tokens (ie '&&' split into two '&' '&' tokens)
+void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit)
+{
+	pJlex->m_jtok = jtokSplit;
+
+	const char * pChzJtok = PChzFromJtok(jtokSplit);
+	const char * pChIt = pJlex->m_pChBegin;
+	const char * pChEnd = pJlex->m_pChEnd;
+	while (pChIt != pChEnd)
+	{
+		EWC_ASSERT(*pChIt == *pChzJtok, "Split token mismatch");
+		if (*pChIt == '\0')
+			break;
+
+		++pChIt;
+		++pChzJtok;
+	}
+
+	pJlex->m_pChEnd = pChIt - 1;
+	pJlex->m_pChParse = pChIt;
+}
+
 int JtokNextToken(SJaiLexer * pJlex)
 {
 	const char * pChz = pJlex->m_pChParse;

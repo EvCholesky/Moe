@@ -3270,14 +3270,14 @@ void TestTypeCheck()
 	const char * pChzOut;
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
-	pChzOut = "({} (ENUMK::enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
-		"(ENUMK::enum $enumk (Literal:Int32 ENUMK::enum $Bah)))";
+	pChzOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
+		"(ENUMK_enum $enumk (Literal:Int32 ENUMK_enum $Bah)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick; }";
-	pChzOut = "({} (EEK::enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int))) "
-		"(EEK::enum $eek (EEK::enum EEK::enum EEK::enum) (Literal:Int16 EEK::enum $Ick)) "
-		"(s16 $n (s16 EEK::enum s16) (Literal:Int16 EEK::enum $Ick)))";
+	pChzOut = "({} (EEK_enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int))) "
+		"(EEK_enum $eek (EEK_enum EEK_enum EEK_enum) (Literal:Int16 EEK_enum $Ick)) "
+		"(s16 $n (s16 EEK_enum s16) (Literal:Int16 EEK_enum $Ick)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "SomeConst : s16 : 0xFF; n := SomeConst;";
@@ -3288,30 +3288,30 @@ void TestTypeCheck()
 	pChzOut = "(Literal:Int $SomeConst Literal:Int) (s16 $n s16 Literal:Int16) (int $n2 Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "pUgh : * SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo; } SFoo :: struct { m_n : s8; }";
-	pChzOut = "(*SUgh::struct $pUgh (*SUgh::struct SUgh::struct)) (s8 (s8 (SFoo::struct *SUgh::struct $m_foo) $m_n) Literal:Int8) "
-		"(SUgh::struct $SUgh ({} (SFoo::struct $m_foo SFoo::struct))) "
-		"(SFoo::struct $SFoo ({} (s8 $m_n s8)))";
+	pChzIn = "pUgh : & SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo; } SFoo :: struct { m_n : s8; }";
+	pChzOut = "(&SUgh_struct $pUgh (&SUgh_struct SUgh_struct)) (s8 (s8 (SFoo_struct &SUgh_struct $m_foo) $m_n) Literal:Int8) "
+		"(SUgh_struct $SUgh ({} (SFoo_struct $m_foo SFoo_struct))) "
+		"(SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "pFoo : * SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8; }";
-	pChzOut = "(*SFoo::struct $pFoo (*SFoo::struct SFoo::struct)) (s8 (s8 *SFoo::struct $m_n) Literal:Int8) (SFoo::struct $SFoo ({} (s8 $m_n s8)))";
+	pChzIn = "pFoo : & SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8; }";
+	pChzOut = "(&SFoo_struct $pFoo (&SFoo_struct SFoo_struct)) (s8 (s8 &SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "foo : SFoo; foo.m_n = 1; SFoo :: struct { m_n : s8; }";
-	pChzOut = "(SFoo::struct $foo SFoo::struct) (s8 (s8 SFoo::struct $m_n) Literal:Int8) (SFoo::struct $SFoo ({} (s8 $m_n s8)))";
+	pChzOut = "(SFoo_struct $foo SFoo_struct) (s8 (s8 SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
-	pChzOut = "(SFoo::struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo::struct $foo SFoo::struct)";
+	pChzOut = "(SFoo_struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo_struct $foo SFoo_struct)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "aN : [4] s32; pN : * s32; fEq := aN == pN; ";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (*s32 $pN (*s32 s32)) (bool $fEq (bool []s32 *s32))";
+	pChzIn = "aN : [4] s32; pN : & s32; fEq := aN == pN; ";
+	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool []s32 &s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "aN : [4] s32; paN : * [4] s32 = *aN;";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (*[]s32 $paN (*[]s32 ([]s32 Literal:Int8 s32)) (*[]s32 []s32))";
+	pChzIn = "aN : [4] s32; paN : & [4] s32 = &aN;";
+	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (&[]s32 $paN (&[]s32 ([]s32 Literal:Int8 s32)) (&[]s32 []s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; n := aN[0];";
@@ -3326,25 +3326,25 @@ void TestTypeCheck()
 	pChzOut ="({} (Nop) (s32 $n s32 (---)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "printf :: (pCh : * u8, ..) -> s32 #foreign;";
-	pChzOut ="(printf() $printf (Params (*u8 $pCh (*u8 u8)) (..)) s32)";
+	pChzIn = "printf :: (pCh : & u8, ..) -> s32 #foreign;";
+	pChzOut ="(printf() $printf (Params (&u8 $pCh (&u8 u8)) (..)) s32)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000);";
 	pChzOut ="(Vararg() $Vararg (Params (..)) void) (void $Vararg Literal:Float64 Literal:Int64 Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "n:=7; pN:=*n; ppN:=*pN; pN2:=@ppN; n2:=@pN2;";
-	pChzOut ="(int $n Literal:Int64) (*int $pN (*int int)) (**int $ppN (**int *int)) "
-				"(*int $pN2 (*int **int)) (int $n2 (int *int))";
+	pChzIn = "n:=7; pN:=&n; ppN:=&pN; pN2:=@ppN; n2:=@pN2;";
+	pChzOut ="(int $n Literal:Int64) (&int $pN (&int int)) (&&int $ppN (&&int &int)) "
+				"(&int $pN2 (&int &&int)) (int $n2 (int &int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "pN : * int; @pN = 2;";
-	pChzOut ="(*int $pN (*int int)) (int (int *int) Literal:Int64)";
+	pChzIn = "pN : & int; @pN = 2;";
+	pChzOut ="(&int $pN (&int int)) (int (int &int) Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "pChz:*u8=\"teststring\"; ";
-	pChzOut ="(*u8 $pChz (*u8 u8) Literal:String)";
+	pChzIn = "pChz:&u8=\"teststring\"; ";
+	pChzOut ="(&u8 $pChz (&u8 u8) Literal:String)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "a:=2-2; n:=-2;";
@@ -3381,17 +3381,16 @@ void TestTypeCheck()
 	pChzOut		= "(ParamFunc() $ParamFunc (params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : *u8 = \"huzzah\";";
-	//pChzOut = "({} (string $i Literal:String) (string $foo string) (string $g string)) (string $g_g string Literal:String)";
-	pChzOut = "({} (*u8 $i Literal:String) (*u8 $foo *u8) (*u8 $g *u8)) (*u8 $g_g (*u8 u8) Literal:String)";
+	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : &u8 = \"huzzah\";";
+	pChzOut = "({} (&u8 $i Literal:String) (&u8 $foo &u8) (&u8 $g &u8)) (&u8 $g_g (&u8 u8) Literal:String)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ pN:* s8; pNInfer:=pN; pNTest:*s8=null;}";
-	pChzOut = "({} (*s8 $pN (*s8 s8)) (*s8 $pNInfer *s8) (*s8 $pNTest (*s8 s8) Literal:Null))";
+	pChzIn =	"{ pN:& s8; pNInfer:=pN; pNTest:&s8=null;}";
+	pChzOut = "({} (&s8 $pN (&s8 s8)) (&s8 $pNInfer &s8) (&s8 $pNTest (&s8 s8) Literal:Null))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ pN:** s8; pNInfer:=pN; pNTest:**s8=null;}";
-	pChzOut = "({} (**s8 $pN (**s8 (*s8 s8))) (**s8 $pNInfer **s8) (**s8 $pNTest (**s8 (*s8 s8)) Literal:Null))";
+	pChzIn =	"{ ppN:&& s8; ppNInfer:=ppN; ppNTest:&&s8=null;}";
+	pChzOut = "({} (&&s8 $ppN (&&s8 (&s8 s8))) (&&s8 $ppNInfer &&s8) (&&s8 $ppNTest (&&s8 (&s8 s8)) Literal:Null))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:s8=5; foo:=i; foo=6; i = foo; }";
@@ -3406,12 +3405,12 @@ void TestTypeCheck()
 	pChzOut = "({} (s8 $i s8) (s32 $foo s32) (s32 s32 (s32 s8 s32)) (s32 s32 (s32 s32 s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ n:s8; pN:=*n; n2:=@pN; }";
-	pChzOut = "({} (s8 $n s8) (*s8 $pN (*s8 s8)) (s8 $n2 (s8 *s8)))";
+	pChzIn =	"{ n:s8; pN:=&n; n2:=@pN; }";
+	pChzOut = "({} (s8 $n s8) (&s8 $pN (&s8 s8)) (s8 $n2 (s8 &s8)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn =	"{ n:s64; pN:*s8; fN := !pN; ++n; --n;}";
-	pChzOut = "({} (s64 $n s64) (*s8 $pN (*s8 s8)) (bool $fN (bool *s8)) (s64 s64) (s64 s64))";
+	pChzIn =	"{ n:s64; pN:&s8; fN := !pN; ++n; --n;}";
+	pChzOut = "({} (s64 $n s64) (&s8 $pN (&s8 s8)) (bool $fN (bool &s8)) (s64 s64) (s64 s64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";

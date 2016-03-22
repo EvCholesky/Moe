@@ -19,12 +19,12 @@ Currently supports:
   * Enums (still need value/names arrays and typedefs)
 
 Coming soon:
-  * Optionals (ala swift)
   * Advanced array support
     - generic array references
     - array literals
     - dynamic arrays
   * Explicit casting
+  * Optionals (ala swift)
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables
   * For Loops.
@@ -39,7 +39,8 @@ Known Issues:
   * static linking of C runtime into libraries won't be happy with two libraries.
 
 Deviations from current JAI syntax:
-  * currently using @ for a dereference operator, rather than <<
+  * pointers use & for pointer type specification/referencing and @ for a dereference operator, rather than <<
+    - I would use & and *, but the asterisk is ambiguous because conditional statements aren't forced into parens. (ie. "if pN *pN=2;"" is parsed as if (pN * pN)=2; )
   * still support single quote character literals. (might #char once the single char is used elsewhere)
   * float types are: float, double, f32 and f64. because... why wouldn't they be?
   * type aliasing uses the typedef keyword to disambiguate constant values from type aliases. (ie 'IntAlias :: typedef s32;')

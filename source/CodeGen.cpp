@@ -2545,40 +2545,40 @@ void TestCodeGen()
 	pChzIn = "{ SomeConst :: 0xFF; n:=SomeConst; }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "SFoo :: struct { m_n : s32; } { foo : SFoo; pFoo := *foo; pFoo.m_n = 2; } ";
+	pChzIn = "SFoo :: struct { m_n : s32; } { foo : SFoo; pFoo := &foo; pFoo.m_n = 2; } ";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"{ aN : [4] s32;  pN : * s32; fTest := aN == pN; }";
+	pChzIn =	"{ aN : [4] s32;  pN : & s32; fTest := aN == pN; }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"{ pN : * s32; ++pN; --pN; }";
+	pChzIn =	"{ pN : & s32; ++pN; --pN; }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"{ pN : * s32; pN = pN + 2; pN = pN - 2; }";
+	pChzIn =	"{ pN : & s32; pN = pN + 2; pN = pN - 2; }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ aN : [4] s32; n := aN[2]; }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"{ pN : * s32; n := pN[0]; }";
+	pChzIn =	"{ pN : & s32; n := pN[0]; }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ i:=0; while i < 5 { i = i + 1; } }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "printf :: (pCh : * u8, ..) -> s32 #foreign;";
+	pChzIn = "printf :: (pCh : & u8, ..) -> s32 #foreign;";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ pChz := \"testString\"; }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"{ pN : * int; n := 2;   if (!pN) pN = *n;   if (pN) @pN = 2; }";
+	pChzIn =	"{ pN : & int; n := 2;   if (!pN) pN = &n;  if pN @pN = 2; }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"{ n : int = 32; pN : * int; pN = *n; n2 := @pN; @pN = 6;}";
+	pChzIn =	"{ n : int = 32; pN : & int; pN = &n; n2 := @pN; @pN = 6;}";
 	AssertTestCodeGen(&work, pChzIn);
 	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; else nRet =1; return nRet; }";
 	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet; }";
