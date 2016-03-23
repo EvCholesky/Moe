@@ -241,3 +241,4 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 };
 
 void DeleteTypeInfo(EWC::CAlloc * pAlloc, STypeInfo * pTin);
+bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs);

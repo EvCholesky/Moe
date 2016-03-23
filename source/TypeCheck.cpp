@@ -887,7 +887,7 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 	return nullptr;
 }
 
-inline bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
+bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 {
 	if (pTinLhs == pTinRhs)
 		return true;
@@ -900,7 +900,13 @@ inline bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 	case TINK_Pointer:	return FTypesAreSame(
 								((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo, 
 								((STypeInfoPointer *)pTinRhs)->m_pTinPointedTo);
-	case TINK_Array:	return FTypesAreSame(((STypeInfoArray *)pTinLhs)->m_pTin, ((STypeInfoArray *)pTinRhs)->m_pTin);
+	case TINK_Array:	
+		{
+			auto pTinaryLhs = (STypeInfoArray *)pTinLhs;
+			auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
+			return (pTinaryLhs->m_aryk == pTinaryLhs->m_aryk) & (pTinaryLhs->m_c == pTinaryLhs->m_c) &&
+				FTypesAreSame(((STypeInfoArray *)pTinLhs)->m_pTin, ((STypeInfoArray *)pTinRhs)->m_pTin);
+		}
 	default :			return false;
 	}
 }
@@ -1025,6 +1031,10 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 				return FTypesAreSame(pTinptrSrc->m_pTinPointedTo, pTinptrDst->m_pTinPointedTo);	
 			}
 		case TINK_Enum: 
+			{
+				return FTypesAreSame(pTinSrc, pTinDst);
+			}
+		case TINK_Array:
 			{
 				return FTypesAreSame(pTinSrc, pTinDst);
 			}
@@ -2341,7 +2351,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							if (!fIsValidLhs)
 							{
 								CString strLhs = StrFromTypeInfo(pTinLhs);
-								EmitError(pTcwork, pStnod, "%s does not provide an assignment operator", strLhs.PChz());
+								EmitError(pTcwork, pStnod, "'%s' does not provide an assignment operator", strLhs.PChz());
 								return TCRET_StoppingError;
 							}
 
@@ -2412,6 +2422,14 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					break;
 				}
 
+				CSTNode * pStnodRhs = pStnod->PStnodChildSafe(1);
+				if (!pStnodRhs || pStnodRhs->m_park != PARK_Identifier)
+				{
+					const char * pChzRhs = (pStnodRhs) ? PChzFromPark(pStnodRhs->m_park) : "(null)";
+					EmitError(pTcwork, pStnod, "Expected right hand side to identifier but it is %s", pChzRhs);
+					return TCRET_StoppingError;
+				}
+
 				CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 				STypeInfoStruct * pTinstruct = nullptr;
 				auto pTinLhs = pStnodLhs->m_pTin;
@@ -2421,67 +2439,94 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					{
 						pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
 					}
-
-					pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
-				}
-
-				if (!pTinstruct)
-				{
-					auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinLhs);
-					if (pTinenum)
-					{
-						pTinstruct = &pTinenum->m_tinstructProduced;
-					}
-
-					if (!pTinenum)
-					{
-						CString strTin = StrFromTypeInfo(pTinLhs);
-						EmitError(pTcwork, pStnod, "Expected left hand side to be structure or enum type but it is %s", strTin.PChz());
-						return TCRET_StoppingError;
-					}
-				}
-				
-				CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
-				if (EWC_FVERIFY(pStnodStruct && pStnodStruct->m_pSym, "Struct type missing symbol"))
-				{
-					if (pStnodStruct->m_strees != STREES_TypeChecked)
-					{
-						// wait for this type to be resolved.
-						SUnknownType * pUntype = PUntypeEnsure(pTcwork, pStnodStruct->m_pSym);
-						pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
-						return TCRET_WaitingForSymbolDefinition;
-					}
-				}
-
-				CSTNode * pStnodRhs = pStnod->PStnodChildSafe(1);
-				if (!pStnodRhs || pStnodRhs->m_park != PARK_Identifier)
-				{
-					const char * pChzRhs = (pStnodRhs) ? PChzFromPark(pStnodRhs->m_park) : "(null)";
-					EmitError(pTcwork, pStnod, "Expected right hand side to identifier but it is %s", pChzRhs);
-					return TCRET_StoppingError;
 				}
 
 				CString strMemberName = StrFromIdentifier(pStnodRhs);
-				auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
-				if (!pSymMember)
+				STypeInfo * pTinMember = nullptr;
+				CSTValue * pStvalMember = nullptr;
+				if (pTinLhs)
 				{
-					EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PChz(), pTinstruct->m_strName.PChz());
+					switch (pTinLhs->m_tink)
+					{
+						case TINK_Enum:
+						{
+							auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinLhs);
+							if (pTinenum)
+							{
+								pTinLhs = &pTinenum->m_tinstructProduced;
+							}
+						} // fall through
+						case TINK_Struct:
+						{
+							pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
+							if (!pTinstruct)
+								break;
+
+							CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
+							if (EWC_FVERIFY(pStnodStruct && pStnodStruct->m_pSym, "Struct type missing symbol"))
+							{
+								if (pStnodStruct->m_strees != STREES_TypeChecked)
+								{
+									// wait for this type to be resolved.
+									SUnknownType * pUntype = PUntypeEnsure(pTcwork, pStnodStruct->m_pSym);
+									pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
+									return TCRET_WaitingForSymbolDefinition;
+								}
+							}
+
+							auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
+							if (!pSymMember)
+							{
+								EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PChz(), pTinstruct->m_strName.PChz());
+								return TCRET_StoppingError;
+							}
+
+							EWC_ASSERT(pSymMember->m_pTin, "expected symbol to have type");
+							pTinMember = pSymMember->m_pTin;
+
+							if (pTinMember && pSymMember->m_pStnodDefinition)
+							{
+								if (pTinMember->m_tink == TINK_Literal)
+								{
+									CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+									pStvalMember = PStvalCopy(pSymtab->m_pAlloc, pSymMember->m_pStnodDefinition->m_pStval);
+								}
+							}
+						} break;
+						case TINK_Array:
+						{
+							if (strMemberName == "count")
+							{
+								auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinLhs); 
+
+								CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+								auto pTinlitInt = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+								pTinlitInt->m_litty.m_litk = LITK_Integer;
+								pSymtab->AddManagedTin(pTinlitInt);
+								pTinMember = pTinlitInt;
+
+								pStvalMember = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
+								pStvalMember->m_stvalk = STVALK_UnsignedInt;
+								pStvalMember->m_nUnsigned = pTinary->m_c;
+							}
+						} break;
+					}
+				}
+
+				if (!pTinMember)
+				{
+					CString strTin = StrFromTypeInfo(pTinLhs);
+					EmitError(pTcwork, pStnod, "Left hand type '%s' does not contain member '%s'", strTin.PChz(), strMemberName.PChz());
 					return TCRET_StoppingError;
 				}
 
-				EWC_ASSERT(pSymMember->m_pTin, "expected symbol to have type");
-				pStnod->m_pTin = pSymMember->m_pTin;
+				pStnod->m_pTin = pTinMember;
 				pStnod->m_pTinOperand = pStnod->m_pTin;
 				pStnod->m_strees = STREES_TypeChecked;
 
-				if (pStnod->m_pTin && pSymMember->m_pStnodDefinition)
+				if (pStvalMember)
 				{
-					TINK tink = pStnod->m_pTin->m_tink;
-					if (tink == TINK_Literal)
-					{
-						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-						pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pSymMember->m_pStnodDefinition->m_pStval);
-					}
+					pStnod->m_pStval = pStvalMember;
 				}
 				PopTcsent(pTcfram, pStnod);
 
@@ -3268,6 +3313,10 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "{ aN : [2] int; n := aN.count; }";
+	pChzOut = "({} ([]int $aN ([]int Literal:Int8 int)) (int $n (Literal:Int64 []int $count)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
 	pChzOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "

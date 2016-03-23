@@ -284,6 +284,44 @@ TestEnums :: ()
 	printf("enumkAck = %d\n", enumkAck);
 }
 
+PrintArray :: (aN : [5] int)
+{
+	printf("{", aN.count);
+	n : int;
+	while n < aN.count
+	{
+		printf("%d", aN[n]);
+		aN[n] = n * 2;
+		++n;
+		if n < aN.count
+		{
+			printf(", ");
+		}
+	}
+	printf("}\n");
+}
+
+TestArrays :: () 
+{
+	printf("\nArrays:\n");
+
+	aN : [5] int;
+	
+	printf("init aN[%d] = ", aN.count);
+	PrintArray(aN);
+
+	n : int;
+	while n < aN.count
+	{
+		aN[n] = n * 2;
+		++n;
+	}
+
+	printf("post aN[%d] = ", aN.count);
+	PrintArray(aN);
+
+}
+
 main :: () -> int 
 {
 	TestOperators();
@@ -295,6 +333,7 @@ main :: () -> int
 	TestRecursion();
 	TestTypedefs();
 	TestEnums();
+	TestArrays();
 
 	return 1;
 }

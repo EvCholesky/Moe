@@ -122,7 +122,7 @@ int main(int cpChzArg, const char * apChzArg[])
 		grfcompile.AddFlags(FCOMPILE_PrintIR);
 	}
 
-	static const int s_cBHeap = 500 * 1024;
+	static const int s_cBHeap = 800 * 1024;
 	u8 * aB = nullptr;
 
 	if (comline.m_pChzFilename)
@@ -270,9 +270,9 @@ int main(int cpChzArg, const char * apChzArg[])
 
 	if (comline.FHasCommand("-test"))
 	{
+		TestTypeCheck();
 		TestLexing();
 		TestParse();
-		TestTypeCheck();
 		TestCodeGen();
 		printf("passed unit tests\n");
 	}

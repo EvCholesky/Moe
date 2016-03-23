@@ -847,7 +847,7 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	u32 cBitDst;
 	bool fSignedSrc = false;
 	bool fSignedDst;
-	if (pTinSrc == pTinDst)
+	if (FTypesAreSame(pTinSrc, pTinDst))
 		return pValSrc;
 	if (pTinSrc->m_tink == TINK_Literal)
 		return pValSrc;
