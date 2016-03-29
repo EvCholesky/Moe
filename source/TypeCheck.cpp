@@ -294,16 +294,16 @@ STypeInfo * PTinFromBint(
 	if (!bint.m_fIsNegative)
 	{
 		s64 nUnsigned = bint.U64Coerce();
-		if (nUnsigned < UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
-		if (nUnsigned < USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
-		if (nUnsigned < UINT_MAX)	return pSymtab->PTinBuiltin("u32");
+		if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
+		if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
+		if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin("u32");
 		return pSymtab->PTinBuiltin("u64");
 	}
 	
 	s64 nSigned = bint.S64Coerce();
-	if ((nSigned < SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
-	if ((nSigned < SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
-	if ((nSigned < INT_MAX) & (nSigned > INT_MIN))		return pSymtab->PTinBuiltin("s32");
+	if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
+	if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
+	if ((nSigned <= INT_MAX) & (nSigned > INT_MIN))		return pSymtab->PTinBuiltin("s32");
 	return pSymtab->PTinBuiltin("s64");
 }
 
@@ -854,16 +854,16 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 			if (fDestIsSigned == false && fIsValNegative == false)
 			{
 				s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
-				if (nUnsigned < UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
-				if (nUnsigned < USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
-				if (nUnsigned < UINT_MAX)	return pSymtab->PTinBuiltin("u32");
+				if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
+				if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
+				if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin("u32");
 				return pSymtab->PTinBuiltin("u64");
 			}
 			
 			s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
-			if ((nSigned < SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
-			if ((nSigned < SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
-			if ((nSigned < INT_MAX) & (nSigned > INT_MIN))		return pSymtab->PTinBuiltin("s32");
+			if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
+			if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
+			if ((nSigned <= INT_MAX) & (nSigned > INT_MIN))		return pSymtab->PTinBuiltin("s32");
 			return pSymtab->PTinBuiltin("s64");
 		}
 	case LITK_Float:	return pSymtab->PTinBuiltin("float");
@@ -1093,6 +1093,12 @@ bool FIsValidLhs(const CSTNode * pStnod)
 		return false;
 
 	TINK tink = pTin->m_tink;
+	if (tink == TINK_Array)
+	{
+		auto pTinary = (STypeInfoArray *)pTin;
+		return pTinary->m_aryk == ARYK_Reference;
+	}
+
 	return (tink != TINK_Null) & (tink != TINK_Void) & (tink != TINK_Literal);
 }
 
@@ -1268,6 +1274,11 @@ STypeInfo * PTinFromTypeSpecification(
 				else
 				{
 					pTinary->m_aryk = (pStnodIt->m_jtok == JTOK_PeriodPeriod) ? ARYK_Dynamic : ARYK_Reference;
+				}
+
+				if (pTinary->m_aryk == ARYK_Dynamic)
+				{
+					EmitError(pTcwork, pStnod, "Dynamic arrays are not yet supported");
 				}
 
 				pStnodIt->m_pTin = pTinary;
@@ -1525,6 +1536,32 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 																	pTcsentTop->m_grfsymlook);
 								EWC_ASSERT(pSymProc && pSymProc->m_pStnodDefinition == pStnod, "symbol lookup failed");
 							}
+						}
+
+						if (pStproc->m_iStnodParameterList >= 0)
+						{
+							CSTNode * pStnodParams = pStnod->PStnodChild(pStproc->m_iStnodParameterList);
+							EWC_ASSERT(pStnodParams->m_park == PARK_ParameterList, "expected parametere list");
+
+							for (int iStnod = 0; iStnod < pStnodParams->CStnodChild(); ++iStnod)
+							{
+								auto pStnodParam = pStnodParams->PStnodChild(iStnod);
+								if (pStnodParam->m_park == PARK_VariadicArg)
+									continue;
+
+								if (!FIsValidLhs(pStnodParam))
+								{
+									auto strType = StrFromTypeInfo(pStnodParam->m_pTin);
+									EmitError(
+										pTcwork, pStnod,
+										"Argument %d is not a valid argument type. '%s' does not define an assignment operator", 
+										iStnod + 1,
+										strType.PChz());
+								}
+							}
+
+							if (pTcwork->m_pErrman->m_cError)
+								return TCRET_StoppingError;
 						}
 
 						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", strProcName.PChz()))

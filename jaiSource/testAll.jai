@@ -196,6 +196,39 @@ TestStructures :: ()
 		printf("aNest[%d] = %d\n", iNest, aNest[iNest].m_nNested);
 		++iNest;
 	}
+
+	SShallowCopy :: struct
+	{
+		m_f : bool;
+		m_n : int;
+		m_aN : [2] s16;
+		m_outer : SOuter;
+	}
+
+	shallowSrc : SShallowCopy;
+	shallowSrc.m_f = true;
+	shallowSrc.m_n = 123;
+	shallowSrc.m_aN[0] = 444;
+	shallowSrc.m_aN[1] = 555;
+	shallowSrc.m_outer.m_n = 127;
+
+	printf("ShallowSrc = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
+		shallowSrc.m_f,
+		shallowSrc.m_n,
+		shallowSrc.m_aN[0],
+		shallowSrc.m_aN[1],
+		shallowSrc.m_outer.m_n);
+
+	shallowDst : SShallowCopy;
+	shallowDst = shallowSrc;
+
+	printf("ShallowDst = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
+		shallowDst.m_f,
+		shallowDst.m_n,
+		shallowDst.m_aN[0],
+		shallowDst.m_aN[1],
+		shallowDst.m_outer.m_n);
+
 }
 
 TestRecursion :: ()
@@ -284,9 +317,9 @@ TestEnums :: ()
 	printf("enumkAck = %d\n", enumkAck);
 }
 
-PrintArray :: (aN : [5] int)
+PrintArray :: (aN : [] int)
 {
-	printf("{", aN.count);
+	printf("[%d] = {", aN.count);
 	n : int;
 	while n < aN.count
 	{
@@ -306,8 +339,8 @@ TestArrays :: ()
 	printf("\nArrays:\n");
 
 	aN : [5] int;
-	
-	printf("init aN[%d] = ", aN.count);
+
+	printf("init aN", aN.count);
 	PrintArray(aN);
 
 	n : int;
@@ -317,9 +350,15 @@ TestArrays :: ()
 		++n;
 	}
 
-	printf("post aN[%d] = ", aN.count);
+	printf("post aN", aN.count);
 	PrintArray(aN);
 
+	aNRef : [] int = aN;
+
+	printf("aNRef", aN.count);
+	PrintArray(aNRef);
+
+	printf("aN.data = %p, aNRef.data = %p\n", aN.data, aNRef.data);
 }
 
 main :: () -> int 

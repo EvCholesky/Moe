@@ -1340,12 +1340,53 @@ CIRInstruction * PInstCreateAssignmentFromRef(
 			if (!EWC_FVERIFY(pTinaryRhs, "assigning non-array (%s) to an array", PChzFromTink(pTinRhs->m_tink)))
 			 return nullptr;
 
-			auto pTinary = (STypeInfoArray *)pTinLhs;
-			switch (pTinary->m_aryk)
+			auto pTinaryLhs = (STypeInfoArray *)pTinLhs;
+			switch (pTinaryLhs->m_aryk)
 			{
 			case ARYK_Fixed:
 				{
-					EWC_ASSERT(false, "fixed array assignment is TBD");
+					EWC_ASSERT(pTinaryRhs->m_aryk == ARYK_Fixed, "cannot copy mixed array kinds to fixed array");
+
+					auto pLbuild = pBuild->m_pLbuild;
+					CIRProcedure * pProc = pBuild->m_pProcCur;
+
+					auto pValZero = PValConstantInt(pBuild, 64, false, 0);
+					auto pValOne = PValConstantInt(pBuild, 64, false, 1);
+					auto pValCount = PValConstantInt(pBuild, 64, false, pTinaryLhs->m_c);
+					
+					auto pInstAlloca = pBuild->PInstCreateAlloca(LLVMInt64Type(), 0, "iInit");
+					(void) pBuild->PInstCreateStore(pInstAlloca, pValZero);
+
+					CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "copyPred");
+					CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "copyBody");
+					CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "copyPost");
+
+					(void) pBuild->PInstCreateBranch(pBlockPred);	
+
+					pBuild->ActivateBlock(pBlockPred);
+					auto pInstLoadIndex = pBuild->PInstCreate(IROP_Load, pInstAlloca, "iLoad");
+					auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULT, pInstLoadIndex, pValCount, "NCmp");
+
+					(void) pBuild->PInstCreateCondBranch(pInstCmp, pBlockBody, pBlockPost);
+
+					pBuild->ActivateBlock(pBlockBody);
+
+					LLVMOpaqueValue * apLvalIndex[2] = {};
+					apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+					apLvalIndex[1] = pInstLoadIndex->m_pLval;
+					auto pInstGEPLhs = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, 2, "GEPLhs");
+					auto pInstGEPRhs = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, 2, "GEPRhs");
+					auto pInstLoadRhs = pBuild->PInstCreate(IROP_Load, pInstGEPRhs, "loadRhs");
+					(void) pBuild->PInstCreateStore(pInstGEPLhs, pInstLoadRhs);
+
+					auto pInstInc = pBuild->PInstCreate(IROP_NAdd, pInstLoadIndex, pValOne, "iInc");
+					(void) pBuild->PInstCreateStore(pInstAlloca, pInstInc);
+					(void) pBuild->PInstCreateBranch(pBlockPred);
+
+					pBuild->ActivateBlock(pBlockPost);
+
+					return nullptr;
+
 				} break;
 			case ARYK_Reference:
 				{
