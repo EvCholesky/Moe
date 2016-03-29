@@ -13,18 +13,20 @@ Currently supports:
   * Pre/post increment/decrement
   * While loops
   * Arrays
+    - fixed size arrays (with count/data members)
+    - base array references (fixed/dynamic agnostic)
   * Structures
   * Constants
   * Type aliasing (typedefs)
   * Enums (still need value/names arrays and typedefs)
 
 Coming soon:
+  * Explicit casting
   * Advanced array support
-    - generic array references
     - array literals
     - dynamic arrays
-  * Explicit casting
-  * Optionals (ala swift)
+  * Method overloading
+  * Method pointers
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables
   * For Loops.

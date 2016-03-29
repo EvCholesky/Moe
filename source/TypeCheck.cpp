@@ -904,8 +904,15 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 		{
 			auto pTinaryLhs = (STypeInfoArray *)pTinLhs;
 			auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
-			return (pTinaryLhs->m_aryk == pTinaryLhs->m_aryk) & (pTinaryLhs->m_c == pTinaryLhs->m_c) &&
+			return (pTinaryLhs->m_aryk == pTinaryRhs->m_aryk) & (pTinaryLhs->m_c == pTinaryRhs->m_c) &&
 				FTypesAreSame(((STypeInfoArray *)pTinLhs)->m_pTin, ((STypeInfoArray *)pTinRhs)->m_pTin);
+		}
+	case TINK_Struct:
+		{
+			auto pTinstructLhs = (STypeInfoStruct *)pTinLhs;
+			auto pTinstructRhs = (STypeInfoStruct *)pTinRhs;
+
+			return pTinstructLhs->m_pStnodStruct == pTinstructRhs->m_pStnodStruct;
 		}
 	default :			return false;
 	}
@@ -919,6 +926,14 @@ inline STypeInfo * PTinElement(STypeInfo * pTin)
 		case TINK_Array:	return ((STypeInfoArray *)pTin)->m_pTin;
 		default :			return nullptr;
 	}
+}
+
+STypeInfoPointer * PTinptrAlloc(CSymbolTable * pSymtab, STypeInfo * pTinPointedTo)
+{
+	auto pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
+	pSymtab->AddManagedTin(pTinptr);
+	pTinptr->m_pTinPointedTo = pTinPointedTo;
+	return pTinptr;
 }
 
 STypeInfo * PTinOperandFromPark(
@@ -973,10 +988,7 @@ STypeInfo * PTinOperandFromPark(
 							return pTinRhs;
 
 						auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinLhs);
-						auto pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
-						pSymtab->AddManagedTin(pTinptr);
-						pTinptr->m_pTinPointedTo = pTinary->m_pTin;
-						return pTinptr;
+						return PTinptrAlloc(pSymtab, pTinary->m_pTin);
 					}
 				} break;
 				case PARK_AdditiveOp:
@@ -987,10 +999,7 @@ STypeInfo * PTinOperandFromPark(
 						return pTinLhs;
 
 					auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinLhs);
-					auto pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
-					pSymtab->AddManagedTin(pTinptr);
-					pTinptr->m_pTinPointedTo = pTinary->m_pTin;
-					return pTinptr;
+					return PTinptrAlloc(pSymtab, pTinary->m_pTin);
 				}
 			}
 		}
@@ -1030,11 +1039,18 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 				auto pTinptrDst = (STypeInfoPointer *)pTinDst;
 				return FTypesAreSame(pTinptrSrc->m_pTinPointedTo, pTinptrDst->m_pTinPointedTo);	
 			}
-		case TINK_Enum: 
-			{
-				return FTypesAreSame(pTinSrc, pTinDst);
-			}
 		case TINK_Array:
+			{
+				auto pTinaryDst = (STypeInfoArray *)pTinDst;
+				if (pTinaryDst->m_aryk == ARYK_Reference)
+				{
+					auto pTinarySrc = (STypeInfoArray *)pTinSrc;
+					return FTypesAreSame(pTinarySrc->m_pTin, pTinaryDst->m_pTin);
+				}
+				return FTypesAreSame(pTinSrc, pTinDst);
+			} 
+		case TINK_Enum: 
+		case TINK_Struct:
 			{
 				return FTypesAreSame(pTinSrc, pTinDst);
 			}
@@ -1169,13 +1185,9 @@ STypeInfo * PTinFromTypeSpecification(
 			} break;
 		case PARK_ArrayDecl:
 			{
-				if (pStnodIt->CStnodChild() != 2)
-				{
-					EmitError(pTcwork, pStnodIt, "Encounted type spec with no array size specified");
-					*pFIsValidTypeSpec = false;
-					return nullptr;
-				}
-				pStnodIt = pStnodIt->PStnodChild(1);
+				// array decl's children are [type] or [m_c, type]
+				pStnodIt = pStnodIt->PStnodChild(pStnodIt->CStnodChild()-1);
+				EWC_ASSERT(pStnodIt, "bad array declaration");
 			} break;
 		case PARK_ReferenceDecl:
 			{
@@ -1203,8 +1215,7 @@ STypeInfo * PTinFromTypeSpecification(
 		{
 		case PARK_ReferenceDecl:
 			{
-				STypeInfoPointer * pTinptr = EWC_NEW(pAlloc, STypeInfoPointer) STypeInfoPointer();
-				pSymtab->AddManagedTin(pTinptr);
+				auto pTinptr = PTinptrAlloc(pSymtab, nullptr);
 				pStnodIt->m_pTin = pTinptr;
 
 				pTinPrev = pTinptr;
@@ -1218,42 +1229,49 @@ STypeInfo * PTinFromTypeSpecification(
 			{
 				STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
 				pSymtab->AddManagedTin(pTinary);
-				pStnodIt->m_pTin = pTinary;
 
 				*ppTinCur = pTinary;
 				ppTinCur = &pTinary->m_pTin;
 
-				CSTNode * pStnodDim = pStnodIt->PStnodChild(0);
-				STypeInfoLiteral * pTinlitDim = (STypeInfoLiteral *)pStnodDim->m_pTin;
-				CSTValue * pStvalDim = nullptr;
-				if (!pTinlitDim || pTinlitDim->m_tink != TINK_Literal)
+				if (pStnodIt->CStnodChild() == 2)
 				{
-					EmitError(pTcwork, pStnodIt, "Only static sized arrays are currently supported");
-					*pFIsValidTypeSpec = false;
-				}
-				else
-				{
-					STypeInfo * pTinCount = pSymtab->PTinBuiltin("s8");
-					STypeInfo * pTinPromoted = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
-					if (!FCanImplicitCast(pTinPromoted, pTinCount))
+					CSTNode * pStnodDim = pStnodIt->PStnodChild(0);
+					STypeInfoLiteral * pTinlitDim = (STypeInfoLiteral *)pStnodDim->m_pTin;
+					CSTValue * pStvalDim = nullptr;
+					if (!pTinlitDim || pTinlitDim->m_tink != TINK_Literal)
 					{
-						EmitError(pTcwork, pStnodIt, "static integer array size expected");
+						EmitError(pTcwork, pStnodIt, "Only static sized arrays are currently supported");
 						*pFIsValidTypeSpec = false;
 					}
 					else
 					{
-						FinalizeLiteralType(pSymtab, pTinCount, pStnodDim);
-						pStvalDim = pStnodDim->m_pStval;
+						STypeInfo * pTinCount = pSymtab->PTinBuiltin("s8");
+						STypeInfo * pTinPromoted = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
+						if (!FCanImplicitCast(pTinPromoted, pTinCount))
+						{
+							EmitError(pTcwork, pStnodIt, "static integer array size expected");
+							*pFIsValidTypeSpec = false;
+						}
+						else
+						{
+							FinalizeLiteralType(pSymtab, pTinCount, pStnodDim);
+							pStvalDim = pStnodDim->m_pStval;
+						}
 					}
+
+					if (!pStvalDim)
+						return nullptr;
+
+					pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnodIt, pStvalDim);
+					pTinary->m_aryk = ARYK_Fixed;
+				}
+				else
+				{
+					pTinary->m_aryk = (pStnodIt->m_jtok == JTOK_PeriodPeriod) ? ARYK_Dynamic : ARYK_Reference;
 				}
 
-				if (!pStvalDim)
-					return nullptr;
-
-				pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnodIt, pStvalDim);
-				pTinary->m_aryk = ARYK_Static;
-
-				pStnodIt = pStnodIt->PStnodChild(1);
+				pStnodIt->m_pTin = pTinary;
+				pStnodIt = pStnodIt->PStnodChild(pStnodIt->CStnodChild()-1);
 			} break;
 		case PARK_MemberLookup:
 			{
@@ -1618,9 +1636,20 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						}
 						else
 						{
-							// BB - this should probably be replaced with an explicit cast AST node
-							pStnodArg->m_pTinOperand = pStnodArg->m_pTin;
-							pStnodArg->m_pTin = pTinParam;
+							if (!FTypesAreSame(pStnodArg->m_pTin, pTinParam))
+							{
+								auto pAlloc = pTcwork->m_pAlloc;
+								CSTNode * pStnodCast = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, pStnodArg->m_lexloc);
+								pStnodCast->m_park = PARK_Cast;
+								pStnodCast->IAppendChild(pStnodArg);
+								pStnod->ReplaceChild(pStnodArg, pStnodCast);
+
+								pStnodCast->m_pTinOperand = pStnodArg->m_pTin;
+								pStnodCast->m_pTin = pTinParam;
+
+								if (EWC_FVERIFY(pStnodArg->m_strees == STREES_TypeChecked, "expected arg to be type checked"))
+									pStnodCast->m_strees = STREES_TypeChecked;
+							}
 						}
 					}
 
@@ -2495,20 +2524,44 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						} break;
 						case TINK_Array:
 						{
-							if (strMemberName == "count")
+							CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+							auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinLhs);
+
+							ARYMEMB arymemb = ArymembLookup(strMemberName.PChz());
+
+							switch (arymemb)
 							{
-								auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinLhs); 
+							case ARYMEMB_Count:
+								{
+									switch (pTinary->m_aryk)
+									{
+									case ARYK_Fixed:
+										{
+											auto pTinlitInt = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+											pTinlitInt->m_litty.m_litk = LITK_Integer;
+											pSymtab->AddManagedTin(pTinlitInt);
+											pTinMember = pTinlitInt;
 
-								CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-								auto pTinlitInt = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
-								pTinlitInt->m_litty.m_litk = LITK_Integer;
-								pSymtab->AddManagedTin(pTinlitInt);
-								pTinMember = pTinlitInt;
-
-								pStvalMember = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
-								pStvalMember->m_stvalk = STVALK_UnsignedInt;
-								pStvalMember->m_nUnsigned = pTinary->m_c;
+											pStvalMember = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
+											pStvalMember->m_stvalk = STVALK_SignedInt;
+											pStvalMember->m_nSigned = pTinary->m_c;
+										} break;
+									case ARYK_Reference:
+									case ARYK_Dynamic:
+										{
+											pTinMember = pSymtab->PTinBuiltin("s64");
+										} break;
+									}
+								} break;
+							case ARYMEMB_Data:
+								{
+									pTinMember = PTinptrAlloc(pSymtab, pTinary->m_pTin);
+								} break;
+							default: 
+								EWC_ASSERT(false, "unknown array member '%s'", strMemberName.PChz());
+								break;
 							}
+
 						} break;
 					}
 				}
@@ -3315,7 +3368,11 @@ void TestTypeCheck()
 	const char * pChzOut;
 
 	pChzIn = "{ aN : [2] int; n := aN.count; }";
-	pChzOut = "({} ([]int $aN ([]int Literal:Int8 int)) (int $n (Literal:Int64 []int $count)))";
+	pChzOut = "({} ([2]int $aN ([2]int Literal:Int8 int)) (int $n (Literal:Int64 [2]int $count)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "{ aN : [2] int; aNUnsized : [] int = aN; }";
+	pChzOut = "({} ([2]int $aN ([2]int Literal:Int8 int)) ([]int $aNUnsized ([]int int) [2]int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
@@ -3356,15 +3413,15 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; pN : & s32; fEq := aN == pN; ";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool []s32 &s32))";
+	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool [4]s32 &s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; paN : & [4] s32 = &aN;";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (&[]s32 $paN (&[]s32 ([]s32 Literal:Int8 s32)) (&[]s32 []s32))";
+	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (&[4]s32 $paN (&[4]s32 ([4]s32 Literal:Int8 s32)) (&[4]s32 [4]s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; n := aN[0];";
-	pChzOut = "([]s32 $aN ([]s32 Literal:Int8 s32)) (s32 $n (s32 []s32 Literal:Int64))";
+	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (s32 $n (s32 [4]s32 Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:s32=2; n++; n--;";

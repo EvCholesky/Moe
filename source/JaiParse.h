@@ -120,7 +120,7 @@ enum PARK // PARse Kind
 	PARK_PostfixUnaryOp,	// postfix increment, decrement
 	PARK_Uninitializer,
 
-	// non-terminals
+	PARK_Cast,
 	PARK_ArrayElement,		// [array, index]
 	PARK_MemberLookup,		// [struct, child]
 	PARK_ProcedureCall,		// [procedure, arg0, arg1, ...]
@@ -282,6 +282,8 @@ public:
 								}
 								return -1;
 							}
+
+	void				ReplaceChild(CSTNode * pStnodOld, CSTNode * pStnodNew);
 
 	size_t				CChWriteDebugString(char * pCh, char * pChEnd, GRFDBGSTR = FDBGSTR_Name);
 

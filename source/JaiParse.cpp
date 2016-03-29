@@ -50,6 +50,7 @@ const char * PChzFromPark(PARK park)
 		"Unary Operator",
 		"Postfix Unary Operator",
 		"Uninitializer",
+		"Cast",
 		"Array Element",		// [array, index]
 		"Member Lookup",		// [struct, child]
 		"Argument Call",		// [procedure, arg0, arg1, ...]
@@ -76,6 +77,52 @@ const char * PChzFromPark(PARK park)
 		return "Unknown PARK";
 
 	return s_mpParkPChz[park];
+}
+
+const char * PChzFromAryk(ARYK aryk)
+{
+	static const char * s_mpArykPChz[] =
+	{
+		"Fixed",
+		"Dynamic",
+		"Reference",
+	};
+	EWC_CASSERT(EWC_DIM(s_mpArykPChz) == ARYK_Max, "missing ARYK string");
+	if (aryk == ARYK_Nil)
+		return "Nil";
+
+	if ((aryk < ARYK_Nil) | (aryk >= ARYK_Max))
+		return "Unknown ARYK";
+
+	return s_mpArykPChz[aryk];
+}
+
+
+const char * PChzFromArymemb(ARYMEMB arymemb)
+{
+	static const char * s_mpArymembPChz[] =
+	{
+		"count",
+		"data",
+	};
+	EWC_CASSERT(EWC_DIM(s_mpArymembPChz) == ARYMEMB_Max, "missing ARYMEMB string");
+	if (arymemb == ARYMEMB_Nil)
+		return "Nil";
+
+	if ((arymemb < ARYMEMB_Nil) | (arymemb >= ARYMEMB_Max))
+		return "Unknown ARYMEMB";
+
+	return s_mpArymembPChz[arymemb];
+}
+
+ARYMEMB ArymembLookup(const char * pChzMember)
+{
+	for (int arymemb = ARYMEMB_Min; arymemb < ARYMEMB_Max; ++arymemb)
+	{
+		if (FAreSame(PChzFromArymemb((ARYMEMB)arymemb), pChzMember))
+			return (ARYMEMB)arymemb;
+	}
+	return ARYMEMB_Nil;
 }
 
 const char * PChzFromLitk(LITK litk)
@@ -746,15 +793,11 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 		SLexerLocation lexloc(pJlex);
 		JtokNextToken(pJlex);
 		CSTNode * pStnodArray = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+		pStnodArray->m_jtok = (JTOK)pJlex->m_jtok;
 		pStnodArray->m_park = PARK_ArrayDecl;
-		
-		STypeInfoArray * pTinary = EWC_NEW(pParctx->m_pAlloc, STypeInfoArray) STypeInfoArray();
-		pParctx->m_pSymtab->m_arypTinManaged.Append(pTinary);
 
 		if (pJlex->m_jtok == JTOK_PeriodPeriod)
 		{
-			pTinary->m_aryk = ARYK_Dynamic;
-			pStnodArray->m_jtok = JTOK_PeriodPeriod;
 			JtokNextToken(pJlex);
 		}
 		else if (pJlex->m_jtok != JTOK(']'))
@@ -763,9 +806,6 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 			if (pStnodExp)
 			{
 				pStnodArray->IAppendChild(pStnodExp);
-				// BB pStnodExp->m_fExpectedConstant = true;
-
-				//pTinary->m_c = constant expression eval
 			}
 		}
 
@@ -837,7 +877,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	CSTNode * pStnodChild = PStnodParseTypeSpecifier(pParctx, pJlex);
 	if (!pStnodChild)
 	{
-		ParseError(pParctx, pJlex, "Expected type identifier before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
+		ParseError(pParctx, pJlex, "Expected type identifier before '%s'", PChzFromJtok(JTOK(pJlex->m_jtok)));
 		// BB - Assume int to try to continue compilation? ala C?
 	}
 	else
@@ -2283,6 +2323,22 @@ CSTNode::~CSTNode()
 	m_pTin = nullptr;
 }
 
+void CSTNode::ReplaceChild(CSTNode * pStnodOld, CSTNode * pStnodNew)
+{
+	// NOTE - this doesn't do anything smart to handle an abandoned child, hopefully you're reparenting or deleting it.
+	for (size_t ipStnod = 0; ipStnod < m_arypStnodChild.C(); ++ipStnod)
+	{
+		CSTNode * pStnodChild = m_arypStnodChild[ipStnod];
+		if (pStnodChild == pStnodOld)
+		{
+			m_arypStnodChild[ipStnod] = pStnodNew;
+			return;
+		}
+	}
+
+	EWC_ASSERT(false, "failed to find child during ReplaceChild");
+}
+
 
 size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 {
@@ -2323,7 +2379,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 			case ARYK_Dynamic:
 				pChWork += CChCopy("[..]", pChWork, pChEnd-pChWork);
 				break;
-			case ARYK_Static:
+			case ARYK_Reference:
 				pChWork += CChCopy("[]", pChWork, pChEnd-pChWork);
 				break;
 			}

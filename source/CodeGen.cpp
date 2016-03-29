@@ -30,6 +30,14 @@ using namespace EWC;
 CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodStruct);
 CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod);
 
+CIRInstruction * PInstCreateAssignmentFromRef(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	STypeInfo * pTinLhs,
+	STypeInfo * pTinRhs,
+	CIRValue * pValLhs,
+	CIRValue * pValRhsRef);
+
 
 
 const char * PChzFromIrop(IROP irop)
@@ -271,9 +279,9 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 
 	if (pCElement)
 	{
-		if (pTin->m_tink == TINK_Array)
+		auto pTinary = PTinRtiCast<STypeInfoArray *>(pTin);
+		if (pTinary && pTinary->m_aryk == ARYK_Fixed)
 		{
-			STypeInfoArray * pTinary = (STypeInfoArray *)pTin;
 			*pCElement = pTinary->m_c;
 		}
 		else
@@ -298,7 +306,23 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 		{
 			STypeInfoArray * pTinary = (STypeInfoArray *)pTin;
 			auto pLtypeElement = PLtypeFromPTin(pTinary->m_pTin);
-			return LLVMArrayType(pLtypeElement, u32(pTinary->m_c));
+
+			switch (pTinary->m_aryk)
+			{
+				case ARYK_Fixed:
+				{
+					return LLVMArrayType(pLtypeElement, u32(pTinary->m_c));
+				}
+				case ARYK_Reference:
+				{
+					LLVMTypeRef apLtype[2]; // pointer, count
+					apLtype[ARYMEMB_Count] = LLVMInt64Type();
+					apLtype[ARYMEMB_Data] = LLVMPointerType(pLtypeElement, 0);
+
+					return LLVMStructType(apLtype, EWC_DIM(apLtype), false);
+				}
+				default: EWC_ASSERT(false, "unhandled ARYK");
+			}
 		}
 		case TINK_Bool:		return LLVMInt1Type();
 	    case TINK_Integer:	
@@ -610,7 +634,7 @@ CIRInstruction * CIRBuilder::PInstCreateGEP(
 
 CIRInstruction * CIRBuilder::PInstFromSymbol(SSymbol * pSym)
 {
-	if (!EWC_FVERIFY(pSym->m_pVal && pSym->m_pVal->m_valk == VALK_Instruction, "expected alloca value for symbol"))
+	if (!EWC_FVERIFY(pSym && pSym->m_pVal && pSym->m_pVal->m_valk == VALK_Instruction, "expected alloca value for symbol"))
 		return nullptr;
 
 	CIRInstruction * pInstSym = (CIRInstruction *)pSym->m_pVal;
@@ -695,6 +719,15 @@ inline LLVMOpaqueValue * PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigne
 	}
 }
 
+inline CIRConstant * PValConstantInt(CIRBuilder * pBuild, int cBit, bool fIsSigned, u64 nUnsigned)
+{
+	CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+	pBuild->AddManagedVal(pConst);
+	pConst->m_pLval = PLvalConstantInt(cBit, fIsSigned, nUnsigned);
+
+	return pConst;
+}
+
 inline LLVMOpaqueValue * PLvalConstantFloat(int cBit, F64 g)
 {
 	switch (cBit)
@@ -729,22 +762,37 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 	case TINK_Array:
 		{
 			auto pTinary = (STypeInfoArray *)pTin;
-			auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
-
-			auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, pTinary->m_c);
-
-			auto pLvalZero = PLvalZeroInType(pBuild, pTinary->m_pTin);
-			EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
-
-			for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
-			{
-				apLval[iElement] = pLvalZero;
-			}
-
 			LLVMOpaqueType * pLtypeElement = PLtypeFromPTin(pTinary->m_pTin);
-			auto pLvalReturn = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
-			pBuild->m_pAlloc->EWC_DELETE(apLval);
-			return pLvalReturn;
+			switch (pTinary->m_aryk)
+			{
+			case ARYK_Fixed:
+			{
+				auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
+
+				auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, pTinary->m_c);
+
+				auto pLvalZero = PLvalZeroInType(pBuild, pTinary->m_pTin);
+				EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
+
+				for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
+				{
+					apLval[iElement] = pLvalZero;
+				}
+
+				auto pLvalReturn = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
+				pBuild->m_pAlloc->EWC_DELETE(apLval);
+				return pLvalReturn;
+			}
+			case ARYK_Reference:
+			{
+				LLVMOpaqueValue * apLvalMember[2]; // pointer, count
+				apLvalMember[ARYMEMB_Count] = LLVMConstInt(LLVMInt64Type(), 0, false);
+				apLvalMember[ARYMEMB_Data] = LLVMConstNull(LLVMPointerType(pLtypeElement, 0));
+
+				return LLVMConstStruct(apLvalMember, EWC_DIM(apLvalMember), false);
+			}
+			default: EWC_ASSERT(false, "Unhandled ARYK");
+			}
 		}
 	case TINK_Struct:
 	{
@@ -1000,7 +1048,12 @@ bool FHasConstInitializer(STypeInfo * pTin)
 	else if (pTin->m_tink == TINK_Array)
 	{
 		auto pTinary = (STypeInfoArray *)pTin;
-		return FHasConstInitializer(pTinary->m_pTin);
+		switch (pTinary->m_aryk)
+		{
+		case ARYK_Fixed:		return FHasConstInitializer(pTinary->m_pTin);
+		case ARYK_Reference:	return true;
+		default: EWC_ASSERT(false, "unhandled ARYK");
+		}
 	}
 
 	return true;
@@ -1063,22 +1116,33 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 	else if (pTin->m_tink == TINK_Array)
 	{
 		auto pTinary = (STypeInfoArray *)pTin;
-		auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
-
-		size_t cB = sizeof(LLVMOpaqueValue *) * pTinary->m_c;
-		auto apLval = (LLVMOpaqueValue **)(alloca(cB));
-
-		auto pLvalInit = PLvalConstInitializer(pBuild, pTinary->m_pTin);
-		if (!EWC_FVERIFY(pLvalInit, "expected valid initializer"))
-			return nullptr;
-
-		for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
+		switch (pTinary->m_aryk)
 		{
-			apLval[iElement] = pLvalInit;
-		}
+		case ARYK_Fixed:
+			{
+				auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
 
-		LLVMOpaqueType * pLtypeElement = PLtypeFromPTin(pTinary->m_pTin);
-		pLval = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
+				size_t cB = sizeof(LLVMOpaqueValue *) * pTinary->m_c;
+				auto apLval = (LLVMOpaqueValue **)(alloca(cB));
+
+				auto pLvalInit = PLvalConstInitializer(pBuild, pTinary->m_pTin);
+				if (!EWC_FVERIFY(pLvalInit, "expected valid initializer"))
+					return nullptr;
+
+				for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
+				{
+					apLval[iElement] = pLvalInit;
+				}
+
+				LLVMOpaqueType * pLtypeElement = PLtypeFromPTin(pTinary->m_pTin);
+				pLval = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
+			} break;
+		case ARYK_Reference:
+			{
+				pLval = PLvalZeroInType(pBuild, pTin);
+			} break;
+		default: EWC_ASSERT(false, "unhandled ARYK");
+		}
 	}
 	else
 	{
@@ -1140,6 +1204,7 @@ static inline CIRValue * PValInitializeToDefault(CWorkspace * pWork, CIRBuilder 
 			auto pLbuild = pBuild->m_pLbuild;
 			CIRProcedure * pProc = pBuild->m_pProcCur;
 			auto pTinary = (STypeInfoArray *)pTin;
+			EWC_ASSERT(pTinary->m_aryk == ARYK_Fixed, "unexpected ARYK");
 
 			auto pLvalZero = PLvalConstantInt(64, false, 0);
 			auto pLvalOne = PLvalConstantInt(64, false, 1);
@@ -1182,21 +1247,73 @@ static inline CIRValue * PValInitializeToDefault(CWorkspace * pWork, CIRBuilder 
 	}
 }
 
+CIRValue * PValFromArrayMember(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pValAryRef, STypeInfoArray * pTinary, ARYMEMB arymemb)
+{
+	EWC_ASSERT(pTinary->m_tink == TINK_Array, "expected array");
+	LLVMOpaqueValue * apLvalIndex[2] = {};
+	apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+
+	if (pTinary->m_aryk == ARYK_Fixed)
+	{
+		if (arymemb == ARYMEMB_Count)
+		{
+			return PValConstantInt(pBuild, 64, true, pTinary->m_c);
+		}
+
+		EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
+		apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 0, false);
+
+		auto pInstGep = pBuild->PInstCreateGEP(pValAryRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
+		return pInstGep; 
+	}
+
+	apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), arymemb, false);
+
+	auto pValReturn = pBuild->PInstCreateGEP(pValAryRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
+		
+	if (pTinary->m_aryk == ARYK_Fixed)
+		return pValReturn;
+
+	return pBuild->PInstCreate(IROP_Load, pValReturn, "arymembLoad");
+}
+
 static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodRhs, STypeInfo * pTinOut)
 {
 	STypeInfo * pTinRhs = pStnodRhs->m_pTin;
-	if ( pTinRhs && pTinRhs->m_tink == TINK_Array)
+
+	if (pTinRhs && pTinRhs->m_tink == TINK_Array)
 	{
 		CIRValue * pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
 
 		// special case for assigning arrays to pointers, need reference to the array type.
-		if (pTinRhs->m_tink == TINK_Array && pTinOut->m_tink == TINK_Pointer)
+		if (pTinOut->m_tink == TINK_Pointer)
 		{
-			LLVMOpaqueValue * apLvalIndex[2] = {};
-			apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
-			apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 0, false);
+			auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
+			return PValFromArrayMember(pWork, pBuild, pValRhsRef, pTinaryRhs, ARYMEMB_Data);
+		}
+		if (pTinOut->m_tink == TINK_Array)
+		{
+			auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
+			auto pTinaryLhs = (STypeInfoArray *)pTinOut;
 
-			return pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
+			if (pTinaryRhs->m_aryk != pTinaryLhs->m_aryk)
+			{
+				if (pTinaryLhs->m_aryk == ARYK_Reference)
+				{
+					EWC_ASSERT(pTinaryRhs->m_aryk == ARYK_Fixed, "expected ARYK_Fixed");
+
+					u64 cElement;
+					auto pLtype = PLtypeFromPTin(pTinaryLhs, &cElement);
+					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for cast"))
+						return nullptr;
+
+					auto * pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, "aryCast");
+					auto * pInst = PInstCreateAssignmentFromRef(pWork, pBuild, pTinaryLhs, pTinaryRhs, pInstAlloca, pValRhsRef);
+					return pInstAlloca;
+				}
+
+				EWC_ASSERT(false, "no implicit cast from ARYK %s to ARYK %s", PChzFromAryk(pTinaryRhs->m_aryk), PChzFromAryk(pTinaryLhs->m_aryk));
+			}
 		}
 
 		CIRValue * pValSrc = pBuild->PInstCreate(IROP_Load, pValRhsRef, "castLoad");
@@ -1205,6 +1322,130 @@ static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pB
 
 	CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
 	return PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOut);
+}
+
+CIRInstruction * PInstCreateAssignmentFromRef(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	STypeInfo * pTinLhs,
+	STypeInfo * pTinRhs,
+	CIRValue * pValLhs,
+	CIRValue * pValRhsRef)
+{
+	switch (pTinLhs->m_tink)
+	{
+		case TINK_Array:
+		{
+			auto pTinaryRhs = PTinRtiCast<STypeInfoArray *>(pTinRhs);
+			if (!EWC_FVERIFY(pTinaryRhs, "assigning non-array (%s) to an array", PChzFromTink(pTinRhs->m_tink)))
+			 return nullptr;
+
+			auto pTinary = (STypeInfoArray *)pTinLhs;
+			switch (pTinary->m_aryk)
+			{
+			case ARYK_Fixed:
+				{
+					EWC_ASSERT(false, "fixed array assignment is TBD");
+				} break;
+			case ARYK_Reference:
+				{
+					LLVMOpaqueValue * apLvalIndex[2] = {};
+					apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+
+					CIRValue * pValCount = nullptr;
+					CIRValue * pValData = nullptr;
+					switch (pTinaryRhs->m_aryk)
+					{
+					case ARYK_Fixed:
+						{
+							pValCount = PValConstantInt(pBuild, 64, true, pTinaryRhs->m_c);
+
+							apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 0, false);
+							pValData = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
+						} break;
+					case ARYK_Reference:
+						{
+							apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), ARYMEMB_Count, false);
+							auto pInstGepCount = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, 2, "gepCount");
+							pValCount = pBuild->PInstCreate(IROP_Load, pInstGepCount, "loadC");
+
+							apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), ARYMEMB_Data, false);
+							auto pInstGepData = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, 2, "gepData");
+							pValData = pBuild->PInstCreate(IROP_Load, pInstGepData, "loadData");
+						} break;
+					default: EWC_ASSERT(false, "Unhandled ARYK"); 
+					}
+
+					apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 0, false);
+					auto pInstGepCount = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, 2, "gepCount");
+					(void) pBuild->PInstCreateStore(pInstGepCount, pValCount);
+
+					apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 1, false);
+					auto pInstGepData = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, 2, "gepData");
+					return pBuild->PInstCreateStore(pInstGepData, pValData);
+
+				} break;
+			default: EWC_ASSERT(false, "Unhandled ARYK"); 
+			}
+		} break;
+		case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTinLhs;
+
+			LLVMOpaqueValue * apLvalIndex[2] = {};
+			apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+
+			CIRInstruction * pInstReturn = nullptr;
+			int cTypemembField = (int)pTinstruct->m_aryTypemembField.C();
+			for (int iTypememb = 0; iTypememb < cTypemembField; ++iTypememb)
+			{
+				auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
+				apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), iTypememb, false);
+
+				auto pInstLhs = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, 2, "gepLhs");
+				auto pInstRhs = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, 2, "gepRhs");
+
+				auto pTin = pTypememb->m_pTin;
+				pInstReturn = PInstCreateAssignmentFromRef(pWork, pBuild, pTin, pTin, pInstLhs, pInstRhs);
+			}
+		} break;
+		default:
+		{
+			auto pInstRhsLoad = pBuild->PInstCreate(IROP_Load, pValRhsRef, "loadRhs");
+			return pBuild->PInstCreateStore(pValLhs, pInstRhsLoad);
+		}
+	}
+
+	return nullptr;
+}
+
+CIRInstruction * PInstCreateAssignment(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	STypeInfo * pTinLhs,
+	CIRValue * pValLhs,
+	CSTNode * pStnodRhs)
+{
+	switch (pTinLhs->m_tink)
+	{
+	case TINK_Array:
+		{
+			auto pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
+			return PInstCreateAssignmentFromRef(pWork, pBuild, pTinLhs, pStnodRhs->m_pTin, pValLhs, pValRhsRef);
+		} break;
+	case TINK_Struct:
+		{
+			CIRValue * pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
+			return PInstCreateAssignmentFromRef(pWork, pBuild, pTinLhs, pTinLhs, pValLhs, pValRhsRef);
+		}
+	default: 
+		{
+			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pTinLhs);
+			EWC_ASSERT(pValRhsCast, "bad cast");
+			return pBuild->PInstCreateStore(pValLhs, pValRhsCast);
+		}
+	}
+	return nullptr;
 }
 
 CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
@@ -1268,9 +1509,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				CSTNode * pStnodRhs = pStnod->PStnodChild(pStdecl->m_iStnodInit);
 				if (pStnodRhs->m_park != PARK_Uninitializer)
 				{
-					CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnod->m_pTin);
-					EWC_ASSERT(pValRhsCast, "bad cast");
-					pBuild->PInstCreateStore(pInstAlloca, pValRhsCast);
+					PInstCreateAssignment(pWork, pBuild, pStnod->m_pTin, pInstAlloca, pStnodRhs);
 				}
 			}
 			else
@@ -1278,6 +1517,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return PValInitializeToDefault(pWork, pBuild, pStnod->m_pTin, pInstAlloca);
 			}
 
+		} break;
+	case PARK_Cast:
+		{
+			if (!EWC_FVERIFY(pStnod->CStnodChild() == 1, "expected one child for cast"))
+				return nullptr;
+
+			return PValGenerateRefCast(pWork, pBuild, pStnod->PStnodChild(0), pStnod->m_pTin);
 		} break;
 	case PARK_StructDefinition:
 		{
@@ -1483,9 +1729,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			for (int iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
 				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodChild + 1);
-				CIRValue * pVal = PValGenerate(pWork, pBuild, pStnodArg, VALGENK_Instance);
-
-				CIRValue * pValRhsCast = PValCreateCast(pBuild, pVal, pStnodArg->m_pTinOperand, pStnodArg->m_pTin);
+				auto pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodArg, pStnodArg->m_pTin);
 
 				arypLvalArgs.Append(pValRhsCast->m_pLval);
 				if (!EWC_FVERIFY(*arypLvalArgs.PLast(), "missing argument value"))
@@ -1530,7 +1774,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					return pConst;
 				}
 			}
-
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			STypeInfoStruct * pTinstruct = nullptr;
 			auto pTinLhs = pStnodLhs->m_pTin;
@@ -1547,8 +1790,15 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
 			}
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, valgenkLhs);
-			
+
 			CString strMemberName = StrFromIdentifier(pStnod->PStnodChild(1));
+			if (pTinLhs && pTinLhs->m_tink == TINK_Array)
+			{
+				auto pTinary = (STypeInfoArray *)pTinLhs;
+				ARYMEMB arymemb = ArymembLookup(strMemberName.PChz());
+				return PValFromArrayMember(pWork, pBuild, pValLhs, pTinary, arymemb);
+			}
+			
 			auto pTypememb = PTypemembLookup(pTinstruct, strMemberName);
 			if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s", strMemberName.PChz()))
 				return nullptr;
@@ -1580,13 +1830,22 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			LLVMOpaqueValue * apLvalIndex[2] = {};
 			TINK tinkLhs = pStnodLhs->m_pTin->m_tink;
-			int cpLvalIndex;
+			int cpLvalIndex = 0;
 			if (tinkLhs == TINK_Array)
 			{
+				auto pTinary = (STypeInfoArray *)pStnodLhs->m_pTin;
 				pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Reference);
-				apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
-				apLvalIndex[1] = pValIndex->m_pLval;
-				cpLvalIndex = 2;
+
+				if (pTinary->m_aryk != ARYK_Fixed)
+				{
+					pValLhs = PValFromArrayMember(pWork, pBuild, pValLhs, pTinary, ARYMEMB_Data);
+				}
+				else
+				{
+					apLvalIndex[cpLvalIndex++] = LLVMConstInt(LLVMInt32Type(), 0, false);
+				}
+
+				apLvalIndex[cpLvalIndex++] = pValIndex->m_pLval;
 			}
 			else if (tinkLhs == TINK_Pointer)
 			{
@@ -1613,12 +1872,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Reference);
-			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnod->m_pTin);
 
-			if (!EWC_FVERIFY((pStnodLhs != nullptr) & (pValRhsCast != nullptr), "null operand"))
-				return nullptr;
-
-			auto pInstOp = pBuild->PInstCreateStore(pValLhs, pValRhsCast);
+			auto pInstOp = PInstCreateAssignment(pWork, pBuild, pStnodLhs->m_pTin, pValLhs, pStnodRhs);
 			return pInstOp;
 		}
 	case PARK_AdditiveOp:
@@ -2538,6 +2793,9 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	pChzIn = "{ aN : [2] int; aNUnsized : [] int = aN; }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } n := ENUMK.Ick; }";
 	AssertTestCodeGen(&work, pChzIn);

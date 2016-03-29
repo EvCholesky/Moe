@@ -217,10 +217,24 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 
 enum ARYK
 {
-    ARYK_Fixed,
-    ARYK_Static,
-    ARYK_Dynamic,
+    ARYK_Fixed,		// c-style fixed size array.			aN : [3] int;
+    ARYK_Dynamic,	// dynamically resizing array.			aN : [..] int;
+    ARYK_Reference,	// reference to array of either type.	aN : [] int;
+
+	EWC_MAX_MIN_NIL(ARYK)
 };
+const char * PChzFromAryk(ARYK aryk);
+
+enum ARYMEMB
+{
+	ARYMEMB_Count,
+	ARYMEMB_Data,
+
+	EWC_MAX_MIN_NIL(ARYMEMB)
+};
+
+const char * PChzFromArymemb(ARYMEMB arymemb);
+ARYMEMB ArymembLookup(const char * pChzMember);
 
 struct STypeInfoArray : public STypeInfo	// tag = tinary
 {
