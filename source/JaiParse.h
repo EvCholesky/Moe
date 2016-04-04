@@ -139,6 +139,7 @@ enum PARK // PARse Kind
 	PARK_StructDefinition,
 	PARK_EnumConstant,
 	PARK_VariadicArg,
+	PARK_ArrayLiteral,
 	
 	EWC_MAX_MIN_NIL(PARK)
 };

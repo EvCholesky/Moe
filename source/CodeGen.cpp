@@ -279,13 +279,11 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 
 	if (pCElement)
 	{
-		auto pTinary = PTinRtiCast<STypeInfoArray *>(pTin);
-		if (pTinary && pTinary->m_aryk == ARYK_Fixed)
+		switch (pTin->m_tink)
 		{
-			*pCElement = pTinary->m_c;
-		}
-		else
-		{
+		case TINK_Array:	*pCElement = ((STypeInfoArray *)pTin)->m_c;
+		case TINK_Literal:	*pCElement = ((STypeInfoLiteral *)pTin)->m_c;
+		default: 
 			*pCElement = 1;
 		}
 	}
@@ -358,6 +356,11 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			case LITK_Char:		return nullptr;
 			case LITK_String:	return LLVMPointerType(LLVMInt8Type(), 0);
 			case LITK_Null:		return PLtypeFromPTin(pTinlit->m_pTinSource);
+			case LITK_Array:
+			{
+				auto pLtypeElement = PLtypeFromPTin(pTinlit->m_pTinSource);
+				return LLVMArrayType(pLtypeElement, u32(pTinlit->m_c));
+			}
 			default:			return nullptr;
 			}
 		}
@@ -774,7 +777,7 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 				auto pLvalZero = PLvalZeroInType(pBuild, pTinary->m_pTin);
 				EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
 
-				for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
+				for (s64 iElement = 0; iElement < pTinary->m_c; ++iElement)
 				{
 					apLval[iElement] = pLvalZero;
 				}
@@ -834,8 +837,21 @@ LLVMOpaqueValue * PLvalFromEnumConstant(CIRBuilder * pBuild, STypeInfo * pTinLoo
 	return PLvalConstantInt(pTinint->m_cBit, pTinint->m_fIsSigned, pStval->m_nUnsigned);
 }
 
-LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinlit, CSTValue * pStval)
+LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinlit, CSTNode * pStnod)
 {
+	CSTValue * pStval = pStnod->m_pStval;
+
+	bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Array;
+	if (!fIsContainerLiteral)
+	{
+		if (!EWC_FVERIFY(pStval, "literal missing value"))
+			return nullptr;
+
+		// containers are not finalized, just their contents
+		if (!EWC_FVERIFY(pTinlit->m_fIsFinalized, "non-finalized literal type encountered during code gen"))
+			return nullptr;
+	}
+
 	LLVMOpaqueValue * pLval = nullptr;
 	switch (pTinlit->m_litty.m_litk)
 	{
@@ -882,14 +898,48 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 				return nullptr;
 
 			pLval = LLVMConstNull(pLtype);
-		}
+		} break;
+	case LITK_Array:
+		{
+			CSTNode * pStnodLit = pStnod;
+			if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
+			{
+				pStnodLit = pTinlit->m_pStnodDefinition;
+			}
+
+			CSTNode * pStnodList = nullptr;
+			CSTDecl * pStdecl = pStnodLit->m_pStdecl;
+			if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "array literal with no values"))
+			{
+				pStnodList = pStnodLit->PStnodChild(pStdecl->m_iStnodInit);
+			}
+
+			if (!pStnodList || !EWC_FVERIFY(pStnodList->CStnodChild() == pTinlit->m_c, "missing values for array literal"))
+				return nullptr;
+
+			size_t cB = sizeof(LLVMOpaqueValue *) * pTinlit->m_c;
+			auto apLval = (LLVMOpaqueValue **)(alloca(cB));
+
+			for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
+			{
+				auto pStnodChild = pStnodList->PStnodChild(iStnod);
+				STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodChild->m_pTin;
+				EWC_ASSERT(pTinlit->m_tink == TINK_Literal, "Bad array literal element");
+
+				apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlit, pStnodChild);
+			}
+
+			LLVMOpaqueType * pLtypeElement = PLtypeFromPTin(pTinlit->m_pTinSource);
+			auto pLvalReturn = LLVMConstArray(pLtypeElement, apLval, u32(pTinlit->m_c));
+			return pLvalReturn;
+		} break;
 	}
 
 	EWC_ASSERT(pLval, "unknown LITK in PLValueFromLiteral");
 	return pLval;
 }
 
-CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * pTinSrc, STypeInfo * pTinDst)
+CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
 	u32 cBitSrc = 0;
 	u32 cBitDst;
@@ -898,7 +948,41 @@ CIRValue * PValCreateCast(CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * p
 	if (FTypesAreSame(pTinSrc, pTinDst))
 		return pValSrc;
 	if (pTinSrc->m_tink == TINK_Literal)
+	{
+		// BB - should we finalize array literals as references to avoid this?
+
+		auto pTinlitSrc = (STypeInfoLiteral *)pTinSrc;
+		auto pTinaryDst = PTinRtiCast<STypeInfoArray *>(pTinDst);
+		if (pTinlitSrc->m_litty.m_litk == LITK_Array && pTinaryDst && pTinaryDst->m_aryk == ARYK_Reference)
+		{
+			// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
+			//  array that happens to be static and isn't read-only.
+				
+			u64 cElement;
+			auto pLtype = PLtypeFromPTin(pTinlitSrc, &cElement);
+			if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
+				return nullptr;
+
+			auto pInstAllocaLit = pBuild->PInstCreateAlloca(pLtype, cElement, "aryLit");
+
+			// copy the literal into memory
+			pBuild->PInstCreateStore(pInstAllocaLit, pValSrc);
+
+			LLVMOpaqueType * pLtypeDst = PLtypeFromPTin(pTinDst, nullptr);
+			auto pInstAllocaDst = pBuild->PInstCreateAlloca(pLtypeDst, 1, "aryDst");
+
+			// copy the fixed array into the array reference
+			STypeInfoArray tinaryFixed;
+			tinaryFixed.m_aryk = ARYK_Fixed;
+			tinaryFixed.m_c = pTinlitSrc->m_c;
+			tinaryFixed.m_pTin = pTinlitSrc->m_pTinSource;
+
+			(void)PInstCreateAssignmentFromRef(pWork, pBuild, pTinaryDst, &tinaryFixed, pInstAllocaDst, pInstAllocaLit);
+			return pBuild->PInstCreate(IROP_Load, pInstAllocaDst, "aryRefLoad");
+		}
+
 		return pValSrc;
+	}
 
 	if (pTinSrc->m_tink == TINK_Enum)
 	{
@@ -1096,7 +1180,7 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 						return nullptr;
 					}
 
-					apLvalMember[ipLvalMember] = PLvalFromLiteral( pBuild, pTinlit, pStnodInit->m_pStval);
+					apLvalMember[ipLvalMember] = PLvalFromLiteral( pBuild, pTinlit, pStnodInit);
 				}
 			}
 		}
@@ -1129,7 +1213,7 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 				if (!EWC_FVERIFY(pLvalInit, "expected valid initializer"))
 					return nullptr;
 
-				for (u64 iElement = 0; iElement < pTinary->m_c; ++iElement)
+				for (s64 iElement = 0; iElement < pTinary->m_c; ++iElement)
 				{
 					apLval[iElement] = pLvalInit;
 				}
@@ -1317,11 +1401,11 @@ static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pB
 		}
 
 		CIRValue * pValSrc = pBuild->PInstCreate(IROP_Load, pValRhsRef, "castLoad");
-		return PValCreateCast(pBuild, pValSrc, pTinRhs, pTinOut);
+		return PValCreateCast(pWork, pBuild, pValSrc, pTinRhs, pTinOut);
 	}
 
 	CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
-	return PValCreateCast(pBuild, pValRhs, pTinRhs, pTinOut);
+	return PValCreateCast(pWork, pBuild, pValRhs, pTinRhs, pTinOut);
 }
 
 CIRInstruction * PInstCreateAssignmentFromRef(
@@ -1336,16 +1420,35 @@ CIRInstruction * PInstCreateAssignmentFromRef(
 	{
 		case TINK_Array:
 		{
-			auto pTinaryRhs = PTinRtiCast<STypeInfoArray *>(pTinRhs);
-			if (!EWC_FVERIFY(pTinaryRhs, "assigning non-array (%s) to an array", PChzFromTink(pTinRhs->m_tink)))
-			 return nullptr;
+			ARYK arykRhs;
+			s64 cRhs;
+			switch (pTinRhs->m_tink)
+			{
+			case TINK_Array:
+				{
+					auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
+					arykRhs = pTinaryRhs->m_aryk;
+					cRhs = pTinaryRhs->m_c;
+				} break;
+			case TINK_Literal:
+				{
+					auto pTinlitRhs = (STypeInfoLiteral *)pTinRhs;
+					EWC_ASSERT(pTinlitRhs->m_litty.m_litk == LITK_Array, "bad literal type in array assignment");
+
+					arykRhs = ARYK_Fixed;
+					cRhs = pTinlitRhs->m_c;
+				} break;
+			default:
+				EWC_ASSERT(false, "assigning non-array (%s) to an array", PChzFromTink(pTinRhs->m_tink));
+				 return nullptr;
+			}
 
 			auto pTinaryLhs = (STypeInfoArray *)pTinLhs;
 			switch (pTinaryLhs->m_aryk)
 			{
 			case ARYK_Fixed:
 				{
-					EWC_ASSERT(pTinaryRhs->m_aryk == ARYK_Fixed, "cannot copy mixed array kinds to fixed array");
+					EWC_ASSERT(arykRhs == ARYK_Fixed, "cannot copy mixed array kinds to fixed array");
 
 					auto pLbuild = pBuild->m_pLbuild;
 					CIRProcedure * pProc = pBuild->m_pProcCur;
@@ -1395,11 +1498,11 @@ CIRInstruction * PInstCreateAssignmentFromRef(
 
 					CIRValue * pValCount = nullptr;
 					CIRValue * pValData = nullptr;
-					switch (pTinaryRhs->m_aryk)
+					switch (arykRhs)
 					{
 					case ARYK_Fixed:
 						{
-							pValCount = PValConstantInt(pBuild, 64, true, pTinaryRhs->m_c);
+							pValCount = PValConstantInt(pBuild, 64, true, cRhs);
 
 							apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 0, false);
 							pValData = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
@@ -1471,6 +1574,32 @@ CIRInstruction * PInstCreateAssignment(
 	{
 	case TINK_Array:
 		{
+			if (pStnodRhs->m_pTin->m_tink == TINK_Literal)
+			{
+				auto pTinlitRhs = (STypeInfoLiteral *)pStnodRhs->m_pTin;
+				auto pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
+
+				auto pTinaryLhs = (STypeInfoArray *)pTinLhs;
+				if (pTinaryLhs->m_aryk == ARYK_Reference)
+				{
+					// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
+					//  array that happens to be static and isn't read-only.
+						
+					u64 cElement;
+					auto pLtype = PLtypeFromPTin(pTinlitRhs, &cElement);
+					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
+						return nullptr;
+
+					auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, "aryLit");
+
+					// copy the literal into memory
+					pBuild->PInstCreateStore(pInstAlloca, pValRhsRef);
+					return PInstCreateAssignmentFromRef(pWork, pBuild, pTinLhs, pStnodRhs->m_pTin, pValLhs, pInstAlloca);
+				}
+
+				return pBuild->PInstCreateStore(pValLhs, pValRhsRef);
+			}
+
 			auto pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
 			return PInstCreateAssignmentFromRef(pWork, pBuild, pTinLhs, pStnodRhs->m_pTin, pValLhs, pValRhsRef);
 		} break;
@@ -1499,17 +1628,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		if (pStnod->m_park == PARK_ConstantDecl)
 			return nullptr;
 
-		CSTNode * pStnodValue = pStnod;
-
-		CSTValue * pStval = pStnodValue->m_pStval;
 		STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnod->m_pTin;
-		if (!pStval || !pTinlit || pTinlit->m_tink != TINK_Literal)
+		if (!pTinlit || pTinlit->m_tink != TINK_Literal)
 			return nullptr;
 
-		if (!EWC_FVERIFY(pTinlit->m_fIsFinalized, "non-finalized literal type encountered during code gen"))
-			return nullptr;
-	
-		auto pLval = PLvalFromLiteral(pBuild, pTinlit, pStval);
+		auto pLval = PLvalFromLiteral(pBuild, pTinlit, pStnod);
 		if (!pLval)
 			return nullptr;
 
@@ -1627,7 +1750,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 						STypeInfo * pTinBool = pStnodIf->m_pTin;
 						EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for if");
-						CIRValue * pValPredCast = PValCreateCast(pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
+						CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
 
 						CIRBasicBlock *	pBlockTrue = pBuild->PBlockCreate(pProc, "ifThen");
 						CIRBasicBlock * pBlockFalse = nullptr;
@@ -1713,7 +1836,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					STypeInfo * pTinBool = pStnodWhile->m_pTin;
 					EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for while predicate");
-					CIRValue * pValPredCast = PValCreateCast(pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
+					CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
 
 					(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockBody, pBlockPost);
 
@@ -1759,10 +1882,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			auto pLvalFunction = pProc->m_pLvalFunction;
 			int cStnodArgs = pStnod->CStnodChild() - 1; // don't count the identifier
 
+			auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
 			if (LLVMCountParams(pLvalFunction) != cStnodArgs)
 			{
-				auto pTinstruct = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
-				if (!EWC_FVERIFY(pTinstruct->m_fHasVarArgs, "unexpected number of arguments"))
+				if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
 					return nullptr;
 			}
 
@@ -1770,7 +1893,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			for (int iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
 				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodChild + 1);
-				auto pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodArg, pStnodArg->m_pTin);
+				STypeInfo * pTinParam = pStnodArg->m_pTin;
+				if (iStnodChild < pTinproc->m_arypTinParams.C())
+				{
+					pTinParam = pTinproc->m_arypTinParams[iStnodChild];
+				}
+
+				auto pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodArg, pTinParam);
 
 				arypLvalArgs.Append(pValRhsCast->m_pLval);
 				if (!EWC_FVERIFY(*arypLvalArgs.PLast(), "missing argument value"))
@@ -2095,7 +2224,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					// OPTIMIZE: could probably save an instruction here by not comparing (for the cast to bool)
 					//  then inverting with a FNot
 
-					CIRValue * pValOperandCast = PValCreateCast(pBuild, pValOperand, pTinOperand, pTinOutput);
+					CIRValue * pValOperandCast = PValCreateCast(pWork, pBuild, pValOperand, pTinOperand, pTinOutput);
 					pValOp = pBuild->PInstCreate(IROP_Not, pValOperandCast, "NCmpEq");
 				} break;
 			case '-':
@@ -2835,6 +2964,9 @@ void TestCodeGen()
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
 
+	pChzIn = "aN := {:int: 2, 4, 5}; ";
+	AssertTestCodeGen(&work, pChzIn);
+
 	pChzIn = "{ aN : [2] int; aNUnsized : [] int = aN; }";
 	AssertTestCodeGen(&work, pChzIn);
 
@@ -2850,7 +2982,7 @@ void TestCodeGen()
 	pChzIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"{ aN : [4] s32;  pN : & s32; fTest := aN == pN; }";
+	pChzIn =	"{ aN : [4] s32;  pN : & s32; fTest := aN.data == pN; }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ pN : & s32; ++pN; --pN; }";

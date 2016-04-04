@@ -317,9 +317,9 @@ TestEnums :: ()
 	printf("enumkAck = %d\n", enumkAck);
 }
 
-PrintArray :: (aN : [] int)
+PrintArray :: (pChzLabel : & u8, aN : [] int)
 {
-	printf("[%d] = {", aN.count);
+	printf("%s[%d] = {", pChzLabel, aN.count);
 	n : int;
 	while n < aN.count
 	{
@@ -340,8 +340,7 @@ TestArrays :: ()
 
 	aN : [5] int;
 
-	printf("init aN", aN.count);
-	PrintArray(aN);
+	PrintArray("aN(allZeros)", aN);
 
 	n : int;
 	while n < aN.count
@@ -350,15 +349,27 @@ TestArrays :: ()
 		++n;
 	}
 
-	printf("post aN", aN.count);
-	PrintArray(aN);
+	PrintArray("aN(post)", aN);
 
 	aNRef : [] int = aN;
 
-	printf("aNRef", aN.count);
-	PrintArray(aNRef);
+	PrintArray("aNRef", aNRef);
 
 	printf("aN.data = %p, aNRef.data = %p\n", aN.data, aNRef.data);
+
+	ConstAry :: { 1, 2, 3, 4};
+	PrintArray("ConstAry", ConstAry);
+
+	aNExplicit : [] int = {:int: 2, 4, 5};
+	PrintArray("ANExplicit", aNExplicit);
+
+	aNInferred : [] int = {2, 4, 5};
+	PrintArray("ANInferred", aNInferred);
+
+	aNTerse := {2, 4, 5};
+	PrintArray("ANTerse", aNTerse);
+
+	PrintArray("AnArgs", {3,4,4567, 2});
 }
 
 main :: () -> int 

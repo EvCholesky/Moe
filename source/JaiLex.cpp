@@ -240,6 +240,16 @@ void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit)
 	pJlex->m_pChParse = pChIt;
 }
 
+bool FConsumeToken(SJaiLexer * pJlex, JTOK jtok)
+{
+	if (pJlex->m_jtok == jtok)
+	{
+		JtokNextToken(pJlex);
+		return true;
+	}
+	return false;
+}
+
 int JtokNextToken(SJaiLexer * pJlex)
 {
 	const char * pChz = pJlex->m_pChParse;

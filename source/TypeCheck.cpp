@@ -592,9 +592,8 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 
 	auto pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 
-	// Note: we may re-finalize finalized literals here when using a typed constant (ie "SomeConst : s8 : 2;" )
-
 	// we've found the place the literal will become 'typed' - flush that type back down into the literal
+	// Note: we may re-finalize finalized literals here when using a typed constant (ie "SomeConst : s8 : 2;" )
 
 	EWC_ASSERT(pTinDst->m_tink != TINK_Literal, "cannot finalize literal with literal");
 	switch (pTinDst->m_tink)
@@ -643,6 +642,31 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 			{
 				pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Integer, pTinint->m_cBit, pTinint->m_fIsSigned);
 			}
+		} break;
+	case TINK_Array:
+		{
+			if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "finalizing array with non-array literal"))
+				break;
+			
+			CSTNode * pStnodDef = pStnodLit;
+			if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
+			{
+				pStnodDef = pTinlit->m_pStnodDefinition;
+			}
+			
+			auto pStdecl = pStnodDef->m_pStdecl;
+			if (!pStdecl)
+				break;
+
+			auto pStnodList = pStnodDef->PStnodChildSafe(pStdecl->m_iStnodInit);
+			if (pStnodList)
+			{
+				for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
+				{
+					FinalizeLiteralType(pSymtab, pTinlit->m_pTinSource, pStnodList->PStnodChild(iStnod));
+				}
+			}
+
 		} break;
 	case TINK_Null: // fall through
 	case TINK_Void: // fall through
@@ -745,12 +769,41 @@ inline STypeInfo * PTinFromLiteralFinalized(
 
 STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit)
 {
-	const STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
+	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 	if (!pTinlit)
 		return pStnodLit->m_pTin;
 
 	if (pTinlit->m_tink != TINK_Literal)
 		return pStnodLit->m_pTin;
+
+	if (pTinlit->m_litty.m_litk == LITK_Array)
+	{
+		// if this is a constant we need to look up the source STNode
+		if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
+		{
+			pStnodLit = pTinlit->m_pStnodDefinition;
+		}
+
+		auto pDecl = pStnodLit->m_pStdecl;
+		if (!EWC_FVERIFY(pDecl, "bad array literal"))
+			return nullptr;
+
+		auto pStnodValues = pStnodLit->PStnodChildSafe(pDecl->m_iStnodInit);
+
+		if (!pTinlit->m_pTinSource &&
+			EWC_FVERIFY(pStnodValues && pStnodValues->CStnodChild(), "Array literal has no child literals"))
+		{
+			pTinlit->m_pTinSource = PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodValues->PStnodChild(0));
+		}
+
+		STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+		pSymtab->AddManagedTin(pTinary);
+		pTinary->m_pTin = pTinlit->m_pTinSource;
+		pTinary->m_c = pTinlit->m_c;
+		pTinary->m_aryk = ARYK_Fixed;
+
+		return pTinary;
+	}
 
 	if (pTinlit->m_fIsFinalized)
 		return PTinFromLiteralFinalized(pTcwork, pSymtab, pTinlit);
@@ -803,12 +856,17 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 	CSTNode * pStnodLit,	
 	STypeInfo * pTinDest)
 {
-	const STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
+	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 	if (!pTinlit)
 		return pStnodLit->m_pTin;
 
 	if (pTinlit->m_tink != TINK_Literal)
 		return pStnodLit->m_pTin;
+
+	if (pTinlit->m_litty.m_litk == LITK_Array)
+	{
+		return PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodLit);
+	}
 
 	if (pTinlit->m_fIsFinalized)
 		return PTinFromLiteralFinalized(pTcwork, pSymtab, pTinlit);
@@ -963,6 +1021,8 @@ STypeInfo * PTinOperandFromPark(
 			
 				return (pTinintA->m_cBit >= pTinintB->m_cBit) ? pTinLhs : pTinRhs;
 			}
+		case TINK_Array:
+			return nullptr;
 		}
 
 		if (FTypesAreSame(pTinLhs, pTinRhs))
@@ -972,6 +1032,7 @@ STypeInfo * PTinOperandFromPark(
 	switch(pTinLhs->m_tink)
 	{
 	case TINK_Array:
+		return nullptr;
 	case TINK_Pointer:
 		{
 			switch (parkOperator)
@@ -2377,6 +2438,74 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					PopTcsent(pTcfram, pStnod);
 				}
 			}break;
+			case PARK_ArrayLiteral:
+			{
+				if (pTcsentTop->m_nState < pStnod->CStnodChild())
+				{
+					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					++pTcsentTop->m_nState;
+					break;
+				}
+
+				auto pStdecl = pStnod->m_pStdecl;
+				if (!EWC_FVERIFY(pStdecl, "invalid array literal"))
+					return TCRET_StoppingError;
+
+				if (EWC_FVERIFY(pStnod->m_pTin == nullptr, "STypeInfo should not be constructed before type checking"))
+				{
+					auto pSymtab = pTcsentTop->m_pSymtab;
+					STypeInfo * pTinType = nullptr;
+					if (pStdecl->m_iStnodType >= 0)
+					{
+						auto pStnodType = pStnod->PStnodChild(pStdecl->m_iStnodType);
+
+						SSymbol * pSymType = nullptr;
+						bool fIsValidTypeSpec;
+						pTinType = PTinFromTypeSpecification(
+												pTcwork,
+												pSymtab,
+												pStnodType,
+												pTcsentTop->m_grfsymlook,
+												&pSymType,
+												&fIsValidTypeSpec);
+
+						if (!fIsValidTypeSpec)
+							return TCRET_StoppingError;
+					}
+
+					bool fHasValues = false;
+					auto pStnodValues = pStnod->PStnodChildSafe(pStdecl->m_iStnodInit);
+					if (pStnodValues && pStnodValues->CStnodChild())
+					{
+						auto pTinValue = pStnodValues->PStnodChild(0)->m_pTin;
+						fHasValues = pTinValue && pTinValue->m_tink == TINK_Literal;
+					}
+
+					if (!fHasValues)
+					{
+						EmitError(pTcwork, pStnod, "Array literal without any element literals");
+						return TCRET_StoppingError;
+					}
+
+					STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+					pSymtab->AddManagedTin(pTinlit);
+					pTinlit->m_litty.m_litk = LITK_Array;
+					pTinlit->m_pTinSource = pTinType;
+					pTinlit->m_pStnodDefinition = pStnod;
+					pStnod->m_pTin = pTinlit;
+
+					if (pStdecl->m_iStnodInit >= 0)
+					{
+						auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+
+						EWC_ASSERT(pStnodInit->m_park == PARK_List, "invalid ArrayLiteral");
+						pTinlit->m_c = pStnodInit->CStnodChild();
+					}
+				}
+
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram, pStnod);
+			} break;
 			case PARK_Literal:
 			{
 				if (EWC_FVERIFY(pStnod->m_pTin == nullptr, "STypeInfoLiteral should not be constructed before type checking"))
@@ -3404,6 +3533,18 @@ void TestTypeCheck()
 	const char * pChzIn;
 	const char * pChzOut;
 
+	pChzIn = "aN := {:s32: 2, 4, 5};";
+	pChzOut = "([3]s32 $aN (Literal:Array s32 ({} Literal:Int32 Literal:Int32 Literal:Int32)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "aN : [] int = {2, 4, 5};";
+	pChzOut = "([]int $aN ([]int int) (Literal:Array ({} Literal:Int64 Literal:Int64 Literal:Int64)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "ArrayConst :: {2, 4, 5};";
+	pChzOut = "(Literal:Array $ArrayConst (Literal:Array ({} Literal:Int Literal:Int Literal:Int)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn = "{ aN : [2] int; n := aN.count; }";
 	pChzOut = "({} ([2]int $aN ([2]int Literal:Int8 int)) (int $n (Literal:Int64 [2]int $count)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
@@ -3449,8 +3590,8 @@ void TestTypeCheck()
 	pChzOut = "(SFoo_struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo_struct $foo SFoo_struct)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
-	pChzIn = "aN : [4] s32; pN : & s32; fEq := aN == pN; ";
-	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool [4]s32 &s32))";
+	pChzIn = "aN : [4] s32; pN : & s32; fEq := aN.data == pN; ";
+	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool (&s32 [4]s32 $data) &s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; paN : & [4] s32 = &aN;";

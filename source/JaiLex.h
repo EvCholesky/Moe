@@ -106,13 +106,14 @@ enum JTOK
 
 enum LITK
 {
-	LITK_Integer,			// int with unassigned type
+	LITK_Integer,
 	LITK_Float,
 	LITK_Char,
 	LITK_String,
 	LITK_Bool,
 	LITK_Null,
 	LITK_Enum,
+	LITK_Array,
 
 	EWC_MAX_MIN_NIL(LITK)
 };
@@ -200,6 +201,7 @@ struct SLexerLocation // tag = lexloc
 };
 
 void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, u32 cChStorage);
+bool FConsumeToken(SJaiLexer * pJlex, JTOK jtok);
 int JtokNextToken(SJaiLexer * pJlex);
 void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit);
 RWORD RwordLookup(SJaiLexer * pJlex);

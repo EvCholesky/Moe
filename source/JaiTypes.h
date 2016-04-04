@@ -143,21 +143,25 @@ struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 
 // NOTE: just documenting a subtle relationship: CSTVal stores a literal value and is enough to determine 
 // what the STypeInfoLiteral *could* be, (ie PTinlitDefault, PTinlitTightest) but the actual type is determined
-// by the nodes type passed down after type checkingbigmath
+// by the nodes type passed down after type checking.
 
 struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 {
 	static const TINK s_tink = TINK_Literal;
 						STypeInfoLiteral()
 						:STypeInfo("", s_tink)
-						,m_fIsFinalized(false)
+						,m_c(-1)
 						,m_pTinSource(nullptr)
+						,m_fIsFinalized(false)
 						,m_litty()
+						,m_pStnodDefinition(nullptr)
 							{ ; }
 	
-	bool			m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
+	s64				m_c;
 	STypeInfo *		m_pTinSource;		// source type (for finalized null pointers or enum literals)
+	bool			m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
 	SLiteralType	m_litty;
+	CSTNode *		m_pStnodDefinition;	// (needed for array literal values)
 };
 
 struct STypeStructMember	// tag = typememb
@@ -249,7 +253,7 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 					{ ; }
 
 	STypeInfo *		m_pTin;
-	u64				m_c;
+	s64				m_c;
 	s32				m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
 	ARYK			m_aryk;
 };
