@@ -1354,10 +1354,6 @@ CIRValue * PValFromArrayMember(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue
 	apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), arymemb, false);
 
 	auto pValReturn = pBuild->PInstCreateGEP(pValAryRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
-		
-	if (pTinary->m_aryk == ARYK_Fixed)
-		return pValReturn;
-
 	return pBuild->PInstCreate(IROP_Load, pValReturn, "arymembLoad");
 }
 
@@ -1962,11 +1958,29 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, valgenkLhs);
 
 			CString strMemberName = StrFromIdentifier(pStnod->PStnodChild(1));
+
 			if (pTinLhs && pTinLhs->m_tink == TINK_Array)
 			{
 				auto pTinary = (STypeInfoArray *)pTinLhs;
 				ARYMEMB arymemb = ArymembLookup(strMemberName.PChz());
 				return PValFromArrayMember(pWork, pBuild, pValLhs, pTinary, arymemb);
+			}
+			if (pTinLhs && pTinLhs->m_tink == TINK_Literal)
+			{
+				auto pTinlit = (STypeInfoLiteral *)pTinLhs;
+				if (EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "unexpected literal type in member lookup"))
+				{
+					u64 cElement;
+					auto pLtype = PLtypeFromPTin(pTinlit, &cElement);
+					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
+						return nullptr;
+
+					auto pInstAllocaLit = pBuild->PInstCreateAlloca(pLtype, cElement, "aryLit");
+
+					// copy the literal into memory
+					pBuild->PInstCreateStore(pInstAllocaLit, pValLhs);
+					return pInstAllocaLit;
+				}
 			}
 			
 			auto pTypememb = PTypemembLookup(pTinstruct, strMemberName);

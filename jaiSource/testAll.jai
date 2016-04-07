@@ -277,11 +277,43 @@ TestTypedefs :: ()
 	}
 }
 
+PrintStringArray :: (pChzLabel : & u8, aPchz : [] & u8)
+{
+	printf("%s[%d] = {", pChzLabel, aPchz.count);
+	n : int;
+	while n < aPchz.count
+	{
+		printf("%s", aPchz[n]);
+		++n;
+		if n < aPchz.count
+		{
+			printf(", ");
+		}
+	}
+	printf("}\n");
+}
+
+PrintIntArray :: (pChzLabel : & u8, aN : [] int)
+{
+	printf("%s[%d] = {", pChzLabel, aN.count);
+	n : int;
+	while n < aN.count
+	{
+		printf("%d", aN[n]);
+		++n;
+		if n < aN.count
+		{
+			printf(", ");
+		}
+	}
+	printf("}\n");
+}
+
 TestEnums :: ()
 {
 	printf("\nEnumerations:\n");
 
-	ENUMK :: enum
+	ENUMK :: enum int
 	{
 		Ack : 0,
 		Bah : Ack+1,
@@ -315,23 +347,10 @@ TestEnums :: ()
 
 	enumkAck := ENUMK.Ack;
 	printf("enumkAck = %d\n", enumkAck);
-}
 
-PrintArray :: (pChzLabel : & u8, aN : [] int)
-{
-	printf("%s[%d] = {", pChzLabel, aN.count);
-	n : int;
-	while n < aN.count
-	{
-		printf("%d", aN[n]);
-		aN[n] = n * 2;
-		++n;
-		if n < aN.count
-		{
-			printf(", ");
-		}
-	}
-	printf("}\n");
+	printf("ENUMK.names: count=%d data=0x%p\n", ENUMK.names.count, ENUMK.names.data);
+	PrintStringArray("ENUMK.names", ENUMK.names);
+	PrintIntArray("ENUMK.values", ENUMK.values);
 }
 
 TestArrays :: () 
@@ -340,7 +359,7 @@ TestArrays :: ()
 
 	aN : [5] int;
 
-	PrintArray("aN(allZeros)", aN);
+	PrintIntArray("aN(allZeros)", aN);
 
 	n : int;
 	while n < aN.count
@@ -349,27 +368,27 @@ TestArrays :: ()
 		++n;
 	}
 
-	PrintArray("aN(post)", aN);
+	PrintIntArray("aN(post)", aN);
 
 	aNRef : [] int = aN;
 
-	PrintArray("aNRef", aNRef);
+	PrintIntArray("aNRef", aNRef);
 
 	printf("aN.data = %p, aNRef.data = %p\n", aN.data, aNRef.data);
 
 	ConstAry :: { 1, 2, 3, 4};
-	PrintArray("ConstAry", ConstAry);
+	PrintIntArray("ConstAry", ConstAry);
 
 	aNExplicit : [] int = {:int: 2, 4, 5};
-	PrintArray("ANExplicit", aNExplicit);
+	PrintIntArray("ANExplicit", aNExplicit);
 
 	aNInferred : [] int = {2, 4, 5};
-	PrintArray("ANInferred", aNInferred);
+	PrintIntArray("ANInferred", aNInferred);
 
 	aNTerse := {2, 4, 5};
-	PrintArray("ANTerse", aNTerse);
+	PrintIntArray("ANTerse", aNTerse);
 
-	PrintArray("AnArgs", {3,4,4567, 2});
+	PrintIntArray("AnArgs", {3,4,4567, 2});
 }
 
 main :: () -> int 

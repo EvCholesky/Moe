@@ -187,6 +187,8 @@ const char * PChzFromEnumimp(ENUMIMP enumimp)
 		"min",		//ENUMIMP_MinConstant,
 		"last",		//ENUMIMP_LastConstant,
 		"max",		//ENUMIMP_MaxConstant,
+		"names",	//ENUMIMP_Names,
+		"values",	//ENUMIMP_Values,
 	};
 	EWC_CASSERT(EWC_DIM(s_mpEnumimpPChz) == ENUMIMP_Max, "missing ENUMIMP string");
 	if (enumimp == ENUMIMP_Max)
@@ -1146,10 +1148,10 @@ CSTNode * PStnodParseParameterList(
 	return pStnodList;
 }
 
-CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)
+CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent, PARK park)
 {
 	CSTNode * pStnodConstant = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-	pStnodConstant->m_park = PARK_EnumConstant;
+	pStnodConstant->m_park = park;
 	pStnodConstant->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
 
 	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
@@ -1227,9 +1229,10 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex
 
 	// add STNodes for implicit members: nil, min, max, etc.
 
-	for (int enumimp = ENUMIMP_ConstantMin; enumimp < ENUMIMP_ConstantMax; ++enumimp)
+	for (int enumimp = ENUMIMP_Min; enumimp < ENUMIMP_Max; ++enumimp)
 	{
-		auto pStnodImplicit = PStnodSpoofEnumConstant(pParctx, lexloc, PChzFromEnumimp((ENUMIMP)enumimp));
+		PARK park = ((enumimp == ENUMIMP_Names) | (enumimp == ENUMIMP_Values)) ? PARK_ArrayLiteral : PARK_EnumConstant;
+		auto pStnodImplicit = PStnodSpoofEnumConstant(pParctx, lexloc, PChzFromEnumimp((ENUMIMP)enumimp), park);
 		pStnodList->IAppendChild(pStnodImplicit);
 	}
 
@@ -1484,7 +1487,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				// type info enum
 				int cStnodChild;
 				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
-				int cStnodArray = 2; // names, values
 				int cStnodMember = cStnodChild; // cStnodArray;
 
 				STypeInfoEnum * pTinenum = EWC_NEW(pParctx->m_pAlloc, STypeInfoEnum) STypeInfoEnum(strIdent.PChz());
@@ -1494,13 +1496,22 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
 					CSTNode * pStnodMember = *ppStnodMember;
-					EWC_ASSERT(pStnodMember->m_park == PARK_EnumConstant, "Expected enum constant");
 
-					auto pTinlit = EWC_NEW(pSymtabParent->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
-					pSymtabParent->AddManagedTin(pTinlit);
-					pTinlit->m_litty.m_litk = LITK_Enum;
-					pTinlit->m_pTinSource = pTinenum;
-					pStnodMember->m_pTin = pTinlit;
+					switch (pStnodMember->m_park)
+					{
+					case PARK_EnumConstant:
+						{
+							auto pTinlit = EWC_NEW(pSymtabParent->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+							pSymtabParent->AddManagedTin(pTinlit);
+							pTinlit->m_litty.m_litk = LITK_Enum;
+							pTinlit->m_pTinSource = pTinenum;
+							pStnodMember->m_pTin = pTinlit;
+						} break;
+					case PARK_ArrayLiteral:
+						{
+						} break;
+					default: EWC_ASSERT(false, "Expected enum child value");
+					}
 				}
 
 				pSymtabParent->AddManagedTin(pTinenum);
@@ -2725,7 +2736,7 @@ void TestParse()
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo; }";
-		pChzOut = "({} (enum $ENUMK $int ({} (enumConst $nil) (enumConst $min) (enumConst $last) (enumConst $max) (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
+		pChzOut = "({} (enum $ENUMK $int ({} (enumConst $nil) (enumConst $min) (enumConst $last) (enumConst $max) (arrayLit $names) (arrayLit $values) (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
 			" (decl $enumk (member $ENUMK $Foo)))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 

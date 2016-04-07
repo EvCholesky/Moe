@@ -209,15 +209,12 @@ enum ENUMIMP	// implicit enum members (added as STNodes during parse)
 	ENUMIMP_MinConstant,	// lowest user value
 	ENUMIMP_LastConstant,	// highest user value 
 	ENUMIMP_MaxConstant,	// one past the highest value
-	//ENUMIMP_Names,
-	//ENUMIMP_Values,
+	ENUMIMP_Names,
+	ENUMIMP_Values,
 
 	ENUMIMP_Max,
 	ENUMIMP_Min = 0,
 	ENUMIMP_Nil = -1,
-
-	ENUMIMP_ConstantMin = ENUMIMP_Min,
-	ENUMIMP_ConstantMax = ENUMIMP_MaxConstant+1,
 };
 
 const char * PChzFromEnumimp(ENUMIMP enumimp);

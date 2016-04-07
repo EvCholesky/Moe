@@ -1071,6 +1071,7 @@ STypeInfo * PTinOperandFromPark(
 
 inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
+	EWC_ASSERT(pTinSrc, "null typeInfo");
 	EWC_ASSERT(pTinSrc->m_tink != TINK_Literal, "literals should be promoted before calling FCanImplicitCast()");
 
 	if (pTinSrc->m_tink == pTinDst->m_tink)
@@ -1449,6 +1450,40 @@ void SetEnumConstantValue(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const
 	pStnod->m_pStval = pStval;
 }
 
+void AddEnumNameValuePair(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodNames,
+	CSTNode * pStnodValues,
+	CSTNode * pStnodConstant,
+	STypeInfo * pTinValue, 
+	STypeInfo * pTinName)
+{
+	CAlloc * pAlloc = pTcwork->m_pAlloc;
+	CSTNode * pStnodValue = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, pStnodValues->m_lexloc);
+	pStnodValue->m_park = PARK_Literal;
+	pStnodValue->m_pTin = pTinValue; // finalized literal version of enum.loose type
+	pStnodValue->m_pStval = PStvalCopy(pAlloc, pStnodConstant->m_pStval);
+
+	pStnodValues->IAppendChild(pStnodValue);
+
+	CSTNode * pStnodName = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, pStnodNames->m_lexloc);
+	pStnodName->m_park = PARK_Literal;
+	pStnodName->m_pTin = pTinName;
+	auto pStvalName = EWC_NEW(pAlloc, CSTValue) CSTValue();
+	pStvalName->m_stvalk = STVALK_String;
+
+	CSTDecl * pStdecl = pStnodConstant->m_pStdecl;
+	CSTNode * pStnodIdent = (pStdecl) ? pStnodConstant->PStnodChildSafe(pStdecl->m_iStnodIdentifier) : nullptr;
+	if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStident, "Enum constant missing name"))
+	{
+		pStvalName->m_str = pStnodIdent->m_pStident->m_str;
+	}
+
+	pStnodName->m_pStval = pStvalName;
+	pStnodNames->IAppendChild(pStnodName);
+}
+
 void ResolveSpoofTypedef(
 	STypeCheckWorkspace * pTcwork, 
 	CSymbolTable * pSymtab,
@@ -1468,7 +1503,47 @@ void ResolveSpoofTypedef(
 	OnTypeComplete(pTcwork, pSym);
 }
 
-TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
+void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodArray, int cElements, STypeInfo * pTinElement)
+{
+	if (!EWC_FVERIFY(pStnodArray->m_pStdecl && pStnodArray->m_pSym, "bad spoofed literal array"))
+		return;
+
+	STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+	pSymtab->AddManagedTin(pTinlit);
+	pTinlit->m_c = cElements;
+	pTinlit->m_litty.m_litk = LITK_Array;
+	pTinlit->m_pTinSource = pTinElement;
+	pTinlit->m_pStnodDefinition = pStnodArray;
+	pStnodArray->m_pTin = pTinlit;
+	pStnodArray->m_pSym->m_pTin = pTinlit;
+
+	CSTNode * pStnodList = EWC_NEW(pSymtab->m_pAlloc, CSTNode) CSTNode(pSymtab->m_pAlloc, pStnodArray->m_lexloc);
+	pStnodList->m_park = PARK_List;
+	pStnodList->m_pTin = pTinlit;
+
+	EWC_ASSERT(pStnodArray->m_pStdecl->m_iStnodInit == -1, "expected empty array");
+	pStnodArray->m_pStdecl->m_iStnodInit = pStnodArray->IAppendChild(pStnodList);
+}
+
+// wrapper struct to allow breaking on returning different TCRET values
+struct TcretDebug
+{
+			TcretDebug(TCRET tcret)
+			:m_tcret(tcret)
+				{
+					if (tcret == TCRET_StoppingError)
+						DoNothing();
+					if (tcret == TCRET_WaitingForSymbolDefinition)
+						DoNothing();
+				}
+
+			operator TCRET()
+				{ return m_tcret; }
+
+	TCRET	m_tcret;
+};
+
+TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
 	while (paryTcsent->C())
@@ -1723,6 +1798,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 							EmitError(pTcwork, pStnod, "no implicit conversion from  type %s to %s",
 								strTinCall.PChz(),
 								strTinParam.PChz());
+							continue;
 						}
 
 						// if we have a literal, just expect the finalized type to be correct, otherwise
@@ -1914,10 +1990,37 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 				}
 				else
 				{
+					CSTNode * pStnodNames = ppStnodMember[ENUMIMP_Names];
+					CSTNode * pStnodValues = ppStnodMember[ENUMIMP_Values];
+
+					int cBitLoose = 64;
+					bool fIsSignedLoose = true;
+					auto pTinintLoose = PTinRtiCast<STypeInfoInteger *>(pTinenum->m_pTinLoose);
+					if (EWC_FVERIFY(pTinintLoose, "expected enum type to be integer"))
+					{
+						cBitLoose = pTinintLoose->m_cBit;
+						fIsSignedLoose = pTinintLoose->m_fIsSigned;
+					}
+
+					auto pSymtab = pTcsentTop->m_pSymtab;
+					STypeInfoLiteral * pTinlitValue = pSymtab->PTinlitFromLitk(LITK_Integer, cBitLoose, fIsSignedLoose);
+					STypeInfoLiteral * pTinlitName = pSymtab->PTinlitFromLitk(LITK_String);
+
+					auto pTinU8 = pSymtab->PTinBuiltin("u8");
+					STypeInfo * pTinString = pSymtab->PTinptrGetReference(pTinU8);
+
+					SpoofLiteralArray(pTcwork, pSymtab, pStnodNames, cStnodChild - ENUMIMP_Max, pTinString);
+					auto pStnodNameList = pStnodNames->PStnodChildSafe(pStnodNames->m_pStdecl->m_iStnodInit);
+
+					SpoofLiteralArray(pTcwork, pSymtab, pStnodValues, cStnodChild - ENUMIMP_Max, pTinenum->m_pTinLoose);
+					auto pStnodValueList = pStnodValues->PStnodChildSafe(pStnodValues->m_pStdecl->m_iStnodInit);
+
 					// assign pTin and finalize literals
 					for (int iStnodMember = 0; iStnodMember < cStnodChild; ++iStnodMember)
 					{
 						auto pStnodMember = ppStnodMember[iStnodMember];
+						if ((iStnodMember == ENUMIMP_Names) | (iStnodMember == ENUMIMP_Values))
+							continue;
 
 						// just make sure the init type fits the specified one
 						auto pStnodInit = pStnodMember->PStnodChildSafe(1);
@@ -1925,16 +2028,19 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						{
 							STypeInfo * pTinInit = pStnodMember->m_pTin;
 
-							pTinInit = PTinPromoteLiteralTightest(pTcwork, pTcsentTop->m_pSymtab, pStnodInit, pTinenum->m_pTinLoose);
+							pTinInit = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodInit, pTinenum->m_pTinLoose);
 							if (!FCanImplicitCast(pTinInit, pTinenum->m_pTinLoose))
 							{
-
-							auto Test = PTinPromoteLiteralTightest(pTcwork, pTcsentTop->m_pSymtab, pStnodInit, pTinenum->m_pTinLoose);
 								EmitError(pTcwork, pStnodInit, "Cannot initialize constant of type %s with %s",
 									StrFromTypeInfo(pTinenum->m_pTinLoose).PChz(),
 									StrFromTypeInfo(pTinInit).PChz());
 							}
 						}
+
+						if (pStnodMember->m_grfstnod.FIsSet(FSTNOD_ImplicitMember))
+							continue;
+
+						AddEnumNameValuePair(pTcwork, pSymtab, pStnodNameList, pStnodValueList, pStnodMember, pTinlitValue, pTinlitName);
 					}
 				}
 
@@ -2101,6 +2207,7 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
 						if (pStnodDefinition->m_park == PARK_Decl ||
 							pStnodDefinition->m_park == PARK_ConstantDecl ||
+							pStnodDefinition->m_park == PARK_ArrayLiteral ||
 							pStnodDefinition->m_park == PARK_Typedef ||
 							pStnodDefinition->m_park == PARK_EnumDefinition ||
 							pStnodDefinition->m_park == PARK_EnumConstant ||
@@ -2440,6 +2547,13 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 			}break;
 			case PARK_ArrayLiteral:
 			{
+				if (pStnod->m_grfstnod.FIsSet(FSTNOD_ImplicitMember))
+				{
+					pStnod->m_strees = STREES_TypeChecked;
+					PopTcsent(pTcfram, pStnod);
+					break;
+				}
+
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
 					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
@@ -2633,6 +2747,11 @@ TCRET TypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 					if (pTinLhs->m_tink == TINK_Pointer)
 					{
 						pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+					}
+					else if (pTinLhs->m_tink == TINK_Literal)
+					{
+						pTinLhs = PTinPromoteLiteralDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodLhs);
+						FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
 					}
 				}
 
@@ -3342,7 +3461,7 @@ void PerformTypeCheck(
 	while (pTcwork->m_arypTcframPending.C())
 	{
 		STypeCheckFrame * pTcfram = pTcwork->m_arypTcframPending[0];
-		TCRET tcret = TypeCheckSubtree(pTcwork, pTcfram);
+		TCRET tcret = TcretTypeCheckSubtree(pTcwork, pTcfram);
 
 		if (tcret == TCRET_StoppingError)
 		{
@@ -3541,6 +3660,10 @@ void TestTypeCheck()
 	pChzOut = "([]int $aN ([]int int) (Literal:Array ({} Literal:Int64 Literal:Int64 Literal:Int64)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
+	pChzIn = "aN : [] & u8 = {\"foo\", \"bar\", \"ack\"};";
+	pChzOut = "([]&u8 $aN ([]&u8 (&u8 u8)) (Literal:Array ({} Literal:String Literal:String Literal:String)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn = "ArrayConst :: {2, 4, 5};";
 	pChzOut = "(Literal:Array $ArrayConst (Literal:Array ({} Literal:Int Literal:Int Literal:Int)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
@@ -3554,12 +3677,15 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
-	pChzOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
+	pChzOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
+		"(Literal:Array $names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array $values (Literal:Array Literal:Int32 Literal:Int32 Literal:Int32)) "
+		"(Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
 		"(ENUMK_enum $enumk (Literal:Int32 ENUMK_enum $Bah)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick; }";
-	pChzOut = "({} (EEK_enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) (Literal:Enum $Ick Literal:Int))) "
+	pChzOut = "({} (EEK_enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
+		"(Literal:Array $names (Literal:Array Literal:String)) (Literal:Array $values (Literal:Array Literal:Int16)) (Literal:Enum $Ick Literal:Int))) "
 		"(EEK_enum $eek (EEK_enum EEK_enum EEK_enum) (Literal:Int16 EEK_enum $Ick)) "
 		"(s16 $n (s16 EEK_enum s16) (Literal:Int16 EEK_enum $Ick)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
