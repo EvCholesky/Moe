@@ -33,9 +33,6 @@ Coming soon:
 Further out:
   * UTF8 identifier support
 
-Known Issues:
-  * Void pointers are not supported (llvm wants to codegen them as *u8)
-
 Deviations from current JAI syntax:
   * pointers use & for pointer type specification/referencing and @ for a dereference operator, rather than <<
   * still support single quote character literals. (might #char once the single char is used elsewhere)

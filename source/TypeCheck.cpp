@@ -1099,6 +1099,9 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 			{
 				auto pTinptrSrc = (STypeInfoPointer *)pTinSrc;
 				auto pTinptrDst = (STypeInfoPointer *)pTinDst;
+				if (pTinptrDst->m_pTinPointedTo->m_tink == TINK_Void)
+					return true;
+
 				return FTypesAreSame(pTinptrSrc->m_pTinPointedTo, pTinptrDst->m_pTinPointedTo);	
 			}
 		case TINK_Array:
@@ -1124,6 +1127,8 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 	{
 		auto pTinarySrc = (STypeInfoArray *)pTinSrc;
 		auto pTinptrDst = (STypeInfoPointer *)pTinDst;
+		if (pTinptrDst->m_pTinPointedTo->m_tink == TINK_Void)
+			return true;
 		return FTypesAreSame(pTinarySrc->m_pTin, pTinptrDst->m_pTinPointedTo);	
 	}
 

@@ -137,6 +137,7 @@ EWC_ENUM_UTILS(VALK);
 		OP(GExtend), \
 		OP(PtrToInt), \
 		OP(IntToPtr), \
+		OP(Bitcast), \
 		OP_RANGE(CastOp, MemoryOpMax) \
 
 #define OP(x) IROP_##x

@@ -297,7 +297,16 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 		case TINK_Pointer:
 		{
 			STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTin;
-			auto pLtypePointedTo = PLtypeFromPTin(pTinptr->m_pTinPointedTo);
+			LLVMOpaqueType * pLtypePointedTo;
+			if (pTinptr->m_pTinPointedTo->m_tink == TINK_Void)
+			{
+				// llvm doesn't support void pointers so we treat them as s8 pointers instead
+				pLtypePointedTo = LLVMInt8Type();
+			}
+			else
+			{
+				pLtypePointedTo = PLtypeFromPTin(pTinptr->m_pTinPointedTo);
+			}
 			return LLVMPointerType(pLtypePointedTo, 0);
 		}
 		case TINK_Array:
@@ -514,6 +523,7 @@ CIRInstruction * CIRBuilder::PInstCreateCast(IROP irop, CIRValue * pValLhs, STyp
 	case IROP_UToG:			pInst->m_pLval = LLVMBuildUIToFP(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
 	case IROP_GTrunc:		pInst->m_pLval = LLVMBuildFPTrunc(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
 	case IROP_GExtend:		pInst->m_pLval = LLVMBuildFPExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_Bitcast:		pInst->m_pLval = LLVMBuildBitCast(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
 	default: EWC_ASSERT(false, "IROP not supported by PInstCreateCast"); break;
 	}
 
@@ -1000,7 +1010,10 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 		if (pTinDst->m_tink != TINK_Bool)
 		{
 			if (EWC_FVERIFY(pTinDst->m_tink == TINK_Pointer, "trying to cast pointer to non-pointer. (not supported yet)"))
-				return pValSrc;
+			{
+				return pBuild->PInstCreateCast(IROP_Bitcast, pValSrc, pTinDst, "Bitcast");
+			}
+			return pValSrc;
 		}
 	}
 	else
@@ -1369,7 +1382,13 @@ static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pB
 		if (pTinOut->m_tink == TINK_Pointer)
 		{
 			auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
-			return PValFromArrayMember(pWork, pBuild, pValRhsRef, pTinaryRhs, ARYMEMB_Data);
+			auto pValData = PValFromArrayMember(pWork, pBuild, pValRhsRef, pTinaryRhs, ARYMEMB_Data);
+
+			auto pTinptr = (STypeInfoPointer *)pTinOut;
+			if (FTypesAreSame(pTinaryRhs->m_pTin, pTinptr->m_pTinPointedTo))
+				return pValData;
+
+			return pBuild->PInstCreateCast(IROP_Bitcast, pValData, pTinptr, "Bitcast");
 		}
 		if (pTinOut->m_tink == TINK_Array)
 		{

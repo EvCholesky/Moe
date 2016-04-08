@@ -57,6 +57,19 @@ TestPointers :: ()
 
 	pointstruct.m_n = 1234;
 	printf("pointstruct.m_n = %d, pPointstruct.m_n = %d\n", pointstruct.m_n, pPointstruct.m_n);
+
+	// void pointers
+	
+	n := 1234;
+	pN := &n;
+	pV : & void = pN;
+
+	printf("%p == %p\n", pN, pV);
+
+	aN := {1,2,3};
+	pN = aN;
+	pV = aN;
+	printf("%p == %p\n", pN, pV);
 }
 
 TestNestedMethod :: (n : s32)
