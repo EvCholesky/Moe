@@ -79,6 +79,12 @@ TestNestedMethod :: (n : s32)
 	printf("return = %f\n", g);
 }
 
+FPrint :: (pChz : & u8, fArg : bool) -> bool
+{
+	printf(pChz);
+	return fArg;
+}
+
 TestIfElse :: ()
 {
 	printf("\nIf/Else:\n");
@@ -95,6 +101,25 @@ TestIfElse :: ()
 			printf("(else) %d\n",n);
 		++n;
 	}
+
+	printf("short circuit: ABCDE = ");
+	if (FPrint("A", false) && FPrint("X", false)) && FPrint("X", true)
+	{
+		printf("ERROR!");
+	}
+	else if FPrint("B", false) || (FPrint("C", true) && FPrint("D", true))
+	{
+		printf("E");
+	}
+
+	printf("\nshort circuit: AB0-AB1-AB2-AB = ");
+	n = 0;
+	while (FPrint("A", false) || FPrint("B", true) && n < 3)
+	{
+		printf("%d-",n);
+		++n;
+	}
+	printf("\n");
 
 }
 

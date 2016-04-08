@@ -1614,6 +1614,54 @@ CIRInstruction * PInstCreateAssignment(
 	return nullptr;
 }
 
+void GeneratePredicate(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	CSTNode * pStnodPred,
+	CIRBasicBlock * pBlockTrue,
+	CIRBasicBlock * pBlockPost,
+	STypeInfo * pTinBool)
+{
+	EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for predicate");
+
+	// short circuiting: 
+	//  jump to true if either operand to || is true
+	//  jump to post if either operand to && is false 
+
+	CSTNode * pStnodOp = pStnodPred;
+	if (pStnodOp->m_park == PARK_LogicalAndOrOp)
+	{
+		CIRBasicBlock *	pBlockRhs = pBuild->PBlockCreate(pBuild->m_pProcCur, "predRhs");
+		EWC_ASSERT(pStnodOp->CStnodChild() == 2, "expected two children for logical op");
+
+		auto pStnodChildLhs = pStnodPred->PStnodChild(0);
+		auto pStnodChildRhs = pStnodPred->PStnodChild(1);
+
+		switch (pStnodOp->m_jtok)
+		{
+			case JTOK_AndAnd:
+				{
+					GeneratePredicate(pWork, pBuild, pStnodChildLhs, pBlockRhs, pBlockPost, pTinBool);
+					pBuild->ActivateBlock(pBlockRhs);
+					GeneratePredicate(pWork, pBuild, pStnodChildRhs, pBlockTrue, pBlockPost, pTinBool);
+				} break;
+			case JTOK_OrOr:
+				{
+					GeneratePredicate(pWork, pBuild, pStnodChildLhs, pBlockTrue, pBlockRhs, pTinBool);
+					pBuild->ActivateBlock(pBlockRhs);
+					GeneratePredicate(pWork, pBuild, pStnodChildRhs, pBlockTrue, pBlockPost, pTinBool);
+				} break;
+			default: EWC_ASSERT(false, "unknown logical op");
+		}
+	}
+	else
+	{
+		CIRValue * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
+		CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
+		(void)pBuild->PInstCreateCondBranch(pValPredCast, pBlockTrue, pBlockPost);
+	}
+}
+
 CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
 {
 	CIRBuilderErrorContext berrctx(pWork->m_pErrman, pBuild, pStnod);
@@ -1742,11 +1790,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 						CSTNode * pStnodIf = pStnodCur;
 						CSTNode * pStnodPred = pStnodIf->PStnodChild(0);
-						CIRValue * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
 
 						STypeInfo * pTinBool = pStnodIf->m_pTin;
-						EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for if");
-						CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
 
 						CIRBasicBlock *	pBlockTrue = pBuild->PBlockCreate(pProc, "ifThen");
 						CIRBasicBlock * pBlockFalse = nullptr;
@@ -1770,7 +1815,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 								}
 								else
 								{
-									pBlockFalse = pBuild->PBlockCreate(pProc, "ifElse");
+									pBlockFalse = pBuild->PBlockCreate(pProc, "else");
 									pStnodElseChild = pStnodChild;
 								}
 							}
@@ -1779,11 +1824,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						if (!pBlockPost)
 						{
 							pBlockPost = pBuild->PBlockCreate(pProc, "postIf");
-							if (!pBlockFalse)
-								pBlockFalse = pBlockPost;
 						}
 
-						(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockTrue, pBlockFalse);
+						if (!pBlockFalse)
+						{
+							pBlockFalse = pBlockPost;
+						}
+						GeneratePredicate(pWork, pBuild, pStnodPred, pBlockTrue, pBlockFalse, pTinBool);
 
 						pBuild->ActivateBlock(pBlockTrue);
 						auto pValThen = PValGenerate(pWork, pBuild, pStnodIf->PStnodChild(1), VALGENK_Instance);
@@ -1828,13 +1875,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					CSTNode * pStnodWhile = pStnod;
 					CSTNode * pStnodPred = pStnodWhile->PStnodChild(0);
-					CIRValue * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
 
 					STypeInfo * pTinBool = pStnodWhile->m_pTin;
 					EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for while predicate");
-					CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
 
-					(void) pBuild->PInstCreateCondBranch(pValPredCast, pBlockBody, pBlockPost);
+					GeneratePredicate(pWork, pBuild, pStnodPred, pBlockBody, pBlockPost, pTinBool);
 
 					pBuild->ActivateBlock(pBlockBody);
 					(void) PValGenerate(pWork, pBuild, pStnodWhile->PStnodChild(1), VALGENK_Instance);
