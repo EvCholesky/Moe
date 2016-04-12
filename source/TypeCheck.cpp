@@ -1069,6 +1069,18 @@ STypeInfo * PTinOperandFromPark(
 	return nullptr;
 }
 
+inline bool FIsNumericTink(TINK tink)
+{
+	switch (tink)
+	{
+	case TINK_Integer:	return true;
+	case TINK_Bool:		return true;
+	case TINK_Enum:		return true;
+	case TINK_Float:	return true;
+	default: return false;
+	}
+}
+
 inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
 	EWC_ASSERT(pTinSrc, "null typeInfo");
@@ -1150,6 +1162,19 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 		}
 	}
 	return false;
+}
+
+inline bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
+{
+	if (FIsNumericTink(pTinSrc->m_tink))
+	{
+		return FIsNumericTink(pTinDst->m_tink);
+	}
+
+	if (pTinSrc->m_tink == TINK_Pointer && pTinDst->m_tink == TINK_Pointer)
+		return true;
+
+	return FCanImplicitCast(pTinSrc, pTinDst);
 }
 
 bool FIsValidLhs(const CSTNode * pStnod)
@@ -1530,6 +1555,30 @@ void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CS
 	pStnodArray->m_pStdecl->m_iStnodInit = pStnodArray->IAppendChild(pStnodList);
 }
 
+TCRET TcretWaitForTypeSymbol(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram, SSymbol * pSymType, CSTNode * pStnodType)
+{
+	if (!pSymType)
+	{
+		CString strTypename = StrTypenameFromTypeSpecification(pStnodType);
+		EmitError(pTcwork, pStnodType, "'%s' unknown symbol detected", strTypename.PChz());
+		return TCRET_StoppingError;
+	}
+
+	if (!pSymType->m_grfsym.FIsSet(FSYM_IsType))
+	{
+		CString strName = StrFullyQualifiedSymbol(pSymType);
+		EmitError(pTcwork, pStnodType, "%s symbol refers to instance, but was expecting type", strName.PChz());
+		return TCRET_StoppingError;
+	}
+	else
+	{
+		// wait for this type to be resolved.
+		SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymType);
+		pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
+		return TCRET_WaitingForSymbolDefinition;
+	}
+}
+
 // wrapper struct to allow breaking on returning different TCRET values
 struct TcretDebug
 {
@@ -1820,11 +1869,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								auto pAlloc = pTcwork->m_pAlloc;
 								CSTNode * pStnodCast = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, pStnodArg->m_lexloc);
 								pStnodCast->m_park = PARK_Cast;
-								pStnodCast->IAppendChild(pStnodArg);
-								pStnod->ReplaceChild(pStnodArg, pStnodCast);
-
 								pStnodCast->m_pTinOperand = pStnodArg->m_pTin;
 								pStnodCast->m_pTin = pTinParam;
+
+								auto  pStdecl = EWC_NEW(pAlloc, CSTDecl) CSTDecl();
+								pStdecl->m_iStnodInit = pStnodCast->IAppendChild(pStnodArg);
+								pStnodCast->m_pStdecl = pStdecl;
+
+								pStnod->ReplaceChild(pStnodArg, pStnodCast);
 
 								if (EWC_FVERIFY(pStnodArg->m_strees == STREES_TypeChecked, "expected arg to be type checked"))
 									pStnodCast->m_strees = STREES_TypeChecked;
@@ -2417,6 +2469,70 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, pStnod);
 			} break;
+			case PARK_Cast:
+			{
+				CSTDecl * pStdecl = pStnod->m_pStdecl;
+				if (pTcsentTop->m_nState < pStnod->CStnodChild())
+				{
+					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+
+					if (pTcsentTop->m_nState == pStdecl->m_iStnodType)
+					{
+						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+						pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+					}
+					
+					++pTcsentTop->m_nState;
+					break;
+				}
+
+				if (!EWC_FVERIFY(pStdecl && pStdecl->m_iStnodType >= 0 && pStdecl->m_iStnodInit >= 0, "bad explicit cast"))
+					return TCRET_StoppingError;
+
+				auto pStnodType = pStnod->PStnodChild(pStdecl->m_iStnodType);
+
+				CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+				SSymbol * pSymType = nullptr;
+				bool fIsValidTypeSpec;
+				STypeInfo * pTinType = PTinFromTypeSpecification(
+					pTcwork,
+					pSymtab,
+					pStnodType,
+					pTcsentTop->m_grfsymlook,
+					&pSymType,
+					&fIsValidTypeSpec);
+
+				if (!fIsValidTypeSpec)
+					return TCRET_StoppingError;
+
+				if (pTinType)
+				{
+					pStnod->m_pTin = pTinType;
+				}
+				else
+				{
+					return TcretWaitForTypeSymbol(pTcwork, pTcfram, pSymType, pStnodType);
+				}
+
+				auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+				STypeInfo * pTinInit = pStnodInit->m_pTin;
+
+				pTinInit = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodInit, pStnod->m_pTin);
+				if (FCanExplicitCast(pTinInit, pTinType))
+				{
+					FinalizeLiteralType(pSymtab, pTinType, pStnodInit);
+					pTinInit = pStnod->m_pTin;
+				}
+				else
+				{
+					EmitError(pTcwork, pStnod, "Cannot cast type '%s' to '%s'",
+						StrFromTypeInfo(pTinInit).PChz(),
+						StrFromTypeInfo(pStnod->m_pTin).PChz());
+				}
+
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram, pStnod);
+			} break;
 			case PARK_Decl:
 			{
 				CSTDecl * pStdecl = pStnod->m_pStdecl;
@@ -2468,25 +2584,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						}
 						else
 						{
-							if (!pSymType)
-							{
-								CString strTypename = StrTypenameFromTypeSpecification(pStnodType);
-								EmitError(pTcwork, pStnod, "'%s' unknown symbol detected", strTypename.PChz());
-								return TCRET_StoppingError;
-							}
-							if (!pSymType->m_grfsym.FIsSet(FSYM_IsType))
-							{
-								CString strName = StrFullyQualifiedSymbol(pSymType);
-								EmitError(pTcwork, pStnod, "%s symbol refers to instance, but was expecting type", strName.PChz());
-								return TCRET_StoppingError;
-							}
-							else
-							{
-								// wait for this type to be resolved.
-								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymType);
-								pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
-								return TCRET_WaitingForSymbolDefinition;
-							}
+							return TcretWaitForTypeSymbol(pTcwork, pTcfram, pSymType, pStnodType);
 						}
 					}
 
@@ -2505,9 +2603,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 							else
 							{
-								CString strLhs = StrFromTypeInfo(pStnod->m_pTin);
-								CString strInit = StrFromTypeInfo(pTinInit);
-								EmitError(pTcwork, pStnod, "Cannot initialize variable of type %s with %s",
+								EmitError(pTcwork, pStnod, "Cannot initialize variable of type '%s' with '%s'",
 									StrFromTypeInfo(pStnod->m_pTin).PChz(),
 									StrFromTypeInfo(pTinInit).PChz());
 							}
@@ -3656,6 +3752,10 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "pG : & float = null; pN := cast(& int) pG;";
+	pChzOut = "(&float $pG (&float float) Literal:Null) (&int $pN (&int (&int int) &float))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN := {:s32: 2, 4, 5};";
 	pChzOut = "([3]s32 $aN (Literal:Array s32 ({} Literal:Int32 Literal:Int32 Literal:Int32)))";

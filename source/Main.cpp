@@ -228,6 +228,7 @@ int main(int cpChzArg, const char * apChzArg[])
 
 			PROCESS_INFORMATION processinfo = {};
 
+			printf("Linking:\n");
 			if (CreateProcessA(
 					s_pChzCommand,
 					aChzCommandLine,

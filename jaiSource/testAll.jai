@@ -429,6 +429,40 @@ TestArrays :: ()
 	PrintIntArray("AnArgs", {3,4,4567, 2});
 }
 
+TestCasting :: () 
+{
+	printf("\nExplicit Casts:\n");
+
+	SFoo :: struct
+	{
+		m_a : int;	
+		m_b : int;
+	}
+
+	g := 12.5;
+	n := cast(int) g;
+	g2 := cast(float) n;
+	printf("%d(12) -> %f(12.0)\n", g, n, g2);
+
+	n = 256 + 22;
+	n2 : s8 = cast(s8) n;
+	printf("%d(22)\n", n, n2);
+
+	foo : SFoo;
+	foo.m_a = 1234;
+	foo.m_b = 5678;
+
+	pN := cast(&int) &foo;
+	printf("%d(1234), %d(5678)\n", pN[0], pN[1]);
+
+	printf("%d(1234), %d(5678)\n", (cast (&SFoo)pN).m_a,  (cast (&SFoo)pN).m_b);	
+
+	pFoo := cast(&SFoo) pN;
+	printf("%d(1234), %d(5678)\n", pFoo.m_a, pFoo.m_b);
+
+}
+
+
 main :: () -> int 
 {
 	TestOperators();
@@ -441,6 +475,7 @@ main :: () -> int
 	TestTypedefs();
 	TestEnums();
 	TestArrays();
+	TestCasting();
 
 	return 1;
 }

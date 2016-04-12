@@ -20,11 +20,12 @@ Currently supports:
   * Type aliasing (typedefs)
   * Enums
   * Short-circuiting logical operators
+  * Explicit casts
 
 Coming soon:
-  * Explicit casting
   * Method overloading
   * Method pointers
+  * break/continue to labels;
   * Dynamic arrays
   * Improved error handling and unit testing of error cases.
   * Default initialization of global variables

@@ -1747,18 +1747,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		} break;
 	case PARK_Cast:
 		{
-			if (!EWC_FVERIFY(pStnod->CStnodChild() == 1, "expected one child for cast"))
+			auto pStdecl = pStnod->m_pStdecl;
+			if (!EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "expected init child for cast"))
 				return nullptr;
 
-			return PValGenerateRefCast(pWork, pBuild, pStnod->PStnodChild(0), pStnod->m_pTin);
-		} break;
-	case PARK_StructDefinition:
-		{
-			// nothing to do here yet...
-		} break;
-	case PARK_EnumDefinition:
-		{
-			// nothing to do here yet...
+			return PValGenerateRefCast(pWork, pBuild, pStnod->PStnodChild(pStdecl->m_iStnodInit), pStnod->m_pTin);
 		} break;
 	case PARK_Literal:
 		{
@@ -2384,8 +2377,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			return pValOp;
 		}
-	case PARK_Nop: 
+	case PARK_StructDefinition:
+	case PARK_EnumDefinition:
 	case PARK_Typedef:
+	case PARK_Nop: 
 		break;
 	default:
 		EWC_ASSERT(false, "unhandled PARK (%s) in code generation.", PChzFromPark(pStnod->m_park));
@@ -2951,6 +2946,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		if (!pFile->m_pChzFile)
 			continue;
 
+		printf("Parsing %s\n", pFile->m_strFilename.PChz());
 		BeginParse(pWork, &jlex, pFile->m_pChzFile);
 		jlex.m_pChzFilename = pFile->m_strFilename.PChz();
 
@@ -2958,14 +2954,17 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
 		EndParse(pWork, &jlex);
+
 	}
 
 	if (pWork->m_pErrman->m_cError == 0)
 	{
+		printf("Type Check:\n");
 		PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 		if (pWork->m_pErrman->m_cError == 0)
 		{
+			printf("Code Generation:\n");
 			CIRBuilder build(pWork->m_pAlloc);
 			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
@@ -3041,6 +3040,11 @@ void TestCodeGen()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 	const char * pChzIn;
+
+	//pChzIn = " g := 2.2; pG := &g; "; // not handling this properly as globals
+
+	pChzIn = "{ g := 2.2; pG := &g; pN := cast(& int) pG; }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "aN := {:int: 2, 4, 5}; ";
 	AssertTestCodeGen(&work, pChzIn);

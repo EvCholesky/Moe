@@ -599,6 +599,47 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 	}
 }
 
+CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+{
+	CSTNode * pStnodCast = nullptr;
+	CSTDecl * pStdecl = nullptr;
+	if (RwordLookup(pJlex) == RWORD_Cast)
+	{
+		JtokNextToken(pJlex);
+
+		SLexerLocation lexloc(pJlex);
+		pStnodCast = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+		pStnodCast->m_park = PARK_Cast;
+
+		pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+		pStnodCast->m_pStdecl = pStdecl;
+
+		Expect(pParctx, pJlex, JTOK('('));
+
+		auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
+		pStdecl->m_iStnodType = pStnodCast->IAppendChild(pStnodType);
+
+		Expect(pParctx, pJlex, JTOK(')'));
+	}
+
+	auto pStnodChild = PStnodParseUnaryExpression(pParctx, pJlex);
+	if (!pStnodCast)
+		return pStnodChild;
+
+	pStdecl->m_iStnodInit = pStnodCast->IAppendChild(pStnodChild);
+
+	if (pStdecl->m_iStnodInit < 0)
+	{
+		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, "Cast statement missing right hand side");
+	}
+
+	if (pStdecl->m_iStnodType < 0)
+	{
+		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, "Cast statement missing type");
+	}
+	return pStnodCast;
+}
+
 CSTNode * PStnodHandleExpressionRHS(
 	CParseContext * pParctx,
 	SJaiLexer * pJlex,
@@ -629,7 +670,7 @@ CSTNode * PStnodHandleExpressionRHS(
 
 CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	CSTNode * pStnod = PStnodParseUnaryExpression(pParctx, pJlex);
+	CSTNode * pStnod = PStnodParseCastExpression(pParctx, pJlex);
 	if (!pStnod)
 		return nullptr;
 
@@ -645,7 +686,7 @@ CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SJaiLexer
 				JTOK jtokPrev = JTOK(pJlex->m_jtok);	
 				JtokNextToken(pJlex); // consume operator
 
-				CSTNode * pStnodExp = PStnodParseUnaryExpression(pParctx, pJlex);
+				CSTNode * pStnodExp = PStnodParseCastExpression(pParctx, pJlex);
 				pStnod = PStnodHandleExpressionRHS(pParctx, pJlex, lexloc, jtokPrev, PARK_MultiplicativeOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
@@ -2522,6 +2563,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_EnumConstant:			return CChCopy("enumConst", pCh, pChEnd - pCh);
 	case PARK_VariadicArg:			return CChCopy("..", pCh, pChEnd - pCh);
 	case PARK_ArrayLiteral:			return CChCopy("arrayLit", pCh, pChEnd - pCh);
+	case PARK_Cast:					return CChCopy("cast", pCh, pChEnd - pCh);
 	case PARK_Error:
 	default:						return CChCopy("error", pCh, pChEnd-pCh);
 	}
@@ -2730,6 +2772,10 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pChzIn = "pN = cast(& int) pG;";
+		pChzOut = "(= $pN (cast (ptr $int) $pG))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "aN := {:int: 2, 4, 5}; ";
 		pChzOut = "(decl $aN (arrayLit $int ({} 2 4 5)))";
