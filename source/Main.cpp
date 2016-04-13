@@ -122,7 +122,7 @@ int main(int cpChzArg, const char * apChzArg[])
 		grfcompile.AddFlags(FCOMPILE_PrintIR);
 	}
 
-	static const int s_cBHeap = 800 * 1024;
+	static const int s_cBHeap = 1000 * 1024;
 	u8 * aB = nullptr;
 
 	if (comline.m_pChzFilename)

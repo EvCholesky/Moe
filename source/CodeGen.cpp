@@ -450,6 +450,21 @@ CIRInstruction * CIRBuilder::PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRVa
 	return pInst;
 }
 
+CIRInstruction * CIRBuilder::PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreateRaw(IROP_Phi, nullptr, nullptr, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	pInst->m_pLval = LLVMBuildPhi(m_pLbuild, pLtype, pChzName);
+	return pInst;
+}
+
+void AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBasicBlock * pBlock)
+{
+	LLVMAddIncoming(pInstPhi->m_pLval, &pVal->m_pLval, &pBlock->m_pLblock, 1);
+}
+
 CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValOperand, const char * pChzName)
 {
 	// Unary Ops
@@ -722,6 +737,7 @@ inline LLVMOpaqueValue * PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigne
 {
 	switch (cBit)
 	{
+	case 1:	 return LLVMConstInt(LLVMInt1Type(), nUnsigned != 0, fIsSigned);
 	case 8:	 return LLVMConstInt(LLVMInt8Type(), U8Coerce(nUnsigned & 0xFF), fIsSigned);
 	case 16: return LLVMConstInt(LLVMInt16Type(), U16Coerce(nUnsigned & 0xFFFF), fIsSigned);
 	case 32: return LLVMConstInt(LLVMInt32Type(), U32Coerce(nUnsigned & 0xFFFFFFFF), fIsSigned);
@@ -2117,13 +2133,41 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			auto pInstOp = PInstCreateAssignment(pWork, pBuild, pStnodLhs->m_pTin, pValLhs, pStnodRhs);
 			return pInstOp;
 		}
+	case PARK_LogicalAndOrOp:
+		{
+			auto pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
+			auto pLtypeBool = PLtypeFromPTin(pTinBool);
+
+			CIRProcedure * pProc = pBuild->m_pProcCur;
+			auto pBlockTrue = pBuild->PBlockCreate(pProc, "predTrue");
+			auto pBlockFalse = pBuild->PBlockCreate(pProc, "predFalse");
+			auto pBlockPost = pBuild->PBlockCreate(pProc, "predPost");
+
+			GeneratePredicate(pWork, pBuild, pStnod, pBlockTrue, pBlockFalse, pTinBool);
+
+			pBuild->ActivateBlock(pBlockTrue);
+			auto pValTrue = PValConstantInt(pBuild, 1, false, 1);
+			(void) pBuild->PInstCreateBranch(pBlockPost);	
+
+			pBuild->ActivateBlock(pBlockFalse);
+			auto pValFalse = PValConstantInt(pBuild, 1, false, 0);
+			(void) pBuild->PInstCreateBranch(pBlockPost);	
+
+			pBuild->ActivateBlock(pBlockPost);
+			auto pValPhi = pBuild->PInstCreatePhi(pLtypeBool, "predPhi"); 
+			AddPhiIncoming(pValPhi, pValTrue, pBlockTrue);
+			AddPhiIncoming(pValPhi, pValFalse, pBlockFalse);
+
+			EWC_ASSERT(valgenk != VALGENK_Reference, "taking the address of a temporary (??)");
+			return pValPhi;
+
+		} break;
 	case PARK_AdditiveOp:
 	case PARK_MultiplicativeOp:
 	case PARK_ShiftOp:
 	case PARK_BitwiseAndOrOp:
 	case PARK_RelationalOp:
 	case PARK_EqualityOp:
-	case PARK_LogicalAndOrOp:
 		{
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);

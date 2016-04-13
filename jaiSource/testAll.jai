@@ -134,6 +134,10 @@ TestIfElse :: ()
 	}
 	printf("\n");
 
+	fT1 := true;
+	fT2 := true;
+	fF1 := false;
+	printf("short-circuit %d(0), %d(1)\n",fT1 && fT2 && fF1, fF1 || fT1);
 }
 
 TestInitializers :: ()
