@@ -16,7 +16,7 @@ SRect :: struct
 CreateWindow :: (dX : s64, dY : s64, pChzName : & u8, ppVHwnd : && void) -> bool #foreign;
 ClearWindow :: (uRed : float, uGreen : float, uBlue : float, uAlpha : float) -> void #foreign;
 UpdateWindowEvents :: () -> void #foreign;
-SwapBuffers_JAI :: (pVHwnd : & void) -> void #foreign;
+SwapBuffers :: (pVHwnd : & void) -> void #foreign SwapBuffers_JAI;
 
 FGetNextEvent :: (pEvent: & SEvent) -> bool #foreign;
 

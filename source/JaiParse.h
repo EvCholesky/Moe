@@ -175,6 +175,7 @@ public:
 					,m_iStnodParameterList(-1)
 					,m_iStnodReturnType(-1)
 					,m_iStnodBody(-1)
+					,m_iStnodForeignAlias(-1)
 					,m_pTinproc(nullptr)
 					,m_fIsForeign(false)
 						{ ; }
@@ -183,6 +184,7 @@ public:
 	int						m_iStnodParameterList;
 	int						m_iStnodReturnType;
 	int						m_iStnodBody;
+	int						m_iStnodForeignAlias;
 	STypeInfoProcedure *	m_pTinproc;
 	bool					m_fIsForeign;
 };

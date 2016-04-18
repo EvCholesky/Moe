@@ -34,7 +34,7 @@ main :: () -> int
 
 		ClearWindow(0, 0.5, 1, 1);
 
-        SwapBuffers_JAI(pWindow);
+        SwapBuffers(pWindow);
         // sleep_milliseconds(5);
         UpdateWindowEvents();
 	}

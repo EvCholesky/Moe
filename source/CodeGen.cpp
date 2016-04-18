@@ -2623,11 +2623,13 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 	CSTNode * pStnodParamList = nullptr;
 	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodName = nullptr;
+	CSTNode * pStnodAlias = nullptr;
 	if (EWC_FVERIFY(pStproc, "Encountered procedure without CSTProcedure"))
 	{
 		pStnodParamList = pStnod->PStnodChildSafe(pStproc->m_iStnodParameterList);
 		pStnodReturn = pStnod->PStnodChildSafe(pStproc->m_iStnodReturnType);
 		pStnodName = pStnod->PStnodChildSafe(pStproc->m_iStnodProcName);
+		pStnodAlias = pStnod->PStnodChildSafe(pStproc->m_iStnodForeignAlias);
 	}
 
 	bool fHasVarArgs = false;
@@ -2667,7 +2669,12 @@ CIRProcedure * PProcCodegenPrototype(CIRBuilder * pBuild, CSTNode * pStnod)
 	}
 
 	const char * pChzName;
-	if (pStnodName)
+	if (pStproc->m_fIsForeign && pStnodAlias)
+	{
+		CString strProcAlias = StrFromIdentifier(pStnodAlias);
+		pChzName = strProcAlias.PChz();
+	}
+	else if (pStnodName)
 	{
 		CString strProcName = StrFromIdentifier(pStnodName);
 		pChzName = strProcName.PChz();

@@ -1374,6 +1374,12 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 					JtokNextToken(pJlex);
 
+					if (pJlex->m_jtok == JTOK_Identifier)
+					{
+						auto pStnodAlias = PStnodParseIdentifier(pParctx, pJlex);
+						pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
+					}
+
 					// TODO: add support for foreign function aliasing (ie. Ack :: () -> int #foreign foo;)
 					Expect(pParctx, pJlex, JTOK(';'), "While parsing foreign directive");
 				}

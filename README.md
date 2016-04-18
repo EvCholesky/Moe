@@ -23,7 +23,6 @@ Currently supports:
   * Explicit casts
 
 Coming soon:
-  * External function aliasing
   * Method overloading
   * Method pointers
   * break/continue to labels;
