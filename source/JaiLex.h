@@ -206,5 +206,7 @@ bool FConsumeToken(SJaiLexer * pJlex, JTOK jtok);
 int JtokNextToken(SJaiLexer * pJlex);
 void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit);
 RWORD RwordLookup(SJaiLexer * pJlex);
+
 const char * PChzFromJtok(JTOK jtok);
 const char * PChzFromRword(RWORD rword);
+const char * PChzCurrentToken(SJaiLexer * pJlex);

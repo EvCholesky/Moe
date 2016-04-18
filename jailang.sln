@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.23107.0
+VisualStudioVersion = 14.0.24720.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "jailang", "jailang.vcxproj", "{55FC0C0F-FC9B-4BBA-902D-DDAC0463B14D}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Basic", "lib\Basic\Basic.vcxproj", "{EEB31C4A-1262-4A9A-B3A9-90A7004B2656}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GL", "lib\GL\GL.vcxproj", "{6D2BA3F7-45E1-4227-A44C-F41ADC314017}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -31,6 +33,14 @@ Global
 		{EEB31C4A-1262-4A9A-B3A9-90A7004B2656}.Release|x64.Build.0 = Release|x64
 		{EEB31C4A-1262-4A9A-B3A9-90A7004B2656}.Release|x86.ActiveCfg = Release|Win32
 		{EEB31C4A-1262-4A9A-B3A9-90A7004B2656}.Release|x86.Build.0 = Release|Win32
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Debug|x64.ActiveCfg = Debug|x64
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Debug|x64.Build.0 = Debug|x64
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Debug|x86.ActiveCfg = Debug|Win32
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Debug|x86.Build.0 = Debug|Win32
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Release|x64.ActiveCfg = Release|x64
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Release|x64.Build.0 = Release|x64
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Release|x86.ActiveCfg = Release|Win32
+		{6D2BA3F7-45E1-4227-A44C-F41ADC314017}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

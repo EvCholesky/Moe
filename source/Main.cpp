@@ -167,7 +167,6 @@ int main(int cpChzArg, const char * apChzArg[])
 			static const char * s_pChzPathRelease = "Release";
 			const char * pChzOptPath = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzPathRelease : s_pChzPathDebug;
 
-			static const char * s_pChzCRTLibraries = "libcmt.lib libucrt.lib";
 			#if EWC_X64
 			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
 			static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/x64/%s\" ";
@@ -177,7 +176,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
 				"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
 			};
-			static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo";
+			static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo /NODEFAULTLIB:MSVCRT.lib /NODEFAULTLIB:LIBCMTD.lib";
 			#else
 			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
 			static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/%s\" ";
@@ -199,9 +198,8 @@ int main(int cpChzArg, const char * apChzArg[])
 			pChzCmd += CChFormat(
 				pChzCmd,
 				pChzCmdMac - pChzCmd,
-				"link %s %s %s ",
+				"link %s %s ",
 				work.m_pChzObjectFilename,
-				s_pChzCRTLibraries,
 				s_pChzOptions);
 
 			pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, s_pChzLibraryFormat, pChzOptPath);
@@ -216,10 +214,22 @@ int main(int cpChzArg, const char * apChzArg[])
 				pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "%s.lib ",file.m_strFilename.PChz());
 			}
 
+			// NOTE: This is a bit of a mess. We're not really handling library ordering properly (we need to track
+			//  library->library dependencies, but this has us limping along for now - I believe the problem was
+			//  that we depend on libraries that depend on msvcrtd, but it was being pulled in first. (and the objects 
+			//  were not needed at the time and discarded) 
+			//  see: http://eli.thegreenplace.net/2013/07/09/library-order-in-static-linking
+
+			static const char * s_pChzCRTLibraryDebug = "msvcrtd.lib";
+			static const char * s_pChzCRTLibraryRelease = "msvcrt.lib";
+			const char * pChzCRTLibrary = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug;
+			pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "%s ", pChzCRTLibrary);
+
 			for (int ipChz = 0; ipChz < EWC_DIM(s_apChzDefaultPaths); ++ipChz)
 			{
 				pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "/libpath:\"%s\" ", s_apChzDefaultPaths[ipChz]);
 			}
+
 
 			STARTUPINFOA startupinfo = {};
 			startupinfo.cb = sizeof(startupinfo);

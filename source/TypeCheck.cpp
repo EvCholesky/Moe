@@ -182,21 +182,26 @@ SUnknownType * PUntypeEnsure(STypeCheckWorkspace * pTcwork, const SSymbol * pSym
 	return pUntype;
 }
 
-void PushTcsent(STypeCheckFrame * pTcfram, CSTNode * pStnod)
+void PushTcsent(STypeCheckFrame * pTcfram, STypeCheckStackEntry ** ppTcsentTop, CSTNode * pStnod)
 {
+	// update ppTcsentTop to handle times when the dynArray reallocs.
+	size_t iTcsentTop = pTcfram->m_aryTcsent.IFromP(*ppTcsentTop);
+
 	EWC_ASSERT(pStnod->m_strees < STREES_TypeChecked, "Pushing syntax tree node that was already checked");
-	STypeCheckStackEntry * pTcsentPrev = pTcfram->m_aryTcsent.PLast();
+	size_t cPrev = pTcfram->m_aryTcsent.C()-1;
 	STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
-	*pTcsent = *pTcsentPrev;
+	*pTcsent = pTcfram->m_aryTcsent[cPrev];
 
 	pTcsent->m_nState = 0;
 	pTcsent->m_pStnod = pStnod;
+
+	*ppTcsentTop = &pTcfram->m_aryTcsent[iTcsentTop];
 }
 
-void PopTcsent(STypeCheckFrame * pTcfram, CSTNode * pStnodDebug)
+void PopTcsent(STypeCheckFrame * pTcfram, STypeCheckStackEntry ** ppTcsentTop, CSTNode * pStnodDebug)
 {
-	STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
-	EWC_ASSERT(pTcsentTop->m_pStnod == pStnodDebug || pStnodDebug == nullptr);
+	*ppTcsentTop = nullptr;
+	EWC_ASSERT(pTcfram->m_aryTcsent.PLast()->m_pStnod == pStnodDebug || pStnodDebug == nullptr);
 
 	pTcfram->m_aryTcsent.PopLast();
 }
@@ -235,7 +240,7 @@ inline s64 NSignedLiteralCast(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, c
 	{
 	case STVALK_UnsignedInt:
 		{
-			if (pStval->m_nUnsigned >= LLONG_MAX)
+			if (pStval->m_nUnsigned > LLONG_MAX)
 			{
 				EmitError(pTcwork, pStnod, "Literal is too large for implicit signed int cast.");
 			}
@@ -938,7 +943,7 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 			if (pTinDest && pTinDest->m_tink == TINK_Pointer)
 				return pTinDest;
 			EmitError(pTcwork, pStnodLit, "Trying to initialize non pointer type with null value");
-		}
+		} break;
 	case LITK_Nil: 
 		EWC_ASSERT(false, "Cannot infer type for LITK_Nil");
 	}
@@ -1083,7 +1088,9 @@ inline bool FIsNumericTink(TINK tink)
 
 inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
-	EWC_ASSERT(pTinSrc, "null typeInfo");
+	if (!pTinSrc)
+		return false;	 // NOTE: this can happen after an error has occurred, don't assert - just return.
+
 	EWC_ASSERT(pTinSrc->m_tink != TINK_Literal, "literals should be promoted before calling FCanImplicitCast()");
 
 	if (pTinSrc->m_tink == pTinDst->m_tink)
@@ -1148,6 +1155,11 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 	{
 		auto pTinenum = (STypeInfoEnum *)pTinSrc;
 		return FCanImplicitCast(pTinenum->m_pTinLoose, pTinDst);
+	}
+
+	if (pTinSrc->m_tink == TINK_Bool && pTinDst->m_tink == TINK_Integer)
+	{
+		return true;
 	}
 
 	if (pTinDst->m_tink == TINK_Bool)
@@ -1625,7 +1637,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						{
 							CSTNode * pStnodParamList = pStnod->PStnodChild(pStproc->m_iStnodParameterList);
 
-							PushTcsent(pTcfram, pStnodParamList);
+							PushTcsent(pTcfram, &pTcsentTop, pStnodParamList);
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_pSymtab = pStnodParamList->m_pSymtab;
 							EWC_ASSERT(pTcsentPushed->m_pSymtab, "null symbol table");
@@ -1637,7 +1649,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						{
 							CSTNode * pStnodReturn = pStnod->PStnodChild(pStproc->m_iStnodReturnType);
 
-							PushTcsent(pTcfram, pStnodReturn);
+							PushTcsent(pTcfram, &pTcsentTop, pStnodReturn);
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
 						}
@@ -1703,7 +1715,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (pStproc->m_iStnodBody >= 0)
 						{
 							CSTNode * pStnodBody = pStnod->PStnodChild(pStproc->m_iStnodBody);
-							PushTcsent(pTcfram, pStnodBody);
+							PushTcsent(pTcfram, &pTcsentTop, pStnodBody);
 
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_pStnodProcedure = pStnod;
@@ -1762,7 +1774,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pStnod->m_pSym = pSymProc;
 						EWC_ASSERT(pStnod->m_pSym, "null symbol");
 
-						PopTcsent(pTcfram, pStnod);
+						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
 						pStnod->m_strees = STREES_TypeChecked;
 						OnTypeComplete(pTcwork, pSymProc);
@@ -1849,7 +1861,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							//BB - need fullyQualifiedTypenames
 							CString strTinCall = StrFromTypeInfo(pTinCall);
 							CString strTinParam = StrFromTypeInfo(pTinParam);
-							EmitError(pTcwork, pStnod, "no implicit conversion from  type %s to %s",
+							EmitError(pTcwork, pStnod, "no implicit conversion from type %s to %s",
 								strTinCall.PChz(),
 								strTinParam.PChz());
 							continue;
@@ -1896,10 +1908,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 					pStnod->m_pTin = pTinReturn;
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, pStnod);
+					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 					break;
 				}
-				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+				PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
 			case PARK_EnumDefinition:
 			{
@@ -1919,7 +1931,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					// type spec
 					if (pStenum->m_iStnodType >= 0)
 					{
-						PushTcsent(pTcfram, pStnod->PStnodChild(pStenum->m_iStnodType));
+						PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pStenum->m_iStnodType));
 						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
 
@@ -1956,7 +1968,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					{
 						pTinenum->m_bintLatest = BintFromInt(-1);  // -1 so initial incremented value is zero
 
-						PushTcsent(pTcfram, pStnod->PStnodChild(pStenum->m_iStnodConstantList));
+						PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pStenum->m_iStnodConstantList));
 						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
 						++pTcsentTop->m_nState;
@@ -2120,7 +2132,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				OnTypeComplete(pTcwork, pSymEnum);
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			}break;
 			case PARK_EnumConstant:
 			{
@@ -2129,7 +2141,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
 					++pTcsentTop->m_nState;
 					break;
 				}
@@ -2191,7 +2203,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				OnTypeComplete(pTcwork, pSymIdent);
 
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 			case PARK_StructDefinition:
 			{
@@ -2205,7 +2217,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					if (pStnod->CStnodChild() >= 1)
 					{
 						CSTNode * pStnodMembers = pStnod->PStnodChild(1);
-						PushTcsent(pTcfram, pStnodMembers);
+						PushTcsent(pTcfram, &pTcsentTop, pStnodMembers);
 
 						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
@@ -2233,7 +2245,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (!EWC_FVERIFY(pSymStruct->m_pTin, "expected structure type info to be created during parse"))
 					return TCRET_StoppingError;
 
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
 				pStnod->m_strees = STREES_TypeChecked;
 				OnTypeComplete(pTcwork, pSymStruct);
@@ -2300,7 +2312,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 				}
 
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 				pStnod->m_strees = STREES_TypeChecked;
 			}break;
 
@@ -2312,10 +2324,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 				{
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, pStnod);
+					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 					break;
 				}
-				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+				PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 
 				STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 				if (pStnod->m_park == PARK_List)
@@ -2336,7 +2348,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			case PARK_VariadicArg:
 			{
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 			case PARK_ConstantDecl:
 			{
@@ -2346,7 +2358,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				CSTDecl * pStdecl = pStnod->m_pStdecl;
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
 
 					if (pTcsentTop->m_nState == pStdecl->m_iStnodType)
 					{
@@ -2416,7 +2428,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 			case PARK_Typedef:
 			{
@@ -2426,7 +2438,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				CSTNode * pStnodType = pStnod->PStnodChild(1);
 				if (pTcsentTop->m_nState == 0)
 				{
-					PushTcsent(pTcfram, pStnodType);
+					PushTcsent(pTcfram, &pTcsentTop, pStnodType);
 					STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 					pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
 					
@@ -2467,14 +2479,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 			case PARK_Cast:
 			{
 				CSTDecl * pStdecl = pStnod->m_pStdecl;
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
 
 					if (pTcsentTop->m_nState == pStdecl->m_iStnodType)
 					{
@@ -2531,7 +2543,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 			case PARK_Decl:
 			{
@@ -2542,7 +2554,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					if (pStdecl->m_iStnodInit >= 0)
 					{
-						PushTcsent(pTcfram, pStnod->PStnodChild(pStdecl->m_iStnodInit));
+						PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pStdecl->m_iStnodInit));
 					}
 					++pTcsentTop->m_nState;
 				}
@@ -2552,7 +2564,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					{
 						CSTNode * pStnodReturn = pStnod->PStnodChild(pStdecl->m_iStnodType);
 
-						PushTcsent(pTcfram, pStnodReturn);
+						PushTcsent(pTcfram, &pTcsentTop, pStnodReturn);
 						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 						pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
 					}
@@ -2643,7 +2655,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, pStnod);
+					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 				}
 			}break;
 			case PARK_ArrayLiteral:
@@ -2651,13 +2663,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (pStnod->m_grfstnod.FIsSet(FSTNOD_ImplicitMember))
 				{
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, pStnod);
+					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 					break;
 				}
 
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
 					++pTcsentTop->m_nState;
 					break;
 				}
@@ -2719,7 +2731,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 			case PARK_Literal:
 			{
@@ -2737,7 +2749,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 				
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			}break;
 
 			case PARK_AssignmentOp:
@@ -2799,7 +2811,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 												(jtokOp == JTOK_XorEqual);
 
 						bool fSupportsArithmetic = (tinkLhs == TINK_Integer) | (tinkLhs == TINK_Float);
-						bool fSupportsBitwise = tinkLhs == TINK_Integer;
+						bool fSupportsBitwise = (tinkLhs == TINK_Integer) | (tinkLhs == TINK_Bool);
 
 						if (fIsArithmeticOp & (fSupportsArithmetic == false))
 						{
@@ -2818,17 +2830,17 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, pStnod);
+					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 					break;
 				}
-				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+				PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			} break;
 			case PARK_MemberLookup:
 			{
 				if (pTcsentTop->m_nState == 0)
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
 					++pTcsentTop->m_nState;
+					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(0));
 					break;
 				}
 
@@ -2967,7 +2979,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					pStnod->m_pStval = pStvalMember;
 				}
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
 			} break;
 			case PARK_ArrayElement:
@@ -2978,7 +2990,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				if (pTcsentTop->m_nState < cStnodChild)
 				{
-					PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState));
+					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
 					++pTcsentTop->m_nState;
 					break;
 				}
@@ -3019,7 +3031,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinIndex, pStnodIndex);
 				
 				pStnod->m_strees = STREES_TypeChecked;
-				PopTcsent(pTcfram, pStnod);
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 			case PARK_ReservedWord:
 			{
@@ -3033,7 +3045,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())
 							{
-								PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 								break;
 							}
 
@@ -3069,18 +3081,18 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinBool, pStnodPred);
 
 							pStnod->m_strees = STREES_TypeChecked;
-							PopTcsent(pTcfram, pStnod);
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;
 					case RWORD_Else:
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())
 							{
-								PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 								break;
 							}
 
 							pStnod->m_strees = STREES_TypeChecked;
-							PopTcsent(pTcfram, pStnod);
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;
 					case RWORD_Return:
 						{
@@ -3138,10 +3150,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 
 								pStnod->m_strees = STREES_TypeChecked;
-								PopTcsent(pTcfram, pStnod);
+								PopTcsent(pTcfram, &pTcsentTop, pStnod);
 								break;
 							}
-							PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+							PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 						}break;
 					default:
 						EmitError(pTcwork, pStnod, "unhandled reserved word '%s' in type checker", PChzFromRword(rword));
@@ -3246,10 +3258,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, pStnod);
+					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 					break;
 				}
-				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+				PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
 		case PARK_PostfixUnaryOp:
 		case PARK_UnaryOp:
@@ -3408,10 +3420,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, pStnod);
+					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 					break;
 				}
-				PushTcsent(pTcfram, pStnod->PStnodChild(pTcsentTop->m_nState++));
+				PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 			}break;
 		default:
 			EWC_ASSERT(false, "unknown parse kind (%s) encountered during type check", PChzFromPark(pStnod->m_park));
@@ -3479,38 +3491,6 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	pTcwork->m_hashPSymUntype.Remove(pSym);
 }
 
-/* enum LITSTOR
-{
-	LITSTOR_Nil = -1,
-	LITSTOR_Float,
-	LITSTOR_SInt,
-	LITSTOR_UInt,
-};
-
-static inline LITSTOR LitstoreFromLitk(LITK litk, bool fSigned)
-{
-	switch (litk)
-	{
-	case LITK_Integer:	return (fSigned) ? LITSTOR_SInt : LITSTOR_UInt;
-	case LITK_Float:	return LITSTOR_Float;
-	case LITK_Bool:		return LITSTOR_UInt;
-	default:			return LITSTOR_Nil;
-	}
-}
-
-static inline LITK LitkFromTink(TINK tink)
-{
-	// BB - LITK and TINK should merge
-	switch (tink)
-	{
-	case TINK_Integer:	return LITK_Integer;
-	case TINK_Float:	return LITK_Float;
-	case TINK_Bool:		return LITK_Bool;
-	case TINK_String:	return LITK_String;
-	default:			return LITK_Nil;
-	}
-}*/
-
 STVALK StvalkFromTin(STypeInfo * pTin)
 {
 	if (pTin->m_tink == TINK_Literal)
@@ -3575,7 +3555,8 @@ void PerformTypeCheck(
 
 			while (pTcfram->m_aryTcsent.C())
 			{
-				PopTcsent(pTcfram, nullptr);
+				STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
+				PopTcsent(pTcfram, &pTcsentTop, nullptr);
 			}
 
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);

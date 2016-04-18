@@ -469,7 +469,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 					#ifdef STB__CLEX_use_stdlib
 					pJlex->m_n = strtol((char *) pChz, (char **) pChzNext, 16);
 					#else
-					int n = 0;
+					u64 n = 0;
 					while (pChzNext != pJlex->m_pChEof) 
 					{
 						if		((*pChzNext >= '0') & (*pChzNext <= '9'))	n = n*16 + (*pChzNext - '0');
@@ -515,7 +515,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 		    #ifdef STB__CLEX_use_stdlib
 		    pJlex->m_n = strtol((char *) pChz, (char **) &pChzNext, 10);
 		    #else
-		    int n = 0;
+		    u64 n = 0;
 			while (pChzNext != pJlex->m_pChEof) 
 			{
 				if ((*pChzNext >= '0') & (*pChzNext <= '9'))
@@ -606,6 +606,15 @@ const char * PChzFromJtok(JTOK jtok)
 	};
 	EWC_CASSERT(EWC_DIM(s_mpJtokPchz) == JTOK_Max - JTOK_SimpleMax, "missing token string");
 	return s_mpJtokPchz[jtok - JTOK_SimpleMax];
+}
+
+const char * PChzCurrentToken(SJaiLexer * pJlex)
+{
+	JTOK jtok = (JTOK)pJlex->m_jtok;
+	if (jtok == JTOK_ReservedWord)
+		return PChzFromRword(pJlex->m_rword);
+
+	return PChzFromJtok(jtok);
 }
 
 #define JLEX_TEST

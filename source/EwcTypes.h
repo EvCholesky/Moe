@@ -34,7 +34,7 @@
 #define STBM_UINTPTR uintptr_t
 #endif
 
-#define STBM_DEBUGCHECK
+//#define STBM_DEBUGCHECK
 #include "stb_malloc.h"
 
 
@@ -423,7 +423,7 @@ extern void STBM_CALLBACK EwcSystemFree(void * pUserContext, void *p);
 // BB - This allocation tracking code doesn't work yet, it doesn't clean up properly for deletions (it needs to
 // add some kind of HV(file,line) into an allocation prefix
 
-#define EWC_TRACK_ALLOCATION
+//#define EWC_TRACK_ALLOCATION
 #ifdef EWC_TRACK_ALLOCATION
 	inline size_t CBAllocationPrefix() { return sizeof(HV); }
 #else
@@ -493,7 +493,7 @@ public:
 	void *				AllocImpl(size_t cB, size_t cBAlign, const char* pChzFile, int cLine)
 							{
 								size_t cBPrefix = CBAllocationPrefix();
-								size_t alignOffset = (cBAlign > cBPrefix) ? cBAlign - cBPrefix : 0;
+								size_t alignOffset = ((cBAlign > cBPrefix) & (cBPrefix > 0)) ? cBAlign - cBPrefix : 0;
 								EWC_ASSERT(m_pStbheap, "Trying to allocate from a NULL heap");
 								void * pV = stbm_alloc_align_fileline(
 											nullptr, 
@@ -511,7 +511,6 @@ public:
 
 								m_cBFree -= cBActual;
 
-#ifdef EWC_TRACK_ALLOCATION
 								void * pVAdjust = ((char *)pV) + cBPrefix;
 								HV * pHv = (HV *)pV;
 								*pHv = 0;
@@ -519,6 +518,7 @@ public:
 								uintptr_t nAlignMask = cBAlign - 1;
 								EWC_ASSERT(((uintptr_t)pVAdjust & nAlignMask) == 0, "bad alignment calculation");
 
+#ifdef EWC_TRACK_ALLOCATION
 								if (m_pAltrac)
 									TrackAlloc(cBActual, pChzFile, cLine, pHv);
 #endif
@@ -1109,7 +1109,6 @@ enum TILAY // tile layer
 #define EWC_TYPES_IMPL_GUARD
 
 
-#include "EwcString.h"
 #include <cstdarg>
 #include <stdio.h>
 #include <string.h>
@@ -1118,6 +1117,7 @@ enum TILAY // tile layer
 #include "stb_malloc.h"
 
 #ifdef EWC_TRACK_ALLOCATION
+#include "EwcString.h"
 #include "EwcArray.h"
 #include "EwcHash.h"
 #endif

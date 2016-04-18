@@ -222,7 +222,7 @@ void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const
 		}
 
 		CString strIdent;
-		const char * pChzFound = PChzFromJtok(JTOK(pJlex->m_jtok));
+		const char * pChzFound = PChzCurrentToken(pJlex);
 		if (pJlex->m_jtok == JTOK_Identifier)
 		{
 			strIdent = CString(pJlex->m_pChString, pJlex->m_cChString);
@@ -279,7 +279,7 @@ CSTNode * PStnodParseReservedWord(CParseContext * pParctx, SJaiLexer * pJlex, RW
 	RWORD rwordLookup = RwordLookup(pJlex);
 	if ((rwordExpected != RWORD_Nil) & (rwordExpected != rwordLookup))
 	{
-		ParseError(pParctx, pJlex, "Expected %s before %s", PChzFromRword(rwordExpected), PChzFromJtok(JTOK(pJlex->m_jtok)));
+		ParseError(pParctx, pJlex, "Expected %s before %s", PChzFromRword(rwordExpected), PChzCurrentToken(pJlex));
 		return nullptr;
 	}
 
@@ -329,7 +329,7 @@ CSTNode * PStnodParseExpressionList(
 
 			if (!pStnodExp)
 			{
-				ParseError(pParctx, pJlex, "Expected expression before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
+				ParseError(pParctx, pJlex, "Expected expression before %s", PChzCurrentToken(pJlex));
 				break;
 			}
 			pStnodList->IAppendChild(pStnodExp);
@@ -560,6 +560,11 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 {
+	if (pJlex->m_jtok == JTOK_DoubleReference)
+	{
+		SplitToken(pJlex, JTOK_Reference);
+	}
+
 	switch(pJlex->m_jtok)
 	{
 	case JTOK_Dereference:
@@ -584,7 +589,7 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 					pJlex,
 					"Unary operator '%s' missing operand before %s",
 					PChzFromJtok(jtokPrev),
-					PChzFromJtok(JTOK(pJlex->m_jtok)));
+					PChzCurrentToken(pJlex));
 				return nullptr;
 			}
 
@@ -656,7 +661,7 @@ CSTNode * PStnodHandleExpressionRHS(
 			pJlex,
 			"operator '%s' missing right hand side before %s",
 			PChzFromJtok(jtokExpression),
-			PChzFromJtok(JTOK(pJlex->m_jtok)));
+			PChzCurrentToken(pJlex));
 		return pStnodLhs;
 	}
 
@@ -1071,7 +1076,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 			{
 				pStnodInit = PStnodParseExpression(pParctx, pJlex);
 				if (!pStnodInit)
-					ParseError(pParctx, pJlex, "initial value expected before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
+					ParseError(pParctx, pJlex, "initial value expected before %s", PChzCurrentToken(pJlex));
 			}
 		}
 		else if (FConsumeToken(pJlex, JTOK(':')))
@@ -1079,7 +1084,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 			pStnodDecl->m_park = PARK_ConstantDecl;
 			pStnodInit = PStnodParseExpression(pParctx, pJlex);
 			if (!pStnodInit)
-				ParseError(pParctx, pJlex, "initial value expected before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
+				ParseError(pParctx, pJlex, "initial value expected before %s", PChzCurrentToken(pJlex));
 		}
 	}
 
@@ -1167,7 +1172,7 @@ CSTNode * PStnodParseParameterList(
 
 			if (!pStnodParam)
 			{
-				ParseError(pParctx, pJlex, "Expected parameter before %s", PChzFromJtok(JTOK(pJlex->m_jtok)));
+				ParseError(pParctx, pJlex, "Expected parameter before %s", PChzCurrentToken(pJlex));
 				break;
 			}
 			pStnodList->IAppendChild(pStnodParam);
@@ -1981,7 +1986,7 @@ void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalE
 
 		if (!pStnod)
 		{
-			ParseError( pParctx, pJlex, "Unexpected token at global scope '%s'", PChzFromJtok((JTOK)pJlex->m_jtok));
+			ParseError( pParctx, pJlex, "Unexpected token at global scope '%s'", PChzCurrentToken(pJlex));
 			break;
 		}
 

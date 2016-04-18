@@ -784,9 +784,9 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 	case TINK_Pointer:
 		{
 			STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTin;
-			auto * pLtype = PLtypeFromPTin(pTinptr->m_pTinPointedTo);
+			auto * pLtype = PLtypeFromPTin(pTinptr);
 			if (pLtype)
-				return LLVMConstNull(LLVMPointerType(pLtype, 0));
+				return LLVMConstNull(pLtype);
 		} break;
 	case TINK_Array:
 		{
@@ -878,35 +878,72 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 			return nullptr;
 	}
 
+	// NOTE: if we're implicit casting literals the STValue's kind won't match the literal kind!
+
 	LLVMOpaqueValue * pLval = nullptr;
 	switch (pTinlit->m_litty.m_litk)
 	{
 	case LITK_Integer:
 		{
-			EWC_ASSERT(
-				(pStval->m_stvalk == STVALK_UnsignedInt) | (pStval->m_stvalk == STVALK_SignedInt),
-				"bad literal value");
+			if (pStval->m_stvalk == STVALK_ReservedWord)
+			{
+				EWC_ASSERT(
+					((pStval->m_nUnsigned == 1) & (pStval->m_rword == RWORD_True)) |
+					((pStval->m_nUnsigned == 0) & (pStval->m_rword == RWORD_False)), "bad boolean reserved word");
+			}
+			else
+			{
+				EWC_ASSERT(pStval->m_stvalk == STVALK_SignedInt || pStval->m_stvalk == STVALK_UnsignedInt, "Integer literal kind mismatch");
+			}
+
+			bool fIsStvalSigned = pStval->m_stvalk == STVALK_SignedInt;
+			if (fIsStvalSigned != pTinlit->m_litty.m_fIsSigned)
+			{
+				if (pTinlit->m_litty.m_fIsSigned)
+				{
+					EWC_ASSERT(pStval->m_nUnsigned <= LLONG_MAX, "Literal too large to fit in destination type");
+				}
+				else
+				{
+					EWC_ASSERT(pStval->m_nSigned >= 0, "Negative literal being assigned to unsigned value");
+				}
+			}
+			u64 nUnsigned = pStval->m_nUnsigned;
 
 			pLval = PLvalConstantInt(pTinlit->m_litty.m_cBit, pTinlit->m_litty.m_fIsSigned, pStval->m_nUnsigned);
 		}break;
 	case LITK_Float:
 		{
-			pLval = PLvalConstantFloat(pTinlit->m_litty.m_cBit, pStval->m_g);
+			F64 g = 0;
+			switch (pStval->m_stvalk)
+			{
+			case STVALK_UnsignedInt:	g = (float)pStval->m_nUnsigned;	break;
+			case STVALK_SignedInt:		g = (float)pStval->m_nSigned;	break;
+			case STVALK_Float:			g = pStval->m_g;				break;
+			default: EWC_ASSERT(false, "Float literal kind mismatch");
+			}
+
+			pLval = PLvalConstantFloat(pTinlit->m_litty.m_cBit, g);
 		}break;
 	case LITK_Bool:
 	{
-			if (pStval->m_stvalk == STVALK_ReservedWord)
+			u64 nUnsigned;
+			switch (pStval->m_stvalk)
 			{
-				EWC_ASSERT(
-					((pStval->m_nUnsigned == 1) & (pStval->m_rword == RWORD_True)) | 
-					((pStval->m_nUnsigned == 0) & (pStval->m_rword == RWORD_False)), "bad boolean reserved word");
-			}
-			else
-			{
-				EWC_ASSERT(pStval->m_stvalk == STVALK_UnsignedInt, "bad literal value");
+			case STVALK_ReservedWord:
+				{
+					EWC_ASSERT(
+						((pStval->m_nUnsigned == 1) & (pStval->m_rword == RWORD_True)) | 
+						((pStval->m_nUnsigned == 0) & (pStval->m_rword == RWORD_False)), "bad boolean reserved word");
+
+					nUnsigned = pStval->m_nUnsigned;
+				} break;
+			case STVALK_UnsignedInt:	nUnsigned = pStval->m_nUnsigned;		break;
+			case STVALK_SignedInt:		nUnsigned = (pStval->m_nSigned != 0);	break;
+			case STVALK_Float:			nUnsigned = (pStval->m_g != 0);			break;
 			}
 
-			pLval = LLVMConstInt(LLVMInt1Type(), pStval->m_nUnsigned, false);
+			pLval = LLVMConstInt(LLVMInt1Type(), nUnsigned, false);
 		} break;
 	case LITK_Char:		EWC_ASSERT(false, "TBD"); return nullptr;
 	case LITK_String:
@@ -1998,22 +2035,27 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		}
 	case PARK_MemberLookup:
 		{
-			if (pStnod->m_pTinOperand && pStnod->m_pTinOperand->m_tink == TINK_Enum)
-			{
-				auto pTinenum = (STypeInfoEnum *)pStnod->m_pTinOperand;
-				if (EWC_FVERIFY(pStnod->m_pStval, "Enum constant lookup without value"))
-				{
-					auto pLval = PLvalFromEnumConstant(pBuild, pTinenum->m_pTinLoose, pStnod->m_pStval);
-					if (!pLval)
-						return nullptr;
+			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 
-					CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
-					pBuild->AddManagedVal(pConst);
-					pConst->m_pLval = pLval;
-					return pConst;
+			// check the symbol because we need to differentiate between enum namespacing and enum struct member.
+			if (auto pSym = pStnodLhs->m_pSym)
+			{
+				if (pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Enum)
+				{
+					auto pTinenum = (STypeInfoEnum *)pStnod->m_pTinOperand;
+					if (EWC_FVERIFY(pStnod->m_pStval, "Enum constant lookup without value"))
+					{
+						auto pLval = PLvalFromEnumConstant(pBuild, pTinenum->m_pTinLoose, pStnod->m_pStval);
+						if (!pLval)
+							return nullptr;
+
+						CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+						pBuild->AddManagedVal(pConst);
+						pConst->m_pLval = pLval;
+						return pConst;
+					}
 				}
 			}
-			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			STypeInfoStruct * pTinstruct = nullptr;
 			auto pTinLhs = pStnodLhs->m_pTin;
 
@@ -2278,6 +2320,17 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						pInstOp = pBuild->PInstCreateGEP(pValLhsCast, &pLvalIndex, 1, "ptrAdd"); break;
 					} break;
 				}
+			case TINK_Enum:
+			{
+				// BB - why is the RHS still a literal here?
+				//EWC_ASSERT(FTypesAreSame(pTinLhs, pTinRhs), "enum comparison type mismatch");
+
+				switch (pStnod->m_jtok)
+				{
+					case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhsCast, pValRhsCast, "NCmpEq"); break;
+					case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhsCast, pValRhsCast, "NCmpNq"); break;
+				}
+			}
 			default: 
 				break;
 			}
