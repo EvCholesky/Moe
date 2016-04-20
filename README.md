@@ -23,6 +23,7 @@ Currently supports:
   * Explicit casts
 
 Coming soon:
+  * Debug info
   * Method overloading
   * Method pointers
   * break/continue to labels;

@@ -101,6 +101,9 @@ EWC_ENUM_UTILS(VALK);
 		OP(SDiv), \
 		OP(UDiv), \
 		OP(GDiv), \
+		OP(SRem), \
+		OP(URem), \
+		OP(GRem), \
 		OP_RANGE(BinaryOp, JumpOpMax) \
 		\
 		OP(NNeg), \

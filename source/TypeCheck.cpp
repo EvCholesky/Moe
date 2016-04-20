@@ -517,9 +517,9 @@ inline bool FComputeBinaryOpOnLiterals(
 		{
 			SetFloatValue(pStvalStnod, g);
 
-			EWC_ASSERT(pTinlitLhs->m_litty.m_litk == LITK_Float);
-			*ppTinReturn = pTinlitLhs;
-			*ppTinOperand = pTinlitLhs;
+			auto pTinlitFloat = (pTinlitLhs->m_litty.m_litk == LITK_Float) ? pTinlitLhs : pTinlitRhs;
+			*ppTinReturn = pTinlitFloat;
+			*ppTinOperand = pTinlitFloat;
 		}
 		return true;
 	} 

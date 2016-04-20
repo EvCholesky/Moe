@@ -254,6 +254,7 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 		return nullptr;
 
 	SLexerLocation lexloc(pJlex);
+
 	CString strIdent(pJlex->m_pChString, pJlex->m_cChString);
 	auto pStnod = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
 	pStnod->m_jtok = JTOK(pJlex->m_jtok);

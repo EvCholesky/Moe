@@ -35,3 +35,13 @@ SStartupInfo :: struct
     m_hStdOutput : HANDLE;
     m_hStdError : HANDLE;
 }
+
+// (JBlow) For some reason in Windows sinf and cosf don't have linkage, probably because
+// they always get turned into intrinsics? So I made my own..
+cos  :: (theta: float) -> float #foreign cosf_JAI; 
+sin  :: (theta: float) -> float #foreign sinf_JAI;
+sqrt :: (theta: float) -> float #foreign sqrtf_JAI;
+
+cos64  :: (theta: f64) -> f64 #foreign cos; 
+sin64  :: (theta: f64) -> f64 #foreign sin;
+sqrt64 :: (theta: f64) -> f64 #foreign sqrt;

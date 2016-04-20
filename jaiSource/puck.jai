@@ -1,8 +1,9 @@
-#import "GL"
 #import "Basic"
+#import "GL"
+#import "Math"
 
-s_dXWindow :: 1280;
-s_dYWindow :: 720;
+g_dXWindow :: 1280;
+g_dYWindow :: 720;
 
 FHandleEvents :: () -> bool
 {
@@ -22,10 +23,39 @@ FHandleEvents :: () -> bool
 	return true;
 }
 
+DrawTestTriangle :: (gRadians:float)
+{
+	dRad :: g_Pi * 2.0 / 3.0;
+	vecCenter := Vec2Create(g_dXWindow / 2.0, g_dYWindow / 2.0);
+	vecRadius := Vec2Create(300, 0);
+	vecA := Vec2Rotate(gRadians, vecRadius);
+	vecB := Vec2Rotate(gRadians + dRad, vecRadius);
+	vecC := Vec2Rotate(gRadians + (2.0 * dRad), vecRadius);
+	z := 0.0;
+
+	vecA = Vec2Add(vecA, vecCenter);
+	vecB = Vec2Add(vecB, vecCenter);
+	vecC = Vec2Add(vecC, vecCenter);
+
+    glBegin(GL_TRIANGLES);
+    glColor3f(1, 0, 0);
+    glVertex3f(vecA.m_x, vecA.m_y, z);
+    glColor3f(0, 1, 0);
+    glVertex3f(vecB.m_x, vecB.m_y, z);
+    glColor3f(0, 0, 1);
+    glVertex3f(vecC.m_x, vecC.m_y, z);
+    glEnd();
+}
+
 main :: () -> int
 {
 	pWindow : HWND;
-	CreateWindow(s_dXWindow, s_dYWindow, "Puck", &pWindow);
+	CreateWindow(g_dXWindow, g_dYWindow, "Puck", &pWindow);
+
+    glOrtho(0, g_dXWindow, 0, g_dYWindow, -1, 1);
+
+    dRadSpin :: 0.001;
+    gRadSpin: float;
 
 	fShouldClose := false;
 	while fShouldClose == false
@@ -33,6 +63,9 @@ main :: () -> int
 		fShouldClose |= !FHandleEvents();
 
 		ClearWindow(0, 0.5, 1, 1);
+
+		gRadSpin += dRadSpin;
+		DrawTestTriangle(gRadSpin);
 
         SwapBuffers(pWindow);
         // sleep_milliseconds(5);

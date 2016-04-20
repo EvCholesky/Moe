@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <math.h>
 
 extern "C" void PrintFloat(float g)
 {
@@ -35,4 +36,19 @@ extern "C" void PrintString(unsigned char * pChz)
 	}
 
 	printf("%s\n", pChz);
+}
+
+extern "C" float cosf_JAI(float g)
+{
+	return cosf(g);
+}
+
+extern "C" float sinf_JAI(float g)
+{
+	return sinf(g);
+}
+
+extern "C" float sqrtf_JAI(float g)
+{
+	return sqrtf(g);
 }

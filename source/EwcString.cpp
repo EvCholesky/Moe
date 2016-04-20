@@ -15,6 +15,7 @@
 
 #include "EwcString.h"
 #include "EwcHash.h"
+#include <stdio.h>
 
 using namespace EWC;
 
@@ -108,20 +109,20 @@ public:
 				,m_mpHvEntry(pAlloc,128)
 					{ ; }
 
-	const char* PChzAlloc(const char * pChz, size_t cB, HV hv)
+	const char* PChzAlloc(const char * pChz, size_t cCh, HV hv)
 					{
 						Entry * pEntry = nullptr;
 						if (m_mpHvEntry.FinsEnsureKey(hv, &pEntry) == FINS_Inserted)
 						{
-							size_t cCh = CCh(pChz) + 1;
+							size_t cB = cCh + 1;
 							pEntry->m_cRef = 1;
-							pEntry->m_pChz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cCh, EWC_ALIGN_OF(char));
-							(void) CChCopy(pChz, pEntry->m_pChz, cCh);
+							pEntry->m_pChz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cB, EWC_ALIGN_OF(char));
+							(void) CChCopy(pChz, pEntry->m_pChz, cB);
 						}
 						else
 						{
 							++pEntry->m_cRef;
-							EWC_ASSERT(FAreSame(pEntry->m_pChz, pChz), "bad table lookup in CStringTable");
+							EWC_ASSERT(FAreSame(pEntry->m_pChz, pChz, cCh), "bad table lookup in CStringTable");
 						}
 
 						return pEntry->m_pChz;
@@ -194,8 +195,7 @@ void CString::SetPChz(const char * pChzNew)
 	if(pChzNew)
 	{
 		m_shash = CStringHash(pChzNew);
-		size_t cB = CCh(pChzNew) + 1;
-		m_pChz = s_pStrtab->PChzAlloc(pChzNew, cB, m_shash.HvRaw());
+		m_pChz = s_pStrtab->PChzAlloc(pChzNew, CCh(pChzNew), m_shash.HvRaw());
 	}
 }
 
@@ -220,8 +220,7 @@ void CString::SetPCh(const char * pChNew, size_t cCh)
 	if(pChNew)
 	{
 		m_shash = CStringHash(pChNew, cCh);
-		size_t cB = cCh + 1;
-		m_pChz = s_pStrtab->PChzAlloc(pChNew, cB, m_shash.HvRaw());
+		m_pChz = s_pStrtab->PChzAlloc(pChNew, cCh, m_shash.HvRaw());
 	}
 }
 

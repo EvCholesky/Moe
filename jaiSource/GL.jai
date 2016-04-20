@@ -18,6 +18,20 @@ ClearWindow :: (uRed : float, uGreen : float, uBlue : float, uAlpha : float) -> 
 UpdateWindowEvents :: () -> void #foreign;
 SwapBuffers :: (pVHwnd : & void) -> void #foreign SwapBuffers_JAI;
 
+GL_TRIANGLES : s32 :           0x0004;
+
+glBegin :: (mode: s32) #foreign;
+glEnd :: () #foreign;
+glColor4f       :: (r: float, g: float, b: float, a: float) -> void #foreign;
+glColor3f       :: (r: float, g: float, b: float) -> void #foreign;
+glVertex3f   :: (x: float, y: float, z: float) #foreign;
+glVertex2f   :: (x: float, y: float) #foreign;
+
+glLoadIdentity :: () -> void #foreign;
+glOrtho :: (xLeft: f64, xRight: f64, yBottom: f64, yTop: f64, zNear: f64, zFar: f64) -> void #foreign;
+
+
+
 FGetNextEvent :: (pEvent: & SEvent) -> bool #foreign;
 
 EVENTK :: enum s32 
