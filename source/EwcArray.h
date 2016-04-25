@@ -86,6 +86,7 @@ public:
 	const T*	A() const					{ return m_a; }
 	size_t		C() const					{ return m_c; }
 	size_t		CMax() const				{ return m_cMax; }
+	bool		FIsEmpty() const			{ return m_c == 0; }
 	T *			PMac()						{ return &m_a[m_c]; }
 	const T *	PMac() const				{ return &m_a[m_c]; }
 	T *			PLast()						

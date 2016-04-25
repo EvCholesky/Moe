@@ -27,6 +27,7 @@ class CIRProcedure;
 class CParseContext;
 class CSTNode;
 class CWorkspace;
+struct SDIFile;
 struct SLexerLocation;
 
 struct SErrorManager	//  // tag = errman
@@ -93,13 +94,14 @@ public:
 	{
 						SFile(const EWC::CString & strFilename, FILEK filek)
 						:m_strFilename(strFilename)
-						,m_pChzFile(nullptr)
+						,m_pChzFileBody(nullptr)
 						,m_filek(filek)
 						,m_files(FILES_Requested)
 							{ ; }
 
-		EWC::CString	m_strFilename;
-		char *			m_pChzFile;
+		EWC::CString	m_strFilename;	// full filename;
+		char *			m_pChzFileBody;	// contents of the file
+		SDIFile *		m_pDif;			
 		FILEK			m_filek;
 		FILES			m_files;
 	};

@@ -101,7 +101,7 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 
 	int iLine = 1;
 	int iCol = 0;
-	const char *pChBegin = pFile->m_pChzFile;
+	const char *pChBegin = pFile->m_pChzFileBody;
 	for (const char * pCh = pChBegin; *pCh != '\0'; ++pCh)
 	{
 		s32 dB = s32(pCh - pChBegin);

@@ -25,6 +25,8 @@ using namespace EWC;
 #include "llvm-c/Core.h"
 #include "llvm-c/Target.h"
 #include "llvm-c/TargetMachine.h"
+#include "llvm/Support/Dwarf.h"
+#include "MissingLlvmC/llvmcDIBuilder.h"
 #include <stdio.h>
 
 CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodStruct);
@@ -161,6 +163,8 @@ CIRProcedure::~CIRProcedure()
 	m_arypValManaged.Clear();
 }
 
+
+
 class CIRBuilderErrorContext // tag = berrctx
 {
 public:
@@ -192,11 +196,147 @@ CIRBuilderErrorContext::~CIRBuilderErrorContext()
 
 
 
+struct SDIFile // tag = dif
+{
+	LLVMOpaqueValue *				m_pLvalScope;
+	LLVMOpaqueValue *				m_pLvalFile;
+
+	EWC::CDynAry<LLVMOpaqueValue *>	m_aryLvalScopeStack;
+};
+
+void PathSplitDestructive(char * pChzFull, size_t cCh, const char ** ppChzPath, const char ** ppChzFile)
+{
+	char * pChzPath = ".";
+	char * pChzFile = pChzFull;
+
+	char * pChLastSlash = nullptr;
+	
+	char * pChEnd = pChzFull + cCh;
+	for (char * pChIt = pChzFull; pChIt != pChEnd; ++pChIt)
+	{
+		if ((*pChIt == '/') | (*pChIt == '\\'))
+		{
+			pChLastSlash = pChIt;
+		}
+	}
+
+	if (pChLastSlash)
+	{
+		*pChLastSlash = '\0';
+		pChzPath = pChzFull;
+		pChzFile = pChLastSlash + 1;
+	}
+
+	*ppChzPath = pChzPath;
+	*ppChzFile = pChzFile;
+}
+
+/*
+void PathSplitDestructive(char * pChzFull, size_t cCh, const char ** ppChzPath, const char ** ppChzFile, const char ** ppChzExt)
+{
+	char * pChzExt = "";
+	char * pChzPath = ".";
+	char * pChzFile = pChzFull;
+
+	char * pChLastSlash = nullptr;
+	char * pChFirstDot = nullptr;
+	
+	char * pChEnd = pChzFull + cCh;
+	for (char * pChIt = pChzFull; pChIt != pChEnd; ++pChIt)
+	{
+		if ((*pChIt == '/') | (*pChIt == '\\'))
+		{
+			pChLastSlash = pChIt;
+			pChFirstDot = nullptr; // ignore periods inside the path
+		}
+
+		if ((pChFirstDot == nullptr) & (*pChIt == '.'))
+			pChFirstDot = pChIt;
+	}
+
+	if (pChFirstDot)
+	{
+		*pChFirstDot = '\0';
+
+		if (pChFirstDot + 1 != pChEnd)
+		{
+			pChzExt = pChFirstDot + 1;
+		}
+	}
+
+	if (pChLastSlash)
+	{
+		*pChLastSlash = '\0';
+		pChzPath = pChzFull;
+		pChzFile = pChLastSlash + 1;
+	}
+
+	*ppChzPath = pChzPath;
+	*ppChzFile = pChzFile;
+	*ppChzExt= pChzExt;
+}*/
+
+SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & strFilename)
+{
+	auto pFile = pWork->PFileLookup(strFilename.Hv(), CWorkspace::FILEK_Source);
+	if (!EWC_FVERIFY(pFile, "bad file lookup in PDifEnsure"))
+		return nullptr;
+
+	if (pFile->m_pDif)
+		return pFile->m_pDif;
+
+	auto pDif = EWC_NEW(pWork->m_pAlloc, SDIFile) SDIFile();
+
+	size_t cBFilename = pFile->m_strFilename.CB() + 1;
+	char * pChzCopy = (char *)alloca(sizeof(char) * cBFilename);
+	CChCopy(pFile->m_strFilename.PChz(), pChzCopy, cBFilename);
+
+	const char * pChzPath;	
+	const char * pChzFile;	
+	PathSplitDestructive(pChzCopy, cBFilename, &pChzPath, &pChzFile);
+
+	pDif->m_pLvalScope = nullptr;  // BB!
+	pDif->m_pLvalFile = LLVMDIBuilderCreateFile(pBuild->m_pDib, pChzFile, pChzPath);
+
+	return pDif;
+}
+
+
+
+void EmitLocation(CWorkspace * pWork, CIRBuilder * pBuild, SLexerLocation lexloc)
+{
+	SDIFile * pDif = PDifEnsure(pWork, pBuild, lexloc.m_strFilename);
+
+	LLVMOpaqueValue * pLvalScope;
+	if (pDif->m_aryLvalScopeStack.FIsEmpty())
+	{
+		pLvalScope = pBuild->m_pLvalCompileUnit;
+	}
+	else
+	{
+		pLvalScope = *pDif->m_aryLvalScopeStack.PMac();
+	}
+
+	// BB - need a faster way to do this than recalculating EVERY time!
+	s32 iLine;
+	s32 iCol;
+	CalculateLinePosition(pWork, &lexloc, &iLine, &iCol);
+
+	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pLvalScope);
+	LLVMSetCurrentDebugLocation(pBuild->m_pLbuild, pLvalLoc);
+}
+
+
+
 // Builder class Methods
-CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc)
+CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, const char * pChzFilename)
 :m_pBerrctx(nullptr)
 ,m_pLmoduleCur(nullptr)
 ,m_pLbuild(nullptr)
+,m_pDib(nullptr)
+,m_pLvalCompileUnit(nullptr)
+,m_pLvalScope(nullptr)
+,m_pLvalFile(nullptr)
 ,m_pAlloc(pAlloc)
 ,m_inspt()
 ,m_pProcCur(nullptr)
@@ -205,6 +345,36 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc)
 { 
 	m_pLbuild = LLVMCreateBuilder();
 	m_pLmoduleCur = LLVMModuleCreateWithName("JaiModule");
+
+	if (!pChzFilename || *pChzFilename == '\0')
+	{
+		pChzFilename = "stub";
+	}
+
+	// should use this?
+	// SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & strFilename)
+
+	size_t cBFilename = CCh(pChzFilename) + 1;
+	char * pChzCopy = (char *)alloca(sizeof(char) * cBFilename);
+	CChCopy(pChzFilename, pChzCopy, cBFilename);
+
+	const char * pChzPath;	
+	const char * pChzFile;	
+	PathSplitDestructive(pChzCopy, cBFilename, &pChzPath, &pChzFile);
+
+	m_pDib = LLVMCreateDIBuilder(m_pLmoduleCur);
+	m_pLvalCompileUnit = LLVMDIBuilderCreateCompileUnit(
+							m_pDib,
+							llvm::dwarf::DW_LANG_C,
+							pChzFile,
+							pChzPath,
+							"Jailang compiler",
+							false,
+							"",
+							0);
+
+	m_pLvalScope = m_pLvalCompileUnit;
+	//m_pLvalFile = LLVMDIBuilderCreateFile(m_pDib, pChzFilename, pChzDirectory);
 }
 	
 CIRBuilder::~CIRBuilder()
@@ -219,6 +389,12 @@ CIRBuilder::~CIRBuilder()
 	{
 		LLVMDisposeModule(m_pLmoduleCur);
 		m_pLmoduleCur = nullptr;
+	}
+
+	if (m_pDib)
+	{
+		LLVMDisposeDIBuilder(m_pDib);
+		m_pDib = nullptr;
 	}
 }
 
@@ -2893,7 +3069,7 @@ void TestUniqueNames(CAlloc * pAlloc)
 {
 	size_t cbFreePrev = pAlloc->CB();
 	{
-		CIRBuilder build(pAlloc);
+		CIRBuilder build(pAlloc, "");
 
 		const char * pChzIn;
 		char aCh[128];
@@ -3102,12 +3278,12 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		char aChFilenameOut[256];
 		(void)CChConstructFilename(pFile->m_strFilename.PChz(), ".jai", aChFilenameOut, EWC_DIM(aChFilenameOut));
 
-		pFile->m_pChzFile = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
-		if (!pFile->m_pChzFile)
+		pFile->m_pChzFileBody = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
+		if (!pFile->m_pChzFileBody)
 			continue;
 
 		printf("Parsing %s\n", pFile->m_strFilename.PChz());
-		BeginParse(pWork, &jlex, pFile->m_pChzFile);
+		BeginParse(pWork, &jlex, pFile->m_pChzFileBody);
 		jlex.m_pChzFilename = pFile->m_strFilename.PChz();
 
 		ParseGlobalScope(pWork, &jlex, true);
@@ -3125,10 +3301,12 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		if (pWork->m_pErrman->m_cError == 0)
 		{
 			printf("Code Generation:\n");
-			CIRBuilder build(pWork->m_pAlloc);
+			CIRBuilder build(pWork->m_pAlloc, pChzFilenameIn);
 			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 			CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
+
+			LLVMDIBuilderFinalize(build.m_pDib);
 
 			if (grfcompile.FIsSet(FCOMPILE_PrintIR))
 			{
@@ -3149,10 +3327,10 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		if (pFile->m_filek != CWorkspace::FILEK_Source)
 			continue;
 
-		if (pFile->m_pChzFile)
+		if (pFile->m_pChzFileBody)
 		{
-			pWork->m_pAlloc->EWC_DELETE((void *)pFile->m_pChzFile);
-			pFile->m_pChzFile = nullptr;
+			pWork->m_pAlloc->EWC_DELETE((void *)pFile->m_pChzFileBody);
+			pFile->m_pChzFileBody = nullptr;
 		}
 	}
 
@@ -3178,7 +3356,7 @@ void AssertTestCodeGen(
 
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	{
-		CIRBuilder build(pWork->m_pAlloc);
+		CIRBuilder build(pWork->m_pAlloc, "");
 		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	}
 

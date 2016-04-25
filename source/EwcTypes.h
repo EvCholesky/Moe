@@ -1355,6 +1355,8 @@ size_t CChFormat(char * aChDest, size_t cChMax, const char * pChzFormat, ...)
 
 size_t CCh(const char * pChz)
 {
+	if (!pChz)
+		return 0;
 	return strlen(pChz);
 }
 

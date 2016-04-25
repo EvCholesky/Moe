@@ -20,6 +20,7 @@
 
 struct LLVMOpaqueBasicBlock;
 struct LLVMOpaqueBuilder;
+struct LLVMOpaqueDIBuilder;
 struct LLVMOpaqueModule;
 struct LLVMOpaqueType;
 struct LLVMOpaqueValue;
@@ -297,7 +298,7 @@ enum NCMPPRED
 class CIRBuilder		// tag = build
 {
 public:
-						CIRBuilder(EWC::CAlloc * pAlloc);
+						CIRBuilder(EWC::CAlloc * pAlloc, const char * pChzFilename);
 						~CIRBuilder();
 	
 	void				PrintDump();
@@ -332,6 +333,13 @@ public:
 
 	LLVMOpaqueModule *		m_pLmoduleCur;
 	LLVMOpaqueBuilder *		m_pLbuild;
+
+	// Debug info
+	LLVMOpaqueDIBuilder *	m_pDib;				// Debug info builder
+	LLVMOpaqueValue *		m_pLvalCompileUnit;
+	LLVMOpaqueValue *		m_pLvalScope;
+	LLVMOpaqueValue *		m_pLvalFile;
+
 	EWC::CAlloc *			m_pAlloc;
 	SInsertPoint			m_inspt;
 

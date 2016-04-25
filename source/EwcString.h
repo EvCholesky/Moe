@@ -170,6 +170,9 @@ public:
 	void			SetPChz(const char * pChzNew);
 	void			SetPCh(const char * pChNew, size_t cCh);
 
+	size_t			CB() const
+						{ return CCh(m_pChz); }
+
 protected:
 
 	const char *		  m_pChz;
