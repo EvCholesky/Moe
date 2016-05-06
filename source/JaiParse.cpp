@@ -1956,11 +1956,11 @@ bool FParseImportDirectives(CWorkspace * pWork, SJaiLexer * pJlex)
 			{
 				if (rword == RWORD_ImportDirective)
 				{
-					pWork->EnsureFile(pJlex->m_pChString, CWorkspace::FILEK_Source);
+					(void) pWork->PFileEnsure(pJlex->m_pChString, CWorkspace::FILEK_Source);
 				}
 				else if (EWC_FVERIFY(rword == RWORD_ForeignLibraryDirective, "unknown directive"))
 				{
-					pWork->EnsureFile(pJlex->m_pChString, CWorkspace::FILEK_Library);
+					(void) pWork->PFileEnsure(pJlex->m_pChString, CWorkspace::FILEK_Library);
 				}
 				JtokNextToken(pJlex);
 				return true;

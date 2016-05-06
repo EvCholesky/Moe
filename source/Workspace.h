@@ -101,7 +101,7 @@ public:
 							{ ; }
 
 		EWC::CString	m_strFilename;	// full filename;
-		char *			m_pChzFileBody;	// contents of the file
+		const char *	m_pChzFileBody;	// contents of the file
 		SDIFile *		m_pDif;			
 		FILEK			m_filek;
 		FILES			m_files;
@@ -113,7 +113,7 @@ public:
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
 	CSymbolTable *			PSymtabNew(const EWC::CString & strName);
 
-	void					EnsureFile(const char * pChzFile, FILEK filek);
+	SFile *					PFileEnsure(const char * pChzFile, FILEK filek);
 	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek) 
 								{ return (filek == FILEK_Source) ? &m_hashHvIPFileSource :  &m_hashHvIPFileLibrary; }
 	int						CFile(FILEK filek)
@@ -139,7 +139,7 @@ public:
 };
 
 void BeginWorkspace(CWorkspace * pWork);
-void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn);
+void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn, const char * pChzFilename = nullptr);
 void EndParse(CWorkspace * pWork, SJaiLexer * pJlex);
 void EndWorkspace(CWorkspace * pWork);
 

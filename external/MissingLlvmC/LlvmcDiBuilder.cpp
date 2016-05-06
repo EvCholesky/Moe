@@ -371,6 +371,10 @@ void LLVMDIBuilderReplaceCompositeElements(
 	DINodeArray diaryElements = pDibuild->getOrCreateArray(ary);
 
 	pDibuild->replaceArrays(pDicomp, diaryElements);
+
+	if (pDicomp->isTemporary())
+		pDicomp = llvm::MDNode::replaceWithPermanent(llvm::TempDICompositeType(pDicomp));
+
 	*ppLvalComposite = wrap(pDicomp);
 }
 

@@ -568,67 +568,67 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			switch (pTinary->m_aryk)
 			{
 			case ARYK_Fixed:
-			{
-				LLVMOpaqueValue * apLvalSubscript[1];
-				apLvalSubscript[0] = LLVMDIBuilderGetOrCreateRange(pDib, 0, pTinary->m_c-1);
-				pTin->m_pLvalDIType = LLVMDIBuilderCreateArrayType(
-					pDib,
-					cBitSizeArray,
-					cBitAlignArray,
-					pTinElement->m_pLvalDIType,
-					apLvalSubscript,
-					1);
-			} break;
-		    case ARYK_Reference:
-			{
-				SDIFile * pDif = PDifEnsure(pWork, pBuild, pStnodRef->m_lexloc.m_strFilename);
-				LLVMOpaqueValue * pLvalScope = pDif->m_pLvalFile;
-
-				auto pLtypeMember =  PLtypeFromPTin(pTinary->m_pTin);
-
-				LLVMTypeRef mpArymembPLtype[ARYMEMB_Max]; // pointer, count
-				mpArymembPLtype[ARYMEMB_Count] = LLVMInt64Type();
-				mpArymembPLtype[ARYMEMB_Data] = LLVMPointerType(pLtypeMember, 0);
-
-				u64 cBitSizeMember, cBitAlignMember;
-				unsigned nFlagsMember = 0;
-				LLVMOpaqueValue * apLvalMember[2]; // pointer, count	
-
-				for (int arymemb = 0; arymemb < ARYMEMB_Max; ++arymemb)
 				{
-					auto pLtypeMember =  mpArymembPLtype[arymemb];
-					u64 dBitMembOffset = LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeArray, ARYMEMB_Count);
-					CalculateSizeAndAlign(pBuild, pLtypeMember, &cBitSizeMember, &cBitAlignMember);
+					LLVMOpaqueValue * apLvalSubscript[1];
+					apLvalSubscript[0] = LLVMDIBuilderGetOrCreateRange(pDib, 0, pTinary->m_c-1);
+					pTin->m_pLvalDIType = LLVMDIBuilderCreateArrayType(
+						pDib,
+						cBitSizeArray,
+						cBitAlignArray,
+						pTinElement->m_pLvalDIType,
+						apLvalSubscript,
+						1);
+				} break;
+		    case ARYK_Reference:
+				{
+					SDIFile * pDif = PDifEnsure(pWork, pBuild, pStnodRef->m_lexloc.m_strFilename);
+					LLVMOpaqueValue * pLvalScope = pDif->m_pLvalFile;
 
-					apLvalMember[arymemb] = LLVMDIBuilderCreateMemberType(
-												pDib,
-												pLvalScope,
-												PChzFromArymemb((ARYMEMB)arymemb),
-												pDif->m_pLvalFile,
-												0,
-												cBitSizeMember,
-												cBitAlignMember,
-												dBitMembOffset,
-												nFlagsMember,
-												pTinElement->m_pLvalDIType);
-				}
+					auto pLtypeMember =  PLtypeFromPTin(pTinary->m_pTin);
 
-				unsigned nFlags = 0;
-				pTin->m_pLvalDIType = LLVMDIBuilderCreateStructType(
-										pDib,
-										pLvalScope,
-										"",
-										pDif->m_pLvalFile,
-										0,
-										cBitSizeArray,
-										cBitAlignArray,
-										nFlags,
-										nullptr, //pLvalDerivedFrom
-										apLvalMember,
-										ARYMEMB_Max,
-										nullptr, //pLvalVTableHolder
-										pBuild->m_nRuntimeLanguage);
-			} break;
+					LLVMTypeRef mpArymembPLtype[ARYMEMB_Max]; // pointer, count
+					mpArymembPLtype[ARYMEMB_Count] = LLVMInt64Type();
+					mpArymembPLtype[ARYMEMB_Data] = LLVMPointerType(pLtypeMember, 0);
+
+					u64 cBitSizeMember, cBitAlignMember;
+					unsigned nFlagsMember = 0;
+					LLVMOpaqueValue * apLvalMember[2]; // pointer, count	
+
+					for (int arymemb = 0; arymemb < ARYMEMB_Max; ++arymemb)
+					{
+						auto pLtypeMember =  mpArymembPLtype[arymemb];
+						u64 dBitMembOffset = LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeArray, ARYMEMB_Count);
+						CalculateSizeAndAlign(pBuild, pLtypeMember, &cBitSizeMember, &cBitAlignMember);
+
+						apLvalMember[arymemb] = LLVMDIBuilderCreateMemberType(
+													pDib,
+													pLvalScope,
+													PChzFromArymemb((ARYMEMB)arymemb),
+													pDif->m_pLvalFile,
+													0,
+													cBitSizeMember,
+													cBitAlignMember,
+													dBitMembOffset,
+													nFlagsMember,
+													pTinElement->m_pLvalDIType);
+					}
+
+					unsigned nFlags = 0;
+					pTin->m_pLvalDIType = LLVMDIBuilderCreateStructType(
+											pDib,
+											pLvalScope,
+											"",
+											pDif->m_pLvalFile,
+											0,
+											cBitSizeArray,
+											cBitAlignArray,
+											nFlags,
+											nullptr, //pLvalDerivedFrom
+											apLvalMember,
+											ARYMEMB_Max,
+											nullptr, //pLvalVTableHolder
+											pBuild->m_nRuntimeLanguage);
+				} break;
 		    case ARYK_Dynamic:
 				EWC_ASSERT(false, "debug info is for aryk %s is TBD", PChzFromAryk(pTinary->m_aryk));
 			}
@@ -3381,6 +3381,7 @@ void CodeGenEntryPoint(
 
 			if (fImplicitFunction)
 			{
+				EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 				(void) pBuild->PInstCreate(IROP_Ret, nullptr, "RetTmp");
 			}
 
@@ -3616,7 +3617,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 {
 	SJaiLexer jlex;
 
-	pWork->EnsureFile(pChzFilenameIn, CWorkspace::FILEK_Source);
+	(void) pWork->PFileEnsure(pChzFilenameIn, CWorkspace::FILEK_Source);
 
 	for (size_t ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
 	{
@@ -3696,9 +3697,14 @@ void AssertTestCodeGen(
 	const char * pChzIn)
 	//const char * pChzOut)
 {
+	const char * s_pChzUnitTestFilename = "unit.test";
+
 	SJaiLexer jlex;
 	BeginWorkspace(pWork);
-	BeginParse(pWork, &jlex, pChzIn);
+	auto pFile = pWork->PFileEnsure(s_pChzUnitTestFilename, CWorkspace::FILEK_Source);
+	pFile->m_pChzFileBody = pChzIn;
+
+	BeginParse(pWork, &jlex, pChzIn, s_pChzUnitTestFilename);
 
 	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
 	pWork->m_pErrman->Clear();
@@ -3712,6 +3718,12 @@ void AssertTestCodeGen(
 	{
 		CIRBuilder build(pWork->m_pAlloc, "");
 		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+	}
+
+	if (pFile->m_pDif)
+	{
+		pWork->m_pAlloc->EWC_DELETE(pFile->m_pDif);
+		pFile->m_pDif = nullptr;
 	}
 
 	EndWorkspace(pWork);

@@ -3,7 +3,7 @@ Work in progress JAI compiler
 
 Slowly building a LLVM frontend for a dialect of Jon Blow's JAI language.
 
-It currently can compile and statically link very simple programs. It doesn't do runtime code execution yet.
+It currently can compile and link simple programs. It doesn't do runtime code execution yet.
 
 Currently supports:
   * Pointers
@@ -30,6 +30,7 @@ Coming soon:
     - loops
     - handle nested scopes
     - verify initializer functions 
+    - faster line lookup
   * Method overloading
   * Method pointers
   * break/continue to labels;

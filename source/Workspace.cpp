@@ -164,7 +164,7 @@ CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strName)
 	return pSymtabNew;
 }
 
-void CWorkspace::EnsureFile(const char * pChzFile, FILEK filek)
+CWorkspace::SFile * CWorkspace::PFileEnsure(const char * pChzFile, FILEK filek)
 {
 	EWC::CHash<HV, int> * phashHvIPFile = PHashHvIPFile(filek);
 	EWC::CString strFilename(pChzFile);
@@ -179,6 +179,7 @@ void CWorkspace::EnsureFile(const char * pChzFile, FILEK filek)
 
 		pFile->m_strFilename = strFilename;
 	}
+	return m_arypFile[*pipFile];
 }
 
 CWorkspace::SFile * CWorkspace::PFileLookup(HV hv, FILEK filek)
@@ -215,7 +216,7 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork->m_pErrman);
 }
 
-void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn)
+void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn, const char * pChzFilename)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 	CParseContext * pParctx = EWC_NEW(pAlloc, CParseContext) CParseContext(pAlloc, pWork);
@@ -224,6 +225,11 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn)
 	static const size_t cChStorage = 1024 * 8;
 	char * aChStorage = (char *)pAlloc->EWC_ALLOC(cChStorage, 4);
 	InitJaiLexer(pJlex, pChzIn, &pChzIn[CCh(pChzIn)], aChStorage, cChStorage);
+
+	if (pChzFilename)
+	{
+		pJlex->m_pChzFilename = pChzFilename;
+	}
 
 	SLexerLocation lexloc(pJlex);
 	PushSymbolTable(pParctx, pWork->m_pSymtab, lexloc);
