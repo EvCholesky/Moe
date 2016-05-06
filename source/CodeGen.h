@@ -22,6 +22,7 @@ struct LLVMOpaqueBasicBlock;
 struct LLVMOpaqueBuilder;
 struct LLVMOpaqueDIBuilder;
 struct LLVMOpaqueModule;
+struct LLVMOpaqueTargetData;
 struct LLVMOpaqueType;
 struct LLVMOpaqueValue;
 
@@ -231,6 +232,7 @@ public:
 						CIRProcedure(EWC::CAlloc * pAlloc)
 						:CIRValue(VALK_ProcedureDefinition)
 						,m_pAlloc(pAlloc)
+						,m_pLvalDIFunction(nullptr)
 						,m_pLvalFunction(nullptr)
 						,m_pBlockEntry(nullptr)
 						,m_arypBlockManaged(pAlloc)
@@ -240,6 +242,7 @@ public:
 						~CIRProcedure();
 
 	EWC::CAlloc *		m_pAlloc;
+	LLVMOpaqueValue *	m_pLvalDIFunction;
 	LLVMOpaqueValue *	m_pLvalFunction;		// null if anonymous function
 	CIRBasicBlock *		m_pBlockEntry;	
 
@@ -334,8 +337,11 @@ public:
 	LLVMOpaqueModule *		m_pLmoduleCur;
 	LLVMOpaqueBuilder *		m_pLbuild;
 
+	LLVMOpaqueTargetData *	m_pTargd;
+
 	// Debug info
 	LLVMOpaqueDIBuilder *	m_pDib;				// Debug info builder
+	unsigned				m_nRuntimeLanguage;
 	LLVMOpaqueValue *		m_pLvalCompileUnit;
 	LLVMOpaqueValue *		m_pLvalScope;
 	LLVMOpaqueValue *		m_pLvalFile;

@@ -1426,6 +1426,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pTinproc->m_arypTinParams.SetArray(ppTin, 0, cStnodParams);
 				pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
 				pStnodProc->m_pTin = pTinproc;
+				pTinproc->m_pStnodDefinition = pStnodProc;
 
 				CSTNode ** ppStnodParamMax = &ppStnodParams[cStnodParams];
 				for ( ; ppStnodParams != ppStnodParamMax; ++ppStnodParams)
@@ -2316,7 +2317,7 @@ void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SJaiLexer * pJlex, ST
 	}
 
 	STypeInfo ** ppTinValue = nullptr;
-	FINS fins = m_hashHvPTin.FinsEnsureKey(strName.Hv(), &ppTinValue);
+	FINS fins = m_hashHvPTinBuiltIn.FinsEnsureKey(strName.Hv(), &ppTinValue);
 	if (fins == FINS_Inserted)
 	{
 		*ppTinValue = pTin;

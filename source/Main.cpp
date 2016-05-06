@@ -30,6 +30,8 @@ extern void TestParse();
 extern void TestTypeCheck();
 extern void TestCodeGen();
 
+extern void PathSplitDestructive(char * pChzFull, size_t cCh, const char ** ppChzPath, const char ** ppChzFile);
+
 class CCommandLine // tag = comline
 {
 public:
@@ -98,6 +100,7 @@ void PrintCommandLineOptions()
 	printf("	-printIR  : Print llvm's intermediate representation\n");
 	printf("    -release  : Generate optimized code and link against optimized local libraries\n");
 	printf("    -test     : Run compiler unit tests\n");
+	printf("    -mslink   : Use microsoft linker (rather than lld) DWARF debug data will be stripped.\n");
 }
 
 int main(int cpChzArg, const char * apChzArg[])
@@ -167,26 +170,40 @@ int main(int cpChzArg, const char * apChzArg[])
 			static const char * s_pChzPathRelease = "Release";
 			const char * pChzOptPath = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzPathRelease : s_pChzPathDebug;
 
+			static const char * s_pChzOptimizedDebug = "/debug";
+			static const char * s_pChzOptimizedRelease = "";
+			const char * pChzOptimized = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzOptimizedRelease : s_pChzOptimizedDebug;
+
+			const char * pChzLinkerFull = nullptr;
+
 			#if EWC_X64
-			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
-			static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/x64/%s\" ";
-			static const char * s_apChzDefaultPaths[] =
-			{
-				"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
-				"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
-				"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
-			};
-			static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo /NODEFAULTLIB:MSVCRT.lib /NODEFAULTLIB:LIBCMTD.lib";
+				static const char * s_pChzCommandMs = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
+				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade64/bin/lld-link.exe";
+				pChzLinkerFull = (comline.FHasCommand("-mslink")) ? s_pChzCommandMs : s_pChzCommandLld; 
+
+				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/x64/%s\" ";
+				static const char * s_apChzDefaultPaths[] =
+				{
+					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
+					"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
+					"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
+				};
+
+				static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo /NODEFAULTLIB:MSVCRT.lib /NODEFAULTLIB:LIBCMTD.lib";
+
 			#else
-			static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
-			static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/%s\" ";
-			static const char * s_apChzDefaultPaths[] =
-			{
-				"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86",
-				"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib",
-				"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x86",
-			};
-			static const char * s_pChzOptions = "/subsystem:console /nologo";
+				static const char * s_pChzCommandMs = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
+				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade/bin/lld-link.exe";
+				pChzLinkerFull = (comline.FHasCommand("-mslink")) ? s_pChzCommandMs : s_pChzCommandLld; 
+
+				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/%s\" ";
+				static const char * s_apChzDefaultPaths[] =
+				{
+					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86",
+					"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib",
+					"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x86",
+				};
+				static const char * s_pChzOptions = "/subsystem:console /nologo";
 			#endif
 
 			const char * s_pChzPath = "c:/Code/jailang/jaiSource";
@@ -195,11 +212,20 @@ int main(int cpChzArg, const char * apChzArg[])
 			char * pChzCmd = aChzCommandLine;
 			const char * pChzCmdMac = EWC_PMAC(aChzCommandLine);
 
+			char aChzCopy[2048];
+			CChCopy(pChzLinkerFull, aChzCopy, EWC_DIM(aChzCopy));
+
+			const char * pChzLinkerPath;	
+			const char * pChzLinkerFile;	
+			PathSplitDestructive(aChzCopy, EWC_DIM(aChzCopy), &pChzLinkerPath, &pChzLinkerFile);
+
 			pChzCmd += CChFormat(
 				pChzCmd,
 				pChzCmdMac - pChzCmd,
-				"link %s %s ",
+				"%s %s %s %s ",
+				pChzLinkerFile,
 				work.m_pChzObjectFilename,
+				pChzOptimized,
 				s_pChzOptions);
 
 			pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, s_pChzLibraryFormat, pChzOptPath);
@@ -240,7 +266,7 @@ int main(int cpChzArg, const char * apChzArg[])
 
 			printf("Linking:\n");
 			if (CreateProcessA(
-					s_pChzCommand,
+					pChzLinkerFull,
 					aChzCommandLine,
 					0,
 					0,

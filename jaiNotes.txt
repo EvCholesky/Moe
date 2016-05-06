@@ -24,9 +24,6 @@ SFoo :: struct { blah : int };
 	error : SFoo; // this should complain that it's not a type, but an instance
 }
 
-// cmake instructions so I don't have to figure it out again.
-C:\code\llvm\cmade>cmake ..\src\ -G "Visual Studio 14"
-C:\code\llvm\cmade64>cmake ..\src\ -G "Visual Studio 14 Win64"
 
 DONE:
  [x] Move allocated TypeInfos into one array for ownership

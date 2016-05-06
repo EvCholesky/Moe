@@ -22,6 +22,17 @@
 extern "C" {
 #endif
 
+
+
+enum DIFlags
+{
+#define HANDLE_DI_FLAG(ID, NAME) DINODE_FLAG_##NAME = ID,
+#include "llvm/IR/DebugInfoFlags.def"
+    DINODE_FLAG_Accessibility = DINODE_FLAG_Private | DINODE_FLAG_Protected | DINODE_FLAG_Public
+};
+
+
+
 typedef struct LLVMOpaqueDIBuilder * LLVMDIBuilderRef;
 
 LLVMDIBuilderRef LLVMCreateDIBuilder(LLVMModuleRef pMod);
@@ -111,6 +122,27 @@ LLVMValueRef LLVMDIBuilderCreateStructType(
 				LLVMValueRef pLvalVTableHolder,
 				unsigned nRunTimeLanguage);
 
+LLVMValueRef LLVMDIBuilderCreateReplacableComposite(
+			    LLVMDIBuilderRef pDib, 
+				unsigned nTag,
+				LLVMValueRef pLvalScope, 
+				const char * pChzName, 
+				LLVMValueRef pLvalFile,
+			    unsigned nLine, 
+				unsigned nRuntimeLanguage,
+				uint64_t cBitSize,
+				uint64_t cBitAlign,
+				unsigned nFlags,
+				const char * pChzUniqueName);
+
+void LLVMDIBuilderReplaceCompositeElements(
+			    LLVMDIBuilderRef pDib, 
+				LLVMValueRef * ppLvalComposite,
+			    LLVMValueRef * ppLvalElements, 
+				unsigned cElement);
+
+LLVMValueRef LLVMDIBuilderGetOrCreateRange(LLVMDIBuilderRef pDib, int64_t iFirst, int64_t iLast);
+
 LLVMValueRef LLVMDIBuilderCreateArrayType(
 				LLVMDIBuilderRef pDib,
 				uint64_t cBitArraySize,
@@ -153,6 +185,12 @@ LLVMValueRef LLVMDIBuilderCreateLocalVariable(
 				bool fIsPreservedWhenOptimized,
 			    unsigned nFlags,
 				unsigned iArgument);
+
+LLVMValueRef LLVMDIBuilderCreateFunctionType(
+				LLVMDIBuilderRef pDib,
+				LLVMValueRef pLvalFile,
+				LLVMValueRef * ppLvalParameters,
+				unsigned cParameters);
 
 LLVMValueRef LLVMDIBuilderCreateFunction(
 			    LLVMDIBuilderRef pDib,

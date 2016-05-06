@@ -74,6 +74,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
+    <CustomBuildAfterTargets>BuildLink</CustomBuildAfterTargets>
+    <PreBuildEventUseInBuild>false</PreBuildEventUseInBuild>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -112,6 +114,22 @@
       <AdditionalDependencies>LLVMAnalysis.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMMCDisassembler.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMipa.lib;LLVMMC.lib;LLVMMCJIT.lib;LLVMObject.lib;LLVMMCParser.lib;LLVMProfileData.lib;LLVMRuntimeDyld.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86AsmPrinter.lib;LLVMX86AsmParser.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMX86Utils.lib;MissingLlvmC.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\llvm\cmade64\Debug\lib;.\x64\Debug;</AdditionalLibraryDirectories>
     </Link>
+    <CustomBuildStep>
+      <Command>
+      </Command>
+    </CustomBuildStep>
+    <CustomBuildStep>
+      <Message>
+      </Message>
+      <Outputs>
+      </Outputs>
+    </CustomBuildStep>
+    <PostBuildEvent>
+      <Command>copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin</Command>
+    </PostBuildEvent>
+    <PostBuildEvent>
+      <Message>Copying executable to bin</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -152,6 +170,10 @@
       <AdditionalDependencies>LLVMAnalysis.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMMCDisassembler.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMipa.lib;LLVMMC.lib;LLVMMCJIT.lib;LLVMObject.lib;LLVMMCParser.lib;LLVMProfileData.lib;LLVMRuntimeDyld.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86AsmPrinter.lib;LLVMX86AsmParser.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMX86Utils.lib;MissingLlvmC.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\llvm\cmade64\Release\lib;.\x64\Release;</AdditionalLibraryDirectories>
     </Link>
+    <PostBuildEvent>
+      <Command>copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin</Command>
+      <Message>Copying executable to bin</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="source\BigMath.h" />

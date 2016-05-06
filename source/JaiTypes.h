@@ -47,13 +47,15 @@ const char * PChzFromTink(TINK tink);
 
 struct STypeInfo	// tag = tin
 {
-			STypeInfo(const char * pChzName, TINK tink)
-			:m_tink(tink)
-			,m_strName(pChzName)
-				{ ; }
+						STypeInfo(const char * pChzName, TINK tink)
+						:m_tink(tink)
+						,m_strName(pChzName)
+						,m_pLvalDIType(nullptr)
+							{ ; }
 
-    TINK			m_tink;
-	EWC::CString	m_strName;
+    TINK				m_tink;
+	EWC::CString		m_strName;
+	LLVMOpaqueValue *	m_pLvalDIType;
 };
 
 template <typename T>
@@ -117,11 +119,13 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 
 						STypeInfoProcedure(const char * pChzName)
 						:STypeInfo(pChzName, s_tink)
+						,m_pStnodDefinition(nullptr)
 						,m_arypTinParams()
 						,m_arypTinReturns()
 						,m_fHasVarArgs(false)
 							{ ; }
 
+	CSTNode *				m_pStnodDefinition;
 	EWC::CAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;
 	bool					m_fHasVarArgs;

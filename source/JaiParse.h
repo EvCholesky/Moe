@@ -375,11 +375,12 @@ struct SSymbol	// tag = sym
 
 enum FSYMTAB	// SYMbol LOOKup flags
 {
-	FSYMTAB_Ordered		= 0x1, // symbols cannot be referenced before their lexical position
+	FSYMTAB_Ordered			= 0x1, // symbols cannot be referenced before their lexical position
 
-	FSYMTAB_None		= 0x0,
-	FSYMTAB_All			= 0x1,
-	FSYMTAB_Default		= FSYMTAB_Ordered,
+	FSYMTAB_None			= 0x0,
+	FSYMTAB_All				= 0x1,
+	FSYMTAB_HasDebugInfo	= 0x2,
+	FSYMTAB_Default			= FSYMTAB_Ordered,
 };
 
 EWC_DEFINE_GRF(GRFSYMTAB, FSYMTAB, u8);
@@ -394,7 +395,7 @@ protected:
 							:m_strName(strName)
 							,m_pAlloc(pAlloc)
 							,m_hashHvPSym(pAlloc)
-							,m_hashHvPTin(pAlloc)
+							,m_hashHvPTinBuiltIn(pAlloc)
 							,m_hashHvPTinfwd(pAlloc)
 							,m_arypTinManaged(pAlloc)
 							,m_pSymtabParent(nullptr)
@@ -432,7 +433,7 @@ public:
 	EWC::CHash<HV, SSymbol *>	m_hashHvPSym;		// All the symbols defined within this scope, a full lookup requires
 													//  walking up the parent list
 	EWC::CHash<HV, STypeInfo *>
-								m_hashHvPTin;		// Declared types in this scope
+								m_hashHvPTinBuiltIn;	// Builtin Types declared in this scope
 	EWC::CHash<HV, STypeInfoForwardDecl *>
 								m_hashHvPTinfwd;	// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.

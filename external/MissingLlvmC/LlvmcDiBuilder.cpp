@@ -24,6 +24,7 @@
 #include "llvm-c/Core.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DIBuilder.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
@@ -48,35 +49,41 @@ inline LLVMValueRef wrap(MDNode * pMdnode)
 
 static MDNode * PMdnodeExtract(MetadataAsValue * pMav) 
 {
-	Metadata * pMdata = pMav->getMetadata();
-	assert((isa<MDNode>(pMdata) || isa<ConstantAsMetadata>(pMdata)) && "metadata node or a constant expected");
+	if (!pMav)
+		return nullptr;
 
-	MDNode * pMdnode = dyn_cast<MDNode>(pMdata);
+	Metadata * pMetadata = pMav->getMetadata();
+	assert((isa<MDNode>(pMetadata) || isa<ConstantAsMetadata>(pMetadata)) && "metadata node or a constant expected");
+
+	MDNode * pMdnode = dyn_cast<MDNode>(pMetadata);
 	if (pMdnode)
 		return pMdnode;
 
-	return MDNode::get(pMav->getContext(), pMdata);
+	return MDNode::get(pMav->getContext(), pMetadata);
 }
 
 inline MDNode * PMdnodeExtract(LLVMValueRef pNode)
 {
+	if (!pNode)
+		return nullptr;
+
 	MetadataAsValue * pMav = unwrap<MetadataAsValue>(pNode);
 	return PMdnodeExtract(pMav);
-
-	//return (pNode) ? cast<MDNode>(unwrap<MetadataAsValue>(pNode)->getMetadata()) : nullptr;
 }
 
 inline Metadata ** PPMetadataUnwrap(LLVMValueRef * ppLval, unsigned cLval)
 {
-#ifdef DEBUG
-	LLVMValueRef * ppLvalEnd = ppLval + cLval;
-	for (LLVMValueRef * ppLvalIt = ppLval; ppLvalIt != ppLvalEnd; ++ppLvalIt)
-	{
-		cast<Metadata>(*ppLvalIt);
-	}
-#endif
+	Metadata ** apMetadata = reinterpret_cast<Metadata **>(ppLval);
 
-	return reinterpret_cast<Metadata **>(ppLval);
+	LLVMValueRef * ppLvalEnd = ppLval + cLval;
+	Metadata ** ppMetadata = apMetadata;
+	for (LLVMValueRef * ppLvalIt = ppLval; ppLvalIt != ppLvalEnd; ++ppLvalIt, ++ppMetadata)
+	{
+		MetadataAsValue * pMav = unwrap<MetadataAsValue>(*ppLvalIt);
+		(*ppMetadata) = cast<Metadata>(PMdnodeExtract(pMav));
+	}
+
+	return apMetadata;
 }
 
 
@@ -295,7 +302,7 @@ LLVMValueRef LLVMDIBuilderCreateStructType(
     LLVMValueRef * ppLvalElements, 
 	unsigned cElement,
 	LLVMValueRef pLvalVTableHolder,
-	unsigned nRunTimeLanguage) 
+	unsigned nRuntimeLanguage) 
 {
 	StringRef strrName(pChzName);
 	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
@@ -317,8 +324,60 @@ LLVMValueRef LLVMDIBuilderCreateStructType(
 								nFlags,
 								pDitypeDerivedFrom,
 								diaryElements,
-								nRunTimeLanguage,
+								nRuntimeLanguage,
 								pDitypeVTableHolder));
+}
+
+LLVMValueRef LLVMDIBuilderCreateReplacableComposite(
+    LLVMDIBuilderRef pDib, 
+	unsigned nTag,
+	LLVMValueRef pLvalScope, 
+	const char * pChzName, 
+	LLVMValueRef pLvalFile,
+    unsigned nLine, 
+	unsigned nRuntimeLanguage,
+	uint64_t cBitSize,
+	uint64_t cBitAlign,
+	unsigned nFlags,
+	const char * pChzUniqueName)
+{
+	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
+	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
+
+	return wrap(unwrap(pDib)->createReplaceableCompositeType(
+								nTag,
+								StringRef(pChzName),
+								pDiscope,
+								pDifile, 
+								nLine,
+								nRuntimeLanguage,
+								cBitSize,
+								cBitAlign,
+								nFlags,
+								StringRef(pChzUniqueName)));
+
+}
+
+void LLVMDIBuilderReplaceCompositeElements(
+    LLVMDIBuilderRef pDib, 
+	LLVMValueRef * ppLvalComposite,
+    LLVMValueRef * ppLvalElements, 
+	unsigned cElement)
+{
+	DICompositeType * pDicomp = cast<DICompositeType>(PMdnodeExtract(*ppLvalComposite));
+
+	auto pDibuild = unwrap(pDib);
+	ArrayRef<Metadata *> ary(PPMetadataUnwrap(ppLvalElements, cElement), cElement);
+	DINodeArray diaryElements = pDibuild->getOrCreateArray(ary);
+
+	pDibuild->replaceArrays(pDicomp, diaryElements);
+	*ppLvalComposite = wrap(pDicomp);
+}
+
+
+LLVMValueRef LLVMDIBuilderGetOrCreateRange(LLVMDIBuilderRef pDib, int64_t iFirst, int64_t iLast)
+{
+	return wrap(unwrap(pDib)->getOrCreateSubrange(iFirst, iLast));
 }
 
 LLVMValueRef LLVMDIBuilderCreateArrayType(
@@ -360,7 +419,6 @@ LLVMValueRef LLVMDIBuilderCreateEnumerationType(
 	DINodeArray diaryElement = pDibuild->getOrCreateArray(ary);
 
 	return wrap(pDibuild->createEnumerationType(pDiscope, strrName, pDifile, nLine, cBitSize, cBitAlign, diaryElement, pDitypeUnderlying));
-
 }
 
 LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
@@ -422,6 +480,21 @@ LLVMValueRef LLVMDIBuilderCreateLocalVariable(
 								iArgument));
 }
 
+LLVMValueRef LLVMDIBuilderCreateFunctionType(
+	LLVMDIBuilderRef pDib,
+	LLVMValueRef pLvalFile,
+	LLVMValueRef * ppLvalParameters,
+	unsigned cParameters)
+{
+	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
+
+	auto pDibuild = unwrap(pDib);
+	ArrayRef<Metadata *> ary(PPMetadataUnwrap(ppLvalParameters, cParameters), cParameters);
+	DITypeRefArray diaryParameters = pDibuild->getOrCreateTypeArray(ary);
+
+	return wrap(unwrap(pDib)->createSubroutineType(pDifile, diaryParameters));
+}
+
 LLVMValueRef LLVMDIBuilderCreateFunction(
     LLVMDIBuilderRef pDib,
 	LLVMValueRef pLvalScope,
@@ -440,7 +513,7 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 	LLVMValueRef pLvalDecl) 
 {
 	StringRef strrName(pChzName);
-	StringRef strrMangled(pChzMangled);
+	StringRef strrMangled(pChzMangled, (pChzMangled) ? strlen(pChzMangled) : 0);
 	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 	DISubroutineType * pDisubt = cast<DISubroutineType>(PMdnodeExtract(pLvalType));
@@ -448,21 +521,30 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 	MDNode * pMdnodeTemplateParm = PMdnodeExtract(pLvalTemplateParm);
 	MDNode * pMdnodeDecl = PMdnodeExtract(pLvalDecl);
 
-	return wrap(unwrap(pDib)->createFunction(
-								pDiscope,
-								strrName,
-								strrMangled,
-								pDifile,
-								nLine,
-								pDisubt,
-								fIsLocalToUnit,
-								fIsDefinition,
-								nLineScopeBegin,
-								nDwarfFlags, 
-								fIsOptimized,
-								pFunc,
-								pMdnodeTemplateParm,
-								pMdnodeDecl));
+	DISubprogram * pDisub = unwrap(pDib)->createFunction(
+											pDiscope,
+											strrName,
+											strrMangled,
+											pDifile,
+											nLine,
+											pDisubt,
+											fIsLocalToUnit,
+											fIsDefinition,
+											nLineScopeBegin,
+											nDwarfFlags, 
+											fIsOptimized,
+											pFunc,
+											pMdnodeTemplateParm,
+											pMdnodeDecl);
+
+
+	if (pFunc->getName() != pDisub->getName())
+	{
+		printf("ERROR: %s != %s\n", pFunc->getName().str().c_str(), pDisub->getName().str().c_str());
+	}
+
+	pFunc->setMetadata(LLVMContext::MD_dbg, pDisub); // this is the same as pFunc->setSubprogram(pDisub); but that's only in 3.8
+	return wrap(pDisub);
 }
 
 

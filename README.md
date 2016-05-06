@@ -21,9 +21,15 @@ Currently supports:
   * Enums
   * Short-circuiting logical operators
   * Explicit casts
+  * Debug Info - minimal first pass
 
 Coming soon:
   * Debug info
+    - enums
+    - typedefs
+    - loops
+    - handle nested scopes
+    - verify initializer functions 
   * Method overloading
   * Method pointers
   * break/continue to labels;

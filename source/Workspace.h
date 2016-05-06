@@ -95,6 +95,7 @@ public:
 						SFile(const EWC::CString & strFilename, FILEK filek)
 						:m_strFilename(strFilename)
 						,m_pChzFileBody(nullptr)
+						,m_pDif(nullptr)
 						,m_filek(filek)
 						,m_files(FILES_Requested)
 							{ ; }
