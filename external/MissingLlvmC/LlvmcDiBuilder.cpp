@@ -16,12 +16,15 @@
 #include "LlvmcDIBuilder.h"
 
 #pragma warning ( push )
+#pragma warning(disable : 4141)
 #pragma warning(disable : 4244)
 #pragma warning(disable : 4267)
+#pragma warning(disable : 4291)
 #pragma warning(disable : 4624)
 #pragma warning(disable : 4800)
 #pragma warning(disable : 4996)
 #include "llvm-c/Core.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/Function.h"
@@ -124,6 +127,7 @@ LLVMValueRef LLVMDIBuilderCreateCompileUnit(
 	StringRef strrProducer(pChzProducer);
 	StringRef strrFlags(pChzFlags);
 
+	auto pBuild = unwrap(pDib);
 	DICompileUnit * pCU = unwrap(pDib)->createCompileUnit(
 											nLanguage,
 											strrFilename,
@@ -171,7 +175,7 @@ void LLVMBuilderClearCurrentDebugLocation(LLVMBuilderRef pLbuild)
 
 // Types
 
-LLVMValueRef LLVMDIBuilderCreateEnumerator(LLVMDIBuilderRef pDib, char * pChzName, uint64_t nValue)
+LLVMValueRef LLVMDIBuilderCreateEnumerator(LLVMDIBuilderRef pDib, const char * pChzName, int64_t nValue)
 {
 	StringRef strrName(pChzName);
 	return wrap(unwrap(pDib)->createEnumerator(strrName, nValue));
@@ -455,48 +459,91 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 
 
 
-LLVMValueRef LLVMDIBuilderCreateLocalVariable(
+LLVMValueRef LLVMDIBuilderCreateAutoVariable(
 	LLVMDIBuilderRef pDib,
-    unsigned nDwarfTag,
 	LLVMValueRef pLvalScope, 
 	const char * pChzName,
 	LLVMValueRef pLvalFile,
 	unsigned nLine,
 	LLVMValueRef pLvalType,
 	bool fIsPreservedWhenOptimized,
-    unsigned nFlags,
-	unsigned iArgument)	// argument index (1 relative, 0 if none)
+    unsigned nFlags)
 {
 	StringRef strrName(pChzName);
 	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 	DIType * pDitype = cast<DIType>(PMdnodeExtract(pLvalType));
 
-	return wrap(unwrap(pDib)->createLocalVariable(
-								nDwarfTag,
+	return wrap(unwrap(pDib)->createAutoVariable(
 								pDiscope,
 								strrName,
 								pDifile,
 								nLine,
 								pDitype,
 								fIsPreservedWhenOptimized,
-								nFlags,
-								iArgument));
+								nFlags));
+}
+
+LLVMValueRef LLVMDIBuilderCreateParameterVariable(
+	LLVMDIBuilderRef pDib,
+	LLVMValueRef pLvalScope, 
+	const char * pChzName,
+	unsigned iArgument,	// argument index (1 relative, 0 if none)
+	LLVMValueRef pLvalFile,
+	unsigned nLine,
+	LLVMValueRef pLvalType,
+	bool fIsPreservedWhenOptimized,
+    unsigned nFlags)
+{
+	StringRef strrName(pChzName);
+	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
+	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
+	DIType * pDitype = cast<DIType>(PMdnodeExtract(pLvalType));
+
+	return wrap(unwrap(pDib)->createParameterVariable(
+								pDiscope,
+								strrName,
+								iArgument,
+								pDifile,
+								nLine,
+								pDitype,
+								fIsPreservedWhenOptimized,
+								nFlags));
+}
+
+LLVMValueRef LLVMDIBuilderInsertDeclare(
+	LLVMDIBuilderRef pDib,
+	LLVMValueRef pLvalStorage,
+	LLVMValueRef pLvalDIVariable,
+	LLVMValueRef pLvalScope,
+	unsigned iLine, 
+	unsigned iColumn, 
+	LLVMBasicBlockRef pLblock)
+{
+	auto pDibuild = unwrap(pDib);
+	DIExpression * pDiExpression = pDibuild->createExpression(); // BB - fill this out when I need it
+
+	Value * pLvalStore = unwrap(pLvalStorage);
+	DILocalVariable * pDilocvar = cast<DILocalVariable>(PMdnodeExtract(pLvalDIVariable));
+	BasicBlock * pLbb = unwrap(pLblock);
+
+	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
+	DILocation * pDiloc = llvm::DebugLoc::get(iLine, iColumn, pDiscope);
+
+	return wrap(pDibuild->insertDeclare(pLvalStore, pDilocvar, pDiExpression, pDiloc, pLbb));
 }
 
 LLVMValueRef LLVMDIBuilderCreateFunctionType(
 	LLVMDIBuilderRef pDib,
-	LLVMValueRef pLvalFile,
 	LLVMValueRef * ppLvalParameters,
 	unsigned cParameters)
 {
-	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
-
 	auto pDibuild = unwrap(pDib);
 	ArrayRef<Metadata *> ary(PPMetadataUnwrap(ppLvalParameters, cParameters), cParameters);
 	DITypeRefArray diaryParameters = pDibuild->getOrCreateTypeArray(ary);
 
-	return wrap(unwrap(pDib)->createSubroutineType(pDifile, diaryParameters));
+
+	return wrap(unwrap(pDib)->createSubroutineType(diaryParameters));
 }
 
 LLVMValueRef LLVMDIBuilderCreateFunction(
@@ -522,8 +569,12 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 	DISubroutineType * pDisubt = cast<DISubroutineType>(PMdnodeExtract(pLvalType));
 	Function * pFunc = unwrap<Function>(pLvalFunction);
-	MDNode * pMdnodeTemplateParm = PMdnodeExtract(pLvalTemplateParm);
-	MDNode * pMdnodeDecl = PMdnodeExtract(pLvalDecl);
+
+	//MDNode * pMdnodeTemplateParm = PMdnodeExtract(pLvalTemplateParm);
+	// BB - what's the right  thing here?
+	DITemplateParameterArray tupelaryTemplateParm = cast_or_null<MDTuple>(PMdnodeExtract(pLvalTemplateParm));
+
+	DISubprogram * pDisubDecl = cast_or_null<DISubprogram>(PMdnodeExtract(pLvalDecl));
 
 	DISubprogram * pDisub = unwrap(pDib)->createFunction(
 											pDiscope,
@@ -537,9 +588,8 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 											nLineScopeBegin,
 											nDwarfFlags, 
 											fIsOptimized,
-											pFunc,
-											pMdnodeTemplateParm,
-											pMdnodeDecl);
+											tupelaryTemplateParm,
+											pDisubDecl);
 
 
 	if (pFunc->getName() != pDisub->getName())

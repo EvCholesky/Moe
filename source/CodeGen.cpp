@@ -21,11 +21,15 @@
 
 using namespace EWC;
 
+#pragma warning ( push )
+#pragma warning(disable : 4141)
 #include "llvm-c/Analysis.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/Target.h"
 #include "llvm-c/TargetMachine.h"
 #include "llvm/Support/Dwarf.h"
+#pragma warning ( pop )
+
 #include "MissingLlvmC/llvmcDIBuilder.h"
 #include <stdio.h>
 
@@ -355,6 +359,9 @@ void PathSplitDestructive(char * pChzFull, size_t cCh, const char ** ppChzPath, 
 		{
 			pChLastSlash = pChIt;
 		}
+
+		if (*pChIt == '\0')
+			break;
 	}
 
 	if (pChLastSlash)
@@ -454,6 +461,30 @@ void EmitLocation(CWorkspace * pWork, CIRBuilder * pBuild, const SLexerLocation 
 	LLVMSetCurrentDebugLocation(pBuild->m_pLbuild, pLvalLoc);
 }
 
+SDIFile * PDifEmitLocation(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	const SLexerLocation & lexloc,
+	s32 * piLine = nullptr,
+	s32 * piCol = nullptr)
+{
+	SDIFile * pDif = PDifEnsure(pWork, pBuild, lexloc.m_strFilename);
+
+	LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
+
+	// BB - need a faster way to do this than recalculating EVERY time!
+	s32 iLine;
+	s32 iCol;
+	CalculateLinePosition(pWork, &lexloc, &iLine, &iCol);
+
+	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pLvalScope);
+	LLVMSetCurrentDebugLocation(pBuild->m_pLbuild, pLvalLoc);
+
+	if (piLine) *piLine = iLine;
+	if (piCol) *piCol = iCol;
+
+	return pDif;
+}
 
 void CalculateSizeAndAlign(CIRBuilder * pBuild, LLVMOpaqueType * pLtype, u64 * pCBitSize, u64 *pCBitAlign)
 {
@@ -528,7 +559,17 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
     case TINK_Pointer:
 		{
 			auto pTinptr = PTinRtiCast<STypeInfoPointer *>(pTin);
-			CreateDebugInfo(pWork, pBuild, pStnodRef, pTinptr->m_pTinPointedTo);
+
+			auto pTinPointedTo = pTinptr->m_pTinPointedTo;
+			if (pTinPointedTo->m_tink == TINK_Void)
+			{
+				// llvm doesn't support void pointers so we treat them as s8 pointers instead
+				pTinPointedTo->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, "void", 8, 8, llvm::dwarf::DW_ATE_signed);
+			}
+			else
+			{
+				CreateDebugInfo(pWork, pBuild, pStnodRef, pTinPointedTo);
+			}
 
 			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
 			u64 cBitAlign = cBitSize;
@@ -549,9 +590,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 				apLvalParam[ipTin] = pTin->m_pLvalDIType;
 			}
 
-			SDIFile * pDif = PDifEnsure(pWork, pBuild, pTinproc->m_pStnodDefinition->m_lexloc.m_strFilename);
-
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateFunctionType(pDib, pDif->m_pLvalFile, apLvalParam, cpTinParam);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateFunctionType(pDib, apLvalParam, cpTinParam);
 
 		} break;
 	case TINK_Array:
@@ -699,11 +738,52 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			pTin->m_pLvalDIType = pLvalDicomp;
 
 		} break;
+	case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTin;
+			auto pStnodDefinition = pTinenum->m_tinstructProduced.m_pStnodStruct;
+
+			SDIFile * pDif = PDifEnsure(pWork, pBuild, pStnodDefinition->m_lexloc.m_strFilename);
+
+			// BB - This will not work for nested structs (nested in methods or structs)
+			auto pLvalScope = pDif->m_pLvalFile;
+
+			s32 iLine, iCol;
+			CalculateLinePosition(pWork, &pStnodDefinition->m_lexloc, &iLine, &iCol);
+
+			CreateDebugInfo(pWork, pBuild, pStnodDefinition, pTinenum->m_pTinLoose);
+
+			size_t cTinecon  = (int)pTinenum->m_aryTinecon.C();
+			auto apLvalConstant = (LLVMOpaqueValue **)(alloca(sizeof(LLVMOpaqueValue *) * cTinecon));
+
+			for (size_t iTinecon = 0; iTinecon < cTinecon; ++iTinecon)
+			{
+				auto pTinecon = &pTinenum->m_aryTinecon[iTinecon];
+				s64 nValue = pTinecon->m_bintValue.S64Coerce();
+
+				apLvalConstant[iTinecon] = LLVMDIBuilderCreateEnumerator(pDib, pTinecon->m_strName.PChz(), nValue);
+			}
+
+			
+			u64 cBitSize, cBitAlign;
+			auto pLtypeLoose = PLtypeFromPTin(pTinenum->m_pTinLoose);
+			CalculateSizeAndAlign(pBuild, pLtypeLoose, &cBitSize, &cBitAlign);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateEnumerationType(
+								    pDib, 
+									pLvalScope, 
+									pTinenum->m_strName.PChz(), 
+									pDif->m_pLvalFile,
+								    iLine,
+									cBitSize,
+									cBitAlign,
+								    apLvalConstant, 
+									cTinecon,
+									pTinenum->m_pTinLoose->m_pLvalDIType);
+		} break;
 	case TINK_Literal:
 	case TINK_Void:
 	case TINK_String:
 		break;
-	case TINK_Enum:
 	default: EWC_ASSERT(false, "unhandled type info kind in debug info");
 	}
 }
@@ -1229,7 +1309,7 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			{
 				auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
 
-				auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, pTinary->m_c);
+				auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, (size_t)pTinary->m_c);
 
 				auto pLvalZero = PLvalZeroInType(pBuild, pTinary->m_pTin);
 				EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
@@ -1411,7 +1491,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 			if (!pStnodList || !EWC_FVERIFY(pStnodList->CStnodChild() == pTinlit->m_c, "missing values for array literal"))
 				return nullptr;
 
-			size_t cB = sizeof(LLVMOpaqueValue *) * pTinlit->m_c;
+			size_t cB = sizeof(LLVMOpaqueValue *) * (size_t)pTinlit->m_c;
 			auto apLval = (LLVMOpaqueValue **)(alloca(cB));
 
 			for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
@@ -1703,7 +1783,7 @@ static inline LLVMOpaqueValue * PLvalConstInitializer(CIRBuilder * pBuild, SType
 			{
 				auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
 
-				size_t cB = sizeof(LLVMOpaqueValue *) * pTinary->m_c;
+				size_t cB = sizeof(LLVMOpaqueValue *) * (size_t)pTinary->m_c;
 				auto apLval = (LLVMOpaqueValue **)(alloca(cB));
 
 				auto pLvalInit = PLvalConstInitializer(pBuild, pTinary->m_pTin);
@@ -2347,10 +2427,38 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 				return nullptr;
 
-			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 			auto * pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, pStnod->m_pSym->m_strName.PChz());
 			pStnod->m_pSym->m_pVal = pInstAlloca;
+
+			s32 iLine;
+			s32 iCol;
+			auto pDif = PDifEmitLocation(pWork, pBuild, pStnod->m_lexloc, &iLine, &iCol);
+
+			LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
+
+			// BB - need a faster way to do this than recalculating EVERY time!
+
+			CreateDebugInfo(pWork, pBuild, pStnod, pStnod->m_pTin);
 			
+			auto pLvalDIVariable = LLVMDIBuilderCreateAutoVariable(
+									pBuild->m_pDib,
+									pLvalScope, 
+									pStnod->m_pSym->m_strName.PChz(),
+									pDif->m_pLvalFile,
+									iLine,
+									pStnod->m_pTin->m_pLvalDIType,
+									true,
+									0);
+
+			(void) LLVMDIBuilderInsertDeclare(
+					pBuild->m_pDib,
+					pInstAlloca->m_pLval,
+					pLvalDIVariable,
+					pLvalScope,
+					iLine, 
+					iCol, 
+					pBuild->m_pBlockCur->m_pLblock);
+
 			// need to generate code for local var, just running init, leg for now.
 			if (pStdecl->m_iStnodInit >= 0)
 			{
@@ -2561,7 +2669,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return nullptr;
 
 			auto pLvalFunction = pProc->m_pLvalFunction;
-			int cStnodArgs = pStnod->CStnodChild() - 1; // don't count the identifier
+			size_t cStnodArgs = pStnod->CStnodChild() - 1; // don't count the identifier
 
 			auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
 			if (LLVMCountParams(pLvalFunction) != cStnodArgs)
@@ -2573,7 +2681,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 
 			CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc);
-			for (int iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
+			for (size_t iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
 				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodChild + 1);
 				STypeInfo * pTinParam = pStnodArg->m_pTin;
@@ -3244,6 +3352,8 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		LLVMValueRef * appLvalParams = (LLVMValueRef*)pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, cpLvalParams);
 		LLVMGetParams(pProc->m_pLvalFunction, appLvalParams);
 		
+		SDIFile * pDif = PDifEnsure(pWork, pBuild, pStnod->m_lexloc.m_strFilename);
+
 		LLVMValueRef * ppLvalParam = appLvalParams;
 		for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
 		{
@@ -3252,6 +3362,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 				continue;
 
 			EWC_ASSERT((ppLvalParam - appLvalParams) < cpLvalParams, "parameter count mismatch");
+
 
 			if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 			{
@@ -3268,6 +3379,34 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 					pStnodParam->m_pSym->m_pVal = pInstAlloca;
 
 					(void)pBuild->PInstCreateStore(pStnodParam->m_pSym->m_pVal, pArg);
+
+					s32 iLine;
+					s32 iCol;
+					CalculateLinePosition(pWork, &pStnodParam->m_lexloc, &iLine, &iCol);
+
+					// BB - need a faster way to do this than recalculating EVERY time!
+
+					CreateDebugInfo(pWork, pBuild, pStnod, pStnodParam->m_pTin);
+					
+					auto pLvalDIVariable = LLVMDIBuilderCreateParameterVariable(
+											pBuild->m_pDib,
+											pProc->m_pLvalDIFunction, 
+											pStnodParam->m_pSym->m_strName.PChz(),
+											ipStnodParam + 1,
+											pDif->m_pLvalFile,
+											iLine,
+											pStnodParam->m_pTin->m_pLvalDIType,
+											true,
+											0);
+
+					(void) LLVMDIBuilderInsertDeclare(
+							pBuild->m_pDib,
+							pInstAlloca->m_pLval,
+							pLvalDIVariable,
+							pProc->m_pLvalDIFunction,
+							iLine, 
+							iCol, 
+							pBuild->m_pBlockCur->m_pLblock);
 				}
 			}
 			++ppLvalParam;
@@ -3330,18 +3469,17 @@ void CodeGenEntryPoint(
 
 			s32 iLineBody, iColBody;
 			CalculateLinePosition(pWork, &pStnodBody->m_lexloc, &iLineBody, &iColBody);
-			auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PChz());
 
-			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, pDif->m_pLvalFile, nullptr, 0);
+			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0);
 
 			pProc->m_pLvalDIFunction = PLvalCreateDebugFunction(
-											pWork,
-											pBuild,
-											aCh,
-											pStnod,
-											pStnodBody,
-											pLvalDIFunctionType,
-											pProc->m_pLvalFunction);
+										pWork,
+										pBuild,
+										aCh,
+										pStnod,
+										pStnodBody,
+										pLvalDIFunctionType,
+										pProc->m_pLvalFunction);
 		}
 		else
 		{
@@ -3650,7 +3788,12 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 
 		if (pWork->m_pErrman->m_cError == 0)
 		{
-			printf("Code Generation:\n");
+
+#if EWC_X64
+			printf("Code Generation (x64):\n");
+#else
+			printf("Code Generation (x86):\n");
+#endif
 			CIRBuilder build(pWork->m_pAlloc, pChzFilenameIn);
 			
 			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);

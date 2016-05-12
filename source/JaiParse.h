@@ -217,6 +217,7 @@ enum ENUMIMP	// implicit enum members (added as STNodes during parse)
 	ENUMIMP_Max,
 	ENUMIMP_Min = 0,
 	ENUMIMP_Nil = -1,
+	ENUMIMP_CConstant = (ENUMIMP_MaxConstant + 1) - ENUMIMP_NilConstant
 };
 
 const char * PChzFromEnumimp(ENUMIMP enumimp);

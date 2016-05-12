@@ -203,7 +203,7 @@ int main(int cpChzArg, const char * apChzArg[])
 					"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib",
 					"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x86",
 				};
-				static const char * s_pChzOptions = "/subsystem:console /nologo";
+				static const char * s_pChzOptions = "/subsystem:console /nologo /NODEFAULTLIB:MSVCRT.lib ";
 			#endif
 
 			const char * s_pChzPath = "c:/Code/jailang/jaiSource";

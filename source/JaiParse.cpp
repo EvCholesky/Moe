@@ -1543,7 +1543,16 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
 				int cStnodMember = cStnodChild; // cStnodArray;
 
-				STypeInfoEnum * pTinenum = EWC_NEW(pParctx->m_pAlloc, STypeInfoEnum) STypeInfoEnum(strIdent.PChz());
+
+				int cConstant = cStnodChild - (ENUMIMP_Max - ENUMIMP_Min) + ENUMIMP_CConstant;
+				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant)) + 
+								cConstant * sizeof(STypeInfoEnumConstant);
+				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
+
+				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent.PChz());
+				auto aTinecon = (STypeInfoEnumConstant *)PVAlign( pB + sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant));
+				pTinenum->m_aryTinecon.SetArray(aTinecon, 0, cConstant);
+
 				pTinenum->m_tinstructProduced.m_pStnodStruct = pStnodEnum;
 
 				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];

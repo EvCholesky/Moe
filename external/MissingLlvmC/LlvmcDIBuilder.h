@@ -55,7 +55,7 @@ LLVMValueRef LLVMCreateDebugLocation(int nLine, int nCol, LLVMValueRef pLvalScop
 // Types
 
 LLVMValueRef LLVMDIBuilderCreateNullPtr(LLVMDIBuilderRef pDib);
-LLVMValueRef LLVMDIBuilderCreateEnumerator(LLVMDIBuilderRef pDib, const char * pChzName, uint64_t nValue);
+LLVMValueRef LLVMDIBuilderCreateEnumerator(LLVMDIBuilderRef pDib, const char * pChzName, int64_t nValue);
 LLVMValueRef LLVMDIBuilderCreateBasicType(
 				LLVMDIBuilderRef pDib, 
 				const char * pChzName,
@@ -174,21 +174,38 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 				bool fIsLocalToUnit,
 				LLVMValueRef pLvalValue);
 
-LLVMValueRef LLVMDIBuilderCreateLocalVariable(
+LLVMValueRef LLVMDIBuilderCreateAutoVariable(
 				LLVMDIBuilderRef pDib,
-			    unsigned nDwarTag,
 				LLVMValueRef pLvalScope, 
 				const char * pChzName,
 				LLVMValueRef pLvalFile,
 				unsigned nLine,
 				LLVMValueRef pLvalType,
 				bool fIsPreservedWhenOptimized,
-			    unsigned nFlags,
-				unsigned iArgument);
+			    unsigned nFlags);
+
+LLVMValueRef LLVMDIBuilderCreateParameterVariable(
+				LLVMDIBuilderRef pDib,
+				LLVMValueRef pLvalScope, 
+				const char * pChzName,
+				unsigned iArgument,
+				LLVMValueRef pLvalFile,
+				unsigned nLine,
+				LLVMValueRef pLvalType,
+				bool fIsPreservedWhenOptimized,
+			    unsigned nFlags);
+
+LLVMValueRef LLVMDIBuilderInsertDeclare(
+				LLVMDIBuilderRef pDib,
+				LLVMValueRef pLvalStorage,
+				LLVMValueRef pLvalDIVariable,
+				LLVMValueRef pLvalScope,
+				unsigned iLine, 
+				unsigned iColumn, 
+				LLVMBasicBlockRef pLblock);
 
 LLVMValueRef LLVMDIBuilderCreateFunctionType(
 				LLVMDIBuilderRef pDib,
-				LLVMValueRef pLvalFile,
 				LLVMValueRef * ppLvalParameters,
 				unsigned cParameters);
 

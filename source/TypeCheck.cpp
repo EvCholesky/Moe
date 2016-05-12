@@ -2106,6 +2106,16 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 						}
 
+						auto pTinecon = pTinenum->m_aryTinecon.AppendNew();
+						pTinecon->m_bintValue = BintFromStval(pStnodMember->m_pStval);
+
+						CSTDecl * pStdecl = pStnodMember->m_pStdecl;
+						CSTNode * pStnodIdent = (pStdecl) ? pStnodMember->PStnodChildSafe(pStdecl->m_iStnodIdentifier) : nullptr;
+						if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStident, "Enum constant missing name"))
+						{
+							pTinecon->m_strName = pStnodIdent->m_pStident->m_str;
+						}
+
 						if (pStnodMember->m_grfstnod.FIsSet(FSTNOD_ImplicitMember))
 							continue;
 

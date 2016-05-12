@@ -203,6 +203,12 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
 
+struct STypeInfoEnumConstant // tag = tinecon
+{
+	EWC::CString		m_strName;
+	SBigInt				m_bintValue;
+};
+
 struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 {
 	static const TINK s_tink = TINK_Enum;
@@ -221,6 +227,9 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 	SBigInt				m_bintMax;
 	SBigInt				m_bintLatest;
 	STypeInfoStruct 	m_tinstructProduced;
+
+	EWC::CAry<STypeInfoEnumConstant>	
+						m_aryTinecon;
 };
 
 enum ARYK

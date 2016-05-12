@@ -25,7 +25,6 @@ Currently supports:
 
 Coming soon:
   * Debug info
-    - enums
     - typedefs
     - loops
     - handle nested scopes
