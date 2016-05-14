@@ -98,6 +98,9 @@ public:
 						,m_pDif(nullptr)
 						,m_filek(filek)
 						,m_files(FILES_Requested)
+						,m_dBWarm(0)
+						,m_iLineWarm(0)
+						,m_iColumnWarm(0)
 							{ ; }
 
 		EWC::CString	m_strFilename;	// full filename;
@@ -105,6 +108,11 @@ public:
 		SDIFile *		m_pDif;			
 		FILEK			m_filek;
 		FILES			m_files;
+
+		s32				m_dBWarm;		// byte delta for warm start (previous lookup)
+		s32				m_iLineWarm;
+		s32				m_iColumnWarm;
+
 	};
 
 							CWorkspace(EWC::CAlloc * pAlloc, SErrorManager * pErrman);

@@ -431,9 +431,7 @@ void PushLexicalBlock(CWorkspace * pWork, CIRBuilder * pBuild, const SLexerLocat
 
 	LLVMOpaqueValue * pLvalScopeParent = PLvalFromDIFile(pBuild, pDif);
 
-	// BB - need a faster way to do this than recalculating EVERY time!
-	s32 iLine;
-	s32 iCol;
+	s32 iLine, iCol;
 	CalculateLinePosition(pWork, &lexloc, &iLine, &iCol);
 
 	LLVMValueRef pLvalScope = LLVMDIBuilderCreateLexicalBlock(pBuild->m_pDib, pLvalScopeParent, pDif->m_pLvalFile, iLine, iCol);
@@ -452,9 +450,7 @@ void EmitLocation(CWorkspace * pWork, CIRBuilder * pBuild, const SLexerLocation 
 
 	LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
 
-	// BB - need a faster way to do this than recalculating EVERY time!
-	s32 iLine;
-	s32 iCol;
+	s32 iLine, iCol;
 	CalculateLinePosition(pWork, &lexloc, &iLine, &iCol);
 
 	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pLvalScope);
@@ -472,9 +468,7 @@ SDIFile * PDifEmitLocation(
 
 	LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
 
-	// BB - need a faster way to do this than recalculating EVERY time!
-	s32 iLine;
-	s32 iCol;
+	s32 iLine, iCol;
 	CalculateLinePosition(pWork, &lexloc, &iLine, &iCol);
 
 	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pLvalScope);
@@ -501,7 +495,6 @@ static inline LLVMOpaqueValue * PLvalCreateDebugFunction(
 	LLVMOpaqueValue * pLvalDIFunctionType,
 	LLVMOpaqueValue * pLvalFunction)
 {
-	// BB - need a faster way to do this than recalculating EVERY time!
 	s32 iLine, iCol;
 	CalculateLinePosition(pWork, &pStnodFunction->m_lexloc, &iLine, &iCol);
 
@@ -2430,13 +2423,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			auto * pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, pStnod->m_pSym->m_strName.PChz());
 			pStnod->m_pSym->m_pVal = pInstAlloca;
 
-			s32 iLine;
-			s32 iCol;
+			s32 iLine, iCol;
 			auto pDif = PDifEmitLocation(pWork, pBuild, pStnod->m_lexloc, &iLine, &iCol);
 
 			LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
-
-			// BB - need a faster way to do this than recalculating EVERY time!
 
 			CreateDebugInfo(pWork, pBuild, pStnod, pStnod->m_pTin);
 			
@@ -3322,9 +3312,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 											pTinproc->m_pLvalDIType,
 											pProc->m_pLvalFunction);
 
-			// BB - need a faster way to do this than recalculating EVERY time!
-			s32 iLine;
-			s32 iCol;
+			s32 iLine, iCol;
 			CalculateLinePosition(pWork, &pStnodBody->m_lexloc, &iLine, &iCol);
 
 			LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pProc->m_pLvalDIFunction);
@@ -3383,8 +3371,6 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 					s32 iLine;
 					s32 iCol;
 					CalculateLinePosition(pWork, &pStnodParam->m_lexloc, &iLine, &iCol);
-
-					// BB - need a faster way to do this than recalculating EVERY time!
 
 					CreateDebugInfo(pWork, pBuild, pStnod, pStnodParam->m_pTin);
 					

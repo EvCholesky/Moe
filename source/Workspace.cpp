@@ -89,29 +89,21 @@ void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * 
 	EmitError(pWork->m_pErrman, pLexloc, pChz, ap);
 }
 
-void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCol)
+inline void CalculateLinePositionRaw(const char * pChBegin, s32 dBLoc, s32 * piLine, s32 * piCol)
 {
-	auto pFile = pWork->PFileLookup(pLexloc->m_strFilename.Hv(), CWorkspace::FILEK_Source);
-	if (!pFile)
-	{
-		*piLine = -1;
-		*piCol = -1;
-		return;
-	}
-
-	int iLine = 1;
+	int iLine = 0;
 	int iCol = 0;
-	const char *pChBegin = pFile->m_pChzFileBody;
+
 	for (const char * pCh = pChBegin; *pCh != '\0'; ++pCh)
 	{
 		s32 dB = s32(pCh - pChBegin);
-		if (dB >= pLexloc->m_dB)
+		if (dB >= dBLoc)
 			break;
 
 		if (*pCh == '\n')
 		{
 			++iLine;
-			iCol = 1;
+			iCol = 0;
 		}
 		else if (*pCh == '\t')
 		{
@@ -124,6 +116,46 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 	}
 	*piLine = iLine;
 	*piCol = iCol;
+}
+
+void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCol)
+{
+	auto pFile = pWork->PFileLookup(pLexloc->m_strFilename.Hv(), CWorkspace::FILEK_Source);
+	if (!pFile)
+	{
+		*piLine = -1;
+		*piCol = -1;
+		return;
+	}
+
+	const char * pChBegin = pFile->m_pChzFileBody;
+	int iLine;
+	int iCol;
+	auto dBWarm = pFile->m_dBWarm;
+	if (pLexloc->m_dB < dBWarm)
+	{
+		CalculateLinePositionRaw(pChBegin, pLexloc->m_dB, &iLine, &iCol);
+	}
+	else
+	{
+		CalculateLinePositionRaw(pChBegin + dBWarm, pLexloc->m_dB - dBWarm, &iLine, &iCol);
+		iCol += (iLine == 0) ? pFile->m_iColumnWarm : 0;	// columns reset on line increments
+		iLine += pFile->m_iLineWarm;
+	}
+
+	/* // Debug Warm Start
+	s32 iLineOld = 0;
+	s32 iColumnOld = 0;
+	CalculateLinePositionRaw(pChBegin, pLexloc->m_dB, &iLineOld, &iColumnOld);
+	EWC_ASSERT(iLine == iLineOld && iCol == iColumnOld, "bad warm start");
+	*/
+
+	pFile->m_dBWarm = pLexloc->m_dB;
+	pFile->m_iLineWarm = iLine;
+	pFile->m_iColumnWarm = iCol;
+
+	*piLine = iLine + 1;	// 1 relative
+	*piCol = iCol + 1;		// 1 relative
 }
 
 

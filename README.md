@@ -29,7 +29,6 @@ Coming soon:
     - loops
     - handle nested scopes
     - verify initializer functions 
-    - faster line lookup
   * Method overloading
   * Method pointers
   * break/continue to labels;
