@@ -21,12 +21,10 @@ Currently supports:
   * Enums
   * Short-circuiting logical operators
   * Explicit casts
-  * Debug Info - minimal first pass
+  * Debug Info - first pass
 
 Coming soon:
   * Debug info
-    - typedefs
-    - loops
     - handle nested scopes
     - verify initializer functions 
   * Method overloading

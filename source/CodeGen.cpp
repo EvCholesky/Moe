@@ -2593,6 +2593,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					if (pStnod->CStnodChild() < 2)
 						return nullptr;
 
+					EmitLocation(pWork, pBuild, pStnod->m_lexloc);
+
 					CIRProcedure * pProc = pBuild->m_pProcCur;
 
 					CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "wpred");
@@ -2615,7 +2617,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					pBuild->ActivateBlock(pBlockBody);
 					(void) PValGenerate(pWork, pBuild, pStnodWhile->PStnodChild(1), VALGENK_Instance);
 
-					EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 					(void) pBuild->PInstCreateBranch(pBlockPred);	
 
 
@@ -3070,9 +3071,31 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			return pValOp;
 		}
+	case PARK_Typedef:
+		{
+			auto pSym = pStnod->m_pSym;
+			if (!EWC_FVERIFY(pSym, "typedef symbol not resolved before codeGen"))
+				return  nullptr;
+
+			SDIFile * pDif = PDifEnsure(pWork, pBuild, pStnod->m_lexloc.m_strFilename);
+			LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
+
+			s32 iLine, iCol;
+			CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLine, &iCol);
+
+			CreateDebugInfo(pWork, pBuild, pStnod, pSym->m_pTin);
+
+			(void) LLVMDIBuilderCreateTypeDef(
+					pBuild->m_pDib,
+					pSym->m_pTin->m_pLvalDIType,
+					pSym->m_strName.PChz(),
+				    pDif->m_pLvalFile,
+					iLine,
+				    pLvalScope);
+
+		} break;
 	case PARK_StructDefinition:
 	case PARK_EnumDefinition:
-	case PARK_Typedef:
 	case PARK_Nop: 
 		break;
 	default:
