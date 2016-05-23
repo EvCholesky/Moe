@@ -22,17 +22,18 @@ Currently supports:
   * Short-circuiting logical operators
   * Explicit casts
   * Debug Info - first pass
+  * Proper handling of global variables (including default initialization)
 
 Coming soon:
+  * Method overloading
+  * Operator overloading
+  * Method pointers
   * Debug info
     - handle nested scopes
     - verify initializer functions 
-  * Method overloading
-  * Method pointers
   * break/continue to labels;
   * Dynamic arrays
   * Improved error handling and unit testing of error cases.
-  * Default initialization of global variables
   * For Loops.
 
 Further out:
@@ -45,7 +46,7 @@ Deviations from current JAI syntax:
   * type aliasing uses the typedef keyword to disambiguate constant values from type aliases. (ie 'IntAlias :: typedef s32;')
   * Implicit enum constants are nil(-1), min, last and max rather than lowest_value and highest_value.
 
-Q. Why are you deviating from the language at all? Aren't these all small changes that just amout to bikeshedding?
+Q. Why are you deviating from the language at all? Aren't these all small changes that just amount to bikeshedding?
 
 A. Yes and no, I've gone back and forth on this a bit and feel comfortable deviating from Jon's design whenever I'm convinced that it's an improvement. It seems likely that the best shot for a new language comes from several different takes on the same ideas, than one monolithic language dictated from a single source.
 

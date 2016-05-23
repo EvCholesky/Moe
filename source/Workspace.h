@@ -61,6 +61,12 @@ enum OPTLEVEL
 	OPTLEVEL_Release,
 };
 
+enum GLOBMOD
+{
+	GLOBMOD_UnitTest,	// Global statements are placed in an implicit method for unit testing convenience.
+	GLOBMOD_Normal,		// Globals declarations become global variables, global statements are errors.
+};
+
 
 
 class CWorkspace	// tag = work
@@ -133,6 +139,7 @@ public:
 	CParseContext *					m_pParctx;
 	EWC::CDynAry<SEntry> 			m_aryEntry;
 	EWC::CDynAry<int> 				m_aryiEntryChecked;		// order in which entry points were successfully type checked
+	EWC::CDynAry<CIRValue *>		m_arypValManaged;
 
 	EWC::CHash<HV, int>				m_hashHvIPFileSource;	// imported (and root) source files
 	EWC::CHash<HV, int>				m_hashHvIPFileLibrary;	// requested foreign library files
@@ -144,6 +151,7 @@ public:
 	SErrorManager *					m_pErrman;
 	size_t							m_cbFreePrev;
 	OPTLEVEL						m_optlevel;
+	GLOBMOD							m_globmod;
 };
 
 void BeginWorkspace(CWorkspace * pWork);

@@ -61,6 +61,7 @@ enum VALK	// VALue Kind
 	VALK_ProcedureDefinition,
 
 	VALK_Instruction,
+	VALK_Global,
 	/*
 	VALK_TerminatorInst,
 	VALK_BinaryOpInst,
@@ -215,6 +216,15 @@ public:
 };
 
 
+
+class CIRGlobal : public CIRValue // tag = glob
+{
+public:
+						CIRGlobal()
+						:CIRValue(VALK_Global)
+						{ ; }
+};
+
 struct SInsertPoint		// tag = inspt
 {
 						SInsertPoint()
@@ -236,7 +246,6 @@ public:
 						,m_pLvalFunction(nullptr)
 						,m_pBlockEntry(nullptr)
 						,m_arypBlockManaged(pAlloc)
-						,m_arypValManaged(pAlloc)
 							{ ; }
 
 						~CIRProcedure();
@@ -248,8 +257,6 @@ public:
 
 	EWC::CDynAry<CIRBasicBlock *>
 						m_arypBlockManaged;
-	EWC::CDynAry<CIRValue *>
-						m_arypValManaged;
 };
 
 #define NCMPPRED_LIST \
@@ -301,7 +308,7 @@ enum NCMPPRED
 class CIRBuilder		// tag = build
 {
 public:
-						CIRBuilder(EWC::CAlloc * pAlloc, const char * pChzFilename);
+						CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypValManaged, const char * pChzFilename);
 						~CIRBuilder();
 	
 	void				PrintDump();
@@ -328,31 +335,33 @@ public:
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateCast(IROP irop, CIRValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
 
-	CIRInstruction *	PInstFromSymbol(SSymbol * pSym);
+	CIRValue *			PValFromSymbol(SSymbol * pSym);
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
 
-	CIRBuilderErrorContext *
-							m_pBerrctx;
+	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
 
-	LLVMOpaqueModule *		m_pLmoduleCur;
-	LLVMOpaqueBuilder *		m_pLbuild;
+	CIRBuilderErrorContext *	m_pBerrctx;
 
-	LLVMOpaqueTargetData *	m_pTargd;
+	LLVMOpaqueModule *			m_pLmoduleCur;
+	LLVMOpaqueBuilder *			m_pLbuild;
+
+	LLVMOpaqueTargetData *		m_pTargd;
 
 	// Debug info
-	LLVMOpaqueDIBuilder *	m_pDib;				// Debug info builder
-	unsigned				m_nRuntimeLanguage;
-	LLVMOpaqueValue *		m_pLvalCompileUnit;
-	LLVMOpaqueValue *		m_pLvalScope;
-	LLVMOpaqueValue *		m_pLvalFile;
+	LLVMOpaqueDIBuilder *		m_pDib;				// Debug info builder
+	unsigned					m_nRuntimeLanguage;
+	LLVMOpaqueValue *			m_pLvalCompileUnit;
+	LLVMOpaqueValue *			m_pLvalScope;
+	LLVMOpaqueValue *			m_pLvalFile;
 
-	EWC::CAlloc *			m_pAlloc;
-	SInsertPoint			m_inspt;
+	EWC::CAlloc *				m_pAlloc;
+	SInsertPoint				m_inspt;
 
-	CIRProcedure *			m_pProcCur;
-	CIRBasicBlock *			m_pBlockCur;
+	CIRProcedure *				m_pProcCur;
+	CIRBasicBlock *				m_pBlockCur;
 
-	EWC::CHash<HV, u32>		m_hashHvNUnique;	// map for generating unique strings
+	EWC::CDynAry<CIRValue *> *	m_parypValManaged;
+	EWC::CHash<HV, u32>			m_hashHvNUnique;	// map for generating unique strings
 
 };
 

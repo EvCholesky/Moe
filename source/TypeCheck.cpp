@@ -691,7 +691,7 @@ STypeInfo *PTinPromoteVarArg(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymt
 			STypeInfoInteger * pTinint = (STypeInfoInteger*)pTinIn;
 			if (pTinint->m_cBit < 32)
 			{
-				return pSymtab->PTinBuiltin((pTinint->m_fIsSigned) ? "int" : "uint");
+				return pSymtab->PTinBuiltin((pTinint->m_fIsSigned) ? "s32" : "u32");
 			}
 			return pTinIn;
 		}

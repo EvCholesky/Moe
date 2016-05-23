@@ -164,6 +164,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_pParctx(nullptr)
 ,m_aryEntry(pAlloc)
 ,m_aryiEntryChecked(pAlloc) 
+,m_arypValManaged(pAlloc, 0)
 ,m_hashHvIPFileSource(pAlloc)
 ,m_hashHvIPFileLibrary(pAlloc)
 ,m_arypFile(pAlloc)
@@ -172,6 +173,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
 ,m_optlevel(OPTLEVEL_Debug)
+,m_globmod(GLOBMOD_Normal)
 {
 	m_pErrman->m_pWork = this;
 }
@@ -237,6 +239,8 @@ void BeginWorkspace(CWorkspace * pWork)
 
 	pWork->m_aryiEntryChecked.Clear();
 	pWork->m_aryEntry.Clear();
+
+	EWC_ASSERT(pWork->m_arypValManaged.C() == 0, "Unexpected managed values in workspace");
 
 	pWork->m_arypFile.Clear();
 	pWork->m_hashHvIPFileSource.Clear(0);
@@ -311,6 +315,14 @@ void EndWorkspace(CWorkspace * pWork)
 			pEntry->m_pProc = nullptr;
 		}
 	}
+
+	size_t cpVal = pWork->m_arypValManaged.C();
+	for (size_t ipVal = 0; ipVal < cpVal; ++ipVal)
+	{
+		pAlloc->EWC_DELETE(pWork->m_arypValManaged[ipVal]);
+	}
+	pWork->m_arypValManaged.Clear();
+
 	pWork->m_aryEntry.Clear();
 	pWork->m_aryiEntryChecked.Clear();
 	pWork->m_hashHvIPFileSource.Clear(0);
@@ -336,7 +348,7 @@ void EndWorkspace(CWorkspace * pWork)
 	size_t cbFreePost = pAlloc->CB();
 	if (pWork->m_cbFreePrev != cbFreePost)
 	{
-		printf("\nWARNING: failed to free all bytes during compilation.\n");
+		printf("\nWARNING: failed to free all bytes during compilation. (%d -> %d)\n", pWork->m_cbFreePrev, cbFreePost);
 		printf("----------------------------------------------------------------------\n");
 		pAlloc->PrintAllocations();
 	}

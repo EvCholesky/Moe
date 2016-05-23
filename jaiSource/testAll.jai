@@ -4,8 +4,8 @@ TestOperators :: ()
 {
 	printf("\nOperators:\n");
 
-	nPre : int;
-	nPost : int;
+	nPre : s32;
+	nPost : s32;
 
 	while nPre < 5
 	{
@@ -18,7 +18,7 @@ TestOperators :: ()
 	printf("6 | 9 = %d, 6 & 2 = %d\n", 6 | 9, 6 & 2);
 
 	n64 := 64;
-	printf("64>>2=%d, 64<<2=%d\n", n64>>2, n64<<2);
+	printf("64>>2=%lld, 64<<2=%lld\n", n64>>2, n64<<2);
 }
 
 TestPointers :: ()
@@ -28,16 +28,16 @@ TestPointers :: ()
 	n : s64 = 456;
 	pN := &n;
 	ppN := &pN;
-	printf("@pN = %d, n = %d\n",@pN, n);
+	printf("@pN = %lld, n = %lld\n", @pN, n);
 
 	n = 123;
-	printf("@pN = %d, n = %d\n",@pN, n);
+	printf("@pN = %lld, n = %lld\n", @pN, n);
 
 	@pN = 600;
-	printf("@pN = %d, n = %d\n",@pN, n);
+	printf("@pN = %lld, n = %lld\n", @pN, n);
 
 	@@ppN = 890;
-	printf("@pN = %d, n = %d\n",@pN, n);
+	printf("@pN = %lld, n = %lld\n", @pN, n);
 
 	pB : & u8 = null; 
 	fIsNull := (pB == null);
@@ -176,7 +176,7 @@ TestInitializers :: ()
 	init : SInit;
 
 	// perfect test case for nested function!
-	iInit := 0;
+	iInit : s32= 0;
 	printf("initc.m_n = %d, initc.m_g = %f, initc.m_pInit=%p\n", initc.m_n, initc.m_g, initc.m_pInit);
 	while iInit < cNest
 	{
@@ -215,7 +215,7 @@ TestStructures :: ()
 
 	root.m_child.m_n = 1234;
 
-	printf("%d = %d", root.m_child.m_n, root.m_pRootSelf.m_pRootSelf.m_child.m_pChildSelf.m_pChildSelf.m_n);
+	printf("%d = %d\n", root.m_child.m_n, root.m_pRootSelf.m_pRootSelf.m_child.m_pChildSelf.m_pChildSelf.m_n);
 
 
 	SOuter :: struct
@@ -235,7 +235,7 @@ TestStructures :: ()
 	iNest := 0;
 	while iNest < SOuter.SNested.NestedCount
 	{
-		printf("aNest[%d] = %d\n", iNest, aNest[iNest].m_nNested);
+		printf("aNest[%lld] = %d\n", iNest, aNest[iNest].m_nNested);
 		++iNest;
 	}
 
@@ -254,7 +254,7 @@ TestStructures :: ()
 	shallowSrc.m_aN[1] = 555;
 	shallowSrc.m_outer.m_n = 127;
 
-	printf("ShallowSrc = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
+	printf("ShallowSrc = %d(true), %lld(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
 		shallowSrc.m_f,
 		shallowSrc.m_n,
 		shallowSrc.m_aN[0],
@@ -264,7 +264,7 @@ TestStructures :: ()
 	shallowDst : SShallowCopy;
 	shallowDst = shallowSrc;
 
-	printf("ShallowDst = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
+	printf("ShallowDst = %d(true), %lld(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
 		shallowDst.m_f,
 		shallowDst.m_n,
 		shallowDst.m_aN[0],
@@ -457,18 +457,44 @@ TestCasting :: ()
 	foo.m_b = 5678;
 
 	pN := cast(&int) &foo;
-	printf("%d(1234), %d(5678)\n", pN[0], pN[1]);
+	printf("%lld(1234), %lld(5678)\n", pN[0], pN[1]);
 
-	printf("%d(1234), %d(5678)\n", (cast (&SFoo)pN).m_a,  (cast (&SFoo)pN).m_b);	
+	printf("%lld(1234), %lld(5678)\n", (cast (&SFoo)pN).m_a,  (cast (&SFoo)pN).m_b);	
 
 	pFoo := cast(&SFoo) pN;
-	printf("%d(1234), %d(5678)\n", pFoo.m_a, pFoo.m_b);
+	printf("%lld(1234), %lld(5678)\n", pFoo.m_a, pFoo.m_b);
 
 }
 
+TestGlobals :: ()
+{
+	printf("\nGlobal initialization:\n");
+	printf("g_n: %d (15)\n",g_n);
+
+	printf("g_aN: %d, %d, %d (2, 4, 5)\n", g_aN[0], g_aN[1], g_aN[2]);
+
+	printf("g_glob = {%d, %d, %lld} ({2, 0, 456})\n", g_glob.m_n, g_glob.m_nUninit, g_glob.m_n2);
+	printf("g_aGlob[1] = {%d, %d, %lld} ({2, 0, 456})\n", g_aGlob[1].m_n, g_aGlob[1].m_nUninit, g_aGlob[1].m_n2);
+	printf("g_aGlob[2] = {%d, %d, %lld} ({2, 0, 456})\n", g_aGlob[2].m_n, g_aGlob[2].m_nUninit, g_aGlob[2].m_n2);
+}
+
+g_n : s32 =15;
+g_aN := {:s32: 2, 4, 5}; // array globals
+
+SGlobal :: struct
+{
+	m_n : s32 = 2;	
+	m_nUninit : s32 = ---;
+	m_n2 := 456;
+}
+
+g_glob : SGlobal; // struct globals
+
+g_aGlob : [4] SGlobal; // array of struct globals
 
 main :: () -> int 
 {
+
 	TestOperators();
 	TestPointers();
 	TestIfElse();
@@ -480,6 +506,7 @@ main :: () -> int
 	TestEnums();
 	TestArrays();
 	TestCasting();
+	TestGlobals();
 
 	return 1;
 }
@@ -493,7 +520,7 @@ SLater :: struct
 
 	// ArrayFail :: typedef [Four] IntAlias; // test this!
 
-	MEMB :: enum
+	MEMB ::	 enum
 	{
 		One : 1,
 		Two,
