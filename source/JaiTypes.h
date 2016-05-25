@@ -119,12 +119,14 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 
 						STypeInfoProcedure(const char * pChzName)
 						:STypeInfo(pChzName, s_tink)
+						,m_strMangled()
 						,m_pStnodDefinition(nullptr)
 						,m_arypTinParams()
 						,m_arypTinReturns()
 						,m_fHasVarArgs(false)
 							{ ; }
 
+	EWC::CString			m_strMangled;
 	CSTNode *				m_pStnodDefinition;
 	EWC::CAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;

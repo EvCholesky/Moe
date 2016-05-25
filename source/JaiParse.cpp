@@ -2453,7 +2453,7 @@ void CSTNode::ReplaceChild(CSTNode * pStnodOld, CSTNode * pStnodNew)
 }
 
 
-size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
+size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr)
 {
 	if (pTin == nullptr)
 	{
@@ -2476,7 +2476,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 			STypeInfoPointer * pTinptr = (STypeInfoPointer*)pTin;
 			char * pChWork = pCh;
 			pChWork += CChCopy(PChzFromJtok(JTOK_Reference), pChWork, pChEnd-pChWork);
-			pChWork += CChPrintTypeInfo(pTinptr->m_pTinPointedTo, park, pChWork, pChEnd);
+			pChWork += CChPrintTypeInfo(pTinptr->m_pTinPointedTo, park, pChWork, pChEnd, grfdbgstr);
 			return pChWork - pCh;
 		}break;
 	case TINK_Array:
@@ -2497,7 +2497,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 				break;
 			}
 
-			pChWork += CChPrintTypeInfo(pTinary->m_pTin, park, pChWork, pChEnd);
+			pChWork += CChPrintTypeInfo(pTinary->m_pTin, park, pChWork, pChEnd, grfdbgstr);
 			return pChWork - pCh;
 		}break;
 
@@ -2512,9 +2512,37 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 		}
     case TINK_Procedure:
 		{
+			char * pChWork = pCh;
 			auto pTinproc = (STypeInfoProcedure *)pTin;
-			return CChFormat(pCh, pChEnd-pCh, "%s()", pTin->m_strName.PChz());
-		}break;
+			pChWork += CChFormat(pCh, pChEnd-pCh, "%s(", pTin->m_strName.PChz());
+
+			size_t cpTin = pTinproc->m_arypTinParams.C();
+			size_t cCommas = (pTinproc->m_fHasVarArgs) ? cpTin : cpTin - 1;
+			for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
+			{
+				pChWork += CChPrintTypeInfo(pTinproc->m_arypTinParams[ipTin], PARK_Nil, pChWork, pChEnd, grfdbgstr);
+
+				if (ipTin < cCommas)
+				{
+					pChWork += CChCopy(", ", pChWork, pChEnd - pChWork);
+				}
+			}
+
+			if (pTinproc->m_fHasVarArgs)
+			{
+				pChWork += CChCopy("..", pChWork, pChEnd - pChWork);
+			}
+
+			pChWork += CChCopy(") -> ", pChWork, pChEnd - pChWork);
+
+			cpTin = pTinproc->m_arypTinReturns.C();
+			for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
+			{
+				pChWork += CChPrintTypeInfo(pTinproc->m_arypTinReturns[ipTin], PARK_Nil, pChWork, pChEnd, grfdbgstr);
+			}
+
+			return pChWork - pCh;
+		};
     case TINK_Struct:
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTin;
@@ -2525,15 +2553,45 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd)
 			auto pTinstruct = (STypeInfoStruct *)pTin;
 			return CChFormat(pCh, pChEnd-pCh, "%s_enum", pTin->m_strName.PChz());
 		}break;
-	case TINK_Integer:		// fall through ...
-    case TINK_Float:		// fall through ...
+	case TINK_Integer:
+		{
+			if (!grfdbgstr.FIsSet(FDBGSTR_UseSizedNumerics))
+				return CChCopy(pTin->m_strName.PChz(), pCh, pChEnd - pCh); 
+
+			// print out the size resolved type (rather than any type aliases - ie. int)
+			char * pChWork = pCh;
+			auto pTinint = (STypeInfoInteger *)pTin;
+			char chSigned = (pTinint->m_fIsSigned) ? 's' : 'u';
+			switch(pTinint->m_cBit)
+			{
+			case 8:		pChWork += CChFormat(pCh, pChEnd-pCh, "%c8", chSigned);		break;
+			case 16:	pChWork += CChFormat(pCh, pChEnd-pCh, "%c16", chSigned);	break;
+			case 32:	pChWork += CChFormat(pCh, pChEnd-pCh, "%c32", chSigned);	break;
+			case 64:	pChWork += CChFormat(pCh, pChEnd-pCh, "%c64", chSigned);	break;
+			default: EWC_ASSERT(false, "unknown integer size");
+			}
+
+			return pChWork - pCh;
+		} break;
+    case TINK_Float:
+		{
+			if (!grfdbgstr.FIsSet(FDBGSTR_UseSizedNumerics))
+				return CChCopy(pTin->m_strName.PChz(), pCh, pChEnd - pCh); 
+
+			// print out the size resolved type (rather than any type aliases - ie. double)
+			char * pChWork = pCh;
+			auto pTinfloat = (STypeInfoFloat *)pTin;
+			pChWork += CChCopy((pTinfloat->m_cBit == 32) ? "f32" : "f64", pChWork, pChEnd - pChWork);
+
+			return pChWork - pCh;
+		} break;
     case TINK_Bool:			// fall through ...
     case TINK_String:		// fall through ...
     case TINK_Void:			// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
 	default:
-		return CChFormat(pCh, pChEnd-pCh, "%s", pTin->m_strName.PChz());
+		return CChCopy(pTin->m_strName.PChz(), pCh, pChEnd - pCh); 
 	}
 }
 
@@ -2615,7 +2673,7 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 		}
 		else
 		{
-			pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_park, pChWork, pChEnd);
+			pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_park, pChWork, pChEnd, grfdbgstr);
 		}
 		grfdbgstr.Clear(FDBGSTR_Type);
 	}

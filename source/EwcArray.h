@@ -95,6 +95,12 @@ public:
 							return &m_a[m_c-1];
 						return nullptr;
 					}
+	T 			Last()						
+					{ 
+						if (EWC_FVERIFY(m_c > 0, "using Last on empty CAry"))
+							return m_a[m_c-1];
+						return T();
+					}
 	const T *	PLast() const
 					{ 
 						if (EWC_FVERIFY(m_c > 0, "using PLast on empty CAry"))

@@ -255,12 +255,13 @@ EWC_DEFINE_GRF(GRFSTNOD, FSTNOD, u8);
 
 enum FDBGSTR // DeBuG STRing Flags
 {
-	FDBGSTR_Name        = 0x1,
-	FDBGSTR_Type        = 0x2,
-	FDBGSTR_LiteralSize = 0x4,
+	FDBGSTR_Name				= 0x1,
+	FDBGSTR_Type				= 0x2,
+	FDBGSTR_LiteralSize			= 0x4,
+	FDBGSTR_UseSizedNumerics	= 0x8, // resolve type aliasing for simple integers - should this be all type aliasing?
 
-	FDBGSTR_None        = 0x0,
-	FDBGSTR_All         = 0x7,
+	FDBGSTR_None				= 0x0,
+	FDBGSTR_All					= 0xF,
 };
 EWC_DEFINE_GRF(GRFDBGSTR, FDBGSTR, u32);
 
@@ -315,7 +316,7 @@ public:
 };
 
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
-size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd);
+size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr = FDBGSTR_None);
 void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
 
 inline bool FIsReservedWord(CSTNode * pStnod, RWORD rword)

@@ -52,11 +52,40 @@ struct SUnknownType // tag = untype
 	CDynAry<int>	m_aryiTcframDependent;		// id for frames dependent on this type
 };
 
+
+
+#define VALIDATE_NAME_MANGLING 1
+
+class CNameMangler // tag = mang
+{
+public:
+					CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax=1024);
+					~CNameMangler();
+
+	void			Resize(size_t cBStartingMax);
+	void			Append(const char * pChz, size_t cCh = 0);
+	void			AppendNumber(size_t n);
+	void			AppendName(const char * pChz);
+	void			AppendType(STypeInfo * pTin);
+
+	EWC::CString	StrMangleMethodName(STypeInfoProcedure * pTinproc);
+	STypeInfoProcedure * 
+					PTinprocDemangle(const EWC::CString & strName, CSymbolTable * pSymtab);
+
+	EWC::CAlloc *	m_pAlloc;
+	char *			m_aB;
+	size_t			m_cB;
+	size_t			m_cBMax;
+};
+
+
+
 struct STypeCheckWorkspace // tag = tcwork
 {
 					STypeCheckWorkspace(CAlloc * pAlloc, SErrorManager * pErrman, int cTcfram)
 					:m_pAlloc(pAlloc)
 					,m_pErrman(pErrman)
+					,m_mang(pAlloc)
 					,m_nIdNext(0)
 					,m_aryTcfram()
 					,m_hashPSymUntype(pAlloc)
@@ -77,6 +106,7 @@ struct STypeCheckWorkspace // tag = tcwork
 	CAlloc *								m_pAlloc;
 	SErrorManager *							m_pErrman;
 	int										m_nIdNext;
+	CNameMangler							m_mang;
 	CAry<STypeCheckFrame>					m_aryTcfram;
 	CHash<const SSymbol *, SUnknownType>	m_hashPSymUntype;
 
@@ -89,6 +119,358 @@ struct STypeCheckWorkspace // tag = tcwork
 
 void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
 
+CNameMangler::CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax)
+:m_pAlloc(pAlloc)
+,m_aB(nullptr)
+,m_cB(0)
+,m_cBMax(0)
+{
+	Resize(cBStartingMax);
+}
+
+CNameMangler::~CNameMangler()
+{
+	Resize(0);
+}
+
+void CNameMangler::Resize(size_t cBNew)
+{
+	char * aBNew = nullptr;
+	if (cBNew)
+	{
+		aBNew = (char *)m_pAlloc->EWC_ALLOC_TYPE_ARRAY(char, cBNew);
+
+		if (m_cBMax)
+		{
+			CChCopy(m_aB, aBNew, m_cBMax);
+		}
+	}
+
+	if (m_cBMax)
+	{
+		m_pAlloc->EWC_DELETE(m_aB);
+	}
+
+	m_aB = aBNew;
+	m_cBMax = cBNew;
+	m_cB = ewcMin(m_cB, cBNew);
+}
+
+void CNameMangler::Append(const char * pChz, size_t cCh)
+{
+	if (cCh < 1)
+	{
+		cCh = CCh(pChz);
+	}
+
+	while (m_cB + cCh >= m_cBMax)
+	{
+		Resize(m_cBMax * 2);
+	}
+
+	CChCopy(pChz, &m_aB[m_cB], m_cBMax - m_cB);
+
+	m_cB += cCh;
+}
+
+void CNameMangler::AppendNumber(size_t n)
+{
+	char aB[32];
+	size_t cCh = CChFormat(aB, EWC_DIM(aB), "%d", n);
+	Append(aB, cCh);
+}
+
+void CNameMangler::AppendName(const char * pChz)
+{
+	size_t cCh = CCh(pChz);
+	AppendNumber(cCh);
+	Append(pChz);
+}
+
+void CNameMangler::AppendType(STypeInfo * pTin)
+{
+	switch (pTin->m_tink)
+	{
+    case TINK_Integer:
+		{
+			// BB - doesn't respect typedefs, including int - will mangle just based on integer size
+			char aChz[4] = "Bxx";
+			auto pTinint = (STypeInfoInteger *)pTin;
+			aChz[1] = (pTinint->m_fIsSigned) ? 'i' : 'u';
+			switch (pTinint->m_cBit)
+			{
+			case 8:		aChz[2] = 'c';	break;	// char
+			case 16:	aChz[2] = 's';	break;	// short
+			case 32:	aChz[2] = 'w';	break;	// word
+			case 64:	aChz[2] = 'd';	break;	// double
+			}
+			Append(aChz);
+		} break;
+    case TINK_Float:
+		{
+			char aChz[3] = "Bx";
+			auto pTinfloat = (STypeInfoFloat *)pTin;
+			switch (pTinfloat->m_cBit)
+			{
+			case 32:	aChz[1] = 'g';	break;	// float
+			case 64:	aChz[1] = 'd';	break;	// double
+			}
+			Append(aChz);
+		} break;
+	case TINK_Bool:		Append("Bf");	break;
+	case TINK_String:	Append("Bs");	break;
+	case TINK_Void:		Append("Bv");	break;
+    case TINK_Pointer:
+		{
+			auto pTinptr = (STypeInfoPointer *)pTin;
+			Append("P");
+			AppendType(pTinptr->m_pTinPointedTo);
+		} break;
+    case TINK_Struct:	AppendName(pTin->m_strName.PChz());	break;
+    case TINK_Enum:		AppendName(pTin->m_strName.PChz()); break;
+    case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTin;
+			switch (pTinary->m_aryk)
+			{
+			case ARYK_Fixed:
+				{
+					Append("A");
+					AppendNumber((size_t)pTinary->m_c);
+					AppendType(pTinary->m_pTin);
+				} break;
+			case ARYK_Reference:
+				{
+					Append("AR");
+					AppendType(pTinary->m_pTin);
+				} break;
+			default: EWC_ASSERT(false, "unhandled array type");
+			}
+		} break;
+	default: 
+		EWC_ASSERT(false, "unexpected type encountered while name mangling a procedure");
+	}
+}
+
+static inline s64 NReadNumber(const char ** ppChz)
+{
+	const char * pChz = *ppChz;
+	if ((*pChz < '0') | (*pChz > '9'))
+		return -1;
+	
+	s64 n = 0;
+	while (1)
+	{
+		if ((*pChz>= '0') & (*pChz<= '9'))
+			n = n*10 + (*pChz- '0');
+		else
+			break;
+		++pChz;
+    }
+
+	*ppChz = pChz;
+	return n;
+}
+
+static inline EWC::CString StrReadName(const char ** ppChz)
+{
+	auto cCh = NReadNumber(ppChz);
+	if (cCh < 0)
+		return EWC::CString("");
+
+	const char * pChzName = *ppChz;
+	*ppChz = pChzName + cCh;
+	return EWC::CString(pChzName, (size_t)cCh);
+}
+
+
+STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
+{
+	int chFirst = **ppChz;
+	if (chFirst == 'B')	// built-in type
+	{
+		++(*ppChz);
+		char chBuiltIn = *(*ppChz)++;
+		switch(chBuiltIn)
+		{
+		case 'i':
+		case 'u':
+			{
+				char aCh[4];
+				aCh[0] = (chBuiltIn == 'i') ? 's' : 'u';
+				switch(*(*ppChz)++)
+				{
+					case 'c':	CChCopy("8", &aCh[1], 3);	break;
+					case 's':	CChCopy("16", &aCh[1], 3);	break;
+					case 'w':	CChCopy("32", &aCh[1], 3);	break;
+					case 'd':	CChCopy("64", &aCh[1], 3);	break;
+				}
+
+				return pSymtab->PTinBuiltin(aCh);
+			} 
+		case 'g':	return pSymtab->PTinBuiltin("f32");
+		case 'd':	return pSymtab->PTinBuiltin("f64");
+		case 'f':	return pSymtab->PTinBuiltin("bool");
+		case 's':	return pSymtab->PTinBuiltin("string");
+		case 'v':	return pSymtab->PTinBuiltin("void");
+		default: EWC_ASSERT(false, "unknown built-in type during de-mangling");
+		}
+	}
+	else if (chFirst == 'P') // Pointer
+	{
+		++(*ppChz);
+		auto pTinPointedTo = PTinReadType(ppChz, pSymtab);
+		if (!pTinPointedTo)
+			return nullptr;
+		return pSymtab->PTinptrGetReference(pTinPointedTo);
+	}
+	else if (chFirst == 'A') // Array
+	{
+		++(*ppChz);
+		STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+
+		if (**ppChz == 'R') // ARYK_Reference
+		{
+			++(*ppChz);
+			pTinary->m_aryk = ARYK_Reference;
+		}
+		else
+		{
+			pTinary->m_aryk = ARYK_Fixed;
+			pTinary->m_c = NReadNumber(ppChz);
+		}
+
+		pTinary->m_pTin = PTinReadType(ppChz, pSymtab);
+
+		if (pTinary->m_pTin == nullptr || pTinary->m_c < 0)
+		{
+			pSymtab->m_pAlloc->EWC_DELETE(pTinary);
+			return nullptr;
+		}
+		pSymtab->AddManagedTin(pTinary);
+		return pTinary;
+	}
+	else
+	{
+		++(*ppChz);
+		// BB - need to handle namespacing and nesting.
+
+		auto strName = StrReadName(ppChz);
+		SLexerLocation lexloc;
+		auto pSym = pSymtab->PSymLookup(strName, lexloc);
+		return (pSym) ? pSym->m_pTin : nullptr;
+	}
+
+	return nullptr;
+}
+
+CString	CNameMangler::StrMangleMethodName(STypeInfoProcedure * pTinproc)
+{
+	m_cB = 0;
+	Append("__F"); // function
+	AppendName(pTinproc->m_strName.PChz());
+
+	Append("_"); // arguments
+
+	if (pTinproc->m_fHasVarArgs)
+	{
+		Append("VA");
+	}
+
+	size_t ipTinMax = pTinproc->m_arypTinParams.C();
+	for (size_t ipTin = 0; ipTin < ipTinMax; ++ipTin)
+	{
+		auto pTin = pTinproc->m_arypTinParams[ipTin];
+		AppendType(pTin);
+	}
+
+	Append("_"); // return types
+	ipTinMax = pTinproc->m_arypTinReturns.C();
+	for (size_t ipTin = 0; ipTin < ipTinMax; ++ipTin)
+	{
+		auto pTin = pTinproc->m_arypTinReturns[ipTin];
+		AppendType(pTin);
+	}
+	return CString(m_aB, m_cB);
+}
+
+static inline bool FMatchString(const char * pChzRef, const char ** ppChz)
+{
+	auto pChzRefIt = pChzRef;
+	const char * pChzIt = *ppChz;
+	while (*pChzRefIt != '\0')
+	{
+		if (*pChzRefIt != *pChzIt)
+			return false;
+		++pChzRefIt;
+		++pChzIt;
+	}
+
+	*ppChz = pChzIt;
+	return true;
+}
+
+STypeInfoProcedure * PTinprocAlloc(EWC::CAlloc * pAlloc, size_t cParams, size_t cReturns, const char * pChzName)
+{
+	size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
+	cBAlloc = cBAlloc +	(cParams + cReturns) * sizeof(STypeInfo *);
+
+	u8 * pB = (u8 *)pAlloc->EWC_ALLOC(cBAlloc,8);
+	STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(pChzName);
+	STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
+
+	pTinproc->m_arypTinParams.SetArray(ppTin, 0, cParams);
+	pTinproc->m_arypTinReturns.SetArray(&ppTin[cParams], 0, cReturns);
+	return pTinproc;
+}
+
+STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSymbolTable * pSymtab)
+{
+	const char * pChz = strName.PChz();
+	if (!FMatchString("__F", &pChz))
+		return nullptr;
+
+	CString strProcName = StrReadName(&pChz);
+
+	if (!FMatchString("_", &pChz))
+		return nullptr;
+
+	bool fHasVarArgs = FMatchString("VA", &pChz);
+	EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc);
+	EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc);
+
+	while (!FMatchString("_", &pChz) && pChz != '\0')
+	{
+		arypTinParams.Append(PTinReadType(&pChz, pSymtab));
+		if (arypTinParams.Last() == nullptr)
+			return nullptr;
+	}
+
+	while (*pChz != '\0')
+	{
+		arypTinReturns.Append(PTinReadType(&pChz, pSymtab));
+		if (arypTinReturns.Last() == nullptr)
+			return nullptr;
+	}
+
+	auto pTinproc = PTinprocAlloc(pSymtab->m_pAlloc, arypTinParams.C(), arypTinReturns.C(), strProcName.PChz());
+	pSymtab->AddManagedTin(pTinproc);
+	pTinproc->m_fHasVarArgs = fHasVarArgs;
+
+	int cpTin = arypTinParams.C();
+	for (int ipTin = 0; ipTin < cpTin; ++ipTin)
+	{
+		pTinproc->m_arypTinParams.Append(arypTinParams[ipTin]);
+	}
+
+	cpTin = arypTinReturns.C();
+	for (int ipTin = 0; ipTin < cpTin; ++ipTin)
+	{
+		pTinproc->m_arypTinReturns.Append(arypTinReturns[ipTin]);
+	}
+
+	return pTinproc;
+}
 
 // by the time we get to type checking we've parsed the whole program, we should have a tree of symbol tables containing
 //	1. names of every global and struct nested types (but not sizing, const values, typedefs)
@@ -1652,6 +2034,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							PushTcsent(pTcfram, &pTcsentTop, pStnodReturn);
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+
 						}
 					}break;
 				case 2:
@@ -1690,6 +2073,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									EmitError(pTcwork, pStnod, "failed to parse return type");
 								}
 								pStnodReturn->m_pTin = pTinReturn;
+
+								pTinproc->m_arypTinReturns[0] = pTinReturn;
 							}
 							pStnod->m_strees = STREES_SignatureTypeChecked;
 
@@ -1773,6 +2158,23 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 						pStnod->m_pSym = pSymProc;
 						EWC_ASSERT(pStnod->m_pSym, "null symbol");
+
+						// compute name mangling
+						auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
+						pTinproc->m_strMangled = pTcwork->m_mang.StrMangleMethodName(pTinproc);
+#if VALIDATE_NAME_MANGLING
+						char aCh[1024];
+						CChPrintTypeInfo(pTinproc, PARK_Nil, aCh, EWC_PMAC(aCh), FDBGSTR_UseSizedNumerics);
+
+						STypeInfoProcedure * pTinprocDemangled = pTcwork->m_mang.PTinprocDemangle(pTinproc->m_strMangled, pTcsentTop->m_pSymtab);
+
+						if (EWC_FVERIFY(pTinprocDemangled, "Name demangling failed - null procedure type"))
+						{
+							char aChAfter[1024];
+							CChPrintTypeInfo(pTinprocDemangled, PARK_Nil, aChAfter, EWC_PMAC(aChAfter), FDBGSTR_UseSizedNumerics);
+							EWC_ASSERT(FAreSame(aCh, aChAfter), "Unmangled type info doesn't match initial info");
+						}
+#endif
 
 						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
@@ -3699,7 +4101,7 @@ void AssertTestSigned65()
 void AssertTestTypeCheck(
 	CWorkspace * pWork,
 	const char * pChzIn,
-	const char * pChzOut)
+	const char * pChzExpected)
 {
 	SJaiLexer jlex;
 	BeginWorkspace(pWork);
@@ -3721,7 +4123,7 @@ void AssertTestTypeCheck(
 
 	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type|FDBGSTR_LiteralSize);
 
-	EWC_ASSERT(FAreSame(aCh, pChzOut), "type check debug string doesn't match expected value");
+	EWC_ASSERT(FAreSame(aCh, pChzExpected), "type check debug string doesn't match expected value");
 
 	EndWorkspace(pWork);
 }
@@ -3833,11 +4235,11 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "printf :: (pCh : & u8, ..) -> s32 #foreign;";
-	pChzOut ="(printf() $printf (Params (&u8 $pCh (&u8 u8)) (..)) s32)";
+	pChzOut ="(printf(&u8, ..) -> s32 $printf (Params (&u8 $pCh (&u8 u8)) (..)) s32)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000);";
-	pChzOut ="(Vararg() $Vararg (Params (..)) void) (void $Vararg Literal:Float64 Literal:Int64 Literal:Int64)";
+	pChzOut ="(Vararg(..) -> void $Vararg (Params (..)) void) (void $Vararg Literal:Float64 Literal:Int64 Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:=7; pN:=&n; ppN:=&pN; pN2:=@ppN; n2:=@pN2;";
@@ -3858,8 +4260,8 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n; }"; 
-	pChzOut		= "(foo() $foo (Params (bool $n bool)) void) (s16 $n s16) "
-					"(ack() $ack (Params (s32 $n s32)) void ({} (s32 $test s32) (s64 $n s64) (s64 $test2 s64) (void)))";
+	pChzOut		= "(foo(bool) -> void $foo (Params (bool $n bool)) void) (s16 $n s16) "
+					"(ack(s32) -> void $ack (Params (s32 $n s32)) void ({} (s32 $test s32) (s64 $n s64) (s64 $test2 s64) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=5; foo:=i; g:=g_g; } g_g:=2.2;";
@@ -3884,7 +4286,7 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
-	pChzOut		= "(ParamFunc() $ParamFunc (params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
+	pChzOut		= "(ParamFunc(s32, float) -> void $ParamFunc (params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : &u8 = \"huzzah\";";
@@ -3936,21 +4338,21 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "AddNums :: (a : int, b := 1) -> int { return a + b;} n := AddNums(2,3);";
-	pChzOut		= "(AddNums() $AddNums (Params (int $a int) (int $b Literal:Int64)) int ({} (int (int int int))))"
+	pChzOut		= "(AddNums(int, int) -> int $AddNums (Params (int $a int) (int $b Literal:Int64)) int ({} (int (int int int))))"
 					" (int $n (int $AddNums Literal:Int64 Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
-	pChzOut		= "(NoReturn() $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void $NoReturn Literal:Int64)";
+	pChzOut		= "(NoReturn(int) -> void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void $NoReturn Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
-	pChzOut		= "(NoReturn() $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void $NoReturn Literal:Int64)";
+	pChzOut		= "(NoReturn(int) -> void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void $NoReturn Literal:Int64)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { n:int=2; Foo :: () -> int { n2:=n; g:=Bar(); return 1;}    Bar :: () -> float { n:=Foo(); return 1;} }";
-	pChzOut		=	"(Foo() $Foo int ({} (int $n2 int) (float $g (float $Bar)) (int Literal:Int64)))"
-					" (Bar() $Bar float ({} (int $n (int $Foo)) (float Literal:Float32)))"
+	pChzOut		=	"(Foo() -> int $Foo int ({} (int $n2 int) (float $g (float $Bar)) (int Literal:Int64)))"
+					" (Bar() -> float $Bar float ({} (int $n (int $Foo)) (float Literal:Float32)))"
 					" ({} (int $n int Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
@@ -3959,13 +4361,13 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 	
 	pChzIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		=	"(Foo() $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
+	pChzOut		=	"(Foo() -> void $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
 					" ({} (int $ovr Literal:Int64) (int $n int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "ack :: ( n : s32) { if (n < 2) foo(true); }  foo :: (n : bool) #foreign;"; 
-	pChzOut		= "(ack() $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) (void $foo Literal:Bool8)) (void))) "
-					"(foo() $foo (Params (bool $n bool)) void)";
+	pChzOut		= "(ack(s32) -> void $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) (void $foo Literal:Bool8)) (void))) "
+					"(foo(bool) -> void $foo (Params (bool $n bool)) void)";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	StaticShutdownStrings(&allocString);
