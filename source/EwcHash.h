@@ -41,32 +41,80 @@ public:
 	public:
 				CIterator(CHash<K, V, LOAD_FACTOR_PERCENT> * pHash)
 				:m_pHash(pHash)
-				,m_pEntry(nullptr)
+				,m_pEntry(pHash->m_aEntry)
 					{ ; }
 
 		V *		Next(K ** ppKey = nullptr) 
 					{
-						SEntry * pEntryEnd = &m_pHash->m_aEntry[m_pHash->m_cCapacity];
-						m_pEntry = (m_pEntry) ? m_pEntry+1 : m_pHash->m_aEntry;
+						auto pEntry = m_pEntry;
 
-						// skip unused and deleted entries
-						while (((m_pEntry->m_hv == kHvUnused)|(m_pEntry->m_hv == kHvDeleted)) & (m_pEntry != pEntryEnd))
-							++m_pEntry;
-
-						if (m_pEntry == pEntryEnd)
+						size_t cCapacity = m_pHash->m_cCapacity;
+						size_t ipEntry = pEntry - m_pHash->m_aEntry;
+						while (1)
 						{
-							if (ppKey)
-								*ppKey = nullptr;
-							return nullptr;
+							++ipEntry;
+							if (ipEntry >= cCapacity)
+							{
+								if (ppKey)
+									*ppKey = nullptr;
+								return nullptr;
+							}
+
+							++pEntry;
+							if ((pEntry->m_hv != kHvUnused) & (pEntry->m_hv != kHvDeleted))
+								break;
 						}
-						
+						m_pEntry = pEntry;
+
 						if (ppKey)
-							*ppKey = &m_pEntry->m_key;
-						return &m_pEntry->m_value;
+							*ppKey = &pEntry->m_key;
+						return &pEntry->m_value;
 					}
 
 		CHash<K, V, LOAD_FACTOR_PERCENT> *	m_pHash;
 		SEntry *							m_pEntry;
+	};
+
+	class CIteratorKey // tag = iterkey
+	{
+	public:
+				CIteratorKey(CHash<K, V, LOAD_FACTOR_PERCENT> * pHash, K key)
+				:m_pHash(pHash)
+				,m_pEntry(pHash->m_aEntry)
+				,m_key(key)
+				,m_hv(HvExtract(key))
+					{ ; }
+
+		V *		Next() 
+					{
+						auto pEntry = m_pEntry;
+
+						size_t cCapacity = m_pHash->m_cCapacity;
+						size_t ipEntry = pEntry - m_pHash->m_aEntry;
+						HV hvDesired = m_hv;
+						while (1)
+						{
+							++ipEntry;
+							if (ipEntry >= cCapacity)
+							{
+								return nullptr;
+							}
+
+							++pEntry;
+							if (pEntry->m_hv == hvDesired)
+							{
+								if (pEntry->m_key == m_key)
+									break;
+							}
+						}
+						m_pEntry = pEntry;
+						return &pEntry->m_value;
+					}
+
+		CHash<K, V, LOAD_FACTOR_PERCENT> *	m_pHash;
+		SEntry *							m_pEntry;
+		K									m_key;
+		HV									m_hv;
 	};
 
 				CHash(CAlloc * pAlloc, u32 cCapacityStarting = 32)
@@ -110,7 +158,6 @@ public:
 							}
 							else if (entry.m_hv == hv)
 							{
-								EWC_ASSERT(key == entry.m_key, "hash collision! buy a lotto ticket!");
 								return &entry.m_value;
 							}
 							iEntry = (iEntry + 1) & mask;
@@ -160,7 +207,6 @@ public:
 							}
 							else if (entry.m_hv == hv)
 							{
-								EWC_ASSERT(key == entry.m_key, "hash collision! buy a lotto ticket!");
 								Destruct(&entry.m_key);
 								Destruct(&entry.m_value);
 								entry.MarkAsDeleted();
@@ -170,7 +216,58 @@ public:
 							iEntry = (iEntry + 1) & mask;
 							++cProbes;
 						}
+					}
 
+	void		Insert(K key, V value)
+					{
+						if (m_cUsed >= m_cCapacity)
+						{
+							int cCapacityNew = ewcMax<u32>(32, m_cCapacity * 2);
+							Grow(cCapacityNew);
+						}
+
+						HV hv = HvExtract(key); // BB - need to clamp less than kHvDeleted
+						u32 mask = m_cCapacity - 1;
+						u32 iEntry = hv & mask;
+						SEntry * pEntryAvailable = nullptr;
+
+						u32 cProbes = 0;	
+						for(; cProbes < m_cCapacity; ++cProbes) // prevent infinite looping
+						{
+							SEntry & entry = m_aEntry[iEntry];
+							if (entry.FIsUnusedOrDeleted())
+							{
+								if (!pEntryAvailable)
+									pEntryAvailable = &entry;
+
+								if (entry.FIsUnused())
+								{
+									break;
+								}
+							}
+
+							iEntry = (iEntry + 1) & mask;
+						}
+
+						if (pEntryAvailable)
+						{
+							pEntryAvailable->m_key = key;
+							pEntryAvailable->m_value = value;
+							pEntryAvailable->m_hv = hv;
+							++m_cUsed;
+
+							if (m_cUsed * 100 >= m_cCapacity * LOAD_FACTOR_PERCENT)
+							{
+								s32 cUsedPrev = m_cUsed;
+								s32 cCapacityPrev = m_cCapacity;
+								Grow(m_cCapacity * 2);
+							}
+
+							return;
+						}
+
+						EWC_ASSERT(false, "CHash overflow");
+						return;
 					}
 
 	FINS		FinsEnsureKey(K key, V ** ppValue = nullptr)
@@ -192,7 +289,6 @@ public:
 							SEntry & entry = m_aEntry[iEntry];
 							if (entry.m_hv == hv)
 							{
-								EWC_ASSERT(key == entry.m_key, "hash collision! buy a lotto ticket!");
 								if (ppValue)
 									*ppValue = &entry.m_value;
 								return FINS_AlreadyExisted;
@@ -259,7 +355,6 @@ public:
 							SEntry & entry = m_aEntry[iEntry];
 							if (entry.m_hv == hv)
 							{
-								EWC_ASSERT(key == entry.m_key, "hash collision! buy a lotto ticket!");
 								entry.m_value = value;
 
 								return FINS_AlreadyExisted;
@@ -344,6 +439,8 @@ public:
 
 	void		Grow(u32 cCapacityNew)
 					{
+						// NOTE: can be called with the current capacity to force a realloc and rehash for testing.
+
 						if (cCapacityNew == 0)
 						{
 							m_aEntry = nullptr;
@@ -381,13 +478,7 @@ public:
 							for( ; cProbes < cCapacityNew; ++cProbes) // prevent infinite looping
 							{
 								SEntry & entryNew = aEntryNew[iEntryNew];
-								if (entryNew.m_hv == pEntryOld->m_hv)
-								{
-									EWC_ASSERT(pEntryOld->m_key == entryNew.m_key, "hash collision! buy a lotto ticket!");
-									EWC_ASSERT(false, "hash map currently doesn't support one-to-many mapping");
-									break;
-								}
-								else if (entryNew.FIsUnusedOrDeleted())
+								if (entryNew.m_hv != pEntryOld->m_hv && entryNew.FIsUnusedOrDeleted())
 								{
 									entryNew.m_key = pEntryOld->m_key;
 									entryNew.m_value = pEntryOld->m_value;
