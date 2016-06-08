@@ -23,9 +23,9 @@ Currently supports:
   * Explicit casts
   * Debug Info - first pass
   * Proper handling of global variables (including default initialization)
+  * Method overloading
 
 Coming soon:
-  * Method overloading
   * Operator overloading
   * Method pointers
   * Debug info

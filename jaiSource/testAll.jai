@@ -466,6 +466,38 @@ TestCasting :: ()
 
 }
 
+TestOveloading :: ()
+{
+	printf("\nOverloading:\n");
+
+	n: s16 = 5;
+	OverloadedPrint(n);
+	OverloadedPrint(2);
+	OverloadedPrint(2.2);
+
+	OverloadedPrint("test");
+}
+
+OverloadedPrint :: (n: int)
+{
+	printf("Overloaded integer %d\n", n);
+}
+
+OverloadedPrint :: (n: s16)
+{
+	printf("Overloaded s16 %d\n", n);
+}
+
+OverloadedPrint :: (pChz: & u8)
+{
+	printf("Overloaded & char %s\n", pChz);
+}
+
+OverloadedPrint :: (g: float)
+{
+	printf("Overloaded float %f\n", g);
+}
+
 TestGlobals :: ()
 {
 	printf("\nGlobal initialization:\n");
@@ -506,6 +538,7 @@ main :: () -> int
 	TestEnums();
 	TestArrays();
 	TestCasting();
+	TestOveloading();
 	TestGlobals();
 
 	return 1;
