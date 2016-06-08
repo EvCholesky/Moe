@@ -46,12 +46,22 @@ struct SErrorManager	//  // tag = errman
 	int				m_cWarning;
 };
 
+struct SError 
+{
+						SError(SErrorManager * pErrman);
+
+	SErrorManager *		m_pErrman;
+};
+
 void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
 void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...);
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...);
 void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pChz, ...);
+
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, ...);
 
 
 

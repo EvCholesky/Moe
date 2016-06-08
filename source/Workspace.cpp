@@ -54,25 +54,8 @@ void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const 
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
 {
-	if (pLexloc && pLexloc->FIsValid())
-	{
-		s32 iLine;
-		s32 iCol;
-		CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
-
-		printf("%s(%d,%d) Error: ", pLexloc->m_strFilename.PChz(), iLine, iCol);
-	}
-	else
-	{
-		printf("Internal Error: ");
-	}
-	++pErrman->m_cError;
-	
-	if (pChz)
-	{
-		vprintf(pChz, ap);
-		printf("\n");
-	}
+	SError error(pErrman);
+	PrintErrorLine(&error, "Error:", pLexloc, pChz, ap);
 }
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...)
@@ -87,6 +70,43 @@ void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * 
 	va_list ap;
 	va_start(ap, pChz);
 	EmitError(pWork->m_pErrman, pLexloc, pChz, ap);
+}
+
+
+
+SError::SError(SErrorManager * pErrman)
+:m_pErrman(pErrman)
+{
+	++pErrman->m_cError;
+}
+
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
+{
+	if (pLexloc && pLexloc->FIsValid())
+	{
+		s32 iLine;
+		s32 iCol;
+		CalculateLinePosition(pError->m_pErrman->m_pWork, pLexloc, &iLine, &iCol);
+
+		printf("%s(%d,%d) %s ", pLexloc->m_strFilename.PChz(), iLine, iCol, pChzPrefix);
+	}
+	else
+	{
+		printf("Internal %s ", pChzPrefix);
+	}
+	
+	if (pChz)
+	{
+		vprintf(pChz, ap);
+		printf("\n");
+	}
+}
+
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, ...)
+{
+	va_list ap;
+	va_start(ap, pChz);
+	PrintErrorLine(pError, pChzPrefix, pLexloc, pChz, ap);
 }
 
 inline void CalculateLinePositionRaw(const char * pChBegin, s32 dBLoc, s32 * piLine, s32 * piCol)

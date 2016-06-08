@@ -3390,20 +3390,22 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		pLtypeReturn = LLVMVoidType();
 	}
 
+	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
+
 	const char * pChzName;
 	if (pStproc->m_fIsForeign && pStnodAlias)
 	{
 		CString strProcAlias = StrFromIdentifier(pStnodAlias);
 		pChzName = strProcAlias.PChz();
 	}
-	else if (pStnodName)
+	else
 	{
-		CString strProcName = StrFromIdentifier(pStnodName);
-		pChzName = strProcName.PChz();
+		EWC_ASSERT(pTinproc, "Exected procedure type");
+		pChzName = pTinproc->m_strMangled.PChz();
 	}
 
 	char aCh[128];
-	if (!pStnodName)
+	if (!pChzName)
 	{
 		(void) pBuild->CChGenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
 		pChzName = aCh;
@@ -3419,7 +3421,6 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	{
 		pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzName);
 
-		auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pTin);
 		if (EWC_FVERIFY(pTinproc))
 		{
 			if (pTinproc->m_pLvalDIType == nullptr)
@@ -3475,7 +3476,6 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 				continue;
 
 			EWC_ASSERT((ppLvalParam - appLvalParams) < cpLvalParams, "parameter count mismatch");
-
 
 			if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 			{

@@ -178,6 +178,7 @@ public:
 					,m_iStnodForeignAlias(-1)
 					,m_pTinproc(nullptr)
 					,m_fIsForeign(false)
+					,m_fUseUnmangledName(false)
 						{ ; }
 
 	int						m_iStnodProcName;
@@ -187,6 +188,7 @@ public:
 	int						m_iStnodForeignAlias;
 	STypeInfoProcedure *	m_pTinproc;
 	bool					m_fIsForeign;
+	bool					m_fUseUnmangledName;
 };
 
 class CSTEnum // tag = stenum
@@ -406,6 +408,32 @@ protected:
 								{ ; }
 
 public:
+	class CSymbolIterator // tag = symiter
+	{
+	public:
+							CSymbolIterator()
+							:m_pSymtab(nullptr)
+							,m_pSym(nullptr)
+							,m_grfsymlook(FSYMLOOK_Default)
+								{ ; }
+
+
+							CSymbolIterator(
+								CSymbolTable * pSymtab,
+								const EWC::CString & str,
+								const SLexerLocation & lexloc,
+								GRFSYMLOOK grfsymlook);
+
+		SSymbol *			PSymNext();
+		bool				FIsDone() const
+								{ return m_pSymtab == nullptr; }
+
+		CSymbolTable *		m_pSymtab;
+		SSymbol *			m_pSym;
+		SLexerLocation		m_lexloc;
+		GRFSYMLOOK			m_grfsymlook;
+	};
+
 							~CSymbolTable();
 
 	void					AddBuiltInSymbols(SErrorManager * pErrman);
@@ -418,7 +446,9 @@ public:
 	SSymbol *				PSymLookup(
 								const EWC::CString & str,
 								const SLexerLocation & lexloc, 
-								GRFSYMLOOK grfsymlook = FSYMLOOK_Default);
+								GRFSYMLOOK grfsymlook = FSYMLOOK_Default,
+								CSymbolTable ** ppSymtabOut = nullptr);
+
 	STypeInfo *				PTinBuiltin( const EWC::CString & str);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);

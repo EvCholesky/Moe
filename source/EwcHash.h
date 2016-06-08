@@ -52,7 +52,6 @@ public:
 						size_t ipEntry = pEntry - m_pHash->m_aEntry;
 						while (1)
 						{
-							++ipEntry;
 							if (ipEntry >= cCapacity)
 							{
 								if (ppKey)
@@ -60,11 +59,13 @@ public:
 								return nullptr;
 							}
 
-							++pEntry;
 							if ((pEntry->m_hv != kHvUnused) & (pEntry->m_hv != kHvDeleted))
 								break;
+
+							++pEntry;
+							++ipEntry;
 						}
-						m_pEntry = pEntry;
+						m_pEntry = pEntry+1;
 
 						if (ppKey)
 							*ppKey = &pEntry->m_key;

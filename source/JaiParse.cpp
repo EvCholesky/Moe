@@ -1096,7 +1096,7 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 	}
 
 	CSymbolTable * pSymtab = pParctx->m_pSymtab;
-	pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
+	pStnodIdent->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
 
 	// check to see if our type is known
 	if (pStdecl->m_iStnodType >= 0)
@@ -1327,6 +1327,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew(strName);
 
+				// BB - don't mangle the main function so the linker can find it. yuck.
+				pStproc->m_fUseUnmangledName |= (strName == "main");
+
 				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pJlex, pSymtabProc);
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 				Expect(pParctx, pJlex, JTOK(')'));
@@ -1371,6 +1374,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					else
 					{
 						pStproc->m_fIsForeign = true;
+						pStproc->m_fUseUnmangledName = true;
 					}
 
 					JtokNextToken(pJlex);
@@ -1492,6 +1496,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				auto pErrman = pParctx->m_pWork->m_pErrman;
 				SSymbol * pSymProc = pSymtabParent->PSymEnsure(pErrman, StrFromIdentifier(pStnodIdent), pStnodProc);
 				pSymProc->m_pTin = pTinproc;
+				pStnodProc->m_pSym = pSymProc;
 
 				pSymtabParent->AddManagedTin(pTinproc);
 
@@ -1732,7 +1737,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 			CSymbolTable * pSymtab = pParctx->m_pSymtab;
 			auto pErrman = pParctx->m_pWork->m_pErrman;
-			pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst);
+			pStnodIdent->m_pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst);
 
 			return pStnodConst;
 		}
@@ -2027,6 +2032,65 @@ void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalE
 }
 
 
+CSymbolTable::CSymbolIterator::CSymbolIterator(
+	CSymbolTable * pSymtab,
+	const CString & str,
+	const SLexerLocation & lexloc,
+	GRFSYMLOOK grfsymlook)
+:m_pSymtab(pSymtab)
+,m_pSym(nullptr)
+,m_lexloc(lexloc)
+,m_grfsymlook(grfsymlook)
+{
+	m_pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook, &m_pSymtab);
+}
+
+SSymbol * CSymbolTable::CSymbolIterator::PSymNext()
+{
+	if (!m_pSym)
+		return nullptr;
+
+	bool fIsOrdered = m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered) && !m_grfsymlook.FIsSet(FSYMLOOK_IgnoreOrder);
+	auto pSymIt = m_pSym;
+	while (pSymIt)
+	{
+		SLexerLocation lexlocSym = (pSymIt->m_pStnodDefinition) ? pSymIt->m_pStnodDefinition->m_lexloc : SLexerLocation();
+		if ((fIsOrdered == false) | (lexlocSym <= m_lexloc))
+		{
+			m_pSym = pSymIt->m_pSymPrev;
+			return pSymIt;
+		}
+		pSymIt = pSymIt->m_pSymPrev;
+	}
+
+	CSymbolTable * pSymtabIt = (m_grfsymlook.FIsSet(FSYMLOOK_Ancestors)) ? m_pSymtab->m_pSymtabParent : nullptr;
+	while (pSymtabIt)
+	{
+		SSymbol ** ppSym = pSymtabIt->m_hashHvPSym.Lookup(m_pSym->m_strName.Hv()); 
+
+		if (ppSym)
+		{
+			bool fIsOrdered = pSymtabIt->m_grfsymtab.FIsSet(FSYMTAB_Ordered);
+			pSymIt = *ppSym;
+			while (pSymIt)
+			{
+				SLexerLocation lexlocSym = (pSymIt->m_pStnodDefinition) ? pSymIt->m_pStnodDefinition->m_lexloc : SLexerLocation();
+				if ((fIsOrdered == false) | (lexlocSym <= m_lexloc))
+				{
+					m_pSym = pSymIt->m_pSymPrev;
+					m_pSymtab = pSymtabIt;
+					return pSymIt;
+				}
+			}
+		}
+
+		pSymtabIt = pSymtabIt->m_pSymtabParent;
+	}
+
+	m_pSym = nullptr;
+	return nullptr; 
+}
+
 void PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab, const SLexerLocation & lexloc)
 {
 	pSymtab->m_pSymtabParent = pParctx->m_pSymtab;
@@ -2151,6 +2215,8 @@ void CSymbolTable::AddBuiltInSymbols(SErrorManager * pErrman)
 	AddBuiltInLiteral(pErrman, this, "__void_Literal", LITK_Null, -1, true);
 }
 
+
+
 SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
 {
 	SLexerLocation lexloc;
@@ -2198,8 +2264,11 @@ SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strN
 	return pSym;
 }
 
-SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook)
+SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook, CSymbolTable ** ppSymtabOut)
 {
+	if (ppSymtabOut)
+		*ppSymtabOut = this;
+
 	if (grfsymlook.FIsSet(FSYMLOOK_Local))
 	{
 		SSymbol ** ppSym = m_hashHvPSym.Lookup(str.Hv()); 
@@ -2228,11 +2297,18 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 
 		if (ppSym)
 		{
+			SSymbol * pSym = *ppSym;
 			bool fIsOrdered = pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered);
-			SLexerLocation lexlocSym = ((*ppSym)->m_pStnodDefinition) ? (*ppSym)->m_pStnodDefinition->m_lexloc : SLexerLocation();
-			if ((fIsOrdered == false) | (lexlocSym <= lexlocChild))
+			while (pSym)
 			{
-				return *ppSym;
+
+				SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
+				if ((fIsOrdered == false) | (lexlocSym <= lexlocChild))
+				{
+					if (ppSymtabOut)
+						*ppSymtabOut = pSymtab;
+					return pSym;
+				}
 			}
 		}
 
