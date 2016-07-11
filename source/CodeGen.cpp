@@ -33,6 +33,7 @@ using namespace EWC;
 #include "MissingLlvmC/llvmcDIBuilder.h"
 #include <stdio.h>
 
+extern bool FIsDirectCall(CSTNode * pStnodCall);
 CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodStruct);
 CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod);
 
@@ -212,6 +213,28 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 		case TINK_Void:
 		{
 			return LLVMVoidType();
+		}
+		case TINK_Procedure:
+		{
+			auto pTinproc = (STypeInfoProcedure *)pTin;
+
+			size_t cpLtypeParam = pTinproc->m_arypTinParams.C();
+			auto apLtypeParam = (LLVMTypeRef *)(alloca(sizeof(LLVMTypeRef *) * cpLtypeParam));
+			for (size_t ipLtype = 0; ipLtype < cpLtypeParam; ++ipLtype)
+			{
+				apLtypeParam[ipLtype] = PLtypeFromPTin(pTinproc->m_arypTinParams[ipLtype]);
+			}
+
+			LLVMOpaqueType * pLtypeReturn = (pTinproc->m_arypTinReturns.C()) ? 
+												PLtypeFromPTin(pTinproc->m_arypTinReturns[0]) : 
+												LLVMVoidType();	
+
+			auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, apLtypeParam, cpLtypeParam, pTinproc->m_fHasVarArgs);
+
+			// NOTE: actually a pointer to a function (not the function type itself)
+			auto pLtypPtr = LLVMPointerType(pLtypeFunction, 0);
+			return pLtypPtr;
+
 		}
 		case TINK_Pointer:
 		{
@@ -1169,11 +1192,17 @@ CIRValue * CIRBuilder::PValFromSymbol(SSymbol * pSym)
 	if (!EWC_FVERIFY(pSym && pSym->m_pVal, "missing value for symbol"))
 		return nullptr;
 
-	if (pSym->m_pVal->m_valk == VALK_Instruction)
+	auto pVal = pSym->m_pVal;
+	if (pVal->m_valk == VALK_Instruction)
 	{
-		CIRInstruction * pInstSym = (CIRInstruction *)pSym->m_pVal;
+		auto pInstSym = (CIRInstruction *)pVal;
 		if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
 			return nullptr;
+	}
+	else if (pVal->m_valk == VALK_ProcedureDefinition)
+	{
+		auto pProc = (CIRProcedure *)pVal;
+		return pVal;
 	}
 
 	return pSym->m_pVal;
@@ -1290,6 +1319,7 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			return PLvalZeroInType(pBuild, pTinenum->m_pTinLoose);
 		} 
 	case TINK_Pointer:
+	case TINK_Procedure:
 		{
 			STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTin;
 			auto * pLtype = PLtypeFromPTin(pTinptr);
@@ -2271,12 +2301,45 @@ static inline CIRValue * PValGenerateMethodBody(
 	return pValRet;
 }
 
-static inline CIRInstruction * PInstGenerateOperator(
-	CIRBuilder * pBuild,
-	JTOK jtok,
-	STypeInfo * pTin,
-	CIRValue * pValLhs,
-	CIRValue * pValRhs)
+// helper routine for generating operators, used to make sure type checking errors are in sync with the code generator
+struct SOperatorInfo // tag = opinfo
+{
+					SOperatorInfo()
+					:m_irop(IROP_Nil)
+					,m_ncmppred(NCMPPRED_Nil)
+					,m_gcmppred(GCMPPRED_Nil)
+					,m_fNegateFirst(false)
+					,m_pChzName(nullptr)
+						{ ; }
+
+	IROP			m_irop;
+	NCMPPRED		m_ncmppred;
+	GCMPPRED		m_gcmppred;
+	bool			m_fNegateFirst;
+	const char *	m_pChzName;
+};
+
+void CreateOpinfo(IROP irop, const char * pChzName, SOperatorInfo * pOpinfo)
+{
+	pOpinfo->m_irop = irop;
+	pOpinfo->m_pChzName = pChzName;
+}
+
+void CreateOpinfo(NCMPPRED ncmppred, const char * pChzName, SOperatorInfo * pOpinfo)
+{
+	pOpinfo->m_irop = IROP_NCmp;
+	pOpinfo->m_ncmppred = ncmppred;
+	pOpinfo->m_pChzName = pChzName;
+}
+
+void CreateOpinfo(GCMPPRED gcmppred, const char * pChzName, SOperatorInfo * pOpinfo)
+{
+	pOpinfo->m_irop = IROP_GCmp;
+	pOpinfo->m_gcmppred = gcmppred;
+	pOpinfo->m_pChzName = pChzName;
+}
+
+static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pOpinfo)
 {
 	bool fIsSigned = true;
 	TINK tink = pTin->m_tink;
@@ -2302,85 +2365,84 @@ static inline CIRInstruction * PInstGenerateOperator(
 	case TINK_Bool:
 		switch (jtok)
 		{
-			case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
-			case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
-			case '&':				pInstOp = pBuild->PInstCreate(IROP_And, pValLhs, pValRhs, "nAndTmp"); break;
-			case '|':				pInstOp = pBuild->PInstCreate(IROP_Or, pValLhs, pValRhs, "nOrTmp"); break;
+			case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case '&':				CreateOpinfo(IROP_And, "nAndTmp", pOpinfo); break;
+			case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
+
+			case JTOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
+			case JTOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 		} break;
 	case TINK_Integer:
 		switch (jtok)
 		{
-			case '+': 				pInstOp = pBuild->PInstCreate(IROP_NAdd, pValLhs, pValRhs, "nAddTmp"); break;
-			case '-': 				pInstOp = pBuild->PInstCreate(IROP_NSub, pValLhs, pValRhs, "nSubTmp"); break;
-			case '*': 				pInstOp = pBuild->PInstCreate(IROP_NMul, pValLhs, pValRhs, "nMulTmp"); break;
-			case '/':
-			{
-				IROP irop = (fIsSigned) ? IROP_SDiv : IROP_UDiv;
-				pInstOp = pBuild->PInstCreate(irop, pValLhs, pValRhs, "nDivTmp");
-			} break;
-			case '%':
-			{
-				IROP irop = (fIsSigned) ? IROP_SRem : IROP_URem;
-				pInstOp = pBuild->PInstCreate(irop, pValLhs, pValRhs, "nRemTmp");
-			} break;
-			case '&':				pInstOp = pBuild->PInstCreate(IROP_And, pValLhs, pValRhs, "nAndTmp"); break;
-			case '|':				pInstOp = pBuild->PInstCreate(IROP_Or, pValLhs, pValRhs, "nOrTmp"); break;
-			case '^':				pInstOp = pBuild->PInstCreate(IROP_Xor, pValLhs, pValRhs, "nXorTmp"); break;
-			case JTOK_ShiftRight:	
-			{
-				// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
-				IROP irop = (fIsSigned) ? IROP_AShr : IROP_LShr;
-				pInstOp = pBuild->PInstCreate(irop, pValLhs, pValRhs, "nShrTmp"); break;
-			} break;
-			case JTOK_ShiftLeft:	pInstOp = pBuild->PInstCreate(IROP_Shl, pValLhs, pValRhs, "nShlTmp"); break;
-			case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
-			case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+			case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
+			case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
+			case '*': 				CreateOpinfo(IROP_NMul, "nMulTmp", pOpinfo); break;
+			case '/':				CreateOpinfo((fIsSigned) ? IROP_SDiv : IROP_UDiv, "nDivTmp", pOpinfo); break;
+			case '%':				CreateOpinfo((fIsSigned) ? IROP_SRem : IROP_URem, "nRemTmp", pOpinfo); break;
+			case '&':				CreateOpinfo(IROP_And, "rAndTmp", pOpinfo); break;
+			case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
+			case '^':				CreateOpinfo(IROP_Xor, "nXorTmp", pOpinfo); break;
+			case JTOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
+									CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
+			case JTOK_ShiftLeft:	CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
+			case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 			case JTOK_LessEqual:
-				if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSLE, pValLhs, pValRhs, "NCmpSLE");
-				else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULE, pValLhs, pValRhs, "NCmpULE");
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSLE, "CmpSLE", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_NCmpULE, "NCmpULE", pOpinfo);
 				break;
 			case JTOK_GreaterEqual:
-				if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSGE, pValLhs, pValRhs, "NCmpSGE");
-				else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpUGE, pValLhs, pValRhs, "NCmpUGE");
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSGE, "NCmpSGE", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_NCmpUGE, "NCmpUGE", pOpinfo);
 				break;
 			case '<':
-				if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSLT, pValLhs, pValRhs, "NCmpSLT");
-				else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULT, pValLhs, pValRhs, "NCmpULT");
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSLT, "NCmpSLT", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_NCmpULT, "NCmpULT", pOpinfo);
 				break;
 			case '>':
-				if (fIsSigned)	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpSGT, pValLhs, pValRhs, "NCmpSGT");
-				else			pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpUGT, pValLhs, pValRhs, "NCmpUGT");
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSGT, "NCmpSGT", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_NCmpUGT, "NCmpUGT", pOpinfo);
 				break;
 		} break;
 	case TINK_Float:
 		switch (jtok)
 		{
-			case '+': 				pInstOp = pBuild->PInstCreate(IROP_GAdd, pValLhs, pValRhs, "gAddTmp"); break;
-			case '-': 				pInstOp = pBuild->PInstCreate(IROP_GSub, pValLhs, pValRhs, "gSubTmp"); break;
-			case '*': 				pInstOp = pBuild->PInstCreate(IROP_GMul, pValLhs, pValRhs, "gMulTmp"); break;
-			case '/': 				pInstOp = pBuild->PInstCreate(IROP_GDiv, pValLhs, pValRhs, "gDivTmp"); break;
-			case '%': 				pInstOp = pBuild->PInstCreate(IROP_GRem, pValLhs, pValRhs, "gRemTmp"); break;
-			case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOEQ, pValLhs, pValRhs, "NCmpOEQ"); break;
-			case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpONE, pValLhs, pValRhs, "NCmpONE"); break;
-			case JTOK_LessEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOLE, pValLhs, pValRhs, "NCmpOLE"); break;
-			case JTOK_GreaterEqual:	pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOGE, pValLhs, pValRhs, "NCmpOGE"); break;
-			case '<': 				pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOLT, pValLhs, pValRhs, "NCmpOLT"); break;
-			case '>': 				pInstOp = pBuild->PInstCreateGCmp(GCMPPRED_GCmpOGT, pValLhs, pValRhs, "NCmpOGT"); break;
+			case '+': 				CreateOpinfo(IROP_GAdd, "gAddTmp", pOpinfo); break;
+			case '-': 				CreateOpinfo(IROP_GSub, "SubTmp", pOpinfo); break;
+			case '*': 				CreateOpinfo(IROP_GMul, "gMulTmp", pOpinfo); break;
+			case '/': 				CreateOpinfo(IROP_GDiv, "gDivTmp", pOpinfo); break;
+			case '%': 				CreateOpinfo(IROP_GRem, "gRemTmp", pOpinfo); break;
+			case JTOK_EqualEqual:	CreateOpinfo(GCMPPRED_GCmpOEQ, "NCmpOEQ", pOpinfo); break;
+			case JTOK_NotEqual:		CreateOpinfo(GCMPPRED_GCmpONE, "NCmpONE", pOpinfo); break;
+			case JTOK_LessEqual:	CreateOpinfo(GCMPPRED_GCmpOLE, "NCmpOLE", pOpinfo); break;
+			case JTOK_GreaterEqual:	CreateOpinfo(GCMPPRED_GCmpOGE, "NCmpOGE", pOpinfo); break;
+			case '<': 				CreateOpinfo(GCMPPRED_GCmpOLT, "NCmpOLT", pOpinfo); break;
+			case '>': 				CreateOpinfo(GCMPPRED_GCmpOGT, "NCmpOGT", pOpinfo); break;
+		} break;
+	case TINK_Procedure:
+		{
+			switch (jtok)
+			{
+				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			}
 		} break;
 	case TINK_Pointer:
-		switch (jtok)
 		{
-			case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
-			case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
-			case '-': 				
-				pValRhs = pBuild->PInstCreate(IROP_NNeg, pValRhs, "NNeg");
-				// fallthrough
-			case '+': 				
+			switch (jtok)
 			{
-				LLVMOpaqueValue * pLvalIndex = pValRhs->m_pLval;
-				pInstOp = pBuild->PInstCreateGEP(pValLhs, &pLvalIndex, 1, "ptrAdd"); break;
-			} break;
-		}
+				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case '+':				CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
+				case '-': 				
+					{
+						CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
+						pOpinfo->m_fNegateFirst = true;
+					} break;
+			}
+		} break;
 	case TINK_Enum:
 	{
 		// BB - why is the RHS still a literal here?
@@ -2388,18 +2450,54 @@ static inline CIRInstruction * PInstGenerateOperator(
 
 		switch (jtok)
 		{
-			case JTOK_EqualEqual:	pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pValLhs, pValRhs, "NCmpEq"); break;
-			case JTOK_NotEqual:		pInstOp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValLhs, pValRhs, "NCmpNq"); break;
+			case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 		}
 	}
 	default: 
 		break;
 	}
+}
 
+bool FDoesOperatorExist(JTOK jtok, STypeInfo * pTin)
+{
+	SOperatorInfo opinfo;
+	GenerateOperatorInfo(jtok, pTin, &opinfo);
+
+	return opinfo.m_irop != IROP_Nil;
+}
+
+static inline CIRInstruction * PInstGenerateOperator(
+	CIRBuilder * pBuild,
+	JTOK jtok,
+	STypeInfo * pTin,
+	CIRValue * pValLhs,
+	CIRValue * pValRhs)
+{
+	SOperatorInfo opinfo;
+	GenerateOperatorInfo(jtok, pTin, &opinfo);
+
+	CIRInstruction * pInstOp = nullptr;
+	switch (opinfo.m_irop)
+	{
+	case IROP_GEP:		// for pointer arithmetic
+		{
+			if (opinfo.m_fNegateFirst)
+			{
+				pValRhs = pBuild->PInstCreate(IROP_NNeg, pValRhs, "NNeg");
+			}
+			LLVMOpaqueValue * pLvalIndex = pValRhs->m_pLval;
+			pInstOp = pBuild->PInstCreateGEP(pValLhs, &pLvalIndex, 1, opinfo.m_pChzName); break;
+		} break;
+	case IROP_NCmp:		pInstOp = pBuild->PInstCreateNCmp(opinfo.m_ncmppred, pValLhs, pValRhs, opinfo.m_pChzName); break;
+	case IROP_GCmp:		pInstOp = pBuild->PInstCreateGCmp(opinfo.m_gcmppred, pValLhs, pValRhs, opinfo.m_pChzName); break;
+	default:			pInstOp = pBuild->PInstCreate(opinfo.m_irop, pValLhs, pValRhs, opinfo.m_pChzName); break;
+	}
+
+	// Note: This should be caught by the type checker! This function should match FIsOperatorDefined
 	EWC_ASSERT(pInstOp, "unexpected op in PInstGenerateOperator '%'", PChzFromJtok(jtok));
 	return pInstOp;
 }
-
 
 CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
 {
@@ -2744,31 +2842,30 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		} break;
 	case PARK_ProcedureCall:
 		{
-			if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
+			auto pStnodTarget = pStnod->PStnodChildSafe(0);
+			STypeInfoProcedure * pTinproc = (pStnodTarget) ? PTinRtiCast<STypeInfoProcedure *>(pStnodTarget->m_pTin) : nullptr;
+
+			if (!EWC_FVERIFY(pTinproc, "expected type info procedure"))
 				return nullptr;
 
-			if (!pStnod->m_pSym->m_pVal)
+			bool fIsDirectCall = FIsDirectCall(pStnod);
+			auto pSym = pStnod->m_pSym;
+			if (fIsDirectCall)
 			{
-				// this happens when calling a method that is defined later
-				(void) PProcCodegenPrototype(pWork, pBuild, pStnod->m_pSym->m_pStnodDefinition);
-
-				if (!pStnod->m_pSym->m_pVal)
+				if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
 					return nullptr;
+
+				if (!pSym->m_pVal)
+				{
+					// this happens when calling a method that is defined later
+					(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
+
+					if (!pSym->m_pVal)
+						return nullptr;
+				}
 			}
 
-			CIRProcedure * pProc = (CIRProcedure *)pStnod->m_pSym->m_pVal;
-			if (!EWC_FVERIFY(pProc->m_valk == VALK_ProcedureDefinition, "expected procedure value type"))
-				return nullptr;
-
-			auto pLvalFunction = pProc->m_pLvalFunction;
 			size_t cStnodArgs = pStnod->CStnodChild() - 1; // don't count the identifier
-
-			auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
-			if (LLVMCountParams(pLvalFunction) != cStnodArgs)
-			{
-				if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
-					return nullptr;
-			}
 
 			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 
@@ -2786,27 +2883,54 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 				arypLvalArgs.Append(pValRhsCast->m_pLval);
 				if (!EWC_FVERIFY(*arypLvalArgs.PLast(), "missing argument value"))
-					return 0;
+					return nullptr;
 			}
+
+			EWC_ASSERT(valgenk != VALGENK_Reference, "cannot return reference value for procedure call");
 
 			CIRInstruction * pInst = pBuild->PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
 			if (pInst->FIsError())
 				return pInst;
 
-			pInst->m_pLval = LLVMBuildCall(
-								pBuild->m_pLbuild,
-								pProc->m_pLvalFunction,
-								arypLvalArgs.A(),
-								(u32)arypLvalArgs.C(),
-								"");
+			if (fIsDirectCall)
+			{
+				CIRProcedure * pProc = (CIRProcedure *)pSym->m_pVal;
+				auto pLvalFunction = pProc->m_pLvalFunction;
+				if (LLVMCountParams(pLvalFunction) != cStnodArgs)
+				{
+					if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
+						return nullptr;
+				}
 
-			EWC_ASSERT(valgenk != VALGENK_Reference, "cannot return reference value for procedure call");
-			return pInst;
+				pInst->m_pLval = LLVMBuildCall(
+									pBuild->m_pLbuild,
+									pProc->m_pLvalFunction,
+									arypLvalArgs.A(),
+									(u32)arypLvalArgs.C(),
+									"");
+				return pInst;
+			}
+			else
+			{
+				CSTNode * pStnodProcref = pStnod->PStnodChildSafe(0);
+				if (!EWC_FVERIFY(pStnodProcref, "expected procedure reference"))
+					return nullptr;
+
+				auto pValProcref = PValGenerate(pWork, pBuild, pStnodProcref, VALGENK_Instance);
+
+				pInst->m_pLval = LLVMBuildCall(
+									pBuild->m_pLbuild,
+									pValProcref->m_pLval,
+									arypLvalArgs.A(),
+									(u32)arypLvalArgs.C(),
+									"");
+				return pInst;
+			}
 		}
 	case PARK_Identifier:
 		{
 			CIRValue * pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
-			if (EWC_FVERIFY(pVal, "unknown identifier in codegen") && valgenk != VALGENK_Reference)
+			if (EWC_FVERIFY(pVal, "unknown identifier in codegen") && valgenk != VALGENK_Reference && pVal->m_valk != VALK_ProcedureDefinition)
 			{
 				return pBuild->PInstCreate(IROP_Load, pVal, pStnod->m_pSym->m_strName.PChz());
 			}
@@ -3416,6 +3540,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, arypLtype.A(), (u32)arypLtype.C(), fHasVarArgs);
 	pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, pChzName, pLtypeFunction);
+	pProc->m_pLval = pProc->m_pLvalFunction; // why is this redundant?
 
 	if (!pStproc->m_fIsForeign)
 	{
@@ -3969,7 +4094,20 @@ void TestCodeGen()
 
 	const char * pChzIn;
 
+	pChzIn = "{ n1 := 6; n := 2 * n1;}";		// procedure reference declaration
+	AssertTestCodeGen(&work, pChzIn);
+
 	//pChzIn = " g := 2.2; pG := &g; "; // not handling this properly as globals
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn = "fooFunc :: (n: s32) -> s64 { return 2; }     func: (n: s32)->s64 = fooFunc;";		// procedure reference declaration
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn = "{ pFunc: (n: s32)->s64;   pFunc(33); }";
+	AssertTestCodeGen(&work, pChzIn);
+
+	pChzIn = "{apFunc: [4] (n: s32)->s64;   apFunc[1](33); }";
+	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "{ g := 2.2; pG := &g; pN := cast(& int) pG; }";
 	AssertTestCodeGen(&work, pChzIn);

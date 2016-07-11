@@ -524,6 +524,75 @@ g_glob : SGlobal; // struct globals
 
 g_aGlob : [4] SGlobal; // array of struct globals
 
+CallByReference :: (pChz: & u8)
+{
+	pFnSelfTest := CallByReference; // test pointer to self procedure
+
+	printf("(ProcRef) %s\n", pChz);
+}
+
+CallByReferenceMultiple :: (pChzA: & u8, pChzB: & u8)
+{
+	printf("(ProcRef) %s .. %s\n", pChzA, pChzB);
+}
+
+PassedMethod :: (pFn: (pChz: & u8)->void, pChz: & u8)
+{
+	pFn(pChz);
+}
+
+SProcRefStruct :: struct
+{
+	m_pFn: (pChz: & u8)->void; 
+}
+
+TestFunc :: typedef (pChz: & u8);
+
+TestProcedureRef :: () -> int 
+{
+	printf("\nProcedureRef:\n");
+
+	{ // Test name collisions being fixed by the procedure overload resolution
+		CallByReference: (pChzA: &u8, pChzB: &u8) = CallByReferenceMultiple;
+		CallByReference("This Should have", "Two parts.");
+
+		CallByReference("This Should have one part.");
+	}
+
+	pFnPrintf := printf;
+	pFnPrintf("Varargs by reference %s\n", "and it works");
+
+	pFn: (pChz: & u8)->void;
+	pFn = CallByReference;
+	pFn("pFn");
+
+	ppFn: & (pChz: & u8)->void;
+
+	//ppFn = &(CallByReference); // Error: Can't take the address of constant proc address
+	ppFn = &pFn;
+	(@ppFn)("ppFn");
+	//@ppFn("Error: Procedure call precedencce is higher than dereference");
+
+	apFn: [2] (pChz: & u8);
+	apFn[1] = CallByReference;	
+	apFn[1]("apFn");
+
+	prs: SProcRefStruct;
+	prs.m_pFn = CallByReference;
+	prs.m_pFn("prs.m_pFn");
+
+	PassedMethod(CallByReference, "PassedMethod direct");
+	PassedMethod(pFn, "PassedMethod pFn");
+
+	pFn2: TestFunc = CallByReference;
+
+	if pFn == pFn2
+	{
+		printf("Procedure reference comparisons work.\n");
+	}
+	return 1;
+}
+
 main :: () -> int 
 {
 
@@ -540,6 +609,7 @@ main :: () -> int
 	TestCasting();
 	TestOveloading();
 	TestGlobals();
+	TestProcedureRef();
 
 	return 1;
 }

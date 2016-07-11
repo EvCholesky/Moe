@@ -390,6 +390,4 @@ enum FCOMPILE
 
 EWC_DEFINE_GRF(GRFCOMPILE, FCOMPILE, u32);
 
-
-
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn);

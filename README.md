@@ -24,10 +24,10 @@ Currently supports:
   * Debug Info - first pass
   * Proper handling of global variables (including default initialization)
   * Method overloading
+  * Method pointers
 
 Coming soon:
   * Operator overloading
-  * Method pointers
   * Debug info
     - handle nested scopes
     - verify initializer functions 
@@ -35,6 +35,10 @@ Coming soon:
   * Dynamic arrays
   * Improved error handling and unit testing of error cases.
   * For Loops.
+
+Clean up
+  * 32bit int for 32bit builds (for %d handling among other things)
+  * consolidate PARK_ReferenceDecl, PARK_ArrayDecl, ParkMethodReferenceDecl into PARK_Decl
 
 Further out:
   * UTF8 identifier support

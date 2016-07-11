@@ -126,11 +126,12 @@ enum PARK // PARse Kind
 	PARK_ProcedureCall,		// [procedure, arg0, arg1, ...]
 	PARK_List,
 	PARK_ParameterList,
-	PARK_ArrayDecl,
 	PARK_If,
 	PARK_Else,
 
+	PARK_ArrayDecl,
 	PARK_ReferenceDecl,		// used in type specification, not used for the unary address-of operator
+	PARK_ProcedureReferenceDecl,
 	PARK_Decl,
 	PARK_Typedef,
 	PARK_ConstantDecl,
@@ -147,6 +148,7 @@ enum PARK // PARse Kind
 const char * PChzFromPark(PARK park);
 const char * PChzFromLitk(LITK litk);
 EWC::CString StrFromIdentifier(CSTNode * pStnod);
+EWC::CString StrFromTypeInfo(STypeInfo * pTin);
 bool FDoesOperatorReturnBool(PARK park);
 
 
@@ -426,7 +428,7 @@ public:
 
 		SSymbol *			PSymNext();
 		bool				FIsDone() const
-								{ return m_pSymtab == nullptr; }
+								{ return (m_pSymtab == nullptr) | (m_pSym == nullptr); }
 
 		CSymbolTable *		m_pSymtab;
 		SSymbol *			m_pSym;
@@ -452,7 +454,7 @@ public:
 	STypeInfo *				PTinBuiltin( const EWC::CString & str);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
-	STypeInfoPointer *		PTinptrGetReference(STypeInfo * pTinPointedTo);
+	STypeInfoPointer *		PTinptrAllocReference(STypeInfo * pTinPointedTo);
 
 	void					AddBuiltInType(SErrorManager * pErrman, SJaiLexer * pJlex, STypeInfo * pTin);
 	void					AddManagedTin(STypeInfo * pTin);
