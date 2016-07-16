@@ -68,6 +68,7 @@ main :: () -> int
 		DrawTestTriangle(gRadSpin);
 
         SwapBuffers(pWindow);
+
         // sleep_milliseconds(5);
         UpdateWindowEvents();
 	}

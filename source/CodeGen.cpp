@@ -28,6 +28,7 @@ using namespace EWC;
 #include "llvm-c/Target.h"
 #include "llvm-c/TargetMachine.h"
 #include "llvm/Support/Dwarf.h"
+#include "llvm/IR/CallingConv.h"
 #pragma warning ( pop )
 
 #include "MissingLlvmC/llvmcDIBuilder.h"
@@ -93,6 +94,32 @@ static inline size_t CChGetTypeString(LLVMOpaqueType * pLtype, char * pCh, const
 	}
 
 	return CChCopy("unknown", pCh, pChEnd-pCh);
+}
+
+static inline llvm::CallingConv::ID CallingconvFromCallconv(CALLCONV callconv)
+{
+	static const llvm::CallingConv::ID s_mpCallconvCallingconv[] = 
+	{
+		llvm::CallingConv::C,				//CALLCONV_CX86,
+		llvm::CallingConv::X86_StdCall,		//CALLCONV_StdcallX86,
+		llvm::CallingConv::X86_64_Win64,	 //CALLCONV_X64,
+	};
+	static const int s_cCallconv = sizeof(s_mpCallconvCallingconv) / sizeof(s_mpCallconvCallingconv[0]);
+	EWC_CASSERT(s_cCallconv == CALLCONV_Max, "Missing llvm calling convention");
+
+	if (callconv < CALLCONV_Nil || callconv >= CALLCONV_Max)
+		callconv = CALLCONV_Nil; 
+
+	if (callconv == CALLCONV_Nil)
+	{
+#if EWC_X64
+		return llvm::CallingConv::C;
+#else
+		return llvm::CallingConv::X86_64_Win64;
+#endif
+	}
+
+	return s_mpCallconvCallingconv[callconv];
 }
 
 static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
@@ -833,7 +860,19 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 	const char * pChzFile;	
 	PathSplitDestructive(pChzCopy, cBFilename, &pChzPath, &pChzFile);
 
+#if 0
+#if EWC_X64
+	const char * pChzDataLayout = "p:64:64";
+#else
+	const char * pChzDataLayout = "p:32:32";
+#endif
+
+	 LLVMSetDataLayout(m_pLmoduleCur, pChzDataLayout);
+
+	m_pTargd = LLVMCreateTargetData(pChzDataLayout);
+#else
 	m_pTargd = LLVMCreateTargetData(LLVMGetDataLayout(m_pLmoduleCur));
+#endif
 
 	m_pDib = LLVMCreateDIBuilder(m_pLmoduleCur);
 	m_nRuntimeLanguage = llvm::dwarf::DW_LANG_C;
@@ -2908,6 +2947,12 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 									arypLvalArgs.A(),
 									(u32)arypLvalArgs.C(),
 									"");
+
+
+				if (pTinproc->m_callconv != CALLCONV_Nil)
+				{
+					LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
+				}
 				return pInst;
 			}
 			else
@@ -3516,11 +3561,19 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 
+	char aCh[256];
 	const char * pChzName;
-	if (pStproc->m_fIsForeign && pStnodAlias)
+
+	EWC_ASSERT(pTinproc, "Exected procedure type");
+	pChzName = pTinproc->m_strMangled.PChz();
+
+	if (pStproc->m_fIsForeign)
 	{
-		CString strProcAlias = StrFromIdentifier(pStnodAlias);
-		pChzName = strProcAlias.PChz();
+		if (pStnodAlias)
+		{
+			CString strProcAlias = StrFromIdentifier(pStnodAlias);
+			pChzName = strProcAlias.PChz();
+		}
 	}
 	else
 	{
@@ -3528,7 +3581,6 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		pChzName = pTinproc->m_strMangled.PChz();
 	}
 
-	char aCh[128];
 	if (!pChzName)
 	{
 		(void) pBuild->CChGenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
@@ -3541,6 +3593,11 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, arypLtype.A(), (u32)arypLtype.C(), fHasVarArgs);
 	pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, pChzName, pLtypeFunction);
 	pProc->m_pLval = pProc->m_pLvalFunction; // why is this redundant?
+
+	if (pTinproc->m_callconv != CALLCONV_Nil)
+	{
+		LLVMSetFunctionCallConv(pProc->m_pLvalFunction, CallingconvFromCallconv(pTinproc->m_callconv));
+	}
 
 	if (!pStproc->m_fIsForeign)
 	{
@@ -3864,6 +3921,7 @@ void CompileToObjectFile(CWorkspace * pWork, LLVMModuleRef pLmodule, const char 
 {
 	LLVMTarget * pLtarget = nullptr;
 	//const char * pChzTriple = "x86_64-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
+	//const char * pChzTriple = "i686-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
 	char * pChzTriple = LLVMGetDefaultTargetTriple();
 
 	bool fUsingWindows;
@@ -3937,7 +3995,7 @@ void InitLLVM()
 	LLVMInitializeX86Target();
 	LLVMInitializeX86TargetMC();
 	LLVMInitializeX86AsmPrinter();
-	LLVMInitializeX86AsmParser();
+	//LLVMInitializeX86AsmParser();
 
 	// Initialize codegen and IR passes used by llc so that the -print-after,
 	// -print-before, and -stop-after options work.

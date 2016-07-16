@@ -1416,33 +1416,42 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				auto pStnodReturns = PStnodParseReturnArrow(pParctx, pJlex);
 				pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 
+				CALLCONV callconv = CALLCONV_Nil;
 				pStproc->m_iStnodBody = -1;
 				if (pJlex->m_jtok == JTOK_ReservedWord)
 				{
-					RWORD rwordLookup = RwordLookup(pJlex);
-					if (rwordLookup != RWORD_ForeignDirective)
+					while (pJlex->m_jtok == JTOK_ReservedWord)
 					{
-						ParseError(
-							pParctx,
-							pJlex,
-							"Unexpected token following procedure declaration %s\n",
-							PChzFromRword(rwordLookup));
-					}
-					else
-					{
-						pStproc->m_fIsForeign = true;
-						pStproc->m_fUseUnmangledName = true;
+						RWORD rwordLookup = RwordLookup(pJlex);
+						JtokNextToken(pJlex);
+						switch (rwordLookup)
+						{
+						case RWORD_ForeignDirective:
+							{
+								pStproc->m_fIsForeign = true;
+								pStproc->m_fUseUnmangledName = true;
+
+								if (pJlex->m_jtok == JTOK_Identifier)
+								{
+									auto pStnodAlias = PStnodParseIdentifier(pParctx, pJlex);
+									pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
+
+									//JtokNextToken(pJlex);
+								}
+							} break;
+						case RWORD_CDecl:	callconv = CALLCONV_CX86;	break;
+						case RWORD_StdCall: callconv = CALLCONV_StdcallX86;	break;
+						default:
+							{
+								ParseError(
+									pParctx,
+									pJlex,
+									"Unexpected token following procedure declaration %s\n",
+									PChzFromRword(rwordLookup));
+							} break;
+						}
 					}
 
-					JtokNextToken(pJlex);
-
-					if (pJlex->m_jtok == JTOK_Identifier)
-					{
-						auto pStnodAlias = PStnodParseIdentifier(pParctx, pJlex);
-						pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
-					}
-
-					// TODO: add support for foreign function aliasing (ie. Ack :: () -> int #foreign foo;)
 					Expect(pParctx, pJlex, JTOK(';'), "While parsing foreign directive");
 				}
 
@@ -1488,6 +1497,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
 				pStnodProc->m_pTin = pTinproc;
 				pTinproc->m_pStnodDefinition = pStnodProc;
+				pTinproc->m_callconv = callconv;
 
 				CSTNode ** ppStnodParamMax = &ppStnodParams[cStnodParams];
 				for ( ; ppStnodParams != ppStnodParamMax; ++ppStnodParams)

@@ -86,7 +86,7 @@
       <SubSystem>Windows</SubSystem>
     </Link>
     <Lib>
-      <AdditionalLibraryDirectories>..\..\external\glfw\lib\x64;</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\external\glfw\lib\win32;</AdditionalLibraryDirectories>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -128,7 +128,7 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <Lib>
-      <AdditionalLibraryDirectories>..\..\external\glfw\lib\x64;</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\external\glfw\lib\win32;</AdditionalLibraryDirectories>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

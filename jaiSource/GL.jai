@@ -1,6 +1,7 @@
 #foreign_library "GL"
 #foreign_library "opengl32"
-#foreign_library "..\..\external\glfw\lib\glfw3"
+#foreign_library "legacy_stdio_definitions"
+#foreign_library "..\external\glfw\lib\win32\glfw3"
 #foreign_library "user32"
 #foreign_library "gdi32"
 #foreign_library "shell32"
@@ -20,15 +21,15 @@ SwapBuffers :: (pVHwnd : & void) -> void #foreign SwapBuffers_JAI;
 
 GL_TRIANGLES : s32 :           0x0004;
 
-glBegin :: (mode: s32) #foreign;
-glEnd :: () #foreign;
-glColor4f       :: (r: float, g: float, b: float, a: float) -> void #foreign;
-glColor3f       :: (r: float, g: float, b: float) -> void #foreign;
-glVertex3f   :: (x: float, y: float, z: float) #foreign;
-glVertex2f   :: (x: float, y: float) #foreign;
+glBegin :: (mode: s32) #foreign #stdcall;
+glEnd :: () #foreign #stdcall;
+glColor4f       :: (r: float, g: float, b: float, a: float) -> void #foreign #stdcall;
+glColor3f       :: (r: float, g: float, b: float) -> void #foreign #stdcall;
+glVertex3f   :: (x: float, y: float, z: float) #foreign #stdcall;
+glVertex2f   :: (x: float, y: float) #foreign #stdcall;
 
-glLoadIdentity :: () -> void #foreign;
-glOrtho :: (xLeft: f64, xRight: f64, yBottom: f64, yTop: f64, zNear: f64, zFar: f64) -> void #foreign;
+glLoadIdentity :: () -> void #foreign #stdcall;
+glOrtho :: (xLeft: f64, xRight: f64, yBottom: f64, yTop: f64, zNear: f64, zFar: f64) -> void #foreign #stdcall;
 
 
 

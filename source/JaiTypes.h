@@ -113,6 +113,15 @@ struct STypeInfoPointer : public STypeInfo	// tag = tinptr
 	s32					m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
 };
 
+enum CALLCONV
+{
+	CALLCONV_CX86,
+	CALLCONV_StdcallX86,
+	CALLCONV_X64,
+
+	EWC_MAX_MIN_NIL(CALLCONV)
+};
+
 struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
@@ -124,6 +133,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 						,m_arypTinParams()
 						,m_arypTinReturns()
 						,m_fHasVarArgs(false)
+						,m_callconv(CALLCONV_Nil)
 							{ ; }
 
 	EWC::CString			m_strMangled;
@@ -131,6 +141,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 	EWC::CAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;
 	bool					m_fHasVarArgs;
+	CALLCONV				m_callconv;
 
 	// BB - need names for named argument matching?
 };
