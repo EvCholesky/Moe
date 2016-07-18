@@ -45,3 +45,24 @@ sqrt :: (theta: float) -> float #foreign sqrtf_JAI;
 cos64  :: (theta: f64) -> f64 #foreign cos; 
 sin64  :: (theta: f64) -> f64 #foreign sin;
 sqrt64 :: (theta: f64) -> f64 #foreign sqrt;
+
+DebugBreak :: () -> void #foreign;
+
+assert :: (fPredicate: bool, pChz: & u8)
+{
+	if (!fPredicate)	
+	{
+		printf("ASSERT FAILED: %s\n", pChz); 
+		DebugBreak();
+	}
+}
+
+fverify :: (fPredicate: bool, pChz: & u8) -> bool
+{
+	if (!fPredicate)	
+	{
+		printf("ASSERT FAILED: %s\n", pChz); 
+		DebugBreak();
+	}
+	return fPredicate;
+}

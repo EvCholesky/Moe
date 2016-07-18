@@ -212,6 +212,15 @@ void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChzFor
 	EmitError(pParctx->m_pWork->m_pErrman, &lexloc, pChzFormat, ap);
 }
 
+EWC::CString StrUnexpectedToken(SJaiLexer * pJlex)
+{
+	if (pJlex->m_jtok == JTOK_Identifier)
+	{
+		return CString(pJlex->m_pChString, pJlex->m_cChString);
+	}
+	return CString(PChzCurrentToken(pJlex));
+}
+
 void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const char * pChzInfo = nullptr, ...)
 {
 	if (pJlex->m_jtok != jtokExpected)
@@ -224,19 +233,12 @@ void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const
 			vsprintf_s(aB, EWC_DIM(aB), pChzInfo, ap);
 		}
 
-		CString strIdent;
-		const char * pChzFound = PChzCurrentToken(pJlex);
-		if (pJlex->m_jtok == JTOK_Identifier)
-		{
-			strIdent = CString(pJlex->m_pChString, pJlex->m_cChString);
-			pChzFound = strIdent.PChz();
-		}
-
-		ParseError(pParctx, pJlex, "Expected '%s' before '%s' %s", PChzFromJtok(jtokExpected), pChzFound, aB);
+		auto strUnexpected = StrUnexpectedToken(pJlex);
+		ParseError(pParctx, pJlex, "Expected '%s' before '%s' %s", PChzFromJtok(jtokExpected), strUnexpected.PChz(), aB);
 	}
 
 	JtokNextToken(pJlex);
-};
+}
 
 CSTNode * PStnodAllocateIdentifier(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)
 {
@@ -1245,13 +1247,15 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, C
 		while (FConsumeToken(pJlex, JTOK(',')))
 		{
 			pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList, pSymtabProc);
-			fHasVarArgs |= pStnodParam->m_park == PARK_VariadicArg;
 
 			if (!pStnodParam)
 			{
-				ParseError(pParctx, pJlex, "Expected parameter before %s", PChzCurrentToken(pJlex));
+				auto strUnexpected = StrUnexpectedToken(pJlex);
+				ParseError(pParctx, pJlex, "expected parameter declaration before '%s'", strUnexpected.PChz());
 				break;
 			}
+
+			fHasVarArgs |= pStnodParam->m_park == PARK_VariadicArg;
 			pStnodList->IAppendChild(pStnodParam);
 		}
 	}
@@ -1391,8 +1395,31 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 			*pJlex = jlexPeek;
 			JtokNextToken(pJlex);
 			
-			// function definition
+			bool fIsProcedure = false;
+			INLINEK inlinek = INLINEK_Nil;
 			if (FConsumeToken(pJlex, JTOK('(')))
+			{
+				fIsProcedure = true;
+			}
+			else if (pJlex->m_jtok == JTOK_ReservedWord )
+			{
+				// Note: It seems wrong for inline to go before the parenthesis, but that's how jBlow did it and it's 
+				// not worth the deviation.
+
+				auto rword = RwordLookup(pJlex);
+				if ((rword == RWORD_Inline) | (rword == RWORD_NoInline))
+				{
+					fIsProcedure = true;
+					inlinek = (rword == RWORD_Inline) ? INLINEK_AlwaysInline : INLINEK_NoInline;
+					JtokNextToken(pJlex);
+
+					Expect(pParctx, pJlex, JTOK('('));
+				}
+			}
+
+
+			// function definition
+			if (fIsProcedure)
 			{
 				CSTNode * pStnodProc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodProc->m_park = PARK_ProcedureDefinition;
@@ -1498,6 +1525,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				pStnodProc->m_pTin = pTinproc;
 				pTinproc->m_pStnodDefinition = pStnodProc;
 				pTinproc->m_callconv = callconv;
+				pTinproc->m_inlinek = inlinek;
 
 				CSTNode ** ppStnodParamMax = &ppStnodParams[cStnodParams];
 				for ( ; ppStnodParams != ppStnodParamMax; ++ppStnodParams)

@@ -77,7 +77,7 @@ enum JTOK
 		RW(Typedef) STR(typedef), \
 		RW(Soa) STR(SOA), \
 		RW(Inline) STR(inline), \
-		RW(NoInline) STR(noinline), \
+		RW(NoInline) STR(no_inline), \
 		RW(Defer) STR(defer), \
 		RW(Null) STR(null), \
 		RW(True) STR(true), \

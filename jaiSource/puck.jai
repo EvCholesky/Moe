@@ -28,14 +28,14 @@ DrawTestTriangle :: (gRadians:float)
 	dRad :: g_Pi * 2.0 / 3.0;
 	vecCenter := Vec2Create(g_dXWindow / 2.0, g_dYWindow / 2.0);
 	vecRadius := Vec2Create(300, 0);
-	vecA := Vec2Rotate(gRadians, vecRadius);
-	vecB := Vec2Rotate(gRadians + dRad, vecRadius);
-	vecC := Vec2Rotate(gRadians + (2.0 * dRad), vecRadius);
+	vecA := VecRotate(gRadians, vecRadius);
+	vecB := VecRotate(gRadians + dRad, vecRadius);
+	vecC := VecRotate(gRadians + (2.0 * dRad), vecRadius);
 	z := 0.0;
 
-	vecA = Vec2Add(vecA, vecCenter);
-	vecB = Vec2Add(vecB, vecCenter);
-	vecC = Vec2Add(vecC, vecCenter);
+	vecA = VecAdd(vecA, vecCenter);
+	vecB = VecAdd(vecB, vecCenter);
+	vecC = VecAdd(vecC, vecCenter);
 
     glBegin(GL_TRIANGLES);
     glColor3f(1, 0, 0);

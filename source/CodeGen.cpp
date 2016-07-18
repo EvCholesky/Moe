@@ -3599,6 +3599,13 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		LLVMSetFunctionCallConv(pProc->m_pLvalFunction, CallingconvFromCallconv(pTinproc->m_callconv));
 	}
 
+	switch (pTinproc->m_inlinek)
+	{
+		case INLINEK_NoInline:		LLVMAddFunctionAttr(pProc->m_pLvalFunction, LLVMNoInlineAttribute);	break;
+		case INLINEK_AlwaysInline:	LLVMAddFunctionAttr(pProc->m_pLvalFunction, LLVMAlwaysInlineAttribute);	break;
+		default: break;
+	}
+
 	if (!pStproc->m_fIsForeign)
 	{
 		pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzName);

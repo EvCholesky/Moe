@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <math.h>
 
+extern "C" void DebugBreak()
+{
+	__debugbreak();
+}
+
 extern "C" void PrintFloat(float g)
 {
 	printf("%f\n", g);

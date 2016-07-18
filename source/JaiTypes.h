@@ -122,6 +122,14 @@ enum CALLCONV
 	EWC_MAX_MIN_NIL(CALLCONV)
 };
 
+enum INLINEK
+{
+	INLINEK_AlwaysInline,
+	INLINEK_NoInline,
+
+	EWC_MAX_MIN_NIL(INLINEK)
+};
+
 struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
@@ -133,6 +141,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 						,m_arypTinParams()
 						,m_arypTinReturns()
 						,m_fHasVarArgs(false)
+						,m_inlinek(INLINEK_Nil)
 						,m_callconv(CALLCONV_Nil)
 							{ ; }
 
@@ -141,6 +150,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 	EWC::CAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;
 	bool					m_fHasVarArgs;
+	INLINEK					m_inlinek;
 	CALLCONV				m_callconv;
 
 	// BB - need names for named argument matching?
