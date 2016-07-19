@@ -87,6 +87,8 @@ enum JTOK
 		RW(Using) STR(using), \
 		RW(ImportDirective) STR(#import), \
 		RW(ForeignDirective) STR(#foreign), \
+		RW(FileDirective) STR(#file), \
+		RW(LineDirective) STR(#line), \
 		RW(ForeignLibraryDirective) STR(#foreign_library), \
 		RW(Cast) STR(cast), \
 		RW(CDecl) STR(#cdecl), \

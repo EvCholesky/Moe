@@ -48,20 +48,20 @@ sqrt64 :: (theta: f64) -> f64 #foreign sqrt;
 
 DebugBreak :: () -> void #foreign;
 
-assert :: (fPredicate: bool, pChz: & u8)
+assert :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
 {
 	if (!fPredicate)	
 	{
-		printf("ASSERT FAILED: %s\n", pChz); 
+		printf("ASSERT FAILED: (%s, %d) %s\n", pChzFile, nLine, pChz); 
 		DebugBreak();
 	}
 }
 
-fverify :: (fPredicate: bool, pChz: & u8) -> bool
+fverify :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
 {
 	if (!fPredicate)	
 	{
-		printf("ASSERT FAILED: %s\n", pChz); 
+		printf("ASSERT FAILED: (%s, %d) %s\n", pChzFile, nLine, pChz); 
 		DebugBreak();
 	}
 	return fPredicate;

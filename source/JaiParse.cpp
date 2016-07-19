@@ -358,33 +358,74 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 		case JTOK_ReservedWord:
 			{
 				RWORD rword = RwordLookup(pJlex);
+				bool fIsRwordLiteral = false;
+				switch (rword)
+				{
+					case RWORD_True:				// fall through
+					case RWORD_False:				// fall through
+					case RWORD_FileDirective:		// fall through
+					case RWORD_LineDirective:		// fall through
+					case RWORD_Null:				fIsRwordLiteral = true;	 break;
+					default: break;
+				}
+
+				if (!fIsRwordLiteral)
+					return nullptr;
+
+				SLexerLocation lexloc(pJlex);
+				CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+
+				pStnod->m_jtok = JTOK(pJlex->m_jtok);
+				pStnod->m_park = PARK_Literal;
+
+				CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
+				pStval->m_stvalk = STVALK_ReservedWord;
+				pStval->m_rword = rword;
+				pStnod->m_pTin = nullptr;
+
+				pStnod->m_pStval = pStval;
 				switch (rword)
 				{
 				case RWORD_True:
+					{
+						pStval->m_nUnsigned = 1;
+						pStval->m_litkLex = LITK_Bool;
+					} break;
 				case RWORD_False:
+					{
+						pStval->m_nUnsigned = 0;
+						pStval->m_litkLex = LITK_Bool;
+					} break;
 				case RWORD_Null:
 					{
-						SLexerLocation lexloc(pJlex);
-						CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+						pStval->m_nUnsigned = 0;
+						pStval->m_litkLex = LITK_Null;
+					} break;
+				case RWORD_FileDirective:
+					{
+						pStval->m_stvalk = STVALK_String;
+						pStval->m_litkLex = LITK_String;
+						pStval->m_str = lexloc.m_strFilename;
+					} break;
+				case RWORD_LineDirective:
+					{
+						s32 iLine;
+						s32 iCol;
+						CalculateLinePosition(pParctx->m_pWork, &lexloc, &iLine, &iCol);
 
-						pStnod->m_jtok = JTOK(pJlex->m_jtok);
-						pStnod->m_park = PARK_Literal;
-
-						CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
-						pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
-						pStval->m_stvalk = STVALK_ReservedWord;
-						pStval->m_nUnsigned = (rword == RWORD_True) ? 1 : 0;
-						pStval->m_rword = rword;
-						pStval->m_litkLex = (rword == RWORD_Null) ? LITK_Null : LITK_Bool;
-						pStnod->m_pTin = nullptr;
-
-						pStnod->m_pStval = pStval;
-
-						JtokNextToken(pJlex);
-						return pStnod;
-					}
+						pStval->m_litkLex = LITK_Integer;
+						pStval->m_nUnsigned = iLine;
+					} break;
 				}
-				return nullptr;
+
+				if (pStval->m_str.FIsEmpty())
+				{
+					pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+				}
+
+
+				JtokNextToken(pJlex);
+				return pStnod;
 			}
 		case JTOK_Literal:
 			{

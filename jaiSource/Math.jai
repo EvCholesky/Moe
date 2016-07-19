@@ -117,4 +117,5 @@ VecMul :: inline (vec: SVector4, r: f32) -> SVector4
 GMin :: inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) return gA; return gB; }
 GMax :: inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) return gA; return gB; }
 GClamp :: inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax); }
+GLerp :: inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp; }
 

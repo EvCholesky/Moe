@@ -25,37 +25,44 @@ SColor :: struct
 	m_a: u8;
 }
 
-ColvecFFromCol :: () -> SColorVec
+ColCreate ::inline (r: u8, g: u8, b: u8, a: u8) -> SColor
 {
-	return VecMul(Vec4Create(cast(f32)m_r, cast(f32)m_g, cast(f32)m_b, (f32)m_a), 1.0/255.0);
+	col: SColor;
+	col.m_r = r;
+	col.m_g = g;
+	col.m_b = b;
+	col.m_a = a;
+	return col;
 }
 
-
-ColLerp :: (colA: SColor, colB: SColor, uLerp: f32) -> SColor
+ColLerp :: inline (colA: SColor, colB: SColor, uLerp: f32) -> SColor
 {
-	gR := cast(f32)colA.m_r; GClamp(gR + (cast(f32)colB.m_r - gR) * uLerp, 0, 255);
-	gG := cast(f32)colA.m_g; GClamp(gG + (cast(f32)colB.m_g - gG) * uLerp, 0, 255);
-	gB := cast(f32)colA.m_b; GClamp(gB + (cast(f32)colB.m_b - gB) * uLerp, 0, 255);
-	gA := cast(f32)colA.m_a; GClamp(gA + (cast(f32)colB.m_a - gA) * uLerp, 0, 255);
+	gR := cast(f32)colA.m_r; gR = GClamp(gR + (cast(f32)colB.m_r - gR) * uLerp, 0, 255);
+	gG := cast(f32)colA.m_g; gG = GClamp(gG + (cast(f32)colB.m_g - gG) * uLerp, 0, 255);
+	gB := cast(f32)colA.m_b; gB = GClamp(gB + (cast(f32)colB.m_b - gB) * uLerp, 0, 255);
+	gA := cast(f32)colA.m_a; gA = GClamp(gA + (cast(f32)colB.m_a - gA) * uLerp, 0, 255);
+	return ColCreate(cast(u8) gR, cast(u8) gG, cast(u8) gG, cast(u8) gA);
 }
 
-inline CColor		ColLerp(CColor colA, CColor colB, F32 gBlend)
-						{
-F32 gR = (F32)colA.m_r; ewcClamp<F32>(gR + ((F32)colB.m_r - gR) * gBlend, 0.0f, 255.0f);
-							F32 gG = (F32)colA.m_g; ewcClamp<F32>(gG + ((F32)colB.m_g - gG) * gBlend, 0.0f, 255.0f);
-							F32 gB = (F32)colA.m_b; ewcClamp<F32>(gB + ((F32)colB.m_b - gB) * gBlend, 0.0f, 255.0f);
-							F32 gA = (F32)colA.m_a; ewcClamp<F32>(gA + ((F32)colB.m_a - gA) * gBlend, 0.0f, 255.0f);
-							return CColor((U8)gR,(U8)gG,(U8)gB,(U8)gA);	
-						}
+ColScaleAlpha :: inline (col: SColor, rScale: f32) -> SColor
+{
+	gA := cast(f32)col.m_a * rScale;
+	return ColCreate(col.m_r, col.m_g, col.m_b, cast(u8)gA);
+}
 
-inline CColorVec	ColvecLerp(CColorVecArg colvecA, CColorVecArg colvecB, CScalarArg gBlend)
-						{
-							return VecClamp( VecLerp(colvecA, colvecB, gBlend), CColorVec(KZERO), CColorVec(KONE)); 
-						}
+ColvecFromCol :: inline (col: SColor) -> SColorVec
+{
+	return VecMul(
+				Vec4Create(cast(f32)col.m_r, cast(f32)col.m_g, cast(f32)col.m_b, cast(f32)col.m_a), 
+				1.0/255.0);
+}
 
-inline CColor		ColScaleAlpha(CColor col, F32 scale)
-						{
-							F32 gA = (F32)col.m_a * scale;
-							return CColor(col.m_r, col.m_g, col.m_b, (U8)gA);
-						}
-2
+ColvecLerp :: inline (colvecA: SColorVec, colvecB: SColorVec, uLerp: f32) -> SColorVec
+{
+	vec := Vec4Create(	GClamp(GLerp(colvecA.m_x, colvecB.m_x, uLerp), 0, 1),
+						GClamp(GLerp(colvecA.m_y, colvecB.m_y, uLerp), 0, 1),
+						GClamp(GLerp(colvecA.m_z, colvecB.m_z, uLerp), 0, 1),
+						GClamp(GLerp(colvecA.m_w, colvecB.m_w, uLerp), 0, 1));
+	return vec;
+}
+

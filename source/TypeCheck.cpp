@@ -678,6 +678,14 @@ inline u64 NUnsignedLiteralCast(STypeCheckWorkspace * pTcwork, CSTNode * pStnod,
 			}
 			return (u64)pStval->m_nSigned;
 		}
+	case STVALK_ReservedWord:
+		{
+			if (EWC_FVERIFY(pStval->m_rword == RWORD_LineDirective, "unexpected reserved word"))
+			{
+				return pStval->m_nUnsigned;
+			}
+			return 0;
+		}
 	default:
 		EWC_ASSERT(false, "bad literal cast to unsigned int");
 		return 0;
@@ -700,6 +708,14 @@ inline s64 NSignedLiteralCast(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, c
 		return pStval->m_nSigned;
 	case STVALK_Float:
 		return (s64)pStval->m_g;
+	case STVALK_ReservedWord:
+		{
+			if (EWC_FVERIFY(pStval->m_rword == RWORD_LineDirective, "unexpected reserved word"))
+			{
+				return pStval->m_nUnsigned;
+			}
+			return 0;
+		}
 	default:
 		EWC_ASSERT(false, "bad literal cast to signed int");
 		return 0;
@@ -726,14 +742,9 @@ SBigInt BintFromStval(CSTValue * pStval)
 	case STVALK_UnsignedInt:	return BintFromUint(pStval->m_nUnsigned, false);
 	case STVALK_ReservedWord:
 		{
-			switch (pStval->m_rword)
-			{
-			case RWORD_False:	return BintFromUint(0, false);
-			case RWORD_True:	return BintFromUint(1, false);
-			default:
-				EWC_ASSERT(false, "Can't create Bint from non reserved word");
-				return SBigInt();
-			}
+
+			EWC_ASSERT(pStval->m_litkLex == LITK_Integer || pStval->m_litkLex == LITK_Bool, "Can't create Bint from non integer reserved word");
+			return BintFromUint(pStval->m_nUnsigned, false);
 		}
 	default:
 		EWC_ASSERT(false, "Can't create Bint from non integer value");
@@ -1410,6 +1421,15 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 	
 	switch(pTinLhs->m_tink)
 	{
+		// BB - We'll need to be a bit more explicit here if we're going to support some kind of explicit typedefs
+	case TINK_Float:	return ((STypeInfoFloat *)pTinLhs)->m_cBit == ((STypeInfoFloat *)pTinRhs)->m_cBit;
+	case TINK_Integer:	
+		{
+			STypeInfoInteger * pTinintLhs = (STypeInfoInteger *)pTinLhs;
+			STypeInfoInteger * pTinintRhs = (STypeInfoInteger *)pTinRhs;
+			return (pTinintLhs->m_cBit == pTinintRhs->m_cBit) & (pTinintLhs->m_fIsSigned == pTinintRhs->m_fIsSigned);
+		}
+
 	case TINK_Pointer:	return FTypesAreSame(
 								((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo, 
 								((STypeInfoPointer *)pTinRhs)->m_pTinPointedTo);

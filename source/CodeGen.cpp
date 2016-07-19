@@ -1465,6 +1465,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 			if (pStval->m_stvalk == STVALK_ReservedWord)
 			{
 				EWC_ASSERT(
+					(pStval->m_rword == RWORD_LineDirective) |
 					((pStval->m_nUnsigned == 1) & (pStval->m_rword == RWORD_True)) |
 					((pStval->m_nUnsigned == 0) & (pStval->m_rword == RWORD_False)), "bad boolean reserved word");
 			}
