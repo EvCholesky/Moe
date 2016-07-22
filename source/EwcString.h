@@ -171,7 +171,9 @@ public:
 	void			SetPCh(const char * pChNew, size_t cCh);
 
 	size_t			CB() const
-						{ return CCh(m_pChz); }
+						{ return EWC::CCh(m_pChz); }
+	size_t			CCh() const
+						{ return EWC::CCh(m_pChz); }
 
 protected:
 

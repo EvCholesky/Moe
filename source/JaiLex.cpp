@@ -99,8 +99,7 @@ static inline char NToLower(char c)
 // copy suffixes at the end of a number into the working string
 static int JtokParseSuffixes(SJaiLexer * pJlex, JTOK jtok, LITK litk, const char * pChzStart, const char * pChzCur)
 {
-	pJlex->m_pChString = pJlex->m_aChStorage;
-	pJlex->m_cChString = 0;
+	pJlex->m_str = EWC::CString();
 
 	int jtokReturn = JtokSetTokinf(pJlex, jtok, pChzStart, pChzCur-1);
 	pJlex->m_litk = litk;
@@ -180,8 +179,8 @@ static int JtokParseString(SJaiLexer * pJlex, const char * pChz)
 {
 	const char * pChzStart = pChz;
 	char chDelim = *pChz++; // grab the " or ' for later matching
-	char * pChOut = pJlex->m_aChStorage;
-	char * pChOutEnd = pJlex->m_aChStorage + pJlex->m_cChStorage;
+	char * pChOut = pJlex->m_aChScratch;
+	char * pChOutEnd = pJlex->m_aChScratch + pJlex->m_cChScratch;
 	while (*pChz != chDelim) 
 	{
 		int jtok;
@@ -210,8 +209,7 @@ static int JtokParseString(SJaiLexer * pJlex, const char * pChz)
 	}
 
 	*pChOut = 0;
-	pJlex->m_pChString = pJlex->m_aChStorage;
-	pJlex->m_cChString = pChOut - pJlex->m_aChStorage;
+	pJlex->m_str = EWC::CString(pJlex->m_aChScratch, pChOut - pJlex->m_aChScratch);
 
 	int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz);
 	pJlex->m_litk = LITK_String;
@@ -301,21 +299,20 @@ int JtokNextToken(SJaiLexer * pJlex)
 				| (u8(*pChz) >= 128))   // >= 128 is UTF8 char
 			{
 				size_t iCh = 0;
-				pJlex->m_pChString = pJlex->m_aChStorage;
+				char * pChzScratch = pJlex->m_aChScratch;
 				do 
 				{
-					if (iCh+1 >= pJlex->m_cChStorage)
+					if (iCh+1 >= pJlex->m_cChScratch)
 						return JtokSetTokinf(pJlex, JTOK_ParseError, pChz, pChz+iCh);
 
-					pJlex->m_pChString[iCh] = pChz[iCh];
+					pChzScratch[iCh] = pChz[iCh];
 					++iCh;
 				} while ( ((pChz[iCh] >= 'a') & (pChz[iCh] <= 'z'))
 						| ((pChz[iCh] >= 'A') & (pChz[iCh] <= 'Z'))
 						| ((pChz[iCh] >= '0') & (pChz[iCh] <= '9')) // allow digits in middle of identifier
 						| (pChz[iCh] == '_')
 						| (u8(pChz[iCh]) >= 128));
-				pJlex->m_pChString[iCh] = 0;
-				pJlex->m_cChString = iCh;
+				pJlex->m_str = EWC::CString(pChzScratch, iCh);
 
 				u32 Hv = EWC::HvFromPChz(pChz, iCh);
 				RWORD rword = RwordFromHv(Hv);
@@ -538,8 +535,8 @@ void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInpu
 	pJlex->m_pChInput = pChInput;
 	pJlex->m_pChParse = pChInput;
 	pJlex->m_pChEof =  pChInputEnd;
-	pJlex->m_aChStorage = aChStorage;
-	pJlex->m_cChStorage = cChStorage;
+	pJlex->m_aChScratch = aChStorage;
+	pJlex->m_cChScratch = cChStorage;
 
 	pJlex->m_pChzFilename = "unknown filename";
 	pJlex->m_pChBegin = nullptr;
@@ -648,10 +645,10 @@ void AssertMatches(
 		if (apChz && jlex.m_jtok == JTOK_Identifier || fIsStringLiteral)
 		{
 			EWC_ASSERT(
-				EWC::CCh(apChz[iJtok]) == jlex.m_cChString, 
+				EWC::CCh(apChz[iJtok]) == jlex.m_str.CCh(), 
 				"lexed string length doesn't match expected value");
 			EWC_ASSERT(
-				EWC::FAreSame(apChz[iJtok], jlex.m_pChString, jlex.m_cChString), 
+				EWC::FAreSame(apChz[iJtok], jlex.m_str.PChz(), jlex.m_str.CCh()), 
 				"lexed string doesn't match expected value");
 		}
 
@@ -683,6 +680,11 @@ void AssertMatches(
 
 void TestLexing()
 {
+	u8 aBString[1024 * 100];
+	EWC::CAlloc allocString(aBString, sizeof(aBString));
+
+	StaticInitStrings(&allocString);
+
 	const char * s_pChzComparisons = "< > <= >= != ==";
 	const JTOK s_aJtokComparisons[] = {	JTOK('<'), JTOK('>'), 
 										JTOK_LessEqual, JTOK_GreaterEqual, 
@@ -761,6 +763,8 @@ void TestLexing()
 								JTOK_Nil };
 
 	AssertMatches(s_pChzTriple, s_aJtokTriple);
+
+	StaticShutdownStrings(&allocString);
 }
 #else // JLEX_TEST
 void TestLexing()

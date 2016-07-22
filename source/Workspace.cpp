@@ -294,7 +294,7 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn, cons
 void EndParse(CWorkspace * pWork, SJaiLexer * pJlex)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
-	pAlloc->EWC_FREE(pJlex->m_aChStorage);
+	pAlloc->EWC_FREE(pJlex->m_aChScratch);
 
 	CSymbolTable * pSymtabPop = PSymtabPop(pWork->m_pParctx);
 	EWC_ASSERT(pSymtabPop == pWork->m_pSymtab, "symbol table push/pop mismatch");

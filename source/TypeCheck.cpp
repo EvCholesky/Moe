@@ -3186,7 +3186,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (pTcsentTop->m_nState < 1)
 					pTcsentTop->m_nState = 1;	// skip the identifier
 
-				CSTDecl * pStdecl = pStnod->m_pStdecl;
+				auto * pStdecl = pStnod->m_pStdecl;
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
 					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
@@ -3314,7 +3314,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			} break;
 			case PARK_Cast:
 			{
-				CSTDecl * pStdecl = pStnod->m_pStdecl;
+				auto * pStdecl = pStnod->m_pStdecl;
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
 					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
@@ -3378,7 +3378,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			} break;
 			case PARK_Decl:
 			{
-				CSTDecl * pStdecl = pStnod->m_pStdecl;
+				auto * pStdecl = pStnod->m_pStdecl;
 				EWC_ASSERT(pStdecl, "missing decl parse data");
 
 				if (pTcsentTop->m_nState == 0)	// type check initializer 
@@ -3467,14 +3467,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						}
 					}
 
+					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 					if (pStnod->m_pTin == nullptr)
 					{
-						EmitError(pTcwork, pStnod, "Unable to calculate type for declaration");
+						const char * pChzIdent = (pStnodIdent) ? StrFromIdentifier(pStnodIdent).PChz() : "declaration";
+						EmitError(pTcwork, pStnod, "Unable to calculate type for %s", pChzIdent);
 						return TCRET_StoppingError;
 					}
 
 					// find our symbol and resolve any pending unknown types
-					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 					if (EWC_FVERIFY(pStnodIdent, "Declaration without identifier"))
 					{
 						CString strIdent = StrFromIdentifier(pStnodIdent);

@@ -307,9 +307,9 @@ int main(int cpChzArg, const char * apChzArg[])
 
 	if (comline.FHasCommand("-test"))
 	{
+		TestParse();
 		TestTypeCheck();
 		TestLexing();
-		TestParse();
 		TestCodeGen();
 		printf("passed unit tests\n");
 	}

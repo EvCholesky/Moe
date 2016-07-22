@@ -154,8 +154,8 @@ struct SJaiLexer // tag = jlex
    const char *		m_pChInput;
    const char *		m_pChEof;
    const char *		m_pChParse;
-   char *			m_aChStorage;
-   u32				m_cChStorage;
+   char *			m_aChScratch;	// wowrking character space - NOTE:
+   u32				m_cChScratch;
 
    // lexer parse location for error messages
    const char *		m_pChzFilename;
@@ -169,8 +169,7 @@ struct SJaiLexer // tag = jlex
    F64				m_g;
    u64				m_n;
    LITK				m_litk;
-   char *			m_pChString;
-   size_t			m_cChString;
+   EWC::CString		m_str;
 };
 
 

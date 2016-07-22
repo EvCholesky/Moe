@@ -125,7 +125,7 @@ enum PARK // PARse Kind
 	PARK_MemberLookup,		// [struct, child]
 	PARK_ProcedureCall,		// [procedure, arg0, arg1, ...]
 	PARK_List,
-	PARK_ParameterList,
+	PARK_ParameterList,		// comma separated declarations, used by structs, argument lists and one line compound decls
 	PARK_If,
 	PARK_Else,
 
@@ -133,6 +133,7 @@ enum PARK // PARse Kind
 	PARK_ReferenceDecl,		// used in type specification, not used for the unary address-of operator
 	PARK_ProcedureReferenceDecl,
 	PARK_Decl,
+//	PARK_CompoundDecl,	// comma separated declarations - specialized AST node for future tuple return value support.
 	PARK_Typedef,
 	PARK_ConstantDecl,
 	PARK_ProcedureDefinition,
@@ -160,12 +161,16 @@ public:
 					:m_iStnodIdentifier(-1)
 					,m_iStnodType(-1)
 					,m_iStnodInit(-1)
+					,m_iStnodChildMin(-1)
+					,m_iStnodChildMax(-1)
 					,m_pTin(nullptr)
 						{ ; }
 
 	int				m_iStnodIdentifier;
 	int				m_iStnodType;
 	int				m_iStnodInit;
+	int				m_iStnodChildMin;
+	int				m_iStnodChildMax;
 	STypeInfo * 	m_pTin;
 };
 

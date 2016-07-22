@@ -23,6 +23,17 @@
 
 using namespace EWC;
 
+enum FPDECL
+{
+	FPDECL_AllowCompoundDecl		= 0x1,	// allow comma-separated declaration of multiple variables.
+	FPDECL_AllowVariadic		= 0x2,	// allow the list to end with variadic arguments (..)
+	FPDECL_AllowUninitializer	= 0x4,	// allow decls to specify explicit uninitializers (n:int=---;}
+
+	FPDECL_None			= 0x0,
+	FPDECL_All			= 0x7,
+};
+EWC_DEFINE_GRF(GRFPDECL, FPDECL, u32);
+
 CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtab);
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex);
 CSTNode * PStnodParseExpression(CParseContext * pParctx, SJaiLexer * pJlex);
@@ -216,7 +227,7 @@ EWC::CString StrUnexpectedToken(SJaiLexer * pJlex)
 {
 	if (pJlex->m_jtok == JTOK_Identifier)
 	{
-		return CString(pJlex->m_pChString, pJlex->m_cChString);
+		return pJlex->m_str;
 	}
 	return CString(PChzCurrentToken(pJlex));
 }
@@ -260,7 +271,7 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 
 	SLexerLocation lexloc(pJlex);
 
-	CString strIdent(pJlex->m_pChString, pJlex->m_cChString);
+	CString strIdent = pJlex->m_str;
 	auto pStnod = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
 	pStnod->m_jtok = JTOK(pJlex->m_jtok);
 
@@ -268,9 +279,9 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	{
 		ParseError(pParctx, pJlex, "Identifier with no string");
 	}
-	else if (pJlex->m_pChString[0] == '#')
+	else if (strIdent.PChz()[0] == '#')
 	{
-		ParseError(pParctx, pJlex, "Unknown directive encountered %s", pJlex->m_pChString);
+		ParseError(pParctx, pJlex, "Unknown directive encountered %s", strIdent.PChz());
 	}
 
 	JtokNextToken(pJlex);
@@ -296,7 +307,7 @@ CSTNode * PStnodParseReservedWord(CParseContext * pParctx, SJaiLexer * pJlex, RW
 	pStnod->m_park = PARK_ReservedWord;
 
 	CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
-	pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+	pStval->m_str = pJlex->m_str;
 	pStval->m_rword = rwordLookup;
 	pStnod->m_pStval = pStval;
 
@@ -420,7 +431,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 
 				if (pStval->m_str.FIsEmpty())
 				{
-					pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+					pStval->m_str = pJlex->m_str;
 				}
 
 
@@ -438,7 +449,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 				pStnod->m_park = PARK_Literal;
 
 				CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
-				pStval->m_str = CString(pJlex->m_pChString, pJlex->m_cChString);
+				pStval->m_str = pJlex->m_str;
 				pStval->m_litkLex = pJlex->m_litk;
 
 				if (pJlex->m_litk == LITK_Float)
@@ -469,7 +480,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 				pStnodLit->m_park = PARK_ArrayLiteral;
 
 				// We're using a decl here... may need a custom value structure
-				CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+				auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
 				pStnodLit->m_pStdecl = pStdecl;
 
 				if (FConsumeToken(pJlex, JTOK(':')))
@@ -1102,10 +1113,69 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnod;
 }
 
-CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK parkContext, CSymbolTable * pSymtab)
+// Decl structure has become a bit complicated...
+// ParameterList { Decl, Decl, Decl{ childDecl[3] } }
+// ParameterLists contain declarations and declarations can contain compound (ie parent/child declarations)
+//   Compound declarations only allow one level deep and are there to support comma separated declarations 
+//   and initialization to multiple return types.
+
+// n1, n2:s32, g1: f32;	// would be one compound decl
+// parent decls cannot have a type.
+// child decls cannot have initializers - the initializer should come from the parent.
+
+void ValidateDeclaration(CParseContext * pParctx, SJaiLexer * pJlex, CSTNode * pStnodDecl)
+{
+	CSTDecl * pStdecl = pStnodDecl->m_pStdecl;
+	if (!EWC_FVERIFY(pStdecl, "bad declaration in ValidateDeclaration"))
+		return;
+
+	bool fMissingTypeSpecifier;
+	if (pStdecl->m_iStnodChildMin == -1)
+	{
+		fMissingTypeSpecifier = (pStdecl->m_iStnodType == -1);
+		EWC_ASSERT(pStdecl->m_iStnodIdentifier != -1, "declaration missing identifier");
+	}
+	else // compound decl
+	{
+		if (pStdecl->m_iStnodType != -1)
+			ParseError(pParctx, pJlex, "Internal error, compound decl should not specify a type");
+
+		fMissingTypeSpecifier = false;
+		for (int iStnodChild = pStdecl->m_iStnodChildMin; iStnodChild != pStdecl->m_iStnodChildMax; ++iStnodChild)
+		{
+			auto pStdeclChild = pStnodDecl->PStnodChild(iStnodChild)->m_pStdecl;
+			EWC_ASSERT(pStdeclChild->m_iStnodIdentifier != -1, "declaration missing identifier");
+
+			if (pStdeclChild->m_iStnodInit != -1)
+				ParseError(pParctx, pJlex, "Internal error, child decl should not specify an initializer");
+
+			EWC_ASSERT(pStdeclChild->m_iStnodChildMin == -1 && pStdeclChild->m_iStnodChildMax == -1, "nested children not supported");
+
+			fMissingTypeSpecifier |= (pStdeclChild->m_iStnodType == -1);
+		}
+	}
+	
+	auto pStnodInit = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
+	if (fMissingTypeSpecifier & (pStnodInit == nullptr))
+		ParseError(pParctx, pJlex, "Expected type specifier or initialization");
+	if (pStnodInit && pStnodInit->m_park == PARK_Uninitializer)
+	{
+		if (fMissingTypeSpecifier)
+		{
+			ParseError(pParctx, pJlex, "Uninitializer not allowed without specified type");
+		}
+	}
+}
+
+
+CSTNode * PStnodParseParameter(
+	CParseContext * pParctx,
+	SJaiLexer * pJlex,
+	CSymbolTable * pSymtab,
+	GRFPDECL grfpdecl)
 {
 	SLexerLocation lexloc(pJlex);
-	if (pJlex->m_jtok == JTOK_PeriodPeriod && parkContext == PARK_ParameterList)
+	if (pJlex->m_jtok == JTOK_PeriodPeriod && grfpdecl.FIsSet(FPDECL_AllowVariadic))
 	{
 		JtokNextToken(pJlex);
 
@@ -1115,96 +1185,162 @@ CSTNode * PStnodParseParameter(CParseContext * pParctx, SJaiLexer * pJlex, PARK 
 		return pStnodVarArgs;
 	}
 
-	if (pJlex->m_jtok != JTOK_Identifier)
-		return nullptr;
+	CSTNode * pStnodReturn = nullptr;
+	CSTNode * pStnodCompound = nullptr;
+	CSTNode * pStnodInit = nullptr;
+	bool fAllowCompoundDecl = grfpdecl.FIsSet(FPDECL_AllowCompoundDecl);
 
 	SJaiLexer jlexPeek = *pJlex;
-	JtokNextToken(&jlexPeek);
-
-	if ((jlexPeek.m_jtok != JTOK(':')) & (jlexPeek.m_jtok != JTOK_ColonEqual))
-		return nullptr;
-
-	CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pJlex);
-	if (!pStnodIdent)
-		return nullptr;
-
-	CSTNode * pStnodDecl = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-	pStnodDecl->m_park = PARK_Decl;
-
-	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-	pStnodDecl->m_pStdecl = pStdecl;
-
-	pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
-	
-	CSTNode * pStnodType = nullptr;
-	CSTNode * pStnodInit = nullptr;
-	if (FConsumeToken(pJlex, JTOK_ColonEqual))
+	int cIdent = 0;
+	while (1)
 	{
-		pStnodInit = PStnodParseExpression(pParctx, pJlex);
-	}
-	else if (FConsumeToken(pJlex, JTOK(':')))
-	{
-		pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
-		pStdecl->m_iStnodType = pStnodDecl->IAppendChild(pStnodType);
+		if (jlexPeek.m_jtok != JTOK_Identifier)
+			return nullptr;
 
-		// NOTE - I'm not propagating the type here as it may be unknown, leave this for the 
-		//  type checking/inference pass.
+		CString strIdent = jlexPeek.m_str;
 
-		if (FConsumeToken(pJlex, JTOK('=')))
+		++cIdent;
+		JtokNextToken(&jlexPeek);
+
+		if (fAllowCompoundDecl && FConsumeToken(&jlexPeek, JTOK(',')))
+			continue;
+
+		if ((jlexPeek.m_jtok != JTOK(':')) & (jlexPeek.m_jtok != JTOK_ColonEqual))
 		{
-			if (FConsumeToken(pJlex, JTOK_TripleMinus))
-			{
-				if (parkContext == PARK_ParameterList)
-				{
-					ParseError(pParctx, pJlex, "--- uninitializer not allowed in parameter lists");
-				}
-				else
-				{
-					SLexerLocation lexloc(pJlex);
-					pStnodInit = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-					pStnodInit->m_jtok = JTOK_TripleMinus;
-					pStnodInit->m_park = PARK_Uninitializer;
+			return nullptr;
+		}
 
-					if (!pStnodType)
-					{
-						ParseError(pParctx, pJlex, "Uninitializer not allowed without specified type");
-					}
+		break;
+	}
+
+	int cTypeNeeded = 0;
+	CSTNode * pStnodDecl = nullptr;
+	do
+	{
+		if (pStnodInit)
+			ParseError(pParctx, pJlex, "Initializer must come after all comma separated declarations");
+
+		CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pJlex);
+		if (!EWC_FVERIFY(pStnodIdent, "parse failed during decl peek"))
+			return nullptr;
+
+		pStnodDecl = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+		pStnodDecl->m_park = PARK_Decl;
+
+		auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+		pStnodDecl->m_pStdecl = pStdecl;
+		++cTypeNeeded;
+
+		if (pStnodReturn)
+		{
+			if (!pStnodCompound)
+			{
+				pStnodCompound = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodCompound->m_park = PARK_Decl;
+
+				auto * pStdeclCompound = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+				pStnodCompound->m_pStdecl = pStdeclCompound;
+
+				pStdeclCompound->m_iStnodChildMin = pStnodCompound->IAppendChild(pStnodReturn);
+				pStnodReturn = pStnodCompound;
+			}
+			pStnodCompound->m_pStdecl->m_iStnodChildMax = pStnodCompound->IAppendChild(pStnodDecl) + 1;
+		}
+		else
+		{
+			pStnodReturn = pStnodDecl;
+		}
+
+		// NOTE: May not resolve symbols (symtab is null if this is a procedure reference)
+		if (pSymtab)
+		{
+			pStnodIdent->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
+		}
+
+		pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
+
+		if (FConsumeToken(pJlex, JTOK_ColonEqual))
+		{
+			pStnodInit = PStnodParseExpression(pParctx, pJlex);
+		}
+		else if (FConsumeToken(pJlex, JTOK(':')))
+		{
+			if (pStnodCompound)
+			{
+				// we back up and pare the type for each child decl in this group (because we don't have a deep CSTNode copy)
+
+				EWC_ASSERT(cTypeNeeded, "No compound children?");
+
+				int iStnodType = pStnodCompound->m_pStdecl->m_iStnodChildMax - cTypeNeeded;
+				for ( ; iStnodType < pStnodCompound->m_pStdecl->m_iStnodChildMax; ++iStnodType)
+				{
+					jlexPeek = *pJlex;
+					auto pStnodType = PStnodParseTypeSpecifier(pParctx, &jlexPeek);
+
+					auto pStnodChild = pStnodCompound->PStnodChild(iStnodType);
+
+					EWC_ASSERT(pStnodChild->m_pStdecl->m_iStnodType == -1, "shouldn't set the type child twice");
+					pStnodChild->m_pStdecl->m_iStnodType = pStnodChild->IAppendChild(pStnodType);
 				}
+				*pJlex = jlexPeek;
+				cTypeNeeded = 0;
 			}
 			else
 			{
+				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
+				pStdecl->m_iStnodType = pStnodDecl->IAppendChild(pStnodType);
+				cTypeNeeded = 0;
+			}
+
+			if (FConsumeToken(pJlex, JTOK('=')))
+			{
+				if (FConsumeToken(pJlex, JTOK_TripleMinus))
+				{
+					if (!grfpdecl.FIsSet(FPDECL_AllowUninitializer))
+					{
+						ParseError(pParctx, pJlex, "--- uninitializer not allowed in parameter lists");
+					}
+					else
+					{
+						SLexerLocation lexloc(pJlex);
+						pStnodInit = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+						pStnodInit->m_jtok = JTOK_TripleMinus;
+						pStnodInit->m_park = PARK_Uninitializer;
+					}
+				}
+				else
+				{
+					pStnodInit = PStnodParseExpression(pParctx, pJlex);
+					if (!pStnodInit)
+						ParseError(pParctx, pJlex, "initial value expected before %s", PChzCurrentToken(pJlex));
+				}
+			}
+			else if (FConsumeToken(pJlex, JTOK(':')))
+			{
+				if (pStnodCompound)
+					ParseError(pParctx, pJlex, "Comma separated declarations not supported for constants");
+
+				pStnodDecl->m_park = PARK_ConstantDecl;
 				pStnodInit = PStnodParseExpression(pParctx, pJlex);
 				if (!pStnodInit)
 					ParseError(pParctx, pJlex, "initial value expected before %s", PChzCurrentToken(pJlex));
 			}
 		}
-		else if (FConsumeToken(pJlex, JTOK(':')))
-		{
-			pStnodDecl->m_park = PARK_ConstantDecl;
-			pStnodInit = PStnodParseExpression(pParctx, pJlex);
-			if (!pStnodInit)
-				ParseError(pParctx, pJlex, "initial value expected before %s", PChzCurrentToken(pJlex));
-		}
-	}
 
-	pStdecl->m_iStnodInit = pStnodDecl->IAppendChild(pStnodInit);
-	if ((pStdecl->m_iStnodType == -1) & (pStdecl->m_iStnodInit == -1))
-	{
-		ParseError(pParctx, pJlex, "Expected type specifier or initialization");
-	}
+	} while (fAllowCompoundDecl && FConsumeToken(pJlex, JTOK(',')));
 
-	// may not resolve symbols (ie. this is a procedure reference)
-	if (pSymtab)
-	{
-		pStnodIdent->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
-	}
+	pStnodReturn->m_pStdecl->m_iStnodInit = pStnodReturn->IAppendChild(pStnodInit);
 
-	return pStnodDecl;
+	ValidateDeclaration(pParctx, pJlex, pStnodReturn);
+	return pStnodReturn;
 }
 
 CSTNode * PStnodParseDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 {
-	CSTNode * pStnod = PStnodParseParameter(pParctx, pJlex, PARK_Decl, pParctx->m_pSymtab);
+	// stand alone declaration statement
+
+	GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl;
+	auto * pStnod =  PStnodParseParameter(pParctx, pJlex, pParctx->m_pSymtab, grfpdecl);
 	if (!pStnod)
 		return nullptr;
 
@@ -1274,7 +1410,8 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, C
 		PushSymbolTable(pParctx, pSymtabProc, lexloc);
 	}
 
-	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList, pSymtabProc);
+	GRFPDECL grfpdecl = FPDECL_AllowVariadic;
+	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pJlex, pSymtabProc, grfpdecl);
 	CSTNode * pStnodList = nullptr;
 	bool fHasVarArgs = pStnodParam && pStnodParam->m_park == PARK_VariadicArg;
 
@@ -1287,7 +1424,7 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, C
 
 		while (FConsumeToken(pJlex, JTOK(',')))
 		{
-			pStnodParam = PStnodParseParameter(pParctx, pJlex, PARK_ParameterList, pSymtabProc);
+			pStnodParam = PStnodParseParameter(pParctx, pJlex, pSymtabProc, grfpdecl);
 
 			if (!pStnodParam)
 			{
@@ -1325,7 +1462,7 @@ CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation 
 	pStnodConstant->m_park = park;
 	pStnodConstant->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
 
-	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+	auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
 	pStnodConstant->m_pStdecl = pStdecl;
 
 	auto pStnodIdent = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
@@ -1346,7 +1483,7 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
 	CSTNode * pStnodConstant = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 	pStnodConstant->m_park = PARK_EnumConstant;
 
-	CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+	auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
 	pStnodConstant->m_pStdecl = pStdecl;
 	pStdecl->m_iStnodIdentifier = pStnodConstant->IAppendChild(pStnodIdent);
 
@@ -1769,9 +1906,24 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSTNode * const * ppStnodMemberMax = &ppStnodMember[cStnodMember];
 				for (auto ppStnodMemberIt = ppStnodMember; ppStnodMemberIt != ppStnodMemberMax; ++ppStnodMemberIt)
 				{
-					switch ((*ppStnodMemberIt)->m_park)
+					auto pStnodMemberIt = *ppStnodMemberIt;
+					switch (pStnodMemberIt->m_park)
 					{
-					case PARK_Decl:				++cStnodField; break;
+					case PARK_Decl:			
+						{
+							auto pStdecl = pStnodMemberIt->m_pStdecl;
+							if (EWC_FVERIFY(pStdecl, "expected stdecl"))
+							{
+								if (pStdecl->m_iStnodChildMin == -1)	
+								{
+									++cStnodField; 
+								}
+								else
+								{
+									cStnodField += pStdecl->m_iStnodChildMax - pStdecl->m_iStnodChildMin;
+								}
+							}
+						} break;
 					case PARK_ConstantDecl:		break;
 					case PARK_StructDefinition:	break;
 					case PARK_EnumDefinition:	break;
@@ -1865,7 +2017,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 			CSTNode * pStnodConst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 			pStnodConst->m_park = PARK_ConstantDecl;
 
-			CSTDecl * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+			auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
 			pStnodConst->m_pStdecl = pStdecl;
 
 			pStdecl->m_iStnodIdentifier = pStnodConst->IAppendChild(pStnodIdent);
@@ -2106,11 +2258,11 @@ bool FParseImportDirectives(CWorkspace * pWork, SJaiLexer * pJlex)
 			{
 				if (rword == RWORD_ImportDirective)
 				{
-					(void) pWork->PFileEnsure(pJlex->m_pChString, CWorkspace::FILEK_Source);
+					(void) pWork->PFileEnsure(pJlex->m_str.PChz(), CWorkspace::FILEK_Source);
 				}
 				else if (EWC_FVERIFY(rword == RWORD_ForeignLibraryDirective, "unknown directive"))
 				{
-					(void) pWork->PFileEnsure(pJlex->m_pChString, CWorkspace::FILEK_Library);
+					(void) pWork->PFileEnsure(pJlex->m_str.PChz(), CWorkspace::FILEK_Library);
 				}
 				JtokNextToken(pJlex);
 				return true;
@@ -2868,6 +3020,7 @@ size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
 	case PARK_ArrayDecl:		    return CChCopy("[]", pCh, pChEnd - pCh);
 	case PARK_ProcedureReferenceDecl:
 									return CChCopy("procref", pCh, pChEnd - pCh);
+	case PARK_Uninitializer:		return CChCopy("---",pCh, pChEnd-pCh);
 	case PARK_ReferenceDecl:		return CChCopy("ptr", pCh, pChEnd - pCh);
 	case PARK_Decl:					return CChCopy("decl", pCh, pChEnd - pCh);
 	case PARK_Typedef:				return CChCopy("typedef", pCh, pChEnd - pCh);
@@ -3003,7 +3156,7 @@ CString StrFromIdentifier(CSTNode * pStnod)
 void AssertParseMatchTailRecurse(
 	CWorkspace * pWork,
 	const char * pChzIn,
-	const char * pChzOut,
+	const char * pChzExpected,
 	const char * apChzExpectedImport[] = nullptr,
 	const char * apChzExpectedLibrary[] = nullptr)
 {
@@ -3031,7 +3184,7 @@ void AssertParseMatchTailRecurse(
 
 	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Name);
 
-	EWC_ASSERT(FAreSame(aCh, pChzOut), "parse debug string doesn't match expected value");
+	EWC_ASSERT(FAreSame(aCh, pChzExpected), "parse debug string doesn't match expected value");
 
 	if (apChzExpectedImport)
 	{
@@ -3087,6 +3240,14 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pChzIn = "n1: int, g1, g2: float = ---;";
+		pChzOut = "(decl (decl $n1 $int) (decl $g1 $float) (decl $g2 $float) (---))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
+
+		pChzIn = "n1, n2: int, g: float;";
+		pChzOut = "(decl (decl $n1 $int) (decl $n2 $int) (decl $g $float))";
+		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "(@ppFunc)(2);";
 		pChzOut = "(procCall (unary[@] $ppFunc) 2)";

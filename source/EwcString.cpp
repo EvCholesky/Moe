@@ -186,7 +186,7 @@ void CString::SetPChz(const char * pChzNew)
 
 	if(m_pChz)
 	{
-		size_t cB = CCh(m_pChz) + 1;
+		size_t cB = EWC::CCh(m_pChz) + 1;
 		s_pStrtab->FreePChz(m_pChz, cB, m_shash.HvRaw());
 		m_pChz = nullptr;
 		m_shash = CStringHash(0);
@@ -195,7 +195,7 @@ void CString::SetPChz(const char * pChzNew)
 	if(pChzNew)
 	{
 		m_shash = CStringHash(pChzNew);
-		m_pChz = s_pStrtab->PChzAlloc(pChzNew, CCh(pChzNew), m_shash.HvRaw());
+		m_pChz = s_pStrtab->PChzAlloc(pChzNew, EWC::CCh(pChzNew), m_shash.HvRaw());
 	}
 }
 
@@ -211,7 +211,7 @@ void CString::SetPCh(const char * pChNew, size_t cCh)
 
 	if(m_pChz)
 	{
-		size_t cB = CCh(m_pChz) + 1;
+		size_t cB = EWC::CCh(m_pChz) + 1;
 		s_pStrtab->FreePChz(m_pChz, cB, m_shash.HvRaw());
 		m_pChz = nullptr;
 		m_shash = CStringHash(0);
