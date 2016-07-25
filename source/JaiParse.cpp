@@ -1949,11 +1949,35 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					if (pStnodMember->m_park != PARK_Decl)
 						continue;
 
-					auto pTypememb = pTinstruct->m_aryTypemembField.AppendNew();
-					auto pStnodMemberIdent = pStnodMember->PStnodChildSafe(pStnodMember->m_pStdecl->m_iStnodIdentifier);
-					pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
-					pTypememb->m_pStnod = pStnodMember;
-					pTypememb->m_pTin = pStnodMember->m_pTin;
+					auto pStdecl = pStnodMember->m_pStdecl;
+					if (EWC_FVERIFY(pStdecl, "expected stdecl"))
+					{
+						if (pStdecl->m_iStnodChildMin == -1)	
+						{
+							auto pTypememb = pTinstruct->m_aryTypemembField.AppendNew();
+							pTypememb->m_pStnod = pStnodMember;
+						}
+						else
+						{
+							int iStnodChildMax = pStdecl->m_iStnodChildMax;
+							for (int iStnod = pStdecl->m_iStnodChildMin; iStnod < iStnodChildMax; ++iStnod)
+							{
+								auto pTypememb = pTinstruct->m_aryTypemembField.AppendNew();
+								pTypememb->m_pStnod = pStnodMember->PStnodChild(iStnod);
+							}
+						}
+					}
+
+					int cTypememb = pTinstruct->m_aryTypemembField.C();
+					for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
+					{
+						auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
+
+						auto pStnodChild = pTypememb->m_pStnod;
+						auto pStnodMemberIdent = pStnodChild->PStnodChildSafe(pStnodChild->m_pStdecl->m_iStnodIdentifier);
+						pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
+						pTypememb->m_pTin = pStnodChild->m_pTin;
+					}
 				}
 
 				pParctx->m_pSymtab->AddManagedTin(pTinstruct);

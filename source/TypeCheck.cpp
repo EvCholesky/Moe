@@ -3381,6 +3381,29 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto * pStdecl = pStnod->m_pStdecl;
 				EWC_ASSERT(pStdecl, "missing decl parse data");
 
+				if (pTcsentTop->m_nState < pStnod->CStnodChild())
+				{
+					if (pTcsentTop->m_nState != pStdecl->m_iStnodIdentifier)
+					{
+						PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
+						STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+
+						if (pTcsentTop->m_nState == pStdecl->m_iStnodInit)
+						{
+							// Note: Allow forward declarations - we may be initializing to a pointer to the current procedure
+							pTcsentPushed->m_fAllowForwardDecl = true;
+						}
+						else if (pTcsentTop->m_nState == pStdecl->m_iStnodType)
+						{
+							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+						}
+					}
+
+					++pTcsentTop->m_nState;
+					break;
+				}
+
+				/*
 				if (pTcsentTop->m_nState == 0)	// type check initializer 
 				{
 					if (pStdecl->m_iStnodInit >= 0)
@@ -3406,6 +3429,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					++pTcsentTop->m_nState;
 				}
 				else if (pTcsentTop->m_nState == 2) // resolve actual type
+				*/
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					if (pStdecl->m_iStnodType >= 0)
@@ -3468,25 +3492,31 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 
 					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
-					if (pStnod->m_pTin == nullptr)
-					{
-						const char * pChzIdent = (pStnodIdent) ? StrFromIdentifier(pStnodIdent).PChz() : "declaration";
-						EmitError(pTcwork, pStnod, "Unable to calculate type for %s", pChzIdent);
-						return TCRET_StoppingError;
-					}
 
-					// find our symbol and resolve any pending unknown types
-					if (EWC_FVERIFY(pStnodIdent, "Declaration without identifier"))
+					// would this be better if there was a PARK_CompoundDecl?
+					bool fIsCompoundDecl = pStdecl->m_iStnodChildMin == -1;
+					if (fIsCompoundDecl)
 					{
-						CString strIdent = StrFromIdentifier(pStnodIdent);
-
-						// may not have symbols for a declaration if this is inside a procedure reference decl
-						if (pStnodIdent->m_pSym)
+						if (pStnod->m_pTin == nullptr)
 						{
-							auto pSymIdent = pStnodIdent->m_pSym;
-							pSymIdent->m_pTin = pStnod->m_pTin;
-							pStnod->m_pSym = pSymIdent;
-							OnTypeComplete(pTcwork, pSymIdent);
+							const char * pChzIdent = (pStnodIdent) ? StrFromIdentifier(pStnodIdent).PChz() : "declaration";
+							EmitError(pTcwork, pStnod, "Unable to calculate type for %s", pChzIdent);
+							return TCRET_StoppingError;
+						}
+
+						// find our symbol and resolve any pending unknown types
+						if (EWC_FVERIFY(pStnodIdent, "Declaration without identifier"))
+						{
+							CString strIdent = StrFromIdentifier(pStnodIdent);
+
+							// may not have symbols for a declaration if this is inside a procedure reference decl
+							if (pStnodIdent->m_pSym)
+							{
+								auto pSymIdent = pStnodIdent->m_pSym;
+								pSymIdent->m_pTin = pStnod->m_pTin;
+								pStnod->m_pSym = pSymIdent;
+								OnTypeComplete(pTcwork, pSymIdent);
+							}
 						}
 					}
 
@@ -4593,6 +4623,14 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "{ n1: int, g1, g2: float = ---; }";
+	pChzOut = "({} (??? (int $n1 int) (float $g1 float) (float $g2 float) (---)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
+	pChzIn = "{ n1, n2: int, g: float; }";
+	pChzOut = "({} (??? (int $n1 int) (int $n2 int) (float $g float)))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= " SelfRef :: () { pfunc := SelfRef; }";
 	pChzOut		= "(SelfRef()->void $SelfRef void ({} (SelfRef()->void $pfunc SelfRef()->void) (void)))";

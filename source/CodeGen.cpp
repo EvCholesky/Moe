@@ -1251,19 +1251,15 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 {
 	//store t into address pointed at by pT
 
-	if (!EWC_FVERIFY(pValPT && pValPT->m_valk == VALK_Instruction, "expected alloca value for symbol"))
+	if (!EWC_FVERIFY(pValPT && (pValPT->m_valk == VALK_Instruction || pValPT->m_valk == VALK_Global), "expected alloca value for symbol"))
 		return nullptr;
 
-	CIRInstruction * pInstPT = (CIRInstruction *)pValPT;
-	if (!EWC_FVERIFY(pInstPT->m_irop = IROP_Alloca, "expected alloca for symbol"))
-		return nullptr;
-
-	CIRInstruction * pInstStore = PInstCreateRaw(IROP_Store, pInstPT, pValT, "store");
+	CIRInstruction * pInstStore = PInstCreateRaw(IROP_Store, pValPT, pValT, "store");
 	if (pInstStore->FIsError())
 		return pInstStore;
 
 	auto pLtypeT = LLVMTypeOf(pValT->m_pLval);
-	auto pLtypePT = LLVMTypeOf(pInstPT->m_pLval);
+	auto pLtypePT = LLVMTypeOf(pValPT->m_pLval);
 	bool fIsPointerKind = LLVMGetTypeKind(pLtypePT) == LLVMPointerTypeKind;
 	bool fTypesMatch = false;
 	if (fIsPointerKind)
@@ -1279,7 +1275,7 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 		printf("\n");
 	}
 
-    pInstStore->m_pLval = LLVMBuildStore(m_pLbuild, pValT->m_pLval, pInstPT->m_pLval);
+    pInstStore->m_pLval = LLVMBuildStore(m_pLbuild, pValT->m_pLval, pValPT->m_pLval);
 	return pInstStore;
 }
 
@@ -2539,6 +2535,106 @@ static inline CIRInstruction * PInstGenerateOperator(
 	return pInstOp;
 }
 
+CIRValue * PValGenerateDecl(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	CSTNode * pStnod,
+	CSTNode * pStnodInit,
+	VALGENK valgenk)
+{
+	CSTDecl * pStdecl = pStnod->m_pStdecl;
+	if (!pStdecl || !EWC_FVERIFY(pStnod->m_pSym, "declaration without symbol"))
+		return nullptr;
+
+	u64 cElement;
+	auto pLtype = PLtypeFromPTin(pStnod->m_pTin, &cElement);
+	if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
+		return nullptr;
+
+	s32 iLine, iCol;
+	auto pDif = PDifEmitLocation(pWork, pBuild, pStnod->m_lexloc, &iLine, &iCol);
+
+	LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
+
+	CreateDebugInfo(pWork, pBuild, pStnod, pStnod->m_pTin);
+
+	bool fIsGlobal = pBuild->m_pProcCur == nullptr;
+	const char * pChzName = pStnod->m_pSym->m_strName.PChz();
+	if (fIsGlobal)
+	{
+		auto pGlob = pBuild->PGlobCreate(pLtype, pChzName);
+		pStnod->m_pSym->m_pVal = pGlob;
+
+		auto pLvalDIVariable = LLVMDIBuilderCreateGlobalVariable(
+								pBuild->m_pDib,
+								pLvalScope, 
+								pChzName,
+								pChzName,
+								pDif->m_pLvalFile,
+								iLine,
+								pStnod->m_pTin->m_pLvalDIType,
+								true,
+								pGlob->m_pLval);
+
+		LLVMOpaqueValue * pLvalInit = nullptr;
+		if (pStnodInit)
+		{
+			auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnodInit->m_pTin);
+			if (pTinlit && pStnodInit->m_park != PARK_Uninitializer)
+			{
+				pLvalInit = PLvalFromLiteral(pBuild, pTinlit, pStnodInit);
+			}
+		}
+
+		if (!pLvalInit)
+		{
+			pLvalInit = PLvalConstInitializer(pBuild, pStnod->m_pTin);
+		}
+
+		LLVMSetInitializer(pGlob->m_pLval, pLvalInit);
+		return pGlob;
+	}
+	else
+	{
+		auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, pChzName);
+		pStnod->m_pSym->m_pVal = pInstAlloca;
+	
+		auto pLvalDIVariable = LLVMDIBuilderCreateAutoVariable(
+								pBuild->m_pDib,
+								pLvalScope, 
+								pChzName,
+								pDif->m_pLvalFile,
+								iLine,
+								pStnod->m_pTin->m_pLvalDIType,
+								true,
+								0);
+
+		(void) LLVMDIBuilderInsertDeclare(
+				pBuild->m_pDib,
+				pInstAlloca->m_pLval,
+				pLvalDIVariable,
+				pLvalScope,
+				iLine, 
+				iCol, 
+				pBuild->m_pBlockCur->m_pLblock);
+
+		if (pStnodInit)
+		{
+			if (pStnodInit->m_park != PARK_Uninitializer)
+			{
+				PInstGenerateAssignment(pWork, pBuild, pStnod->m_pTin, pInstAlloca, pStnodInit);
+			}
+		}
+		else
+		{
+			return PValInitializeToDefault(pWork, pBuild, pStnod->m_pTin, pInstAlloca);
+		}
+		return pInstAlloca;
+	}
+}
+
+
+
 CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
 {
 	CIRBuilderErrorContext berrctx(pWork->m_pErrman, pBuild, pStnod);
@@ -2606,102 +2702,20 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 	case PARK_Decl:
 		{
 			CSTDecl * pStdecl = pStnod->m_pStdecl;
-			if (!pStdecl || !EWC_FVERIFY(pStnod->m_pSym, "declaration without symbol"))
-				return nullptr;
-
-			u64 cElement;
-			auto pLtype = PLtypeFromPTin(pStnod->m_pTin, &cElement);
-			if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
-				return nullptr;
-
-			s32 iLine, iCol;
-			auto pDif = PDifEmitLocation(pWork, pBuild, pStnod->m_lexloc, &iLine, &iCol);
-
-			LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
-
-			CreateDebugInfo(pWork, pBuild, pStnod, pStnod->m_pTin);
-
-			bool fIsGlobal = pBuild->m_pProcCur == nullptr;
-			const char * pChzName = pStnod->m_pSym->m_strName.PChz();
-			if (fIsGlobal)
+			auto pStnodInit = pStnod->PStnodChildSafe(pStdecl->m_iStnodInit);
+			if (pStdecl->m_iStnodChildMin != -1)
 			{
-				auto pGlob = pBuild->PGlobCreate(pLtype, pChzName);
-				pStnod->m_pSym->m_pVal = pGlob;
-
-				auto pLvalDIVariable = LLVMDIBuilderCreateGlobalVariable(
-										pBuild->m_pDib,
-										pLvalScope, 
-										pChzName,
-										pChzName,
-										pDif->m_pLvalFile,
-										iLine,
-										pStnod->m_pTin->m_pLvalDIType,
-										true,
-										pGlob->m_pLval);
-
-				// need to generate code for local var, just running init, leg for now.
-
-				LLVMOpaqueValue * pLvalInit = nullptr;
-				if (pStdecl->m_iStnodInit >= 0)
+				// compound decl
+				for (int iStnod = pStdecl->m_iStnodChildMin; iStnod < pStdecl->m_iStnodChildMax; ++iStnod)
 				{
-					CSTNode * pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
-
-					if (pStnodInit)
-					{
-						auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnodInit->m_pTin);
-						if (pTinlit && pStnodInit->m_park != PARK_Uninitializer)
-						{
-							pLvalInit = PLvalFromLiteral(pBuild, pTinlit, pStnodInit);
-						}
-					}
+					auto pStnodChild = pStnod->PStnodChild(iStnod);
+					(void) PValGenerateDecl(pWork, pBuild, pStnodChild, pStnodInit, valgenk);
 				}
-
-				if (!pLvalInit)
-				{
-					pLvalInit = PLvalConstInitializer(pBuild, pStnod->m_pTin);
-				}
-
-				LLVMSetInitializer(pGlob->m_pLval, pLvalInit);
 			}
 			else
 			{
-				auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, pChzName);
-				pStnod->m_pSym->m_pVal = pInstAlloca;
-			
-				auto pLvalDIVariable = LLVMDIBuilderCreateAutoVariable(
-										pBuild->m_pDib,
-										pLvalScope, 
-										pChzName,
-										pDif->m_pLvalFile,
-										iLine,
-										pStnod->m_pTin->m_pLvalDIType,
-										true,
-										0);
-
-				(void) LLVMDIBuilderInsertDeclare(
-						pBuild->m_pDib,
-						pInstAlloca->m_pLval,
-						pLvalDIVariable,
-						pLvalScope,
-						iLine, 
-						iCol, 
-						pBuild->m_pBlockCur->m_pLblock);
-
-				// need to generate code for local var, just running init, leg for now.
-				if (pStdecl->m_iStnodInit >= 0)
-				{
-					CSTNode * pStnodRhs = pStnod->PStnodChild(pStdecl->m_iStnodInit);
-					if (pStnodRhs->m_park != PARK_Uninitializer)
-					{
-						PInstGenerateAssignment(pWork, pBuild, pStnod->m_pTin, pInstAlloca, pStnodRhs);
-					}
-				}
-				else
-				{
-					return PValInitializeToDefault(pWork, pBuild, pStnod->m_pTin, pInstAlloca);
-				}
+				(void) PValGenerateDecl(pWork, pBuild, pStnod, pStnodInit, valgenk);
 			}
-
 		} break;
 	case PARK_Cast:
 		{
