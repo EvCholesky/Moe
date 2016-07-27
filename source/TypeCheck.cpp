@@ -1391,7 +1391,26 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 			return pSymtab->PTinBuiltin("s64");
 		}
 	case LITK_Float:	return pSymtab->PTinBuiltin("float");
-	case LITK_Char:		return pSymtab->PTinBuiltin("char");
+	case LITK_Char:
+		{
+			const CSTValue * pStval = pStnodLit->m_pStval;
+			if (!EWC_FVERIFY(pStval, "literal without value"))
+				return nullptr;
+
+			bool fDestIsSigned = pTinDest->m_tink == TINK_Integer && ((STypeInfoInteger*)pTinDest)->m_fIsSigned;
+			if (fDestIsSigned)
+			{
+				s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
+				if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
+				if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
+				return pSymtab->PTinBuiltin("s32");
+			}
+
+			s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
+			if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
+			if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
+			return pSymtab->PTinBuiltin("char");
+		}
 	case LITK_String:
 	{
 		// right now string literals just promote to *u8, but will eventually promote to string
@@ -1416,7 +1435,7 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 	if (pTinLhs == pTinRhs)
 		return true;
 
-	if (pTinLhs->m_tink != pTinRhs->m_tink)
+	if (!pTinLhs || !pTinRhs || pTinLhs->m_tink != pTinRhs->m_tink)
 		return false;
 	
 	switch(pTinLhs->m_tink)
@@ -1858,7 +1877,7 @@ STypeInfo * PTinFromTypeSpecification(
 					}
 					else
 					{
-						STypeInfo * pTinCount = pSymtab->PTinBuiltin("s8");
+						STypeInfo * pTinCount = pSymtab->PTinBuiltin("int");
 						STypeInfo * pTinPromoted = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
 						if (!FCanImplicitCast(pTinPromoted, pTinCount))
 						{
@@ -4624,6 +4643,10 @@ void TestTypeCheck()
 	const char * pChzIn;
 	const char * pChzOut;
 
+	pChzIn = "{ ch:= 'a'; }";
+	pChzOut = "({} (char $ch Literal:Int32))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+
 	pChzIn = "{ n1: int, g1, g2: float = ---; }";
 	pChzOut = "({} (??? (int $n1 int) (float $g1 float) (float $g2 float) (---)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
@@ -4676,11 +4699,11 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ aN : [2] int; n := aN.count; }";
-	pChzOut = "({} ([2]int $aN ([2]int Literal:Int8 int)) (int $n (Literal:Int64 [2]int $count)))";
+	pChzOut = "({} ([2]int $aN ([2]int Literal:Int64 int)) (int $n (Literal:Int64 [2]int $count)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ aN : [2] int; aNUnsized : [] int = aN; }";
-	pChzOut = "({} ([2]int $aN ([2]int Literal:Int8 int)) ([]int $aNUnsized ([]int int) [2]int))";
+	pChzOut = "({} ([2]int $aN ([2]int Literal:Int64 int)) ([]int $aNUnsized ([]int int) [2]int))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
@@ -4724,15 +4747,15 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; pN : & s32; fEq := aN.data == pN; ";
-	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool (&s32 [4]s32 $data) &s32))";
+	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int64 s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool (&s32 [4]s32 $data) &s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; paN : & [4] s32 = &aN;";
-	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (&[4]s32 $paN (&[4]s32 ([4]s32 Literal:Int8 s32)) (&[4]s32 [4]s32))";
+	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int64 s32)) (&[4]s32 $paN (&[4]s32 ([4]s32 Literal:Int64 s32)) (&[4]s32 [4]s32))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "aN : [4] s32; n := aN[0];";
-	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int8 s32)) (s32 $n (s32 [4]s32 Literal:Int64))";
+	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int64 s32)) (s32 $n (s32 [4]s32 Literal:Int64))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "n:s32=2; n++; n--;";

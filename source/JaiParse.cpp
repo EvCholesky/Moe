@@ -456,9 +456,13 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 				{
 					SetFloatValue(pStval, pJlex->m_g);
 				}
-				else if ((pJlex->m_litk == LITK_String) || (pJlex->m_litk == LITK_Char))
+				else if (pJlex->m_litk == LITK_String)
 				{
 					pStval->m_stvalk = STVALK_String;
+				}
+				else if (pJlex->m_litk == LITK_Char)
+				{
+					SetUnsignedIntValue(pStval, pJlex->m_n);
 				}
 				else
 				{
@@ -2518,6 +2522,7 @@ void CSymbolTable::AddBuiltInSymbols(SErrorManager * pErrman)
 	AddBuiltInInteger(pErrman, this, "u8", 8, false);
 	AddBuiltInInteger(pErrman, this, "u16", 16, false);
 	AddBuiltInInteger(pErrman, this, "u32", 32, false);
+	AddBuiltInInteger(pErrman, this, "char", 32, false);
 	AddBuiltInInteger(pErrman, this, "uint", 64, false);
 	AddBuiltInInteger(pErrman, this, "u64", 64, false);
 
@@ -2634,7 +2639,6 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 			bool fIsOrdered = pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered);
 			while (pSym)
 			{
-
 				SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
 				if ((fIsOrdered == false) | (lexlocSym <= lexlocChild))
 				{
@@ -2642,6 +2646,7 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 						*ppSymtabOut = pSymtab;
 					return pSym;
 				}
+				pSym = pSym->m_pSymPrev;
 			}
 		}
 

@@ -450,7 +450,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 		       return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart,pChzStart);
 		    if (pChz == pJlex->m_pChEof || *pChz != '\'')
 		       return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart, pChz);
-			int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz+1);
+			int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz);
 			pJlex->m_litk = LITK_Char;
 			return jtok;
 		}
@@ -642,7 +642,7 @@ void AssertMatches(
 			apChz = nullptr;
 
 		bool fIsStringLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_String;
-		if (apChz && jlex.m_jtok == JTOK_Identifier || fIsStringLiteral)
+		if (apChz && (jlex.m_jtok == JTOK_Identifier || fIsStringLiteral))
 		{
 			EWC_ASSERT(
 				EWC::CCh(apChz[iJtok]) == jlex.m_str.CCh(), 
@@ -684,6 +684,13 @@ void TestLexing()
 	EWC::CAlloc allocString(aBString, sizeof(aBString));
 
 	StaticInitStrings(&allocString);
+
+	const char * s_pChzLitString = " 'f'; \"foo\"; ";
+	const JTOK s_aJtokLitString[] = {	
+										JTOK_Literal, JTOK(';'),
+										JTOK_Literal, JTOK(';'),
+										JTOK_Nil};
+	AssertMatches(s_pChzLitString, s_aJtokLitString);
 
 	const char * s_pChzComparisons = "< > <= >= != ==";
 	const JTOK s_aJtokComparisons[] = {	JTOK('<'), JTOK('>'), 
