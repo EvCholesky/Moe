@@ -2523,14 +2523,20 @@ void CSymbolTable::AddBuiltInSymbols(SErrorManager * pErrman)
 	AddBuiltInInteger(pErrman, this, "u16", 16, false);
 	AddBuiltInInteger(pErrman, this, "u32", 32, false);
 	AddBuiltInInteger(pErrman, this, "char", 32, false);
-	AddBuiltInInteger(pErrman, this, "uint", 64, false);
 	AddBuiltInInteger(pErrman, this, "u64", 64, false);
 
 	AddBuiltInInteger(pErrman, this, "s8", 8, true);
 	AddBuiltInInteger(pErrman, this, "s16", 16, true);
 	AddBuiltInInteger(pErrman, this, "s32", 32, true);
-	AddBuiltInInteger(pErrman, this, "int", 64, true);
 	AddBuiltInInteger(pErrman, this, "s64", 64, true);
+
+#if EWC_X64
+	AddBuiltInInteger(pErrman, this, "int", 64, true);
+	AddBuiltInInteger(pErrman, this, "uint", 64, false);
+#else
+	AddBuiltInInteger(pErrman, this, "int", 32, true);
+	AddBuiltInInteger(pErrman, this, "uint", 32, false);
+#endif
 
 	AddBuiltInFloat(pErrman, this, "float", 32);
 	AddBuiltInFloat(pErrman, this, "f32", 32);
@@ -3102,6 +3108,7 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 			const SLiteralType & litty = ((STypeInfoLiteral *)pStnod->m_pTin)->m_litty;
 
 			pChWork += CChFormat(pChWork, pChEnd - pChWork, ":%s", PChzFromLitk(litty.m_litk));
+
 			if (litty.m_cBit >= 0)
 			{
 				pChWork += CChFormat(pChWork, pChEnd - pChWork, "%d", litty.m_cBit);

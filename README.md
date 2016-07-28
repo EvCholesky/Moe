@@ -1,7 +1,7 @@
-# JaiLang
-Work in progress JAI compiler
+# Jade
+Work in progress compiler inspired by JAI
 
-Slowly building a LLVM frontend for a dialect of Jon Blow's JAI language.
+Slowly building a LLVM frontend for a language inspired by Jon Blow's JAI videos.
 
 It currently can compile and link simple programs. It doesn't do runtime code execution yet.
 
@@ -37,8 +37,8 @@ Coming soon:
   * For Loops.
 
 Clean up
-  * 32bit int for 32bit builds (for %d handling among other things)
   * consolidate PARK_ReferenceDecl, PARK_ArrayDecl, ParkMethodReferenceDecl into PARK_Decl
+  * clean up CAlloc - It's currently overflowing into system memory, which is ok, but needs to track cbAllocated, not cBFree.
 
 Further out:
   * UTF8 identifier support
@@ -49,10 +49,6 @@ Deviations from current JAI syntax:
   * float types are: float, double, f32 and f64. because... why wouldn't they be?
   * type aliasing uses the typedef keyword to disambiguate constant values from type aliases. (ie 'IntAlias :: typedef s32;')
   * Implicit enum constants are nil(-1), min, last and max rather than lowest_value and highest_value.
-
-Q. Why are you deviating from the language at all? Aren't these all small changes that just amount to bikeshedding?
-
-A. Yes and no, I've gone back and forth on this a bit and feel comfortable deviating from Jon's design whenever I'm convinced that it's an improvement. It seems likely that the best shot for a new language comes from several different takes on the same ideas, than one monolithic language dictated from a single source.
 
 Known ambiguities:
    * Contants with parens in the literal "APlusB :: (A + B)" parses as a method declaration.

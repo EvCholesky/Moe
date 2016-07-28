@@ -506,8 +506,11 @@ public:
 											cLine);
 
 								size_t cBActual = stbm_get_allocation_size(pV);
-								if (!EWC_FVERIFY(cBActual < m_cBFree, "CAlloc out of memory!"))
-									return nullptr;
+								
+								// BB - We're letting the compiler overflow into system malloc, this is ok - we just
+								//  need to change the CAlloc interface from CBFree to CBAllocated.
+								//if (!EWC_FVERIFY(cBActual < m_cBFree, "CAlloc out of memory!"))
+								//	return nullptr;
 
 								m_cBFree -= cBActual;
 

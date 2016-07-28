@@ -4241,7 +4241,7 @@ void TestCodeGen()
 	AssertTestCodeGen(&work, pChzIn);
 	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; else nRet =1; return nRet; }";
 	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet; }";
-	pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n == 4) nRet = 4; else if (n == 3) nRet =3; else nRet = 2; return nRet; }";
+	pChzIn =	"Foo :: (n : s64) -> int { nRet : int = 5; if (n == 4) nRet = 4; else if (n == 3) nRet =3; else nRet = 2; return nRet; }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ i:=5 + 2 * 3; }";

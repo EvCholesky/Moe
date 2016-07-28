@@ -18,7 +18,7 @@ TestOperators :: ()
 	printf("6 | 9 = %d, 6 & 2 = %d\n", 6 | 9, 6 & 2);
 
 	n64 := 64;
-	printf("64>>2=%lld, 64<<2=%lld\n", n64>>2, n64<<2);
+	printf("64>>2=%d, 64<<2=%d\n", n64>>2, n64<<2);
 }
 
 TestPointers :: ()
@@ -235,7 +235,7 @@ TestStructures :: ()
 	iNest := 0;
 	while iNest < SOuter.SNested.NestedCount
 	{
-		printf("aNest[%lld] = %d\n", iNest, aNest[iNest].m_nNested);
+		printf("aNest[%d] = %d\n", iNest, aNest[iNest].m_nNested);
 		++iNest;
 	}
 
@@ -254,7 +254,7 @@ TestStructures :: ()
 	shallowSrc.m_aN[1] = 555;
 	shallowSrc.m_outer.m_n = 127;
 
-	printf("ShallowSrc = %d(true), %lld(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
+	printf("ShallowSrc = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
 		shallowSrc.m_f,
 		shallowSrc.m_n,
 		shallowSrc.m_aN[0],
@@ -264,7 +264,7 @@ TestStructures :: ()
 	shallowDst : SShallowCopy;
 	shallowDst = shallowSrc;
 
-	printf("ShallowDst = %d(true), %lld(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
+	printf("ShallowDst = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
 		shallowDst.m_f,
 		shallowDst.m_n,
 		shallowDst.m_aN[0],
@@ -457,12 +457,12 @@ TestCasting :: ()
 	foo.m_b = 5678;
 
 	pN := cast(&int) &foo;
-	printf("%lld(1234), %lld(5678)\n", pN[0], pN[1]);
+	printf("%d(1234), %d(5678)\n", pN[0], pN[1]);
 
-	printf("%lld(1234), %lld(5678)\n", (cast (&SFoo)pN).m_a,  (cast (&SFoo)pN).m_b);	
+	printf("%d(1234), %d(5678)\n", (cast (&SFoo)pN).m_a,  (cast (&SFoo)pN).m_b);	
 
 	pFoo := cast(&SFoo) pN;
-	printf("%lld(1234), %lld(5678)\n", pFoo.m_a, pFoo.m_b);
+	printf("%d(1234), %d(5678)\n", pFoo.m_a, pFoo.m_b);
 
 }
 
@@ -505,9 +505,9 @@ TestGlobals :: ()
 
 	printf("g_aN: %d, %d, %d (2, 4, 5)\n", g_aN[0], g_aN[1], g_aN[2]);
 
-	printf("g_glob = {%d, %d, %lld} ({2, 0, 456})\n", g_glob.m_n, g_glob.m_nUninit, g_glob.m_n2);
-	printf("g_aGlob[1] = {%d, %d, %lld} ({2, 0, 456})\n", g_aGlob[1].m_n, g_aGlob[1].m_nUninit, g_aGlob[1].m_n2);
-	printf("g_aGlob[2] = {%d, %d, %lld} ({2, 0, 456})\n", g_aGlob[2].m_n, g_aGlob[2].m_nUninit, g_aGlob[2].m_n2);
+	printf("g_glob = {%d, %d, %d} ({2, 0, 456})\n", g_glob.m_n, g_glob.m_nUninit, g_glob.m_n2);
+	printf("g_aGlob[1] = {%d, %d, %d} ({2, 0, 456})\n", g_aGlob[1].m_n, g_aGlob[1].m_nUninit, g_aGlob[1].m_n2);
+	printf("g_aGlob[2] = {%d, %d, %d} ({2, 0, 456})\n", g_aGlob[2].m_n, g_aGlob[2].m_nUninit, g_aGlob[2].m_n2);
 }
 
 g_n : s32 =15;
