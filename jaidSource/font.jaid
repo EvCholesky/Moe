@@ -1,0 +1,385 @@
+#import "Color"
+
+ALIGNK :: enum
+{
+	Center,
+	SideMin,
+	SideMax,
+	Left:		SideMin,
+	Bottom:		SideMin,
+	Right:		SideMax,
+	Top:		SideMax,
+}
+
+SDrawData :: struct // tag = drawd
+{
+	m_fontd: SFontData;
+}
+
+SFontData :: struct // tag = fontd
+{
+	m_colMain: SColor;
+	m_colShadow: SColor;
+	m_gCharSize: f32;
+	m_uOpacit: f32;
+	m_iGlyphSet: int;
+	m_alignkX: ALIGNK;
+	m_alignkY: ALIGNK;
+	m_fUseFixedWidth: bool;
+	m_fUseWordWrap: bool;
+}
+
+/*
+DRASK :: enum // draw state kind
+{
+	RectMin,
+		RectScissor		= RectMin,
+	RectMax,
+
+	VecMin,
+		PosSortOriginWs	= VecMin,		// this is the origin for tile "perspective" and sorting
+		VecScale,
+		PosCursor,
+	VecMax,
+
+	ColMin,
+		ColFontMain		= ColMin,
+		ColFontShadow,
+	ColMax,
+
+	GMin,
+		GCharSize		= GMin,
+		ROpacity,
+	GMax,
+
+	NMin,
+		IFont			= NMin,
+		NAlignkX,
+		NAlignkY,
+	NMax,
+
+
+	FMin,
+		FFixedWidthFont	= FMin,
+		FWordWrap,
+		FUseScissor,
+		FDrawSolid,
+	FMax,
+};
+
+SDrawState :: struct
+{					
+	m_aRect: [DRASK.RectMax - DRASK.RectMin] CRect;
+	m_aVec: [DRASK.VecMax - DRASK.VecMin] CVec2;
+	m_aCol: [DRASK.ColMax - DRASK.ColMin] CColor;
+	m_aG: [DRASK.GMax - DRASK.GMin] f32;
+	m_aN: [DRASK.NMax - DRASK.NMin] s16;
+	m_aF: [DRASK.FMax - DRASK.FMin] bool;
+};
+
+InitDrask :: (pDrask :: & SDrawState)
+{
+	SetRect(DRASK.RectScissor, CRect(0,0,0,0));
+
+	SetVec(DRASK.PosSortOriginWs, CVec2(KZERO));
+	SetVec(DRASK.VecScale, CVec2(1.0f, 1.0f));
+	SetVec(DRASK.PosCursor, CVec2(KZERO));
+
+	SetCol(DRASK.ColFontMain, CColor(kWhite));
+	SetCol(DRASK.ColFontShadow, CColor(kBlack));
+
+	SetG(DRASK.GCharSize, 24.0f);
+	SetG(DRASK.ROpacity, 1.0f);
+
+	SetN(DRASK.IFont, 0);
+	SetN(DRASK.NAlignkX, ALIGNK_Center);
+	SetN(DRASK.NAlignkY, ALIGNK_Center);
+
+	SetF(DRASK.FFixedWidthFont, false);
+	SetF(DRASK.FWordWrap, false);
+	SetF(DRASK.FUseScissor, false);
+	SetF(DRASK.FDrawSolid, true);
+}
+
+SetF :: (pDras: & SDrawState, drask: DRASK, f: bool)
+{ 
+	assert((drask>=DRASK.FMin)&(drask<DRASK.FMax), "bad drask(F)");
+	pDras.m_aF[drask-DRASK.FMin] = f; 
+}
+
+SetN :: (pDras: & SDrawState, drask: DRASK, n s16)
+{ 
+	assert((drask>=DRASK.NMin)&(drask<DRASK.NMax), "bad drask(N)");
+	pDras.m_aN[drask-DRASK.NMin] = n;
+}
+
+SetG :: (pDras: & SDrawState, drask: DRASK, g: f32)
+{ 
+	assert((drask>=DRASK.GMin)&(drask<DRASK.GMax), "bad drask(G)");
+	pDras.m_aG[drask-DRASK.GMin] = g;
+}
+
+SetCol :: (drask: DRASK, CColor col)
+{ 
+	EWC_ASSERT((drask>=DRASK.ColMin)&(drask<DRASK.ColMax), "bad drask(Col)");
+	pDras.m_aCol[drask-DRASK.ColMin] = col;
+}
+
+SetVec :: (drask: DRASK, CVec2Arg vec)
+{ 
+	EWC_ASSERT((drask>=DRASK.VecMin)&(drask<DRASK.VecMax), "bad drask(Vec)");
+	pDras.m_aVec[drask-DRASK.VecMin] = vec;
+}
+
+SetRect :: (drask: DRASK, CRectArg rect)
+{ 
+	EWC_ASSERT((drask>=DRASK.RectMin)&(drask<DRASK.RectMax), "bad drask(Rect)");
+	pDras.m_aRect[drask-DRASK.RectMin] = rect;
+}
+
+bool	FGet(DRASK drask) const
+			{
+				EWC_ASSERT((drask>=DRASK.FMin)&(drask<DRASK.FMax), "bad drask(F)");
+				return m_aF[drask-DRASK.FMin];
+			}
+I16		NGet(DRASK drask) const
+			{
+				EWC_ASSERT((drask>=DRASK.NMin)&(drask<DRASK.NMax), "bad drask(N)");
+				return m_aN[drask-DRASK.NMin];
+			}
+F32		GGet(DRASK drask) const
+			{
+				EWC_ASSERT((drask>=DRASK.GMin)&(drask<DRASK.GMax), "bad drask(G)");
+				return m_aG[drask-DRASK.GMin];
+			}
+CColor	ColGet(DRASK drask) const
+			{
+				EWC_ASSERT((drask>=DRASK.ColMin)&(drask<DRASK.ColMax), "bad drask(Col)");
+				return m_aCol[drask-DRASK.ColMin];
+			}
+CVec2	VecGet(DRASK drask) const
+			{
+				EWC_ASSERT((drask>=DRASK.VecMin)&(drask<DRASK.VecMax), "bad drask(Vec)");
+				return m_aVec[drask-DRASK.VecMin];
+			}
+CRect	RectGet(DRASK drask) const
+			{
+				EWC_ASSERT((drask>=DRASK.RectMin)&(drask<DRASK.RectMax), "bad drask(Rect)");
+				return m_aRect[drask-DRASK.RectMin];
+			}
+
+void	SetAlignk(ALIGNK alignkX, ALIGNK alignkY)
+			{
+				SetN(DRASK.NAlignkX, alignkX);
+				SetN(DRASK.NAlignkY, alignkY);
+			}
+
+void	FlushIfChanged(const CDrawState & drasPrev)
+			{ ; }
+
+void	PreDraw() const;
+void	PostDraw() const;
+*/
+
+
+
+DrawInt :: typedef s32; // tag=dri
+DrawEnum :: typedef u32; // tag=dru
+SHHAND :: enum  s16
+{
+	// just has nil
+};
+ 
+STextureMip :: struct // tag=texmip
+{
+	m_dX: DrawInt;
+	m_dY: DrawInt;
+	m_cB: u32; // data size
+	m_aB: & u8; // actual texel data
+};
+
+STexture :: struct // tag=tex
+{
+	m_shashFilename: u32;	// filename hash, for texture reuse
+	m_cTexmip: u8;
+	m_iTex: s16;				// index into our global texture array
+	m_driId: DrawInt;			// GL id for this texture
+	m_driComponents: DrawInt;	// number of components or GL-specific format	(GL_RGBA)
+	m_druFormat: DrawEnum;		// format of color such as indexed or RGBA		(GL_RGBA)
+	m_druType: DrawEnum;		// data type for each component					(GL_UNSIGNED_BYTE)
+	m_druTarget: DrawEnum;		// gl target type (ie. GL_TEXTURE_2D)
+
+	m_aTexmip: [1] STextureMip;
+};
+
+DXFromTex :: (pTex: & STexture)->DrawInt
+{ 
+	return pTex.m_aTexmip[0].m_dX;
+}
+
+DYFromTex :: (pTex: & STextureMip)->DrawInt
+{
+	return pTex.m_aTexmip[0].m_dY;
+}
+	
+FONTK :: enum
+{
+	Regular,
+	Bold,
+};
+		
+FONTSHK :: enum
+{
+	Basic,
+}
+
+SFontGlyph :: struct // tag=glyph
+{
+	m_wch: s32;				// UCS2 Codepoint for this glyph
+	m_dXPixels: f32;
+	m_dYPixels: f32;
+	m_xOffset: f32;				// offset from the glyph origin to the top-left of the bitmap
+	m_yOffset: f32;
+	m_dXKerningDefault: f32;	// offset between letters
+	m_iDxKerningMin: u16;		// index into the kerning table 0xFFFF if none
+	m_iDxKerningMax: u16;		// index into the kerning table 0xFFFF if none
+	m_uMin: f32;
+	m_uMax: f32;
+	m_vMin: f32;
+	m_vMax: f32;
+}
+
+SFontGlyphFile :: struct //tag=glyphf
+{
+	m_cGlyph: s16;
+	m_iBaWchKerning: s32; 			// byte offset from the start of this structure to n^2 list of kerning glyph pairs (UCS2)
+	m_iBaDxKerning: s32;			// byte offset from the start of this structure to the kerning values (U8)
+
+	m_dYAscent: f32;				// y offset from the baseline to the height of tallest character
+	m_dYDescent: f32;				// y offset from the baseline to the bottom of the lowest descender
+	m_dYLineGap: f32;				// lineGap is the spacing between one row's descent and the next row's ascent...
+									// you should advance the vertical position by "ascent - descent + lineGap"
+
+	m_aGlyph: [1] SFontGlyph;		// sorted by UCS2 glyph (for binary search)
+}
+
+SFont :: struct // tag=font
+{
+	m_pTex: & STexture;
+	m_pGlyphf: & SFontGlyphFile;
+	m_aWchKerning: & s32;
+	m_aDxKerning: & f32;
+}
+
+SFontManager :: struct // tag=fontman
+{
+	m_aFont: [FONTK.max] SFont;
+	m_aShhand: [FONTSHK.max] SHHAND;
+}
+
+SFontVertex :: struct // tag=fvert
+{
+	m_x, m_y: f32;
+	m_u, m_v: f32;
+	m_r, m_g, m_b, m_a: f32;
+	m_uMin, m_vMin, m_uMax, m_vMax: f32; // glyph bounds for clamping texture filtering
+}
+
+PFontmanStaticInit :: (pAlloc: & CAlloc, pShman: & CShaderManager) -> & SFontManager
+{
+	iFont := 0;
+	while (iFont < s_fontman.m_aFont.count)
+	{
+		s_fontman.m_aFont[i].m_pTex			= 0;
+		s_fontman.m_aFont[i].m_pGlyphf		= 0;
+		s_fontman.m_aFont[i].m_aWchKerning	= 0;
+		s_fontman.m_aFont[i].m_aDxKerning	= 0;
+		++iFont;
+	}
+
+	LoadFont(&s_fontman, FONTK_Regular, "Fonts/Calibri", pAlloc);
+
+	s_fontman.m_aShhand[FONTSHK.Basic] = ShhandLoad(pShman, "BasicFontShader", s_fontMainVertex, s_fontMainFragment);
+	return &s_fontman;
+}
+
+ConcatPChz :: 	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
+{
+	iCh: s32;
+	cChEnd := aCh.count -1; // leave room for terminator, BB doesn't support zero size array
+
+	while ((@pChzA != '\0') && (iCh < cChEnd))
+	{
+		aCh[iCh] = @pChzA;
+		++pChzA;
+		++iCh;
+	}
+
+	while ((@pChzB != '\0') && (iCh < cChEnd))
+	{
+		aCh[iCh] = @pChzB;
+		++pChzB;
+		++iCh;
+	}
+
+	aCh[iCh] = '\0';
+}
+
+LoadFont :: (pFontman: & SFontManager, fontk: FONTK, pChzFilename: & u8, pAlloc: & CAlloc)
+{
+	char aCh[1024];
+
+	ConcatPChz(pChzFilename, ".png", aCh, sizeof(aCh));
+	pFontman->m_aFont[fontk].m_pTex = PTexLoad(aCh, false);
+	EWC_ASSERT(pFontman->m_aFont[fontk].m_pTex, "Failed to load font texture: %s", aCh);
+
+	ConcatPChz(pChzFilename, ".font", aCh, sizeof(aCh));
+
+	FILE * pFile;
+	fopen_s(&pFile, aCh, "rb");
+	EWC_ASSERT(pFile, "Failed to load font glyph file: %s", aCh);
+
+	if(pFile != 0)
+	{
+		fseek(pFile, 0L, SEEK_END);
+		size_t cBFile = ftell(pFile);
+		fseek(pFile, 0L, SEEK_SET);
+
+		SFont * pFont = &pFontman->m_aFont[fontk];
+		pFont->m_pGlyphf = (SFontGlyphFile *)pAlloc->EWC_ALLOC(cBFile, 16);
+		fread(pFont->m_pGlyphf, 1, cBFile, pFile);
+		fclose(pFile);
+
+		SFontGlyphFile * pGlyphf = pFont->m_pGlyphf;
+		pFont->m_aWchKerning = (WChar *)(reinterpret_cast<U8 *>(pGlyphf) + pGlyphf->m_iBaWchKerning);
+		EWC_ASSERT((void *)pFont->m_aWchKerning == (void *)&pGlyphf->m_aGlyph[pGlyphf->m_cGlyph], "bad offsets");
+
+		pFont->m_aDxKerning = (F32 *)(reinterpret_cast<U8 *>(pGlyphf) + pGlyphf->m_iBaDxKerning);
+	}
+}
+
+
+FillOutVert :: inline (
+					x: float, y: float, 
+					u: float, v: float, 
+					r: float, g: float, b: float, a: float, 
+					pGlyph: & SFontGlyph, 
+					pVert: & SFontVertex)
+{
+	pVert.m_x = x;
+	pVert.m_y = y;
+
+	pVert.m_u = u;
+	pVert.m_v = v;
+
+	pVert.m_r = r;
+	pVert.m_g = g;
+	pVert.m_b = b;
+	pVert.m_a = a;
+
+	pVert.m_uMin = glyph.m_uMin;
+	pVert.m_vMin = glyph.m_vMin;
+	pVert.m_uMax = glyph.m_uMax;
+	pVert.m_vMax = glyph.m_vMax;
+}
+

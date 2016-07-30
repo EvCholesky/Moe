@@ -118,6 +118,7 @@ struct STypeCheckWorkspace // tag = tcwork
 
 extern bool FDoesOperatorExist(JTOK jtok, STypeInfo * pTin);
 void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
+STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit);
 
 CNameMangler::CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax)
 :m_pAlloc(pAlloc)
@@ -1233,8 +1234,9 @@ inline STypeInfo * PTinFromLiteralFinalized(
 	return nullptr;
 }
 
-STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit)
+static inline STypeInfo * PTinPromoteLiteralCommon(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, bool * pFWasHandled, CSTNode * pStnodLit)
 {
+	*pFWasHandled = true;
 	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 	if (!pTinlit)
 		return pStnodLit->m_pTin;
@@ -1278,7 +1280,21 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 	if (!EWC_FVERIFY(pStval, "literal without value"))
 		return nullptr;
 
+	*pFWasHandled = false;
+	return nullptr;
+}
+
+
+STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit)
+{
+	bool fWasHandled;
+	STypeInfo * pTinReturn = PTinPromoteLiteralCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit);
+	if (fWasHandled)
+		return pTinReturn;
+
+	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 	const SLiteralType & litty = pTinlit->m_litty;
+
 	switch (litty.m_litk)
 	{
 	case LITK_Integer:
@@ -1286,6 +1302,7 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 			bool fIsSigned = litty.m_fIsSigned;
 			if (fIsSigned == false)
 			{
+				const CSTValue * pStval = pStnodLit->m_pStval;
 				s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
 				fIsSigned = (nUnsigned < LLONG_MAX);
 			}
@@ -1316,27 +1333,37 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 	return nullptr;
 }
 
+STypeInfo * PTinPromoteLiteralArgument(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodLit,
+	STypeInfo * pTinArgument)
+{
+	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
+	const SLiteralType & litty = pTinlit->m_litty;
+	if (litty.m_litk == LITK_Null)
+	{
+		if (pTinArgument && pTinArgument->m_tink == TINK_Pointer )
+			return pTinArgument;
+
+		return pSymtab->PTinptrAllocReference(pSymtab->PTinBuiltin("void"));
+	}
+
+	return PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodLit);
+}
+
 inline STypeInfo * PTinPromoteLiteralTightest(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLit,	
 	STypeInfo * pTinDest)
 {
+	bool fWasHandled;
+	STypeInfo * pTinReturn = PTinPromoteLiteralCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit);
+	if (fWasHandled)
+		return pTinReturn;
+
 	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
-	if (!pTinlit)
-		return pStnodLit->m_pTin;
-
-	if (pTinlit->m_tink != TINK_Literal)
-		return pStnodLit->m_pTin;
-
-	if (pTinlit->m_litty.m_litk == LITK_Array)
-	{
-		return PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodLit);
-	}
-
-	if (pTinlit->m_fIsFinalized)
-		return PTinFromLiteralFinalized(pTcwork, pSymtab, pTinlit);
-
 	const SLiteralType & litty = pTinlit->m_litty;
 	switch (litty.m_litk)
 	{
@@ -1362,16 +1389,13 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 		{
 			// NOTE: We're casting the value to fit the type info here, not letting the value determine the type.
 
-			const CSTValue * pStval = pStnodLit->m_pStval;
-			if (!EWC_FVERIFY(pStval, "literal without value"))
-				return nullptr;
-
 			if (pTinDest->m_tink == TINK_Float)
 			{
 				// integer literals can be used to initialize floating point numbers
 				return pSymtab->PTinBuiltin("f32");
 			}
 
+			const CSTValue * pStval = pStnodLit->m_pStval;
 			bool fDestIsSigned = pTinDest->m_tink != TINK_Integer || ((STypeInfoInteger*)pTinDest)->m_fIsSigned;
 			bool fIsValNegative = pStval->m_stvalk == STVALK_SignedInt && pStval->m_nSigned < 0;
 
@@ -1383,20 +1407,19 @@ inline STypeInfo * PTinPromoteLiteralTightest(
 				if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin("u32");
 				return pSymtab->PTinBuiltin("u64");
 			}
-			
+
+			// NOTE - if this value isn't explicitly negative, allow code to initialize it with 
+			//  values large enough to cause it to be negative. ie. n:s32=0xFFFFFFFF;
 			s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
-			if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
-			if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
-			if ((nSigned <= INT_MAX) & (nSigned > INT_MIN))		return pSymtab->PTinBuiltin("s32");
+			if ((nSigned & ~0x00000000000000FF) == 0)	return pSymtab->PTinBuiltin("s8");
+			if ((nSigned & ~0x000000000000FFFF) == 0)	return pSymtab->PTinBuiltin("s16");
+			if ((nSigned & ~0x00000000FFFFFFFF) == 0)	return pSymtab->PTinBuiltin("s32");
 			return pSymtab->PTinBuiltin("s64");
 		}
 	case LITK_Float:	return pSymtab->PTinBuiltin("float");
 	case LITK_Char:
 		{
 			const CSTValue * pStval = pStnodLit->m_pStval;
-			if (!EWC_FVERIFY(pStval, "literal without value"))
-				return nullptr;
-
 			bool fDestIsSigned = pTinDest->m_tink == TINK_Integer && ((STypeInfoInteger*)pTinDest)->m_fIsSigned;
 			if (fDestIsSigned)
 			{
@@ -2168,19 +2191,23 @@ PROCMATCH ProcmatchCheckArguments(
 	{
 		CSTNode * pStnodArg = pStnodCall->PStnodChild(iStnodArg);
 		STypeInfo * pTinCall = pStnodArg->m_pTin;
-		STypeInfo * pTinParam = nullptr;
 		
-		STypeInfo * pTinCallDefault = PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodArg);
+		// Find the default literal promotion, as we need this to check for exact matches (which have precedence for matching)
+		//  Things that can't default (void *) are problematic.
+		STypeInfo * pTinParam = nullptr;
 		int ipTinParam = iStnodArg - iStnodArgMin;
-		if (ipTinParam < (int)pTinproc->m_arypTinParams.C())
+		bool fIsVarArg = ipTinParam >= (int)pTinproc->m_arypTinParams.C();
+
+		if (!fIsVarArg)
 		{
 			pTinParam = pTinproc->m_arypTinParams[ipTinParam];
 			if (!EWC_FVERIFY(pTinParam, "unknown parameter type"))
-				continue;
-
+				return PROCMATCH_None;
 			pTinCall = PTinPromoteLiteralTightest(pTcwork, pSymtab, pStnodArg, pTinParam);
 		}
-		else
+
+		STypeInfo * pTinCallDefault = PTinPromoteLiteralArgument(pTcwork, pSymtab, pStnodArg, pTinParam);
+		if (fIsVarArg)
 		{
 			if (!pTinproc->m_fHasVarArgs)
 			{
@@ -2712,7 +2739,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "bad procedure match!"))
 							return TCRET_StoppingError;
 
-						pTinCall = PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodArg);
+						pTinCall = PTinPromoteLiteralArgument(pTcwork, pSymtab, pStnodArg, nullptr);
 						pTinParam = PTinPromoteVarArg(pTcwork, pSymtab, pTinCall);
 					}
 
@@ -4673,6 +4700,10 @@ void TestTypeCheck()
 
 	const char * pChzIn;
 	const char * pChzOut;
+
+	pChzIn = "{ n:s32=0xFFFFFFFF; }";
+	pChzOut = "({} (s32 $n s32 Literal:Int32))";
+	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn = "{ ch:= 'a'; }";
 	pChzOut = "({} (char $ch Literal:Int32))";

@@ -4048,7 +4048,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 			continue;
 
 		char aChFilenameOut[256];
-		(void)CChConstructFilename(pFile->m_strFilename.PChz(), ".jai", aChFilenameOut, EWC_DIM(aChFilenameOut));
+		(void)CChConstructFilename(pFile->m_strFilename.PChz(), ".jaid", aChFilenameOut, EWC_DIM(aChFilenameOut));
 
 		pFile->m_pChzFileBody = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
 		if (!pFile->m_pChzFileBody)
