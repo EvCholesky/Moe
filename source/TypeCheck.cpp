@@ -2237,7 +2237,9 @@ PROCMATCH ProcmatchCheckArguments(
 			{
 				CString strTinCall = StrFromTypeInfo(pTinCall);
 				CString strTinParam = StrFromTypeInfo(pTinParam);
-				EmitError(pTcwork, pStnodCall, "no implicit conversion from type %s to %s",
+				EmitError(pTcwork, pStnodCall, "procedure call '%s' cannot convert argument %d from type %s to %s",
+					(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
+					iStnodArg-iStnodArgMin+1,
 					strTinCall.PChz(),
 					strTinParam.PChz());
 			}
@@ -3344,12 +3346,27 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					CString strIdent = StrFromIdentifier(pStnodIdent);
 					auto pSym = pSymtab->PSymLookup( strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook);
 
-					if (EWC_FVERIFY(pSym && pSym->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz()))
+					if (EWC_FVERIFY(pSym, "symbol lookup failed for '%s'", strIdent.PChz()))
 					{
-						pStnod->m_pSym = pSym;
-						if (pSym->m_pTin == nullptr)
+						if (pSym->m_pStnodDefinition != pStnod)
 						{
-							pSym->m_pTin = pStnod->m_pTin;
+							s32 iLine;
+							s32 iCol;
+							auto pLexlocDefinition = &pSym->m_pStnodDefinition->m_lexloc;
+							CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocDefinition , &iLine, &iCol);
+
+							EmitError(pTcwork, pStnod, "Symbol '%s' is also defined here: %s(%d,%d)",
+								strIdent.PChz(),
+								pLexlocDefinition->m_strFilename.PChz(), iLine, iCol);
+							return TCRET_StoppingError;
+						}
+						else
+						{
+							pStnod->m_pSym = pSym;
+							if (pSym->m_pTin == nullptr)
+							{
+								pSym->m_pTin = pStnod->m_pTin;
+							}
 						}
 					}
 					OnTypeComplete(pTcwork, pSym);

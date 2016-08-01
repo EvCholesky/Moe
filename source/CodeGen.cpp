@@ -1271,7 +1271,7 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 	{
 		printf("bad store information\n");
 		printf("pLtypeT:"); LLVMDumpType(pLtypeT);
-		printf("\npLtypePT: (dest)"); LLVMDumpType(pLtypePT);
+		printf("pLtypePT: (dest)"); LLVMDumpType(pLtypePT);
 		printf("\n");
 	}
 
@@ -1501,7 +1501,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 		}break;
 	case LITK_Bool:
 	{
-			u64 nUnsigned;
+			u64 nUnsigned = 0;
 			switch (pStval->m_stvalk)
 			{
 			case STVALK_ReservedWord:
@@ -1703,7 +1703,7 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 			case TINK_Integer:
 				{
 					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValSrc, pConstZero, "NToBool"); break;
+					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValSrc, pConstZero, "NToBool");
 					return pInst;
 				} 
 			case TINK_Float:

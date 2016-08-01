@@ -206,7 +206,8 @@ int main(int cpChzArg, const char * apChzArg[])
 				static const char * s_pChzOptions = "/subsystem:console /nologo /NODEFAULTLIB:MSVCRT.lib ";
 			#endif
 
-			const char * s_pChzPath = "c:/Code/jailang/jaiSource";
+			char aChzCwd[1024];
+			GetCurrentDirectoryA(EWC_DIM(aChzCwd), (char*)aChzCwd);
 
 			char aChzCommandLine[2048];
 			char * pChzCmd = aChzCommandLine;
@@ -265,6 +266,8 @@ int main(int cpChzArg, const char * apChzArg[])
 			PROCESS_INFORMATION processinfo = {};
 
 			printf("Linking:\n");
+
+			// BB - Should switch CreateProcess and GetCurrentDirectory to wide char versions.
 			if (CreateProcessA(
 					pChzLinkerFull,
 					aChzCommandLine,
@@ -273,7 +276,7 @@ int main(int cpChzArg, const char * apChzArg[])
 					false,
 					0,
 					0,
-					s_pChzPath,
+					aChzCwd,
 					&startupinfo,
 					&processinfo))
 			{
@@ -307,12 +310,11 @@ int main(int cpChzArg, const char * apChzArg[])
 
 	if (comline.FHasCommand("-test"))
 	{
+		TestLexing();
 		TestParse();
 		TestTypeCheck();
-		TestLexing();
 		TestCodeGen();
 		printf("passed unit tests\n");
 	}
-
 	return 0;
 }

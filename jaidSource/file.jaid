@@ -1,4 +1,4 @@
-HANDLE :: typedef int;
+#foreign_library "kernel32"
 
 FFILEACCESS :: enum s32
 {
@@ -39,11 +39,11 @@ CreateFileA :: (
 	pVSecurity: & void,
 	ffilecreate: FFILECREATE,
 	ffileattrib: s32,
-	hndTemplate: HANDLE) -> HANDLE #foreign;
+	hndTemplate: HANDLE) -> HANDLE #foreign #stdcall;
 
-CloseHandle  :: (handle: HANDLE) -> s32 #foreign;
+CloseHandle  :: (handle: HANDLE) -> s32 #foreign #stdcall;
 
-GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign;
+GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall;
 
 ReadFile :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign;
 
