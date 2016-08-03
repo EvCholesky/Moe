@@ -1339,14 +1339,17 @@ STypeInfo * PTinPromoteLiteralArgument(
 	CSTNode * pStnodLit,
 	STypeInfo * pTinArgument)
 {
-	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
-	const SLiteralType & litty = pTinlit->m_litty;
-	if (litty.m_litk == LITK_Null)
+	STypeInfoLiteral * pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
+	if (pTinlit)
 	{
-		if (pTinArgument && pTinArgument->m_tink == TINK_Pointer )
-			return pTinArgument;
+		const SLiteralType & litty = pTinlit->m_litty;
+		if (litty.m_litk == LITK_Null)
+		{
+			if (pTinArgument && pTinArgument->m_tink == TINK_Pointer )
+				return pTinArgument;
 
-		return pSymtab->PTinptrAllocReference(pSymtab->PTinBuiltin("void"));
+			return pSymtab->PTinptrAllocReference(pSymtab->PTinBuiltin("void"));
+		}
 	}
 
 	return PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodLit);
@@ -1544,6 +1547,11 @@ STypeInfo * PTinOperandFromPark(
 	STypeInfo * pTinLhs,
 	STypeInfo * pTinRhs)
 {
+	if (parkOperator == PARK_LogicalAndOrOp)
+	{
+		return pSymtab->PTinBuiltin("bool");
+	}
+
 	if (pTinLhs->m_tink == pTinRhs->m_tink)
 	{
 		switch(pTinLhs->m_tink)
@@ -1572,43 +1580,32 @@ STypeInfo * PTinOperandFromPark(
 			return pTinLhs;
 	}
 
-	switch(pTinLhs->m_tink)
+	if (pTinLhs->m_tink == TINK_Pointer || pTinRhs->m_tink == TINK_Pointer)
 	{
-	case TINK_Array:
-		return nullptr;
-	case TINK_Pointer:
+		STypeInfo * pTinPtr = pTinLhs;
+		STypeInfo * pTinOther = pTinRhs;
+		if (pTinOther->m_tink == TINK_Pointer)
 		{
-			switch (parkOperator)
+			pTinPtr = pTinRhs;
+			pTinOther = pTinLhs;
+		}
+
+		switch (parkOperator)
+		{
+		case PARK_EqualityOp:
 			{
-				case PARK_EqualityOp:
-				{
-					auto pTinElemLhs = PTinElement(pTinLhs);
-					auto pTinElemRhs = PTinElement(pTinRhs);
-					if (FTypesAreSame(pTinElemLhs, pTinElemRhs))
-					{
-						if (pTinLhs->m_tink == TINK_Pointer)
-							return pTinLhs;
-						if (pTinRhs->m_tink == TINK_Pointer)
-							return pTinRhs;
-
-						auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinLhs);
-						return PTinptrAlloc(pSymtab, pTinary->m_pTin);
-					}
-				} break;
-				case PARK_AdditiveOp:
-				{
-					if (pTinRhs->m_tink != TINK_Integer)
-						return nullptr;
-					if (pTinLhs->m_tink == TINK_Pointer)
-						return pTinLhs;
-
-					auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinLhs);
-					return PTinptrAlloc(pSymtab, pTinary->m_pTin);
-				}
+				auto pTinElemLhs = PTinElement(pTinLhs);
+				auto pTinElemRhs = PTinElement(pTinRhs);
+				if (FTypesAreSame(pTinElemLhs, pTinElemRhs))
+					return pTinPtr;
 			}
+		case PARK_AdditiveOp:
+			{
+				if (pTinOther->m_tink == TINK_Integer)
+					return pTinPtr;
+			} break;
 		}
 	}
-
 	return nullptr;
 }
 
@@ -2180,8 +2177,19 @@ PROCMATCH ProcmatchCheckArguments(
 	int iStnodArgMin = 1; // skip the identifier
 
 	size_t cArgs = size_t(cStnodCall - iStnodArgMin);
-	if ((cArgs < pTinproc->m_arypTinParams.C()) || 
-		(pTinproc->m_fHasVarArgs == false && cArgs > pTinproc->m_arypTinParams.C()))
+	if (cArgs < pTinproc->m_arypTinParams.C())
+	{
+		if (fPrintErrors)
+		{
+			EmitError(pTcwork, pStnodCall, "Too few arguments to procedure '%s'. Expected %d but encountered %d",
+				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
+				pTinproc->m_arypTinParams.C(),
+				cStnodCall - iStnodArgMin);
+		}
+		return PROCMATCH_None;
+	}
+
+	if 	(pTinproc->m_fHasVarArgs == false && cArgs > pTinproc->m_arypTinParams.C())
 	{
 		return PROCMATCH_None;
 	}
@@ -2213,7 +2221,8 @@ PROCMATCH ProcmatchCheckArguments(
 			{
 				if (fPrintErrors)
 				{
-					EmitError(pTcwork, pStnodCall, "expected %d arguments but encountered %d",
+					EmitError(pTcwork, pStnodCall, "procedure '%s' expected %d arguments but encountered %d",
+						(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
 						pTinproc->m_arypTinParams.C(),
 						cStnodCall - iStnodArgMin);
 				}
@@ -2608,6 +2617,11 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									(void) ProcmatchCheckArguments( pTcwork, pSymtab, pTinprocSym, pStnod, true);
 								}
 							}
+
+							if (pTcwork->m_pErrman->m_cError == 0)
+							{
+								EmitError(pTcwork, pStnod, "error type matching procedure '%s'", strProcName.PChz());
+							}
 						}
 						else
 						{
@@ -2768,8 +2782,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							pStnod->ReplaceChild(pStnodArg, pStnodCast);
 
+							if (!FVerifyIsInstance(pTcwork, pStnodArg))
+								return TCRET_StoppingError;
+
 							if (EWC_FVERIFY(pStnodArg->m_strees == STREES_TypeChecked, "expected arg to be type checked"))
 								pStnodCast->m_strees = STREES_TypeChecked;
+
 						}
 					}
 				}
@@ -3718,7 +3736,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 														pTinLhs);
 						if (FCanImplicitCast(pTinRhsPromoted, pTinLhs))
 						{
-							pStnod->m_pTin = pTinLhs;
+							pStnod->m_pTinOperand = pTinLhs;
 							FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinLhs, pStnodRhs);
 						}
 						else
@@ -3757,6 +3775,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						}
 
 					}
+
+					EWC_ASSERT(pStnod->m_pTin == nullptr, "assignment op has no 'return' value");
 
 					pStnod->m_strees = STREES_TypeChecked;
 					PopTcsent(pTcfram, &pTcsentTop, pStnod);

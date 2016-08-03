@@ -1,5 +1,17 @@
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
+
+extern "C" void * PVMalloc(int64_t cB)
+{
+	return malloc((size_t)cB);
+}
+
+extern "C" void FreeMalloc(void * pV)
+{
+	free(pV);
+}
 
 extern "C" void DebugBreak()
 {

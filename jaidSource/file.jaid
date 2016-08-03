@@ -45,7 +45,7 @@ CloseHandle  :: (handle: HANDLE) -> s32 #foreign #stdcall;
 
 GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall;
 
-ReadFile :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign;
+ReadFile32 :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign ReadFile #stdcall;
 
 SFile :: struct // tag = file
 {
@@ -87,3 +87,68 @@ CloseFile :: (pFile: &SFile)
     CloseHandle(pFile.m_hnd);
 }
 
+PBReadEntireFile :: (pChzFilename: & u8, pCBWasRead: &s64) -> & u8
+{
+    @pCBWasRead = 0;
+    file := FileOpen(pChzFilename, false);
+    if file.m_hnd == INVALID_HANDLE
+        return null;
+
+    lgintSize: SLargeInteger;
+    fSuccess := GetFileSizeEx(file.m_hnd, &lgintSize);
+    if !fSuccess
+    {
+        CloseFile(&file);
+        return null;
+    }
+
+    cBFile : s64 = lgintSize.m_nQuadPart;
+
+    pBData : & u8 = cast (& u8) PVMalloc(cBFile);
+    if !pBData
+    {
+        CloseFile(&file);
+        return null;
+    }
+    
+    @pCBWasRead = CBReadFile(file, pBData, cBFile);
+    if (@pCBWasRead < cBFile)
+    {
+        FreeMalloc(pBData);
+        CloseFile(&file);
+        return null;
+    }
+
+    CloseFile(&file);
+    @pCBWasRead = cBFile;
+    return pBData;
+}
+
+CBReadFile :: (file: SFile, pB: & u8, cBLength: s64) -> s64
+{
+    cBSingleRead: s32; // need to split up the read to handle > 32bit read sizes
+    cBWasRead: s64;
+    fSuccess: bool;
+    while cBWasRead < cBLength 
+    {
+        cBRemaining := cBLength - cBWasRead;
+        cBToRead : s32;
+        if cBRemaining <= 0x7fffffff 
+        {
+            cBToRead = cast(s32) cBRemaining;
+        }
+        else 
+        {
+            cBToRead = 0x7fffffff;
+        }
+
+        fSuccess = ReadFile32(file.m_hnd, pB + cBWasRead, cBToRead, &cBSingleRead, null);
+        cBWasRead += cBSingleRead;
+        if !fSuccess || cBSingleRead <= 0 
+        { 
+            return cBWasRead;
+        }
+    }
+
+    return cBWasRead;
+}

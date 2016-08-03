@@ -11,6 +11,8 @@ printf :: (pCh : &u8, ..) -> s32 #foreign;
 HANDLE :: typedef int; 	// This actually needs to be pointer-sized, so s32 in 32-bit, 
 						//  but lots of people use integers too, arrrrgh!!
 
+INVALID_HANDLE :: -1;
+
 HWND :: typedef HANDLE;
 HDC  :: typedef HANDLE;
 
@@ -47,6 +49,8 @@ sin64  :: (theta: f64) -> f64 #foreign sin;
 sqrt64 :: (theta: f64) -> f64 #foreign sqrt;
 
 DebugBreak :: () -> void #foreign;
+PVMalloc :: (cB : s64) -> & void #foreign;
+FreeMalloc :: (pV: &u8) #foreign;
 
 assert :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
 {

@@ -1279,7 +1279,7 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 	return pInstStore;
 }
 
-void ExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
+bool FExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
 {
 	// BB - Is there really any good reason not to make one type info for ints, bools and floats?
 	switch (pTin->m_tink)
@@ -1301,8 +1301,9 @@ void ExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
 			*pCBit = pTinfloat->m_cBit;	
 			*pFSigned = true;
 		} break;
-	default: EWC_ASSERT(false, "non-numeric type info");
+	default: return false;
 	}
+	return true;
 }
 
 inline LLVMOpaqueValue * PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned)
@@ -1645,9 +1646,13 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 	}
 	else
 	{
-		ExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc);
+		if (!FExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc))
+			return nullptr;
 	}
-	ExtractNumericInfo(pTinDst, &cBitDst, &fSignedDst);
+
+	if (!FExtractNumericInfo(pTinDst, &cBitDst, &fSignedDst))
+		return nullptr;
+
 	//auto pLtypeDst = PLtypeFromPTin(pTinDst);
 
 	CIRInstruction * pInst = nullptr;
@@ -2039,11 +2044,21 @@ static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pB
 		}
 
 		CIRValue * pValSrc = pBuild->PInstCreate(IROP_Load, pValRhsRef, "castLoad");
-		return PValCreateCast(pWork, pBuild, pValSrc, pTinRhs, pTinOut);
+		auto pVal = PValCreateCast(pWork, pBuild, pValSrc, pTinRhs, pTinOut);
+		if (!pVal)
+		{
+			EmitError(pWork, &pStnodRhs->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
+		}
+		return pVal;
 	}
 
 	CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
-	return PValCreateCast(pWork, pBuild, pValRhs, pTinRhs, pTinOut);
+	auto pVal = PValCreateCast(pWork, pBuild, pValRhs, pTinRhs, pTinOut);
+	if (!pVal)
+	{
+		EmitError(pWork, &pStnodRhs->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
+	}
+	return pVal;
 }
 
 CIRInstruction * PInstGenerateAssignmentFromRef(
@@ -2306,7 +2321,14 @@ void GeneratePredicate(
 	{
 		CIRValue * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
 		CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
-		(void)pBuild->PInstCreateCondBranch(pValPredCast, pBlockTrue, pBlockPost);
+		if (!pValPredCast)
+		{
+			EmitError(pWork, &pStnodPred->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast in predicate.");
+		}
+		else
+		{
+			(void)pBuild->PInstCreateCondBranch(pValPredCast, pBlockTrue, pBlockPost);
+		}
 	}
 }
 
@@ -3194,6 +3216,34 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			return pBuild->PInstCreateStore(pValLhs, pInstOp);
 		}
 	case PARK_AdditiveOp:
+		{
+			if (pStnod->m_pTinOperand->m_tink == TINK_Pointer)
+			{
+				//handle pointer arithmetic
+
+				CSTNode * pStnodLhs = pStnod->PStnodChild(0);
+				CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Instance);
+
+				CSTNode * pStnodRhs = pStnod->PStnodChild(1);
+				CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
+
+				CIRValue * pValPtr;
+				CIRValue * pValIndex;
+				if (pStnodLhs->m_pTin->m_tink == TINK_Pointer)
+				{
+					pValPtr = pValLhs;
+					pValIndex = pValRhs;
+				}
+				else
+				{
+					pValPtr = pValRhs;
+					pValIndex = pValLhs;
+				}
+
+				auto pInstGep = pBuild->PInstCreateGEP(pValPtr, &pValIndex->m_pLval, 1, "ptrGep");
+				return pInstGep; 
+			}
+		} // fallthrough
 	case PARK_MultiplicativeOp:
 	case PARK_ShiftOp:
 	case PARK_BitwiseAndOrOp:
@@ -3273,6 +3323,12 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					//  then inverting with a FNot
 
 					CIRValue * pValOperandCast = PValCreateCast(pWork, pBuild, pValOperand, pTinOperand, pTinOutput);
+					if (!pValOperandCast)
+					{
+						EmitError(pWork, &pStnod->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
+						return nullptr;
+					}
+
 					pValOp = pBuild->PInstCreate(IROP_Not, pValOperandCast, "NCmpEq");
 				} break;
 			case '-':
