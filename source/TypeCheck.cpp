@@ -1769,6 +1769,21 @@ STypeInfo * PTinFromRange(
 	return pTin;
 }
 
+bool FIsType(CSTNode * pStnod)
+{
+	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
+		return false;
+
+	auto pSym = pStnod->m_pSym;
+	if (!pSym)
+	{
+		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
+		return false;
+	}
+
+	return pSym->m_grfsym.FIsSet(FSYM_IsType);
+}
+
 STypeInfo * PTinFromTypeSpecification(
 	STypeCheckWorkspace *pTcwork,
 	CSymbolTable * pSymtab,
@@ -1817,6 +1832,12 @@ STypeInfo * PTinFromTypeSpecification(
 		case PARK_Identifier:
 			{
 				auto strIdent = StrFromIdentifier(pStnodIt);
+				if (!FIsType(pStnodIt))
+				{
+					EmitError(pTcwork, pStnodIt, "Expected type specification but encounted '%s'", strIdent.PChz());
+					*pFIsValidTypeSpec = false;
+				}
+
 				auto pSym = pSymtab->PSymLookup(strIdent, pStnodIt->m_lexloc, grfsymlook);
 				EWC_ASSERT(pSym && pSym->m_pTin, "bad type identifier in type specification");
 				
@@ -1996,21 +2017,6 @@ CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
 	auto pStvalRet = EWC_NEW(pAlloc, CSTValue) CSTValue();
 	*pStvalRet = *pStval;
 	return pStvalRet;
-}
-
-bool FIsType(CSTNode * pStnod)
-{
-	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
-		return false;
-
-	auto pSym = pStnod->m_pSym;
-	if (!pSym)
-	{
-		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
-		return false;
-	}
-
-	return pSym->m_grfsym.FIsSet(FSYM_IsType);
 }
 
 bool FVerifyIsInstance(STypeCheckWorkspace * pTcwork, CSTNode * pStnod)
@@ -3354,11 +3360,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					&pSymType,
 					&fIsValidTypeSpec);
 
+				CSTNode * pStnodIdent = pStnod->PStnodChild(0);
 				if (!fIsValidTypeSpec)
+				{
+					EmitError(pTcwork, pStnod, "Cannot determine type for typedef '%s'", 
+						(pStnodIdent) ? StrFromIdentifier(pStnodIdent).PChz() : "unknown");
 					return TCRET_StoppingError;
+				}
 
 				// find our symbol and resolve any pending unknown types
-				CSTNode * pStnodIdent = pStnod->PStnodChild(0);
 				if (EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))
 				{
 					CString strIdent = StrFromIdentifier(pStnodIdent);
