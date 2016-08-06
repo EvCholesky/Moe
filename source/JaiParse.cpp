@@ -1610,6 +1610,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSTProcedure * pStproc = EWC_NEW(pParctx->m_pAlloc, CSTProcedure) CSTProcedure();
 				pStnodProc->m_pStproc = pStproc;
 				pStproc->m_iStnodProcName = pStnodProc->IAppendChild(pStnodIdent);
+				pStproc->m_pStnodParentScope = pParctx->m_pStnodScope;
 
 				const CString & strName = StrFromIdentifier(pStnodIdent);
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
@@ -1666,7 +1667,11 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 
 				if (pJlex->m_jtok == JTOK('{'))
 				{
+					auto pStnodScopePrev = pParctx->m_pStnodScope;
+					pParctx->m_pStnodScope = pStnodProc;
 					CSTNode * pStnodBody = PStnodParseCompoundStatement(pParctx, pJlex, pSymtabProc);
+					pParctx->m_pStnodScope = pStnodScopePrev;
+
 					pStproc->m_iStnodBody = pStnodProc->IAppendChild(pStnodBody);
 				}
 
@@ -1801,8 +1806,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSTNode * pStnodConstantList = nullptr;
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				(void) pSymtabEnum->PSymEnsure(pErrman, "loose", pStnodEnum);
-				(void) pSymtabEnum->PSymEnsure(pErrman, "strict", pStnodEnum);
+				(void) pSymtabEnum->PSymEnsure(pErrman, "loose", pStnodEnum, FSYM_IsType);
+				(void) pSymtabEnum->PSymEnsure(pErrman, "strict", pStnodEnum, FSYM_IsType);
 
 				if (FConsumeToken(pJlex, JTOK('{')))
 				{
@@ -2021,8 +2026,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 				CSymbolTable * pSymtab = pParctx->m_pSymtab;
 				auto pErrman = pParctx->m_pWork->m_pErrman;
 
-				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef);
-				pSym->m_pStnodDefinition = pStnodTypedef;
+				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef, FSYM_IsType);
 				pStnodTypedef->m_pSym = pSym;
 
 				return pStnodTypedef;
@@ -2092,9 +2096,15 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 	{
 		SLexerLocation lexloc(pJlex);
 
+		pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+		pStnodList->m_jtok = JTOK('{');
+		pStnodList->m_park = PARK_List;
+		pStnodList->m_pSymtab = pSymtab;
+
 		if (!pSymtab)
 		{
 			pSymtab = pParctx->m_pWork->PSymtabNew("anon");
+			pStnodList->m_pSymtab = pSymtab;
 		}
 		PushSymbolTable(pParctx, pSymtab, lexloc);
 
@@ -2114,14 +2124,6 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 			}
 			else 
 			{
-				if (pStnodList == nullptr)
-				{
-					pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-					pStnodList->m_jtok = JTOK('{');
-					pStnodList->m_park = PARK_List;
-					pStnodList->m_pSymtab = pSymtab;
-				}
-
 				pStnodList->IAppendChild(pStnod);
 			}
 		}
@@ -2885,6 +2887,7 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd, 
 		case PARK_VariadicArg:		return CChCopy("..",pCh, pChEnd-pCh);
 		case PARK_Nop:				return CChCopy("Nop",pCh, pChEnd-pCh);
 		case PARK_Uninitializer:	return CChCopy("---",pCh, pChEnd-pCh);
+		case PARK_AssignmentOp:		return CChCopy("=", pCh, pChEnd-pCh);
 		default:					return CChCopy("???", pCh, pChEnd-pCh);
 		}
 	}

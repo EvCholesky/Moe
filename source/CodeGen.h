@@ -244,6 +244,7 @@ public:
 						,m_pAlloc(pAlloc)
 						,m_pLvalDIFunction(nullptr)
 						,m_pLvalFunction(nullptr)
+						,m_pLvalDebugLocCur(nullptr)
 						,m_pBlockEntry(nullptr)
 						,m_arypBlockManaged(pAlloc)
 							{ ; }
@@ -253,6 +254,7 @@ public:
 	EWC::CAlloc *		m_pAlloc;
 	LLVMOpaqueValue *	m_pLvalDIFunction;
 	LLVMOpaqueValue *	m_pLvalFunction;		// null if anonymous function
+	LLVMOpaqueValue *	m_pLvalDebugLocCur;
 	CIRBasicBlock *		m_pBlockEntry;	
 
 	EWC::CDynAry<CIRBasicBlock *>

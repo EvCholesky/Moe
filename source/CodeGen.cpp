@@ -452,7 +452,7 @@ LLVMOpaqueValue * PLvalFromDIFile(CIRBuilder * pBuild, SDIFile * pDif)
 {
 	if (pDif->m_aryLvalScopeStack.FIsEmpty())
 	{
-		return pBuild->m_pLvalCompileUnit;
+		return pBuild->m_pLvalFile;
 	}
 
 	return *pDif->m_aryLvalScopeStack.PLast();
@@ -527,6 +527,29 @@ void CalculateSizeAndAlign(CIRBuilder * pBuild, LLVMOpaqueType * pLtype, u64 * p
 {
 	*pCBitSize = LLVMSizeOfTypeInBits(pBuild->m_pTargd, pLtype);
 	*pCBitAlign = *pCBitSize;
+}
+
+LLVMOpaqueValue * PLvalParentScopeForProcedure(CSTNode * pStnodProc, SDIFile * pDif)
+{
+	auto pStproc = pStnodProc->m_pStproc;
+	if (EWC_FVERIFY(pStproc, "function missing procedure") && pStproc->m_pStnodParentScope)
+	{
+		CIRProcedure * pProc = nullptr;
+		auto pSymParentScope = pStproc->m_pStnodParentScope->m_pSym;
+		if (EWC_FVERIFY(pSymParentScope, "expected symbol to be set during type check"))
+		{
+			pProc = (CIRProcedure *)pSymParentScope->m_pVal;
+			if (!EWC_FVERIFY(pProc->m_valk == VALK_ProcedureDefinition, "expected IR procedure"))
+				pProc = nullptr;
+		}
+
+		if (pProc)
+		{
+			return pProc->m_pLval;
+		}
+	}
+
+	return pDif->m_pLvalFile;
 }
 
 static inline LLVMOpaqueValue * PLvalCreateDebugFunction(
@@ -2934,7 +2957,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				if (!pSym->m_pVal)
 				{
 					// this happens when calling a method that is defined later
+					CSTNode * pStnodProc = pSym->m_pStnodDefinition;
+					auto pDif = PDifEnsure(pWork, pBuild, pStnodProc->m_lexloc.m_strFilename.PChz());
+					auto pLvalParentScope = PLvalParentScopeForProcedure(pStnodProc, pDif);
+
+					PushDIScope(pDif, pLvalParentScope);
 					(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
+					PopDIScope(pDif, pLvalParentScope);
 
 					if (!pSym->m_pVal)
 						return nullptr;
@@ -3462,7 +3491,17 @@ CIRBasicBlock * CIRBuilder::PBlockCreate(CIRProcedure * pProc, const char * pChz
 
 void CIRBuilder::ActivateProcedure(CIRProcedure * pProc, CIRBasicBlock * pBlock)
 {
+	if (m_pProcCur)
+	{
+		m_pProcCur->m_pLvalDebugLocCur = LLVMGetCurrentDebugLocation(m_pLbuild);
+	}
+
 	m_pProcCur = pProc;
+
+	if (pProc)
+	{
+		LLVMSetCurrentDebugLocation(m_pLbuild, pProc->m_pLvalDebugLocCur);
+	}
 	ActivateBlock(pBlock);
 }
 
@@ -3502,6 +3541,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 
 	CAlloc * pAlloc = pBuild->m_pAlloc;
 	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
+
 	pProc->m_pLvalFunction = pLvalFunc;
 	
 	pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, aChName);
@@ -3701,8 +3741,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 			s32 iLine, iCol;
 			CalculateLinePosition(pWork, &pStnodBody->m_lexloc, &iLine, &iCol);
 
-			LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pProc->m_pLvalDIFunction);
-			LLVMSetCurrentDebugLocation(pBuild->m_pLbuild, pLvalLoc);
+			pProc->m_pLvalDebugLocCur = LLVMCreateDebugLocation(iLine, iCol, pProc->m_pLvalDIFunction);
 		}
 	}
 
@@ -3882,11 +3921,17 @@ void CodeGenEntryPoint(
 		if (pStnod->m_pStproc && pStnod->m_pStproc->m_fIsForeign)
 			continue;
 
-		fHaveAnyFailed |= LLVMVerifyFunction(pEntry->m_pProc->m_pLvalFunction, LLVMPrintMessageAction);
+		LLVMBool fFunctionFailed = LLVMVerifyFunction(pEntry->m_pProc->m_pLvalFunction, LLVMPrintMessageAction);
+		if (fFunctionFailed)
+		{
+			printf("\n\n Internal compiler error during codegen for '%s'\n", pEntry->m_pStnod->m_pTin->m_strName.PChz());
+		}
+		fHaveAnyFailed |= fFunctionFailed;
 	}
 
 	if (fHaveAnyFailed)
 	{
+		printf("\n\n LLVM IR:\n");
 		pBuild->PrintDump();
 		EmitError(pWork, nullptr, "Code generation for entry point is invalid");
 	}

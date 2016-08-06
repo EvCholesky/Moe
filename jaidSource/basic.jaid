@@ -50,7 +50,57 @@ sqrt64 :: (theta: f64) -> f64 #foreign sqrt;
 
 DebugBreak :: () -> void #foreign;
 PVMalloc :: (cB : s64) -> & void #foreign;
-FreeMalloc :: (pV: &u8) #foreign;
+FreeMalloc :: (pV: &void) #foreign;
+
+FuncAllocate :: typedef (allock: ALLOCK, cB: s64, cBPrev: s64, pVPrev: & void, pVAllocator: & void, options: s64) -> & void;
+
+memcpy :: (dest: &void, source: &void, count: s64) -> &void #foreign;
+memset :: (dest: &void, value: int, count: s64)    -> &void #foreign;
+
+PVAllocateDefault :: (allock: ALLOCK, cB: s64, cBPrev: s64, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
+{
+    if allock == ALLOCK.Allocate
+    {
+        return PVMalloc(cB);
+    } 
+    else if allock == ALLOCK.Resize
+    {
+        // For now, we dont even bother with realloc, just allocate, copy, free.
+        pVNew := PVMalloc(cB);
+        if !pVNew
+            return null;
+
+        if pVPrev && (cBPrev > 0) 
+        {
+            memcpy(pVNew, pVPrev, cBPrev);
+            FreeMalloc(pVPrev);
+        }
+
+        return pVNew;
+    }
+    else if allock == ALLOCK.Free
+    {
+        FreeMalloc(pVPrev);
+    }
+    else if allock == ALLOCK.FreeAll 
+    {
+        assert(false, "ALLOCK.FreeAll is not yet implemented", #file, #line);
+    }
+    else 
+    {
+        assert(false, "unhanadled ALLOCK ", #file, #line);
+    }
+
+    return null;
+}
+
+ALLOCK :: enum 
+{
+    Allocate,
+    Resize,
+    Free,
+    FreeAll
+}
 
 assert :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
 {

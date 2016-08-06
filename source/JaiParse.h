@@ -184,6 +184,7 @@ public:
 					,m_iStnodBody(-1)
 					,m_iStnodForeignAlias(-1)
 					,m_pTinproc(nullptr)
+					,m_pStnodParentScope(nullptr)
 					,m_fIsForeign(false)
 					,m_fUseUnmangledName(false)
 						{ ; }
@@ -193,6 +194,7 @@ public:
 	int						m_iStnodReturnType;
 	int						m_iStnodBody;
 	int						m_iStnodForeignAlias;
+	CSTNode *				m_pStnodParentScope;	// procedure this proc is nested inside (if there is one)
 	STypeInfoProcedure *	m_pTinproc;
 	bool					m_fIsForeign;
 	bool					m_fUseUnmangledName;
@@ -495,12 +497,14 @@ public:
 						:m_pAlloc(pAlloc)
 						,m_pWork(pWork)
 						,m_pSymtab(nullptr)
+						,m_pStnodScope(nullptr)
 						,m_grfsymlook(FSYMLOOK_Default)
 							{ ; }
 
 	EWC::CAlloc * 		m_pAlloc;
 	CWorkspace *		m_pWork;
 	CSymbolTable *		m_pSymtab;
+	CSTNode *			m_pStnodScope;	// current containng scope
 	GRFSYMLOOK			m_grfsymlook;
 };
 

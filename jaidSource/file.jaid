@@ -1,5 +1,7 @@
 #foreign_library "kernel32"
 
+kCBFilePathMax :: 1024;
+
 FFILEACCESS :: enum s32
 {
 	GenericRead:		0x80000000,
