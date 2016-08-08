@@ -861,8 +861,9 @@ inline bool FComputeUnaryOpOnLiteral(
 		switch (jtokOperator)
 		{
 		case JTOK('-'):         bintOperand.m_fIsNegative = !bintOperand.m_fIsNegative; break;
-		// we're not currently handling ~ Doing this properly requires a bunch of work on sign extending unsized literals
-		//case JTOK('~'):       bintOperand = ~bintOperand; break;
+		// BB - We're not really handling unsized literals correctly here - we'll just promote to a 64 bit type
+		case JTOK('~'):       bintOperand = BintBitwiseNot(bintOperand); break;
+
 		case JTOK('!'):         f = bintOperand.m_nAbs == 0; break;
 		default: return false;
 		}
@@ -1004,6 +1005,7 @@ inline bool FComputeBinaryOpOnLiterals(
 		case JTOK('%'):         bintOut = BintRemainder(bintLhs, bintRhs); break;
 		case JTOK('|'):         bintOut = BintBitwiseOr(bintLhs, bintRhs); break;
 		case JTOK('&'):         bintOut = BintBitwiseAnd(bintLhs, bintRhs); break;
+		case JTOK('^'):         bintOut = BintBitwiseXor(bintLhs, bintRhs); break;
 		case JTOK_ShiftRight:	bintOut = BintShiftRight(bintLhs, bintRhs); break;
 		case JTOK_ShiftLeft:	bintOut = BintShiftLeft(bintLhs, bintRhs); break;
 		case JTOK('>'):         f = bintLhs > bintRhs; break;

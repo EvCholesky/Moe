@@ -145,6 +145,26 @@ inline SBigInt BintBitwiseAnd(const SBigInt & bintLhs, const SBigInt & bintRhs)
 	return BintFromUint(nOut, fIsOutNegative);
 }
 
+inline SBigInt BintBitwiseNot(const SBigInt & bintOp)
+{
+	u64 nLhs = NTwosCompliment(bintOp.m_nAbs, bintOp.m_fIsNegative);
+
+	bool fIsOutNegative = !bintOp.m_fIsNegative;
+	u64 nOut = NTwosCompliment(~nLhs, fIsOutNegative);
+
+	return BintFromUint(nOut, fIsOutNegative);
+}
+
+inline SBigInt BintBitwiseXor(const SBigInt & bintLhs, const SBigInt & bintRhs)
+{
+	u64 nLhs = NTwosCompliment(bintLhs.m_nAbs, bintLhs.m_fIsNegative);
+	u64 nRhs = NTwosCompliment(bintRhs.m_nAbs, bintRhs.m_fIsNegative);
+
+	bool fIsOutNegative = bintLhs.m_fIsNegative ^ bintRhs.m_fIsNegative;
+	u64 nOut = NTwosCompliment(nLhs ^ nRhs, fIsOutNegative);
+
+	return BintFromUint(nOut, fIsOutNegative);
+}
 inline SBigInt BintShiftRight(const SBigInt & bintLhs, const SBigInt & bintRhs)
 {
 	u64 nLhs = NTwosCompliment(bintLhs.m_nAbs, bintLhs.m_fIsNegative);

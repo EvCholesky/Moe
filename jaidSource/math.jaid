@@ -119,3 +119,38 @@ GMax :: inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) return gA; return gB
 GClamp :: inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax); }
 GLerp :: inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp; }
 
+SRandomGenJenkinsSmall :: struct // tag = rng
+{
+	m_nA, m_nB, m_nC, m_nD: u32;
+}
+
+SRandomGen :: typedef SRandomGenJenkinsSmall;
+
+SeedRandom :: (pRng: & SRandomGenJenkinsSmall, nSeed: u32)
+{
+	pRng.m_nA = 0xf1ea5eed;
+	pRng.m_nB = nSeed;
+	pRng.m_nC = nSeed;
+	pRng.m_nD = nSeed;
+
+	i := 0;
+	while i < 20
+	{
+		NGenerateRand(pRng);
+		++i;
+	}
+}
+//#define EWC_RAND_SMALL_ROT(X, K)  (((X)<<(K))|((X)>>(32-(K))))
+	
+NGenerateRand :: (pRng : & SRandomGenJenkinsSmall) -> u32
+{
+	//U32 nE = m_nA - EWC_RAND_SMALL_ROT(m_nB, 27);	
+	//m_nA = m_nB ^ EWC_RAND_SMALL_ROT(m_nC, 17);
+	nE := pRng.m_nA - ((pRng.m_nB << 27) | (pRng.m_nB >> (32 - 27)));
+	pRng.m_nA = pRng.m_nB ^ ((pRng.m_nC << 17) | (pRng.m_nC >> (32 - 17)));
+	pRng.m_nB = pRng.m_nC + pRng.m_nD;
+	pRng.m_nC = pRng.m_nD + nE;
+	pRng.m_nD = nE + pRng.m_nA;
+	return pRng.m_nD;
+}
+
