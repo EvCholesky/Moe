@@ -232,6 +232,26 @@ EWC::CString StrUnexpectedToken(SJaiLexer * pJlex)
 	return CString(PChzCurrentToken(pJlex));
 }
 
+void SkipToToken(SJaiLexer * pJlex, JTOK const * const aJtok, int cJtok)
+{
+	while (1)
+	{
+		bool fFound = false;
+		JTOK jtok = (JTOK)pJlex->m_jtok;
+		if (jtok == JTOK_Eof)
+			break;
+
+		for (int iJtok = 0; !fFound && iJtok < cJtok; ++iJtok)
+		{
+			fFound |= (jtok == aJtok[iJtok]);
+		}
+
+		if (fFound)
+			break;
+		JtokNextToken(pJlex);
+	}
+}
+
 void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const char * pChzInfo = nullptr, ...)
 {
 	if (pJlex->m_jtok != jtokExpected)
@@ -670,26 +690,28 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 {
 	CSTNode * pStnodCast = nullptr;
 	CSTDecl * pStdecl = nullptr;
-	if (RwordLookup(pJlex) == RWORD_Cast)
+	if (RwordLookup(pJlex) != RWORD_Cast)
 	{
-		JtokNextToken(pJlex);
-
-		SLexerLocation lexloc(pJlex);
-		pStnodCast = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-		pStnodCast->m_park = PARK_Cast;
-
-		pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-		pStnodCast->m_pStdecl = pStdecl;
-
-		Expect(pParctx, pJlex, JTOK('('));
-
-		auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
-		pStdecl->m_iStnodType = pStnodCast->IAppendChild(pStnodType);
-
-		Expect(pParctx, pJlex, JTOK(')'));
+		return PStnodParseUnaryExpression(pParctx, pJlex);
 	}
 
-	auto pStnodChild = PStnodParseUnaryExpression(pParctx, pJlex);
+	JtokNextToken(pJlex);
+
+	SLexerLocation lexloc(pJlex);
+	pStnodCast = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+	pStnodCast->m_park = PARK_Cast;
+
+	pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+	pStnodCast->m_pStdecl = pStdecl;
+
+	Expect(pParctx, pJlex, JTOK('('));
+
+	auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
+	pStdecl->m_iStnodType = pStnodCast->IAppendChild(pStnodType);
+
+	Expect(pParctx, pJlex, JTOK(')'));
+
+	auto pStnodChild = PStnodParseCastExpression(pParctx, pJlex);
 	if (!pStnodCast)
 		return pStnodChild;
 
@@ -1722,7 +1744,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 					{
 						pTinproc->m_fHasVarArgs = true;
 					}
-					else if (EWC_FVERIFY(pStnodParam->m_park == PARK_Decl, "Expected decl"))
+					else if (pStnodParam->m_park == PARK_Decl, "Expected decl")
 					{
 						pTinproc->m_arypTinParams.Append(pStnodParam->m_pTin);
 					}
@@ -2179,6 +2201,15 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SJaiLexer * pJl
 		pStnodIf->IAppendChild(pStnodExp);
 		
 		CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pJlex);
+		if (!pStnodStatement)
+		{
+			ParseError( pParctx, pJlex, "Error parsing if statement. unexpected token '%s'", PChzFromJtok((JTOK)pJlex->m_jtok));
+
+			// move the lexer forward until it has some hope of generating decent errors
+			static const JTOK s_aJtok[] = {JTOK(';'), JTOK('{') };
+			SkipToToken(pJlex, s_aJtok, EWC_DIM(s_aJtok));
+			return pStnodIf;
+		}
 		if (pStnodStatement->m_grfstnod.FIsSet(FSTNOD_EntryPoint))
 		{
 			EWC_ASSERT(pStnodStatement->m_park == PARK_ProcedureDefinition, "Unknown entry point park");

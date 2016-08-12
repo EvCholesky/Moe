@@ -154,3 +154,47 @@ NGenerateRand :: (pRng : & SRandomGenJenkinsSmall) -> u32
 	return pRng.m_nD;
 }
 
+GRandom :: (pRng : & SRandomGenJenkinsSmall, gMin: f32, gMax: f32) -> f32
+{
+	d := gMax-gMin;
+	if (d <= 0.000001)
+		return gMin;
+	assert(d >= 0.0, "bad range in GRandom", #file, #line);
+
+	return gMin + ( cast(f32) NGenerateRand(pRng) / cast (f32)0xFFFFFFFF) * d;
+}
+
+
+NRandom :: (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
+{ 
+	d := cast(u32)(nMax-nMin);
+	if (d == 0)
+		return nMin;
+	assert(d > 0, "bad range in NRandom", #file, #line);
+	return nMin + cast(s32) (NGenerateRand(pRng) % d);
+}
+
+BuildRandomOrderedArray :: (pRng : & SRandomGenJenkinsSmall, aiN: [] s32)
+{
+	c := aiN.count;
+	if (c <= 0)
+		return;
+
+	// build a random ordered array containing all values [0..(c-1)] exactly once.
+	//  this is an implementation of the "inside-out" fisher-yates shuffle
+
+	aiN[0] = 0;
+	//for (int i = 1; i < c; ++i)
+	i := 1;
+	while (i < c)	
+	{
+		iNRand := NRandom(pRng, 0, i+1);
+		printf("iNRand = %d\n", iNRand);
+		if (iNRand != i)
+		{
+			aiN[i] = aiN[iNRand];
+		}
+		aiN[iNRand] = i;
+		++i;
+	}
+}

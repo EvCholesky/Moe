@@ -16,6 +16,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MissingLlvmC", "external\Mi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "File", "lib\File\File.vcxproj", "{3D8A3AEA-089F-446D-A12E-195B95BA136C}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "stb", "lib\stb\stb.vcxproj", "{14309634-5E68-488A-B2BA-6BF599200ADC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -64,6 +66,14 @@ Global
 		{3D8A3AEA-089F-446D-A12E-195B95BA136C}.Release|x64.Build.0 = Release|x64
 		{3D8A3AEA-089F-446D-A12E-195B95BA136C}.Release|x86.ActiveCfg = Release|Win32
 		{3D8A3AEA-089F-446D-A12E-195B95BA136C}.Release|x86.Build.0 = Release|Win32
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Debug|x64.ActiveCfg = Debug|x64
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Debug|x64.Build.0 = Debug|x64
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Debug|x86.ActiveCfg = Debug|Win32
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Debug|x86.Build.0 = Debug|Win32
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Release|x64.ActiveCfg = Release|x64
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Release|x64.Build.0 = Release|x64
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Release|x86.ActiveCfg = Release|Win32
+		{14309634-5E68-488A-B2BA-6BF599200ADC}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

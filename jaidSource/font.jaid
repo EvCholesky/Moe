@@ -1,4 +1,8 @@
 #import "Color"
+#import "File"
+#import "Gl"
+#import "Hash"
+#import "stb_image"
 
 ALIGNK :: enum
 {
@@ -200,24 +204,27 @@ STextureMip :: struct // tag=texmip
 
 STexture :: struct // tag=tex
 {
-	m_shashFilename: u32;	// filename hash, for texture reuse
+	m_shashFilename: SStringHash;	// filename hash, for texture reuse
 	m_cTexmip: u8;
-	m_iTex: s16;				// index into our global texture array
-	m_driId: DrawInt;			// GL id for this texture
-	m_driComponents: DrawInt;	// number of components or GL-specific format	(GL_RGBA)
-	m_druFormat: DrawEnum;		// format of color such as indexed or RGBA		(GL_RGBA)
-	m_druType: DrawEnum;		// data type for each component					(GL_UNSIGNED_BYTE)
-	m_druTarget: DrawEnum;		// gl target type (ie. GL_TEXTURE_2D)
+	m_iTex: s16;					// index into our global texture array
+	m_driId: gluint;				// GL id for this texture
+	m_driComponents: DrawInt;		// number of components or GL-specific format	(GL_RGBA)
+	m_druFormat: DrawEnum;			// format of color such as indexed or RGBA		(GL_RGBA)
+	m_druType: DrawEnum;			// data type for each component					(GL_UNSIGNED_BYTE)
+	m_druTarget: DrawEnum;			// gl target type (ie. GL_TEXTURE_2D)
 
 	m_aTexmip: [1] STextureMip;
 };
+
+g_cTex : s32;
+g_aTex : [50] STexture;
 
 DXFromTex :: (pTex: & STexture)->DrawInt
 { 
 	return pTex.m_aTexmip[0].m_dX;
 }
 
-DYFromTex :: (pTex: & STextureMip)->DrawInt
+DYFromTex :: (pTex: & STexture)->DrawInt
 {
 	return pTex.m_aTexmip[0].m_dY;
 }
@@ -276,6 +283,7 @@ SFontManager :: struct // tag=fontman
 	m_aFont: [FONTK.max] SFont;
 	m_aShhand: [FONTSHK.max] SHHAND;
 }
+g_fontman: SFontManager;
 
 SFontVertex :: struct // tag=fvert
 {
@@ -285,22 +293,163 @@ SFontVertex :: struct // tag=fvert
 	m_uMin, m_vMin, m_uMax, m_vMax: f32; // glyph bounds for clamping texture filtering
 }
 
-PFontmanStaticInit :: (pAlloc: & CAlloc, pShman: & CShaderManager) -> & SFontManager
+SShader :: struct// tag=shad
+{
+	m_driProgram: gluint;
+	m_driVertexShader: gluint;
+	m_driFragmentShader: gluint;
+}
+
+CORESHK :: enum // core shader kind
+{
+	Sprite,
+	Environment,	// like sprite, but with "perspective" distortion
+}
+
+SShaderManager  :: struct // tag=shman
+{
+	m_aShad: [16] SShader;
+	m_mpCoreshkShhand : [CORESHK.max] SHHAND;
+}
+
+ShhandFindUnused :: inline (pShman: &SShaderManager) -> SHHAND
+{
+	iShad: SHHAND;
+	pShadEnd := &pShman.m_aShad[pShman.m_aShad.count];
+	pShadIt: &SShader = pShman.m_aShad; 
+	while pShadIt != pShadEnd
+	{
+		if pShadIt.m_driProgram == 0
+			return iShad;
+		++pShadIt;
+		++iShad;
+	}
+	return SHHAND.nil;
+}
+
+// BB - would pass in print procs, but can't currently pass stdcall procedures
+PrintShaderInfoLog :: (object: gluint)
+{
+	cCh: glint;
+	glGetShaderiv(object, GL_INFO_LOG_LENGTH, &cCh);
+
+	aCh := cast(&u8) PVMalloc(cCh);
+	glGetShaderInfoLog(object, cCh, null, aCh);
+	printf("%s", aCh);
+	FreeMalloc(aCh);
+}
+
+PrintProgramInfoLog :: (object: gluint)
+{
+	cCh: glint;
+	glGetProgramiv(object, GL_INFO_LOG_LENGTH, &cCh);
+
+	aCh := cast(&u8) PVMalloc(cCh);
+	glGetProgramInfoLog(object, cCh, null, aCh);
+	printf("%s", aCh);
+	FreeMalloc(aCh);
+}
+
+ShhandLoad :: (pShman: &SShaderManager, pChzMaterialName: &u8, pChzVertexSource: &u8, pChzFragmentSource: &u8) -> SHHAND
+{
+	shhand := ShhandFindUnused(pShman);
+	if(shhand == SHHAND.nil)
+		return SHHAND.nil;
+
+	pShad := &pShman.m_aShad[shhand];    
+	
+	glSuccess: glint;
+	pShad.m_driProgram			= glCreateProgram();
+	pShad.m_driVertexShader		= glCreateShader(GL_VERTEX_SHADER_ARB);
+	pShad.m_driFragmentShader	= glCreateShader(GL_FRAGMENT_SHADER_ARB);
+
+	glShaderSource(pShad.m_driVertexShader, 1, &pChzVertexSource, null);
+	glShaderSource(pShad.m_driFragmentShader, 1, &pChzFragmentSource, null);
+
+	glCompileShader(pShad.m_driVertexShader);
+	// if(checkForErrors("glCompileShaderARB(sd.vertexShader)", sd.m_vertexShader))
+	// 	return SHHAND_Nil;
+
+	glGetShaderiv(pShad.m_driVertexShader, GL_COMPILE_STATUS, &glSuccess);
+	if (!glSuccess)
+	{
+		printf("Failed to compile vertex shader %s:\n", pChzMaterialName);
+		PrintShaderInfoLog(pShad.m_driVertexShader);
+		glDeleteShader(pShad.m_driVertexShader);
+		return SHHAND.nil;
+	}
+
+	glCompileShader(pShad.m_driFragmentShader);
+	// if(checkForErrors("glCompileShaderARB(pShad.fragmentShader)", pShad.m_driFragmentShader))
+	// 	return SHHAND_Nil;
+
+	glGetShaderiv(pShad.m_driFragmentShader, GL_COMPILE_STATUS, &glSuccess);
+	if (!glSuccess)
+	{
+		printf("Failed to compile fragment shader %s:\n", pChzMaterialName);
+		PrintShaderInfoLog(pShad.m_driFragmentShader);
+		glDeleteShader(pShad.m_driVertexShader);
+		glDeleteShader(pShad.m_driFragmentShader);
+		return SHHAND.nil;
+	}
+
+	glAttachShader(pShad.m_driProgram, pShad.m_driVertexShader);
+	glAttachShader(pShad.m_driProgram, pShad.m_driFragmentShader);
+
+	glLinkProgram(pShad.m_driProgram);
+	glGetProgramiv(pShad.m_driProgram, GL_LINK_STATUS, &glSuccess);
+	if (!glSuccess)
+	{
+		printf("Failed to link shader program: %s\n", pChzMaterialName);
+		PrintProgramInfoLog(pShad.m_driProgram);
+		glDeleteProgram(pShad.m_driProgram);
+		return SHHAND.nil;
+	}
+	// if(checkForErrors("glLinkProgram(mat.program)", sd.m_program))
+	// 	return SHHAND_Nil;
+
+	return shhand;
+}
+
+/*
+void BeginShader(const CShaderManager * pShman, ShaderHandle shhand)
+{
+	const SShader & pShad = pShman->m_aShad[shhand];
+	glUseProgram(pShad.m_driProgram);
+	//checkForErrors("glCompileShaderARB(sd.vertexShader)", &sd.m_program);
+}
+
+void EndShader()
+{
+	glUseProgram(0);
+}
+
+I32 IParamFind(const CShaderManager * pShman, ShaderHandle shhand, const char* pChzName)
+{
+	EWC_ASSERT(shhand != SHHAND_Nil, "Bad shader handle");
+	return glGetUniformLocation(pShman->m_aShad[shhand].m_driProgram, pChzName);
+}
+*/
+
+g_fontMainVertex :: "";
+g_fontMainFragment :: "";
+
+PFontmanStaticInit :: (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SFontManager
 {
 	iFont := 0;
-	while (iFont < s_fontman.m_aFont.count)
+	while (iFont < g_fontman.m_aFont.count)
 	{
-		s_fontman.m_aFont[i].m_pTex			= 0;
-		s_fontman.m_aFont[i].m_pGlyphf		= 0;
-		s_fontman.m_aFont[i].m_aWchKerning	= 0;
-		s_fontman.m_aFont[i].m_aDxKerning	= 0;
+		g_fontman.m_aFont[iFont].m_pTex			= null;
+		g_fontman.m_aFont[iFont].m_pGlyphf		= null;
+		g_fontman.m_aFont[iFont].m_aWchKerning	= null;
+		g_fontman.m_aFont[iFont].m_aDxKerning	= null;
 		++iFont;
 	}
 
-	LoadFont(&s_fontman, FONTK_Regular, "Fonts/Calibri", pAlloc);
+	LoadFont(&g_fontman, FONTK.Regular, "Fonts/Calibri", procAlloc);
 
-	s_fontman.m_aShhand[FONTSHK.Basic] = ShhandLoad(pShman, "BasicFontShader", s_fontMainVertex, s_fontMainFragment);
-	return &s_fontman;
+	g_fontman.m_aShhand[FONTSHK.Basic] = ShhandLoad(pShman, "BasicFontShader", g_fontMainVertex, g_fontMainFragment);
+	return &g_fontman;
 }
 
 ConcatPChz :: 	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
@@ -325,16 +474,127 @@ ConcatPChz :: 	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
 	aCh[iCh] = '\0';
 }
 
-LoadFont :: (pFontman: & SFontManager, fontk: FONTK, pChzFilename: & u8, pAlloc: & CAlloc)
+PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
 {
-	char aCh[1024];
+    // TODO - should replace this with a hash
+    shashFilename:= ShashCreate(pChzFilename, 0);
 
-	ConcatPChz(pChzFilename, ".png", aCh, sizeof(aCh));
-	pFontman->m_aFont[fontk].m_pTex = PTexLoad(aCh, false);
-	EWC_ASSERT(pFontman->m_aFont[fontk].m_pTex, "Failed to load font texture: %s", aCh);
+    iTex: s16;
+    //for (int iTex = 0, cTex = g_aTex.C(); iTex < cTex; ++iTex)
+    while (iTex < g_cTex)
+    {
+        pTex := &g_aTex[iTex];
+        if (FAreEqual(pTex.m_shashFilename, shashFilename))
+            return pTex;
+        ++iTex;
+    }
 
-	ConcatPChz(pChzFilename, ".font", aCh, sizeof(aCh));
 
+    if ((!fverify(iTex == cast(s32) cast(s16)iTex, "iTex overflow", #file, #line)) |
+        (!fverify(g_cTex < g_aTex.count, "s_aryTex overflow", #file, #line)))
+        return null;
+
+    //STexture * pTex = (STexture*)s_aryTex.AppendNew();
+    pTex := &g_aTex[g_cTex];
+    ++g_cTex;
+    pTex.m_cTexmip = 1;
+    pTex.m_shashFilename = shashFilename;
+
+    dX, dY: s32;
+    cComponents: s32;
+    pB : &u8 = stbi_load(pChzFilename, &dX, &dY, &cComponents, 4);
+    if (pB == null)
+        return null;
+    
+    // we'll flip most of our images so the UV origin is in the lower left
+
+    if (fFlipVertical)
+    {
+        bTemp: u32;
+        cLine := dY / 2;
+        //for (int iLine = 0, cLine = dY>>1; iLine < cLine; ++iLine)
+        iLine: s32;
+        while (iLine < cLine)
+        {
+            pB1 := &(cast(&u32)pB)[iLine * dX];
+            pB2 := &(cast(&u32)pB)[(dY - 1 - iLine) * dX];
+            //for (U32 * pB1End = &pB1[dX]; pB1 != pB1End; ++pB1, ++pB2)
+            pB1End := &pB1[dX];
+            while (pB1 != pB1End)
+            {
+                bTemp = @pB1;
+                @pB1 = @pB2;
+                @pB2 = bTemp;
+                ++pB1;
+                ++pB2;
+            }
+            ++iLine;
+        }
+    }
+
+    pTex.m_iTex = iTex;
+    pTex.m_aTexmip[0].m_aB = pB;
+    pTex.m_aTexmip[0].m_dX = dX;
+    pTex.m_aTexmip[0].m_dY = dY;
+    pTex.m_driComponents   = GL_RGBA; //numComponents;
+    pTex.m_druFormat       = GL_RGBA; //GL_TEXTURE_2D;
+    pTex.m_druType         = GL_UNSIGNED_BYTE;
+    pTex.m_druTarget       = GL_TEXTURE_2D;
+
+    glGenTextures(1, cast(&gluint)&pTex.m_driId);
+    glBindTexture(GL_TEXTURE_2D, pTex.m_driId);
+
+    iTexmip: u32;
+    texmipEnd := &pTex.m_aTexmip[pTex.m_cTexmip];
+    texmipIt : &STextureMip = pTex.m_aTexmip;
+    //for(TextureMip * texmipIt = pTex.m_aTexmip; texmipIt != texmipEnd; ++texmipIt, ++iTexmip)
+    while (texmipIt != texmipEnd)
+    {
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            iTexmip,
+            pTex.m_driComponents,
+            texmipIt.m_dX,
+            texmipIt.m_dY,
+            0,
+            pTex.m_druFormat,
+            pTex.m_druType,
+            texmipIt.m_aB);
+        ++texmipIt;
+        ++iTexmip;
+    }
+
+    return pTex;
+}
+
+LoadFont :: (pFontman: & SFontManager, fontk: FONTK, pChzFilename: & u8, procAlloc: ProcAlloc)
+{
+	aCh: [1024] u8;
+
+	ConcatPChz(pChzFilename, ".png", aCh);
+	pFontman.m_aFont[fontk].m_pTex = PTexLoad(aCh, false);
+	//assert(pFontman.m_aFont[fontk].m_pTex, "Failed to load font texture: %s", aCh);
+	assert(pFontman.m_aFont[fontk].m_pTex, "Failed to load font texture", #file, #line);
+
+	ConcatPChz(pChzFilename, ".font", aCh);
+
+	cBRead: s64;
+	pB := PBReadEntireFile(aCh, &cBRead);
+	if (!pB)
+	{
+		assert(false, "failed to load glyph file", #file, #line);
+	}
+	else
+	{
+		pFont: & SFont = &pFontman.m_aFont[fontk];
+
+		pGlyphf := cast (&SFontGlyphFile)pB;
+		pFont.m_aWchKerning = cast(&s32)(pB + pGlyphf.m_iBaWchKerning);
+		assert(cast(&void)pFont.m_aWchKerning == cast(&void)&pGlyphf.m_aGlyph[pGlyphf.m_cGlyph], "bad offsets", #file, #line);
+
+		pFont.m_aDxKerning = cast(&f32)(pB + pGlyphf.m_iBaDxKerning);
+	}
+	/*
 	FILE * pFile;
 	fopen_s(&pFile, aCh, "rb");
 	EWC_ASSERT(pFile, "Failed to load font glyph file: %s", aCh);
@@ -355,7 +615,7 @@ LoadFont :: (pFontman: & SFontManager, fontk: FONTK, pChzFilename: & u8, pAlloc:
 		EWC_ASSERT((void *)pFont->m_aWchKerning == (void *)&pGlyphf->m_aGlyph[pGlyphf->m_cGlyph], "bad offsets");
 
 		pFont->m_aDxKerning = (F32 *)(reinterpret_cast<U8 *>(pGlyphf) + pGlyphf->m_iBaDxKerning);
-	}
+	}*/
 }
 
 
@@ -377,9 +637,9 @@ FillOutVert :: inline (
 	pVert.m_b = b;
 	pVert.m_a = a;
 
-	pVert.m_uMin = glyph.m_uMin;
-	pVert.m_vMin = glyph.m_vMin;
-	pVert.m_uMax = glyph.m_uMax;
-	pVert.m_vMax = glyph.m_vMax;
+	pVert.m_uMin = pGlyph.m_uMin;
+	pVert.m_vMin = pGlyph.m_vMin;
+	pVert.m_uMax = pGlyph.m_uMax;
+	pVert.m_vMax = pGlyph.m_vMax;
 }
 

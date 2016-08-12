@@ -2433,6 +2433,7 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 		{
 		case LITK_Integer:	tink = TINK_Integer;	break;
 		case LITK_Float:	tink = TINK_Float;		break;
+		case LITK_Enum:		tink = TINK_Enum;		break;
 		default:			tink = TINK_Nil;
 		}
 	}
@@ -2451,7 +2452,6 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 			case '&':				CreateOpinfo(IROP_And, "nAndTmp", pOpinfo); break;
 			case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
-
 			case JTOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 			case JTOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 		} break;
@@ -2526,16 +2526,18 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 			}
 		} break;
 	case TINK_Enum:
-	{
-		// BB - why is the RHS still a literal here?
-		//EWC_ASSERT(FTypesAreSame(pTinLhs, pTinRhs), "enum comparison type mismatch");
-
-		switch (jtok)
 		{
-			case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
-		}
-	}
+			// BB - why is the RHS still a literal here?
+			//EWC_ASSERT(FTypesAreSame(pTinLhs, pTinRhs), "enum comparison type mismatch");
+
+			switch (jtok)
+			{
+				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
+				case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
+			}
+		} break;
 	default: 
 		break;
 	}
@@ -3008,6 +3010,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						return nullptr;
 				}
 
+				s32 iLine;
+				s32 iCol;
+				CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLine, &iCol);
+
 				pInst->m_pLval = LLVMBuildCall(
 									pBuild->m_pLbuild,
 									pProc->m_pLvalFunction,
@@ -3320,6 +3326,19 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			STypeInfo * pTinOutput = pStnod->m_pTinOperand;
 			STypeInfo * pTinOperand = pStnodOperand->m_pTin;
+
+			if (pTinOutput->m_tink == TINK_Enum)
+			{
+				auto pTinenum = (STypeInfoEnum *)pTinOutput;
+				pTinOutput = pTinenum->m_pTinLoose;
+			}
+
+			if (pTinOperand->m_tink == TINK_Enum)
+			{
+				auto pTinenum = (STypeInfoEnum *)pTinOperand;
+				pTinOperand = pTinenum->m_pTinLoose;
+			}
+
 			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinOperand != nullptr), "bad cast"))
 				return nullptr;
 	
@@ -3335,6 +3354,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				{
 				case LITK_Integer:	tink = TINK_Integer;	break;
 				case LITK_Float:	tink = TINK_Float;		break;
+				case LITK_Enum:		tink = TINK_Enum;		break;
 				default:			tink = TINK_Nil;
 				}
 			}
@@ -3403,6 +3423,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 								pInstAdd = pBuild->PInstCreate(IROP_GSub, pInstLoad, pConst, "gDec");
 
 						} break;
+					case TINK_Enum:
 					case TINK_Integer:
 						{
 							auto pTinint = (STypeInfoInteger *)pTinOperand;

@@ -851,7 +851,7 @@ inline bool FComputeUnaryOpOnLiteral(
 		}
 		return true;
 	} 
-	else // both LITK_Integer
+	else // LITK_Integer
 	{
 		EWC_ASSERT(littyOperand.m_cBit == -1, "expected unsized literal here");
 
@@ -1088,7 +1088,16 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 			switch (pTinlitPrev->m_litty.m_litk)
 			{
 			case LITK_String:	pTinlit = pSymtab->PTinlitFromLitk(LITK_String);	break;
-			case LITK_Null:		pTinlit = pSymtab->PTinlitFromLitk(LITK_Null);	break;
+			case LITK_Null:		
+				{
+					pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+					pSymtab->AddManagedTin(pTinlit);
+					pTinlit->m_litty.m_litk = LITK_Null;
+					pTinlit->m_litty.m_cBit = -1;
+					pTinlit->m_litty.m_fIsSigned = false;
+					pTinlit->m_fIsFinalized = true;
+					pTinlit->m_pTinSource = (STypeInfoPointer*)pTinDst;
+				} break;
 			case LITK_Integer:	
 				{
 					CSTValue * pStval = pStnodLit->m_pStval;
@@ -1096,9 +1105,9 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 				} break;
 			default: EWC_ASSERT(false, "unexpected literal type");
 			}
+
 			if (pTinlit)
 			{
-				pTinlit->m_pTinSource = (STypeInfoPointer*)pTinDst;
 				pStnodLit->m_pTin = pTinlit;
 			}
 		}break;
@@ -1582,6 +1591,20 @@ STypeInfo * PTinOperandFromPark(
 			return pTinLhs;
 	}
 
+	if (pTinLhs->m_tink == TINK_Enum || pTinRhs->m_tink == TINK_Enum)
+	{
+		STypeInfo * pTinEnum = pTinLhs;
+		STypeInfo * pTinOther = pTinRhs;
+		if (pTinOther->m_tink == TINK_Enum)
+		{
+			pTinEnum = pTinRhs;
+			pTinOther = pTinLhs;
+		}
+
+		if (parkOperator ==PARK_AdditiveOp && pTinOther->m_tink == TINK_Integer)
+			return pTinEnum;
+	}
+
 	if (pTinLhs->m_tink == TINK_Pointer || pTinRhs->m_tink == TINK_Pointer)
 	{
 		STypeInfo * pTinPtr = pTinLhs;
@@ -1640,8 +1663,11 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 				auto pTinintSrc = (STypeInfoInteger *)pTinSrc;
 				auto pTinintDst = (STypeInfoInteger *)pTinDst;
 
-				// BB - this could be more forgiving... allow signed/unsigned conversions if a higher cBit
-				return (pTinintDst->m_cBit >= pTinintSrc->m_cBit) & (pTinintDst->m_fIsSigned == pTinintSrc->m_fIsSigned);
+				if ((pTinintDst->m_cBit >= pTinintSrc->m_cBit) & (pTinintDst->m_fIsSigned == pTinintSrc->m_fIsSigned))
+					return true;
+
+				// Allow unsigned->signed conversions if a higher cBit
+				return ((pTinintDst->m_fIsSigned == true) & (pTinintDst->m_cBit > pTinintSrc->m_cBit));
 			}
 		case TINK_Float:
 			{
@@ -2201,6 +2227,13 @@ PROCMATCH ProcmatchCheckArguments(
 
 	if 	(pTinproc->m_fHasVarArgs == false && cArgs > pTinproc->m_arypTinParams.C())
 	{
+		if (fPrintErrors)
+		{
+			EmitError(pTcwork, pStnodCall, "Too many arguments to procedure '%s'. Expected %d but encountered %d",
+				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
+				pTinproc->m_arypTinParams.C(),
+				cStnodCall - iStnodArgMin);
+		}
 		return PROCMATCH_None;
 	}
 
@@ -3278,6 +3311,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+				CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
+				CString strIdent = StrFromIdentifier(pStnodIdent);
+				if (FIsType(pStnodInit))
+				{
+					EmitError(pTcwork, pStnod, "Cannot initialize constant '%s' to non-instance value.",strIdent.PChz());
+					return TCRET_StoppingError;
+				}
 
 				auto pSymtab = pTcsentTop->m_pSymtab;
 				auto pStnodType = pStnod->PStnodChildSafe(pStdecl->m_iStnodType);
@@ -3314,10 +3354,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				pStnod->m_pTin = pStnodInit->m_pTin;
 
 				// find our symbol and resolve any pending unknown types
-				CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 				if (EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))
 				{
-					CString strIdent = StrFromIdentifier(pStnodIdent);
 					SSymbol * pSymIdent = pSymtab->PSymLookup(
 													strIdent,
 													pStnodIdent->m_lexloc,
@@ -3921,8 +3959,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									pTinMember = PTinptrAlloc(pSymtab, pTinary->m_pTin);
 								} break;
 							default: 
-								EWC_ASSERT(false, "unknown array member '%s'", strMemberName.PChz());
-								break;
+								EmitError(pTcwork, pStnod, "unknown array member '%s'", strMemberName.PChz());
+								return TCRET_StoppingError;
 							}
 
 						} break;
@@ -3987,7 +4025,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto pSymtab = pTcsentTop->m_pSymtab;
 
 				auto pTinIndex = PTinPromoteLiteralDefault(pTcwork, pSymtab, pStnodIndex);
-				if (pTinIndex->m_tink != TINK_Integer &&  pTinIndex->m_tink != TINK_Integer)
+				if (pTinIndex->m_tink == TINK_Enum)
+				{
+					auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinIndex);
+					pTinIndex = pTinenum->m_pTinLoose;
+				}
+
+				if (pTinIndex->m_tink != TINK_Integer)
 				{
 					CString strTinIndex = StrFromTypeInfo(pTinIndex);
 					EmitError(pTcwork, pStnod, "Cannot convert %s to integer for array index", strTinIndex.PChz());
@@ -4309,14 +4353,25 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										//  definition, but need to walk past member lookups 
 										
 										// Need a better method for this - this fails in lots of different ways
-										//  ex. pN2 := &(pN + 1);
 
 										bool fCanTakeReference = false;
 										auto pStnodMember = pStnodOperand;
-										while (pStnodMember->m_park == PARK_MemberLookup)
+
+										while (1)
 										{
-											pStnodMember = pStnodMember->PStnodChildSafe(1);
 											if (!EWC_FVERIFY(pStnodMember, "bad member lookup child"))
+												break;
+
+											if (pStnodMember->m_park == PARK_MemberLookup)
+												pStnodMember = pStnodMember->PStnodChildSafe(1);
+											else if (pStnodMember->m_park == PARK_ArrayElement)
+												pStnodMember = pStnodMember->PStnodChildSafe(0);
+											else if (pStnodMember->m_park == PARK_Cast)
+											{
+												auto * pStdecl = pStnodMember->m_pStdecl;
+												pStnodMember = pStnodMember->PStnodChild(pStdecl->m_iStnodInit);
+											}
+											else
 												break;
 										}
 
@@ -4362,17 +4417,21 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										TINK tinkOperand = pTinOperand->m_tink;
 										bool fIsInteger = tinkOperand == TINK_Integer;
 										bool fIsFloat = tinkOperand == TINK_Float;
+										bool fIsEnum = tinkOperand == TINK_Enum;
 										if (tinkOperand == TINK_Literal && pStnodOperand->m_pStval)
 										{
 											LITK litk = ((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk;
 											fIsInteger |= litk == LITK_Integer;
 											fIsFloat |= litk == LITK_Float;
+											fIsEnum |= litk == LITK_Enum;
 										}
 
 										bool fIsValidPtrOp = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) &
 											(tinkOperand == TINK_Pointer);
-										bool fIsValidFloatOp = ((jtok == JTOK('+')) | (jtok == JTOK('-')) | (jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & fIsFloat;
-										bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp;
+										bool fIsValidFloatOp = ((jtok == JTOK('+')) | (jtok == JTOK('-')) | (jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & 
+																fIsFloat;
+										bool fIsValidEnumOp = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & fIsEnum;
+										bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp | fIsValidEnumOp;
 
 										// BB - we should be checking for negating a signed literal here, but we can't really
 										//  do operations on literals until we know the resolved type

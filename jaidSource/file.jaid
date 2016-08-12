@@ -47,7 +47,7 @@ CloseHandle  :: (handle: HANDLE) -> s32 #foreign #stdcall;
 
 GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall;
 
-ReadFile32 :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign ReadFile #stdcall;
+ReadFile32 :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign #stdcall;
 
 SFile :: struct // tag = file
 {

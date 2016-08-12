@@ -1,0 +1,68 @@
+/* Copyright (C) 2015 Evan Christensen
+|
+| Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated 
+| documentation files (the "Software"), to deal in the Software without restriction, including without limitation the 
+| rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit 
+| persons to whom the Software is furnished to do so, subject to the following conditions:
+| 
+| The above copyright notice and this permission notice shall be included in all copies or substantial portions of the 
+| Software.
+| 
+| THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE 
+| WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+| COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR 
+| OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
+
+#import "Math"
+
+SColorVec :: typedef SVector4;
+
+SColor :: struct
+{
+	m_r: u8;
+	m_g: u8;
+	m_b: u8;
+	m_a: u8;
+}
+
+ColCreate ::inline (r: u8, g: u8, b: u8, a: u8) -> SColor
+{
+	col: SColor;
+	col.m_r = r;
+	col.m_g = g;
+	col.m_b = b;
+	col.m_a = a;
+	return col;
+}
+
+ColLerp :: inline (colA: SColor, colB: SColor, uLerp: f32) -> SColor
+{
+	gR := cast(f32)colA.m_r; gR = GClamp(gR + (cast(f32)colB.m_r - gR) * uLerp, 0, 255);
+	gG := cast(f32)colA.m_g; gG = GClamp(gG + (cast(f32)colB.m_g - gG) * uLerp, 0, 255);
+	gB := cast(f32)colA.m_b; gB = GClamp(gB + (cast(f32)colB.m_b - gB) * uLerp, 0, 255);
+	gA := cast(f32)colA.m_a; gA = GClamp(gA + (cast(f32)colB.m_a - gA) * uLerp, 0, 255);
+	return ColCreate(cast(u8) gR, cast(u8) gG, cast(u8) gG, cast(u8) gA);
+}
+
+ColScaleAlpha :: inline (col: SColor, rScale: f32) -> SColor
+{
+	gA := cast(f32)col.m_a * rScale;
+	return ColCreate(col.m_r, col.m_g, col.m_b, cast(u8)gA);
+}
+
+ColvecFromCol :: inline (col: SColor) -> SColorVec
+{
+	return VecMul(
+				Vec4Create(cast(f32)col.m_r, cast(f32)col.m_g, cast(f32)col.m_b, cast(f32)col.m_a), 
+				1.0/255.0);
+}
+
+ColvecLerp :: inline (colvecA: SColorVec, colvecB: SColorVec, uLerp: f32) -> SColorVec
+{
+	vec := Vec4Create(	GClamp(GLerp(colvecA.m_x, colvecB.m_x, uLerp), 0, 1),
+						GClamp(GLerp(colvecA.m_y, colvecB.m_y, uLerp), 0, 1),
+						GClamp(GLerp(colvecA.m_z, colvecB.m_z, uLerp), 0, 1),
+						GClamp(GLerp(colvecA.m_w, colvecB.m_w, uLerp), 0, 1));
+	return vec;
+}
+
