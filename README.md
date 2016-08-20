@@ -30,7 +30,6 @@ Coming soon:
   * Operator overloading
   * Debug info
     - handle nested scopes
-    - verify initializer functions 
   * break/continue to labels;
   * Dynamic arrays
   * Improved error handling and unit testing of error cases.

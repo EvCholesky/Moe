@@ -50,7 +50,7 @@ LLVMValueRef LLVMDIBuilderCreateCompileUnit(
 				unsigned nRuntimeVersion);
 
 LLVMValueRef LLVMDIBuilderCreateFile(LLVMDIBuilderRef pDib, const char * pChzFilename, const char * pChzDirectory);
-LLVMValueRef LLVMCreateDebugLocation(int nLine, int nCol, LLVMValueRef pLvalScope);
+LLVMValueRef LLVMCreateDebugLocation(LLVMBuilderRef pLbuild, int nLine, int nCol, LLVMValueRef pLvalScope);
 
 // Types
 

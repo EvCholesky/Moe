@@ -37,6 +37,7 @@ using namespace EWC;
 extern bool FIsDirectCall(CSTNode * pStnodCall);
 CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodStruct);
 CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod);
+LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodProc, SDIFile * pDif);
 
 CIRInstruction * PInstGenerateAssignmentFromRef(
 	CWorkspace * pWork,
@@ -496,7 +497,7 @@ void EmitLocation(CWorkspace * pWork, CIRBuilder * pBuild, const SLexerLocation 
 	s32 iLine, iCol;
 	CalculateLinePosition(pWork, &lexloc, &iLine, &iCol);
 
-	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pLvalScope);
+	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(pBuild->m_pLbuild, iLine, iCol, pLvalScope);
 	LLVMSetCurrentDebugLocation(pBuild->m_pLbuild, pLvalLoc);
 }
 
@@ -514,7 +515,7 @@ SDIFile * PDifEmitLocation(
 	s32 iLine, iCol;
 	CalculateLinePosition(pWork, &lexloc, &iLine, &iCol);
 
-	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(iLine, iCol, pLvalScope);
+	LLVMOpaqueValue * pLvalLoc = LLVMCreateDebugLocation(pBuild->m_pLbuild, iLine, iCol, pLvalScope);
 	LLVMSetCurrentDebugLocation(pBuild->m_pLbuild, pLvalLoc);
 
 	if (piLine) *piLine = iLine;
@@ -529,7 +530,30 @@ void CalculateSizeAndAlign(CIRBuilder * pBuild, LLVMOpaqueType * pLtype, u64 * p
 	*pCBitAlign = *pCBitSize;
 }
 
-LLVMOpaqueValue * PLvalParentScopeForProcedure(CSTNode * pStnodProc, SDIFile * pDif)
+CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CIRBuilder * pBuild, SSymbol * pSym)
+{
+	if (pSym->m_pVal && EWC_FVERIFY(pSym->m_pVal->m_valk == VALK_ProcedureDefinition))
+	{
+		return (CIRProcedure *)pSym->m_pVal;
+	}
+
+	// this happens when calling a method that is defined later
+	CSTNode * pStnodProc = pSym->m_pStnodDefinition;
+	auto pDif = PDifEnsure(pWork, pBuild, pStnodProc->m_lexloc.m_strFilename.PChz());
+	auto pLvalParentScope = PLvalParentScopeForProcedure(pWork, pBuild, pStnodProc, pDif);
+
+	PushDIScope(pDif, pLvalParentScope);
+	(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
+	PopDIScope(pDif, pLvalParentScope);
+
+	if (pSym->m_pVal && EWC_FVERIFY(pSym->m_pVal->m_valk == VALK_ProcedureDefinition))
+	{
+		return (CIRProcedure *)pSym->m_pVal;
+	}
+	return nullptr;
+}
+
+LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodProc, SDIFile * pDif)
 {
 	auto pStproc = pStnodProc->m_pStproc;
 	if (EWC_FVERIFY(pStproc, "function missing procedure") && pStproc->m_pStnodParentScope)
@@ -538,18 +562,19 @@ LLVMOpaqueValue * PLvalParentScopeForProcedure(CSTNode * pStnodProc, SDIFile * p
 		auto pSymParentScope = pStproc->m_pStnodParentScope->m_pSym;
 		if (EWC_FVERIFY(pSymParentScope, "expected symbol to be set during type check"))
 		{
-			pProc = (CIRProcedure *)pSymParentScope->m_pVal;
-			if (!EWC_FVERIFY(pProc->m_valk == VALK_ProcedureDefinition, "expected IR procedure"))
+			pProc = (CIRProcedure *)PProcTryEnsure(pWork, pBuild, pSymParentScope);
+
+			if (!EWC_FVERIFY(pProc && pProc->m_valk == VALK_ProcedureDefinition, "expected IR procedure"))
 				pProc = nullptr;
 		}
 
 		if (pProc)
 		{
-			return pProc->m_pLval;
+			return pProc->m_pLvalDIFunction;
 		}
 	}
 
-	return pDif->m_pLvalFile;
+	return pBuild->m_pLvalCompileUnit;
 }
 
 static inline LLVMOpaqueValue * PLvalCreateDebugFunction(
@@ -864,6 +889,7 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 ,m_inspt()
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
+,m_arypProcVerify(pAlloc)
 ,m_parypValManaged(parypValManaged)
 ,m_hashHvNUnique(pAlloc)
 { 
@@ -2380,6 +2406,8 @@ static inline CIRValue * PValGenerateMethodBody(
 	PopDIScope(pDif, pProc->m_pLvalDIFunction);
 
 	pBuild->ActivateProcedure(nullptr, nullptr);
+
+	pBuild->m_arypProcVerify.Append(pProc);
 	return pValRet;
 }
 
@@ -2957,20 +2985,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
 					return nullptr;
 
+
+				PProcTryEnsure(pWork, pBuild, pSym);
+
 				if (!pSym->m_pVal)
-				{
-					// this happens when calling a method that is defined later
-					CSTNode * pStnodProc = pSym->m_pStnodDefinition;
-					auto pDif = PDifEnsure(pWork, pBuild, pStnodProc->m_lexloc.m_strFilename.PChz());
-					auto pLvalParentScope = PLvalParentScopeForProcedure(pStnodProc, pDif);
-
-					PushDIScope(pDif, pLvalParentScope);
-					(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
-					PopDIScope(pDif, pLvalParentScope);
-
-					if (!pSym->m_pVal)
-						return nullptr;
-				}
+					return nullptr;
 			}
 
 			size_t cStnodArgs = pStnod->CStnodChild() - 1; // don't count the identifier
@@ -3565,13 +3584,41 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 
 	pProc->m_pLvalFunction = pLvalFunc;
-	
 	pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, aChName);
-
+	
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
 
 	pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
+
+	{ // create debug info
+		CreateDebugInfo(pWork, pBuild, pStnodStruct, pTinstruct);
+
+		int cpTinParam = 1;
+		LLVMValueRef apLvalParam[1];
+
+		u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
+		u64 cBitAlign = cBitSize;
+		apLvalParam[0] = LLVMDIBuilderCreatePointerType(pBuild->m_pDib, pTinstruct->m_pLvalDIType, cBitSize, cBitAlign, "");
+
+		auto pLvalDIType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, apLvalParam, cpTinParam);
+
+		pProc->m_pLvalDIFunction = PLvalCreateDebugFunction(
+										pWork,
+										pBuild,
+										aChName,
+										aChName,
+										pStnodStruct,
+										pStnodStruct,
+										pLvalDIType,
+										pProc->m_pLvalFunction);
+
+		s32 iLine, iCol;
+		CalculateLinePosition(pWork, &pStnodStruct->m_lexloc, &iLine, &iCol);
+
+		pProc->m_pLvalDebugLocCur = LLVMCreateDebugLocation(pBuild->m_pLbuild, iLine, iCol, pProc->m_pLvalDIFunction);
+		LLVMSetCurrentDebugLocation(pBuild->m_pLbuild, pProc->m_pLvalDebugLocCur);
+	}
 
 	// load our 'this' argument
 	int cpLvalParams = LLVMCountParams(pProc->m_pLvalFunction);
@@ -3630,12 +3677,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 	LLVMBuildRetVoid(pBuild->m_pLbuild);
 	pBuild->ActivateProcedure(pProcPrev, pBlockPrev);
 
-	/* LLVMBool fFailed = LLVMVerifyFunction(pProc->m_pLvalFunction, LLVMPrintMessageAction);
-	if (fFailed)
-	{
-		pBuild->PrintDump();
-		EWC_ASSERT(false, "Code generation failed during creation of initializer for %s", pTinstruct->m_strName.PChz());
-	}*/
+	pBuild->m_arypProcVerify.Append(pProc);
 	return pProc;
 }
 
@@ -3763,7 +3805,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 			s32 iLine, iCol;
 			CalculateLinePosition(pWork, &pStnodBody->m_lexloc, &iLine, &iCol);
 
-			pProc->m_pLvalDebugLocCur = LLVMCreateDebugLocation(iLine, iCol, pProc->m_pLvalDIFunction);
+			pProc->m_pLvalDebugLocCur = LLVMCreateDebugLocation(pBuild->m_pLbuild, iLine, iCol, pProc->m_pLvalDIFunction);
 		}
 	}
 
@@ -3932,21 +3974,19 @@ void CodeGenEntryPoint(
 	LLVMDIBuilderFinalize(pBuild->m_pDib);
 
 	LLVMBool fHaveAnyFailed = false;
-	for (int * piEntry = paryiEntryOrder->A(); piEntry != piEntryMax; ++piEntry)
+	CIRProcedure ** ppProcVerifyEnd = pBuild->m_arypProcVerify.PMac();
+	for (CIRProcedure ** ppProcVerifyIt = pBuild->m_arypProcVerify.A(); ppProcVerifyIt != ppProcVerifyEnd; ++ppProcVerifyIt)
 	{
-		CWorkspace::SEntry *pEntry = &(*paryEntry)[*piEntry];
-		auto pProc = pEntry->m_pProc;
-		if (!pProc)
-			continue;
-
-		auto pStnod = pEntry->m_pStnod;
-		if (pStnod->m_pStproc && pStnod->m_pStproc->m_fIsForeign)
-			continue;
-
-		LLVMBool fFunctionFailed = LLVMVerifyFunction(pEntry->m_pProc->m_pLvalFunction, LLVMPrintMessageAction);
+		auto pProc = *ppProcVerifyIt;
+		LLVMBool fFunctionFailed = LLVMVerifyFunction(pProc->m_pLvalFunction, LLVMPrintMessageAction);
 		if (fFunctionFailed)
 		{
-			printf("\n\n Internal compiler error during codegen for '%s'\n", pEntry->m_pStnod->m_pTin->m_strName.PChz());
+			CString strName("unknown");
+			if (pProc->m_pStnod && pProc->m_pStnod->m_pTin)
+			{
+				strName = pProc->m_pStnod->m_pTin->m_strName;
+			}
+			printf("\n\n Internal compiler error during codegen for '%s'\n", strName.PChz());
 		}
 		fHaveAnyFailed |= fFunctionFailed;
 	}
@@ -4203,6 +4243,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 #endif
 			CIRBuilder build(pWork->m_pAlloc, &pWork->m_arypValManaged, pChzFilenameIn);
 			
+
 			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 			CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);

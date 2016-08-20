@@ -150,12 +150,13 @@ LLVMValueRef LLVMDIBuilderCreateFile(LLVMDIBuilderRef pDib, const char * pChzFil
 	return wrap(pFile);
 }
 
-LLVMValueRef LLVMCreateDebugLocation(int nLine, int nCol, LLVMValueRef pLvalScope)
+LLVMValueRef LLVMCreateDebugLocation(LLVMBuilderRef pLbuild, int nLine, int nCol, LLVMValueRef pLvalScope)
 {
 	MDNode * pMdnodeScope = PMdnodeExtract(unwrap<MetadataAsValue>(pLvalScope));
 	DebugLoc debugloc = DebugLoc::get(nLine, nCol, pMdnodeScope);
 
-	return wrap(debugloc.getAsMDNode());
+	LLVMContext &context = unwrap(pLbuild)->getContext();
+	return wrap(MetadataAsValue::get(context, debugloc.getAsMDNode()));
 }
 
 /*

@@ -216,6 +216,76 @@ static int JtokParseString(SJaiLexer * pJlex, const char * pChz)
 	return jtok;
 }
 
+static int JtokLexHereString(SJaiLexer * pJlex, const char * pChz)
+{
+	while (pChz != pJlex->m_pChEof && FIsWhitespace(*pChz))
+	{
+		++pChz;
+	}
+
+	// make sure this is a valid delimiter
+	const char * pChzDelim = pChz;
+	const char * pChzDelimEnd = pChz;
+
+	while (!FIsWhitespace(*pChzDelimEnd))
+	{
+		if (pChzDelimEnd == pJlex->m_pChEof)
+			return JTOK_ParseError;
+
+		++pChzDelimEnd;
+	}
+
+	// make sure it's all whitespace from here to the EOL
+	pChz = pChzDelimEnd;
+	while (*pChz != '\n')
+	{
+		if (pChz == pJlex->m_pChEof || !FIsWhitespace(*pChz))
+			return JTOK_ParseError;
+		++pChz;
+	}
+
+	++pChz; // skip the newline
+	const char * pChzStart = pChz;
+
+	int cChDelim = pChzDelimEnd - pChzDelim;
+	int cChMatch = 0;
+	const char * pChzLine = pChz;
+	while (1)
+	{
+		if (pChz == pJlex->m_pChEof)
+			return JTOK_ParseError;
+
+		if (pChzLine)
+		{
+			if (pChzLine[cChMatch] == pChzDelim[cChMatch])
+			{
+				++cChMatch;
+				if (cChMatch >= cChDelim)
+					break;
+			}
+			else
+			{
+				cChMatch = 0;
+				pChzLine = nullptr;
+			}
+		}
+
+		if (*pChz == '\n')
+		{
+			pChzLine = pChz + 1;
+		}
+		++pChz;
+	}
+
+	// we've found a match!
+
+	pJlex->m_str = EWC::CString(pChzStart, pChzLine - pChzStart);
+
+	int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz);
+	pJlex->m_litk = LITK_String;
+	return jtok;
+}
+
 // method used to split compound tokens (ie '&&' split into two '&' '&' tokens)
 void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit)
 {
@@ -318,7 +388,16 @@ int JtokNextToken(SJaiLexer * pJlex)
 				RWORD rword = RwordFromHv(Hv);
 				pJlex->m_rword = rword;
 
-				return JtokSetTokinf(pJlex, (rword == RWORD_Nil) ? JTOK_Identifier : JTOK_ReservedWord, pChz, pChz+iCh-1);
+				if (rword != RWORD_Nil)
+				{
+					if (rword == RWORD_StringDirective)
+					{
+						return JtokLexHereString(pJlex, pChz+iCh);
+					}
+					return JtokSetTokinf(pJlex, JTOK_ReservedWord, pChz, pChz+iCh-1);
+				}
+
+				return JtokSetTokinf(pJlex, JTOK_Identifier, pChz, pChz+iCh-1);
 			}
 
 		single_char:         

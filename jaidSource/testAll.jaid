@@ -292,7 +292,6 @@ TestRecursion :: ()
 	{
 		if (n > 0)	
 			MethodB(n-1);
-
 	}
 
 	MethodB :: (n : int)
@@ -593,6 +592,27 @@ TestProcedureRef :: () -> int
 	return 1;
 }
 
+g_pChzHere :: #string END
+This is a string
+that should just work
+even though it's several lines
+and "contains quotes"
+END;
+
+TestHereStrings :: ()
+{
+	printf("\nHere Strings:\n");
+
+	printf(g_pChzHere);
+
+	pChzTest := #string HERE
+this HERE is a HERE
+string inlined
+HERE;
+
+	printf("\n%s\n", pChzTest);
+}
+
 main :: () -> int 
 {
 
@@ -610,6 +630,7 @@ main :: () -> int
 	TestOveloading();
 	TestGlobals();
 	TestProcedureRef();
+	TestHereStrings();
 
 	return 1;
 }

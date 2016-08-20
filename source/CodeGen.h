@@ -342,28 +342,29 @@ public:
 
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
 
-	CIRBuilderErrorContext *	m_pBerrctx;
+	CIRBuilderErrorContext *			m_pBerrctx;
 
-	LLVMOpaqueModule *			m_pLmoduleCur;
-	LLVMOpaqueBuilder *			m_pLbuild;
+	LLVMOpaqueModule *					m_pLmoduleCur;
+	LLVMOpaqueBuilder *					m_pLbuild;
 
-	LLVMOpaqueTargetData *		m_pTargd;
+	LLVMOpaqueTargetData *				m_pTargd;
 
 	// Debug info
-	LLVMOpaqueDIBuilder *		m_pDib;				// Debug info builder
-	unsigned					m_nRuntimeLanguage;
-	LLVMOpaqueValue *			m_pLvalCompileUnit;
-	LLVMOpaqueValue *			m_pLvalScope;
-	LLVMOpaqueValue *			m_pLvalFile;
+	LLVMOpaqueDIBuilder *				m_pDib;				// Debug info builder
+	unsigned							m_nRuntimeLanguage;
+	LLVMOpaqueValue *					m_pLvalCompileUnit;
+	LLVMOpaqueValue *					m_pLvalScope;
+	LLVMOpaqueValue *					m_pLvalFile;
 
-	EWC::CAlloc *				m_pAlloc;
-	SInsertPoint				m_inspt;
+	EWC::CAlloc *						m_pAlloc;
+	SInsertPoint						m_inspt;
 
-	CIRProcedure *				m_pProcCur;
-	CIRBasicBlock *				m_pBlockCur;
+	CIRProcedure *						m_pProcCur;
+	CIRBasicBlock *						m_pBlockCur;
 
-	EWC::CDynAry<CIRValue *> *	m_parypValManaged;
-	EWC::CHash<HV, u32>			m_hashHvNUnique;	// map for generating unique strings
+	EWC::CDynAry<CIRProcedure *>		m_arypProcVerify;	// all the procedures that need verification.
+	EWC::CDynAry<CIRValue *> *			m_parypValManaged;
+	EWC::CHash<HV, u32>					m_hashHvNUnique;	// map for generating unique strings
 
 };
 

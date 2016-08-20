@@ -89,6 +89,7 @@ enum JTOK
 		RW(ForeignDirective) STR(#foreign), \
 		RW(FileDirective) STR(#file), \
 		RW(LineDirective) STR(#line), \
+		RW(StringDirective) STR(#string), \
 		RW(ForeignLibraryDirective) STR(#foreign_library), \
 		RW(Cast) STR(cast), \
 		RW(CDecl) STR(#cdecl), \
@@ -154,7 +155,7 @@ struct SJaiLexer // tag = jlex
    const char *		m_pChInput;
    const char *		m_pChEof;
    const char *		m_pChParse;
-   char *			m_aChScratch;	// wowrking character space - NOTE:
+   char *			m_aChScratch;	// working character space - NOTE:
    u32				m_cChScratch;
 
    // lexer parse location for error messages
