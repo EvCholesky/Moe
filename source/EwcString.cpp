@@ -109,44 +109,44 @@ public:
 				,m_mpHvEntry(pAlloc,128)
 					{ ; }
 
-	const char* PChzAlloc(const char * pChz, size_t cCh, HV hv)
+	const char * PCozAlloc(const char * pCoz, size_t cCodepoint, HV hv)
 					{
 						Entry * pEntry = nullptr;
 						if (m_mpHvEntry.FinsEnsureKey(hv, &pEntry) == FINS_Inserted)
 						{
-							size_t cB = cCh + 1;
+							size_t cB = CBFromCoz(pCoz, cCodepoint);
 							pEntry->m_cRef = 1;
-							pEntry->m_pChz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cB, EWC_ALIGN_OF(char));
-							(void) CChCopy(pChz, pEntry->m_pChz, cB);
+							pEntry->m_pCoz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cB, EWC_ALIGN_OF(char));
+							(void) CBCopyCoz(pCoz, pEntry->m_pCoz, cB);
 						}
 						else
 						{
 							++pEntry->m_cRef;
-							EWC_ASSERT(FAreSame(pEntry->m_pChz, pChz, cCh), "bad table lookup in CStringTable");
+							EWC_ASSERT(FAreCozEqual(pEntry->m_pCoz, pCoz, cCodepoint), "bad table lookup in CStringTable");
 						}
 
-						return pEntry->m_pChz;
+						return pEntry->m_pCoz;
 					}
 
-	void		FreePChz(const char * pChz, size_t cB,HV hv)
+	void		FreePCoz(const char * pCoz, size_t cB,HV hv)
 					{
 						Entry * pEntry = m_mpHvEntry.Lookup(hv);
 						if (!pEntry)
 						{
-							EWC_ASSERT(false, "failed lookup in CStringTable::FreePchz");
+							EWC_ASSERT(false, "failed lookup in CStringTable::FreePCoz");
 							return;
 						}
 						--pEntry->m_cRef;
 						if (pEntry->m_cRef <= 0)
 						{
-							m_pAlloc->EWC_FREE(pEntry->m_pChz);
+							m_pAlloc->EWC_FREE(pEntry->m_pCoz);
 							m_mpHvEntry.Remove(hv);
 						}
 					}
 
 	struct Entry
 	{
-		char *	m_pChz;
+		char *	m_pCoz;
 		u16		m_cRef;
 	};
 
@@ -187,7 +187,7 @@ void CString::SetPChz(const char * pChzNew)
 	if(m_pChz)
 	{
 		size_t cB = EWC::CCh(m_pChz) + 1;
-		s_pStrtab->FreePChz(m_pChz, cB, m_shash.HvRaw());
+		s_pStrtab->FreePCoz(m_pChz, cB, m_shash.HvRaw());
 		m_pChz = nullptr;
 		m_shash = CStringHash(0);
 	}
@@ -195,7 +195,7 @@ void CString::SetPChz(const char * pChzNew)
 	if(pChzNew)
 	{
 		m_shash = CStringHash(pChzNew);
-		m_pChz = s_pStrtab->PChzAlloc(pChzNew, EWC::CCh(pChzNew), m_shash.HvRaw());
+		m_pChz = s_pStrtab->PCozAlloc(pChzNew, EWC::CCh(pChzNew), m_shash.HvRaw());
 	}
 }
 
@@ -212,7 +212,7 @@ void CString::SetPCh(const char * pChNew, size_t cCh)
 	if(m_pChz)
 	{
 		size_t cB = EWC::CCh(m_pChz) + 1;
-		s_pStrtab->FreePChz(m_pChz, cB, m_shash.HvRaw());
+		s_pStrtab->FreePCoz(m_pChz, cB, m_shash.HvRaw());
 		m_pChz = nullptr;
 		m_shash = CStringHash(0);
 	}
@@ -220,9 +220,76 @@ void CString::SetPCh(const char * pChNew, size_t cCh)
 	if(pChNew)
 	{
 		m_shash = CStringHash(pChNew, cCh);
-		m_pChz = s_pStrtab->PChzAlloc(pChNew, cCh, m_shash.HvRaw());
+		m_pChz = s_pStrtab->PCozAlloc(pChNew, cCh, m_shash.HvRaw());
 	}
 }
+
+
+
+/*
+// CWstring Methods:
+void CWstring::StaticInit(CAlloc * pAlloc)
+{
+	s_pStrtab = EWC_NEW(pAlloc, CStringTable) CStringTable(pAlloc);
+}
+
+void CWstring::StaticShutdown(CAlloc * pAlloc)
+{
+	pAlloc->EWC_DELETE(s_pStrtab);
+	s_pStrtab = nullptr;
+}
+
+void CWstring::SetPCoz(const char * pCozNew)
+{
+	EWC_ASSERT(s_pStrtab, "String table has not been allocated");
+	if (!s_pStrtab)
+	{
+		m_shash = CStringHash(0);
+		m_pCoz = nullptr;
+		return;
+	}
+
+	if(m_pCoz)
+	{
+		size_t cB = EWC::CB(m_pCoz);
+		s_pStrtab->FreePCoz(m_pCoz, cB, m_shash.HvRaw());
+		m_pCoz = nullptr;
+		m_shash = CStringHash(0);
+	}
+
+	if(pCozNew)
+	{
+		m_shash = CStringHash(pCozNew);
+		m_pCoz = s_pStrtab->PCozAlloc(pCozNew, EWC::CCodepoint(pCozNew), m_shash.HvRaw());
+	}
+}
+
+void CWstring::SetPCo(const char * pCoNew, size_t cCodepoint)
+{
+	EWC_ASSERT(s_pStrtab, "String table has not been allocated");
+	if (!s_pStrtab)
+	{
+		m_shash = CStringHash(0);
+		m_pCoz = nullptr;
+		return;
+	}
+
+	if(m_pCoz)
+	{
+		size_t cB = EWC::CB(m_pCoz);
+		s_pStrtab->FreePCoz(m_pCoz, cB, m_shash.HvRaw());
+		m_pCoz = nullptr;
+		m_shash = CStringHash(0);
+	}
+
+	if(pCoNew)
+	{
+		m_shash = CStringHash(pCoNew, cCodepoint);
+		m_pCoz = s_pStrtab->PCozAlloc(pCoNew, cCodepoint, m_shash.HvRaw());
+	}
+}
+*/
+
 
 
 // OID methods

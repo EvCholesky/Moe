@@ -68,35 +68,6 @@ const char * PChzFromIrop(IROP irop)
 	return s_mpIropPChz[irop];
 }
 
-static inline size_t CChGetTypeString(LLVMOpaqueType * pLtype, char * pCh, const char * pChEnd)
-{
-	switch (LLVMGetTypeKind(pLtype))
-	{
-	case LLVMIntegerTypeKind:
-		{
-			switch (LLVMGetIntTypeWidth(pLtype))
-			{
-			case 1: return CChCopy("bool", pCh, pChEnd-pCh);
-			case 8: return CChCopy("s8", pCh, pChEnd-pCh);
-			case 16: return CChCopy("s16", pCh, pChEnd-pCh);
-			case 32: return CChCopy("s32", pCh, pChEnd-pCh);
-			case 64: return CChCopy("s64", pCh, pChEnd-pCh);
-			}
-		}
-	case LLVMFloatTypeKind:		return CChCopy("f32", pCh, pChEnd-pCh);
-	case LLVMDoubleTypeKind:	return CChCopy("f64", pCh, pChEnd-pCh);
-	case LLVMVoidTypeKind:		return CChCopy("void", pCh, pChEnd-pCh);
-	case LLVMPointerTypeKind:
-		{
-			size_t cChPrefix = CChCopy("* ", pCh, pChEnd-pCh);
-			LLVMOpaqueType * pLtypeElement = LLVMGetElementType(pLtype);
-			return cChPrefix + CChGetTypeString(pLtypeElement, pCh+cChPrefix, pChEnd);
-		}
-	}
-
-	return CChCopy("unknown", pCh, pChEnd-pCh);
-}
-
 static inline llvm::CallingConv::ID CallingconvFromCallconv(CALLCONV callconv)
 {
 	static const llvm::CallingConv::ID s_mpCallconvCallingconv[] = 
@@ -389,34 +360,34 @@ struct SDIFile // tag = dif
 	EWC::CDynAry<LLVMOpaqueValue *>	m_aryLvalScopeStack;
 };
 
-void PathSplitDestructive(char * pChzFull, size_t cCh, const char ** ppChzPath, const char ** ppChzFile)
+void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile)
 {
-	char * pChzPath = ".";
-	char * pChzFile = pChzFull;
+	char * pCozPath = ".";
+	char * pCozFile = pCozFull;
 
 	char * pChLastSlash = nullptr;
 	
-	char * pChEnd = pChzFull + cCh;
-	for (char * pChIt = pChzFull; pChIt != pChEnd; ++pChIt)
+	char * pChEnd = pCozFull + cBMax;
+	for (char * pCozIt = pCozFull; pCozIt != pChEnd; ++pCozIt)
 	{
-		if ((*pChIt == '/') | (*pChIt == '\\'))
+		if ((*pCozIt == '/') | (*pCozIt == '\\'))
 		{
-			pChLastSlash = pChIt;
+			pChLastSlash = pCozIt;
 		}
 
-		if (*pChIt == '\0')
+		if (*pCozIt == '\0')
 			break;
 	}
 
 	if (pChLastSlash)
 	{
 		*pChLastSlash = '\0';
-		pChzPath = pChzFull;
-		pChzFile = pChLastSlash + 1;
+		pCozPath = pCozFull;
+		pCozFile = pChLastSlash + 1;
 	}
 
-	*ppChzPath = pChzPath;
-	*ppChzFile = pChzFile;
+	*ppCozPath = pCozPath;
+	*ppCozFile = pCozFile;
 }
 
 SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & strFilename)
@@ -432,15 +403,16 @@ SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & st
 	pFile->m_pDif = pDif;
 
 	size_t cBFilename = pFile->m_strFilename.CB() + 1;
-	char * pChzCopy = (char *)alloca(sizeof(char) * cBFilename);
-	CChCopy(pFile->m_strFilename.PChz(), pChzCopy, cBFilename);
+	char * pCozCopy = (char *)alloca(sizeof(char) * cBFilename);
+	EWC::SStringBuffer strbuf(pCozCopy, cBFilename);
+	AppendCoz(&strbuf, pFile->m_strFilename.PChz());
 
-	const char * pChzPath;	
-	const char * pChzFile;	
-	PathSplitDestructive(pChzCopy, cBFilename, &pChzPath, &pChzFile);
+	const char * pCozPath;	
+	const char * pCozFile;	
+	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile);
 
 	pDif->m_pLvalScope = pBuild->m_pLvalCompileUnit;
-	pDif->m_pLvalFile = LLVMDIBuilderCreateFile(pBuild->m_pDib, pChzFile, pChzPath);
+	pDif->m_pLvalFile = LLVMDIBuilderCreateFile(pBuild->m_pDib, pCozFile, pCozPath);
 
 	pDif->m_aryLvalScopeStack.SetAlloc(pWork->m_pAlloc);
 	pDif->m_aryLvalScopeStack.Append(pDif->m_pLvalFile);
@@ -902,12 +874,13 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 	}
 
 	size_t cBFilename = CCh(pChzFilename) + 1;
-	char * pChzCopy = (char *)alloca(sizeof(char) * cBFilename);
-	CChCopy(pChzFilename, pChzCopy, cBFilename);
+	char * pCozCopy = (char *)alloca(sizeof(char) * cBFilename);
+	EWC::SStringBuffer strbuf(pCozCopy, cBFilename);
+	AppendCoz(&strbuf, pChzFilename);
 
-	const char * pChzPath;	
-	const char * pChzFile;	
-	PathSplitDestructive(pChzCopy, cBFilename, &pChzPath, &pChzFile);
+	const char * pCozPath;	
+	const char * pCozFile;	
+	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile);
 
 #if 0
 #if EWC_X64
@@ -928,8 +901,8 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 	m_pLvalCompileUnit = LLVMDIBuilderCreateCompileUnit(
 							m_pDib,
 							m_nRuntimeLanguage,
-							pChzFile,
-							pChzPath,
+							pCozFile,
+							pCozPath,
 							"Jailang compiler",
 							false,
 							"",
@@ -965,17 +938,16 @@ CIRBuilder::~CIRBuilder()
 	}
 }
 
-size_t CIRBuilder::CChGenerateUniqueName(const char * pChzIn, char * pChzOut, size_t cChMax)
+void CIRBuilder::GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax)
 {
-	size_t cChIn = CCh(pChzIn);
-	size_t iCh = cChIn - 1;
+	size_t iCh = CBCoz(pCozIn) - 2;
 
 	// not handling whitespace...
 	u32 nIn = 0;
 	u32 nMultiple = 1;
-	while (iCh >= 0 && ((pChzIn[iCh] >= '0') & (pChzIn[iCh] <= '9')))
+	while (iCh >= 0 && ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9')))
 	{
-		nIn = (pChzIn[iCh] - '0') * nMultiple + nIn;
+		nIn = (pCozIn[iCh] - '0') * nMultiple + nIn;
 		nMultiple *= 10;
 		--iCh;
 	}
@@ -983,24 +955,24 @@ size_t CIRBuilder::CChGenerateUniqueName(const char * pChzIn, char * pChzOut, si
 	HV hv = 0;
 	if (iCh >= 0)
 	{
-		hv = HvFromPChz(pChzIn, iCh+1);
+		hv = HvFromPChz(pCozIn, iCh+1);
 	}
 
 	u32 * pN = nullptr;
 	FINS fins = m_hashHvNUnique.FinsEnsureKey(hv, &pN);
+	EWC::SStringBuffer strbufOut(pCozOut, cBOutMax);
 	if (fins == FINS_Inserted)
 	{
 		*pN = nIn;
-		return CChCopy(pChzIn, pChzOut, cChMax);
+		AppendCoz(&strbufOut, pCozIn);
 	}
 	else
 	{
 		*pN = ewcMax(nIn, *pN + 1);
-		CChCopy(pChzIn, pChzOut, cChMax);
+		AppendCoz(&strbufOut, pCozIn);
 
-		size_t iChNumber = iCh+1;
-		size_t cChNumber = CChFormat(&pChzOut[iChNumber], cChMax - (iChNumber), "%d", *pN); 	
-		return iChNumber + cChNumber;
+		strbufOut.m_pCozAppend = &strbufOut.m_pCozBegin[iCh+1];
+		FormatCoz(&strbufOut, "%d", *pN); 
 	}
 }
 
@@ -3575,7 +3547,8 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 	auto pLtypeFunction = LLVMFunctionType(pLtypeVoid, apLtype, 1, false);
 
 	char aChName[128];
-	size_t cChName = CChFormat(aChName, EWC_DIM(aChName), "_%s_INIT", pTinstruct->m_strName.PChz());
+	EWC::SStringBuffer strbufName(aChName, EWC_DIM(aChName));
+	FormatCoz(&strbufName, "_%s_INIT", pTinstruct->m_strName.PChz());
 
 	LLVMOpaqueValue * pLvalFunc = LLVMAddFunction(pBuild->m_pLmoduleCur, aChName, pLtypeFunction);
 	pTinstruct->m_pLvalInitMethod = pLvalFunc;
@@ -3758,7 +3731,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	if (!pChzName)
 	{
-		(void) pBuild->CChGenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
+		pBuild->GenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
 		pChzName = aCh;
 	}
 
@@ -3932,7 +3905,7 @@ void CodeGenEntryPoint(
 			CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 			pEntry->m_pProc = pProc;
 
-			(void) pBuild->CChGenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
+			pBuild->GenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
 
 			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
 			pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
@@ -4007,36 +3980,29 @@ void TestUniqueNames(CAlloc * pAlloc)
 
 		const char * pChzIn;
 		char aCh[128];
-		size_t cCh;
 
 		pChzIn = "funcName";
-		cCh = build.CChGenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
-		EWC_ASSERT(cCh = CCh(aCh), "bad return size");
-		EWC_ASSERT(FAreSame(pChzIn, aCh), "bad unique name");
+		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		EWC_ASSERT(FAreCozEqual(pChzIn, aCh), "bad unique name");
 
-		cCh = build.CChGenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
-		EWC_ASSERT(cCh = CCh(aCh), "bad return size");
-		EWC_ASSERT(FAreSame("funcName1", aCh), "bad unique name");
+		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		EWC_ASSERT(FAreCozEqual("funcName1", aCh), "bad unique name");
 
 		pChzIn = "funcName20";
-		cCh = build.CChGenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
-		EWC_ASSERT(cCh = CCh(aCh), "bad return size");
-		EWC_ASSERT(FAreSame("funcName20", aCh), "bad unique name");
+		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		EWC_ASSERT(FAreCozEqual("funcName20", aCh), "bad unique name");
 
 		pChzIn = "234";
-		cCh = build.CChGenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
-		EWC_ASSERT(cCh = CCh(aCh), "bad return size");
-		EWC_ASSERT(FAreSame("234", aCh), "bad unique name");
+		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		EWC_ASSERT(FAreCozEqual("234", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		cCh = build.CChGenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
-		EWC_ASSERT(cCh = CCh(aCh), "bad return size");
-		EWC_ASSERT(FAreSame("test6000", aCh), "bad unique name");
+		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		EWC_ASSERT(FAreCozEqual("test6000", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		cCh = build.CChGenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
-		EWC_ASSERT(cCh = CCh(aCh), "bad return size");
-		EWC_ASSERT(FAreSame("test6001", aCh), "bad unique name");
+		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		EWC_ASSERT(FAreCozEqual("test6001", aCh), "bad unique name");
 	}
 
 	size_t cbFreePost = pAlloc->CB();
@@ -4111,13 +4077,14 @@ void CompileToObjectFile(CWorkspace * pWork, LLVMModuleRef pLmodule, const char 
 
 	bool fUsingWindows;
 	{
-		size_t cBTriple = CCh(pChzTriple)+1;
+		size_t cBTriple = CBCoz(pChzTriple);
 		char * pChzTripleCopy = (char*)pWork->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(char, cBTriple);
-		CChCopy(pChzTriple, pChzTripleCopy, cBTriple);
+		EWC::SStringBuffer strbuf(pChzTripleCopy, cBTriple);
+		AppendCoz(&strbuf, pChzTriple);
 
 		char * pChzOs;
 		TokenizeTripleString(pChzTripleCopy, nullptr, nullptr, &pChzOs, nullptr);
-		fUsingWindows = FAreSame(pChzOs, "windows");
+		fUsingWindows = FAreCozEqual(pChzOs, "windows");
 		
 		pWork->m_pAlloc->EWC_DELETE(pChzTripleCopy);
 	}

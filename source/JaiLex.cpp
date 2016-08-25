@@ -727,7 +727,7 @@ void AssertMatches(
 				EWC::CCh(apChz[iJtok]) == jlex.m_str.CCh(), 
 				"lexed string length doesn't match expected value");
 			EWC_ASSERT(
-				EWC::FAreSame(apChz[iJtok], jlex.m_str.PChz(), jlex.m_str.CCh()), 
+				EWC::FAreCozEqual(apChz[iJtok], jlex.m_str.PChz(), jlex.m_str.CCh()), 
 				"lexed string doesn't match expected value");
 		}
 

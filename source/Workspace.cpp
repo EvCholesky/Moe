@@ -374,18 +374,20 @@ void EndWorkspace(CWorkspace * pWork)
 	}
 }
 
-void CWorkspace::SetObjectFilename(const char * pChzObjectFilename, size_t cCh)
+void CWorkspace::SetObjectFilename(const char * pChzObjectFilename, size_t cB)
 {
-	if (!cCh)
+	if (!cB)
 	{
-		cCh = CCh(pChzObjectFilename);
+		cB = CBCoz(pChzObjectFilename);
 	}
 
 	if (EWC_FVERIFY(m_pChzObjectFilename == nullptr, "expected null object filename"))
 	{
-		char * pChz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cCh, EWC_ALIGN_OF(char));
-		(void) CChCopy(pChzObjectFilename, pChz, cCh);
-		m_pChzObjectFilename = pChz;
+		char * pCoz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cB, EWC_ALIGN_OF(char));
+
+		EWC::SStringBuffer strbuf(pCoz, cB);
+		AppendCoz(&strbuf, pChzObjectFilename);
+		m_pChzObjectFilename = pCoz;
 	}
 }
 

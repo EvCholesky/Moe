@@ -30,7 +30,7 @@ extern void TestParse();
 extern void TestTypeCheck();
 extern void TestCodeGen();
 
-extern void PathSplitDestructive(char * pChzFull, size_t cCh, const char ** ppChzPath, const char ** ppChzFile);
+extern void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile);
 
 class CCommandLine // tag = comline
 {
@@ -209,27 +209,26 @@ int main(int cpChzArg, const char * apChzArg[])
 			char aChzCwd[1024];
 			GetCurrentDirectoryA(EWC_DIM(aChzCwd), (char*)aChzCwd);
 
-			char aChzCommandLine[2048];
-			char * pChzCmd = aChzCommandLine;
-			const char * pChzCmdMac = EWC_PMAC(aChzCommandLine);
+			char aCozCommandLine[2048];
+			EWC::SStringBuffer strbufCmd(aCozCommandLine, EWC_DIM(aCozCommandLine));
 
-			char aChzCopy[2048];
-			CChCopy(pChzLinkerFull, aChzCopy, EWC_DIM(aChzCopy));
+			char aCozCopy[2048];
+			EWC::SStringBuffer strbufCopy(aCozCopy, EWC_DIM(aCozCopy));
+			AppendCoz(&strbufCopy, pChzLinkerFull);
 
 			const char * pChzLinkerPath;	
 			const char * pChzLinkerFile;	
-			PathSplitDestructive(aChzCopy, EWC_DIM(aChzCopy), &pChzLinkerPath, &pChzLinkerFile);
+			PathSplitDestructive(aCozCopy, EWC_DIM(aCozCopy), &pChzLinkerPath, &pChzLinkerFile);
 
-			pChzCmd += CChFormat(
-				pChzCmd,
-				pChzCmdMac - pChzCmd,
+			FormatCoz(
+				&strbufCmd,
 				"%s %s %s %s ",
 				pChzLinkerFile,
 				work.m_pChzObjectFilename,
 				pChzOptimized,
 				s_pChzOptions);
 
-			pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, s_pChzLibraryFormat, pChzOptPath);
+			FormatCoz(&strbufCmd, s_pChzLibraryFormat, pChzOptPath);
 
 			CWorkspace::SFile ** ppFileMac = work.m_arypFile.PMac();
 			for (CWorkspace::SFile ** ppFile = work.m_arypFile.A(); ppFile != ppFileMac; ++ppFile)
@@ -238,7 +237,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				if (file.m_filek != CWorkspace::FILEK_Library)
 					continue;
 
-				pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "%s.lib ",file.m_strFilename.PChz());
+				FormatCoz(&strbufCmd, "%s.lib ",file.m_strFilename.PChz());
 			}
 
 			// NOTE: This is a bit of a mess. We're not really handling library ordering properly (we need to track
@@ -250,11 +249,11 @@ int main(int cpChzArg, const char * apChzArg[])
 			static const char * s_pChzCRTLibraryDebug = "msvcrtd.lib";
 			static const char * s_pChzCRTLibraryRelease = "msvcrt.lib";
 			const char * pChzCRTLibrary = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug;
-			pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "%s ", pChzCRTLibrary);
+			FormatCoz(&strbufCmd, "%s ", pChzCRTLibrary);
 
 			for (int ipChz = 0; ipChz < EWC_DIM(s_apChzDefaultPaths); ++ipChz)
 			{
-				pChzCmd += CChFormat(pChzCmd, pChzCmdMac - pChzCmd, "/libpath:\"%s\" ", s_apChzDefaultPaths[ipChz]);
+				FormatCoz(&strbufCmd, "/libpath:\"%s\" ", s_apChzDefaultPaths[ipChz]);
 			}
 
 
@@ -270,7 +269,7 @@ int main(int cpChzArg, const char * apChzArg[])
 			// BB - Should switch CreateProcess and GetCurrentDirectory to wide char versions.
 			if (CreateProcessA(
 					pChzLinkerFull,
-					aChzCommandLine,
+					aCozCommandLine,
 					0,
 					0,
 					false,
@@ -292,7 +291,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				DWORD nErrorCode = GetLastError();
 			}
 
-			printf("\n%s\n", aChzCommandLine);
+			printf("\n%s\n", aCozCommandLine);
 		}
 
 		EndWorkspace(&work);

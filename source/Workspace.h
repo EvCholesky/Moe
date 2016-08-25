@@ -143,7 +143,7 @@ public:
 	int						CFile(FILEK filek)
 								{ return PHashHvIPFile(filek)->C(); }
 	SFile *					PFileLookup(HV hv, FILEK filek);
-	void					SetObjectFilename(const char * pChzObjectFilename, size_t cCh = 0);
+	void					SetObjectFilename(const char * pChzObjectFilename, size_t cB = 0);
 
 	EWC::CAlloc *					m_pAlloc;
 	CParseContext *					m_pParctx;

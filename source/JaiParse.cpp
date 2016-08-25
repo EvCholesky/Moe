@@ -135,7 +135,7 @@ ARYMEMB ArymembLookup(const char * pChzMember)
 {
 	for (int arymemb = ARYMEMB_Min; arymemb < ARYMEMB_Max; ++arymemb)
 	{
-		if (FAreSame(PChzFromArymemb((ARYMEMB)arymemb), pChzMember))
+		if (FAreCozEqual(PChzFromArymemb((ARYMEMB)arymemb), pChzMember))
 			return (ARYMEMB)arymemb;
 	}
 	return ARYMEMB_Nil;
@@ -2905,21 +2905,20 @@ void CSTNode::ReplaceChild(CSTNode * pStnodOld, CSTNode * pStnodNew)
 	EWC_ASSERT(false, "failed to find child during ReplaceChild");
 }
 
-
-size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr)
+void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GRFDBGSTR grfdbgstr)
 {
 	if (pTin == nullptr)
 	{
 		switch (park)
 		{
-		case PARK_List:				return CChCopy("{}", pCh, pChEnd-pCh);
-		case PARK_Identifier:		return CChCopy("Ident", pCh, pChEnd-pCh);
-		case PARK_ParameterList:	return CChCopy("Params", pCh, pChEnd-pCh);
-		case PARK_VariadicArg:		return CChCopy("..",pCh, pChEnd-pCh);
-		case PARK_Nop:				return CChCopy("Nop",pCh, pChEnd-pCh);
-		case PARK_Uninitializer:	return CChCopy("---",pCh, pChEnd-pCh);
-		case PARK_AssignmentOp:		return CChCopy("=", pCh, pChEnd-pCh);
-		default:					return CChCopy("???", pCh, pChEnd-pCh);
+		case PARK_List:				AppendCoz(pStrbuf, "{}");		return;
+		case PARK_Identifier:		AppendCoz(pStrbuf, "Ident");	return;
+		case PARK_ParameterList:	AppendCoz(pStrbuf, "Params");	return; 
+		case PARK_VariadicArg:		AppendCoz(pStrbuf, "..");		return;
+		case PARK_Nop:				AppendCoz(pStrbuf, "Nop");		return;
+		case PARK_Uninitializer:	AppendCoz(pStrbuf, "---");		return;
+		case PARK_AssignmentOp:		AppendCoz(pStrbuf, "=");		return;
+		default:					AppendCoz(pStrbuf, "???");		return;
 		}
 	}
 
@@ -2928,197 +2927,187 @@ size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd, 
 	case TINK_Pointer:		
 		{
 			STypeInfoPointer * pTinptr = (STypeInfoPointer*)pTin;
-			char * pChWork = pCh;
-			pChWork += CChCopy(PChzFromJtok(JTOK_Reference), pChWork, pChEnd-pChWork);
-			pChWork += CChPrintTypeInfo(pTinptr->m_pTinPointedTo, park, pChWork, pChEnd, grfdbgstr);
-			return pChWork - pCh;
-		}break;
+			AppendCoz(pStrbuf, PChzFromJtok(JTOK_Reference));
+			PrintTypeInfo(pStrbuf, pTinptr->m_pTinPointedTo, park, grfdbgstr);
+			return;
+		}
 	case TINK_Array:
 		{
 			STypeInfoArray * pTinary = (STypeInfoArray*)pTin;
-			char * pChWork = pCh;
 
 			switch (pTinary->m_aryk)
 			{
-			case ARYK_Fixed:
-				pChWork += CChFormat(pChWork, pChEnd-pChWork, "[%d]", pTinary->m_c);
-				break;
-			case ARYK_Dynamic:
-				pChWork += CChCopy("[..]", pChWork, pChEnd-pChWork);
-				break;
-			case ARYK_Reference:
-				pChWork += CChCopy("[]", pChWork, pChEnd-pChWork);
-				break;
+			case ARYK_Fixed:		FormatCoz(pStrbuf, "[%d]", pTinary->m_c);	break;
+			case ARYK_Dynamic:		AppendCoz(pStrbuf, "[..]");				break;
+			case ARYK_Reference:	AppendCoz(pStrbuf, "[]");					break;
 			}
 
-			pChWork += CChPrintTypeInfo(pTinary->m_pTin, park, pChWork, pChEnd, grfdbgstr);
-			return pChWork - pCh;
-		}break;
+			PrintTypeInfo(pStrbuf, pTinary->m_pTin, park, grfdbgstr);
+			return;
+		}
 
 	case TINK_Literal:		
 		{
-			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
-			char * pChWork = pCh;
-			const SLiteralType & litty = pTinlit->m_litty;
-
-			pChWork += CChCopy("Literal", pChWork, pChEnd - pChWork);
-			return pChWork - pCh;
+			AppendCoz(pStrbuf, "Literal");
+			return;
 		}
     case TINK_Procedure:
 		{
-			char * pChWork = pCh;
 			auto pTinproc = (STypeInfoProcedure *)pTin;
-			pChWork += CChFormat(pCh, pChEnd-pCh, "%s(", pTin->m_strName.PChz());
+			FormatCoz(pStrbuf, "%s(", pTin->m_strName.PChz());
 
 			size_t cpTin = pTinproc->m_arypTinParams.C();
 			size_t cCommas = (pTinproc->m_fHasVarArgs) ? cpTin : cpTin - 1;
 			for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
 			{
-				pChWork += CChPrintTypeInfo(pTinproc->m_arypTinParams[ipTin], PARK_Nil, pChWork, pChEnd, grfdbgstr);
+				PrintTypeInfo(pStrbuf, pTinproc->m_arypTinParams[ipTin], PARK_Nil, grfdbgstr);
 
 				if (ipTin < cCommas)
 				{
-					pChWork += CChCopy(", ", pChWork, pChEnd - pChWork);
+					AppendCoz(pStrbuf, ", ");
 				}
 			}
 
 			if (pTinproc->m_fHasVarArgs)
 			{
-				pChWork += CChCopy("..", pChWork, pChEnd - pChWork);
+				AppendCoz(pStrbuf, "..");
 			}
 
-			pChWork += CChCopy(")->", pChWork, pChEnd - pChWork);
+			AppendCoz(pStrbuf, ")->");
 
 			cpTin = pTinproc->m_arypTinReturns.C();
 			for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
 			{
-				pChWork += CChPrintTypeInfo(pTinproc->m_arypTinReturns[ipTin], PARK_Nil, pChWork, pChEnd, grfdbgstr);
+				PrintTypeInfo(pStrbuf, pTinproc->m_arypTinReturns[ipTin], PARK_Nil, grfdbgstr);
 			}
-
-			return pChWork - pCh;
-		};
+			return;
+		}
     case TINK_Struct:
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTin;
-			return CChFormat(pCh, pChEnd-pCh, "%s_struct", pTin->m_strName.PChz());
-		}break;
+			FormatCoz(pStrbuf, "%s_struct", pTin->m_strName.PChz());
+			return;
+		}
     case TINK_Enum:
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTin;
-			return CChFormat(pCh, pChEnd-pCh, "%s_enum", pTin->m_strName.PChz());
-		}break;
+			FormatCoz(pStrbuf, "%s_enum", pTin->m_strName.PChz());
+			return;
+		}
 	case TINK_Integer:
 		{
 			if (!grfdbgstr.FIsSet(FDBGSTR_UseSizedNumerics))
-				return CChCopy(pTin->m_strName.PChz(), pCh, pChEnd - pCh); 
+			{
+				AppendCoz(pStrbuf, pTin->m_strName.PChz()); 
+				return;
+			}
 
 			// print out the size resolved type (rather than any type aliases - ie. int)
-			char * pChWork = pCh;
 			auto pTinint = (STypeInfoInteger *)pTin;
 			char chSigned = (pTinint->m_fIsSigned) ? 's' : 'u';
 			switch(pTinint->m_cBit)
 			{
-			case 8:		pChWork += CChFormat(pCh, pChEnd-pCh, "%c8", chSigned);		break;
-			case 16:	pChWork += CChFormat(pCh, pChEnd-pCh, "%c16", chSigned);	break;
-			case 32:	pChWork += CChFormat(pCh, pChEnd-pCh, "%c32", chSigned);	break;
-			case 64:	pChWork += CChFormat(pCh, pChEnd-pCh, "%c64", chSigned);	break;
+			case 8:		FormatCoz(pStrbuf, "%c8", chSigned);	break;
+			case 16:	FormatCoz(pStrbuf, "%c16", chSigned);	break;
+			case 32:	FormatCoz(pStrbuf, "%c32", chSigned);	break;
+			case 64:	FormatCoz(pStrbuf, "%c64", chSigned);	break;
 			default: EWC_ASSERT(false, "unknown integer size");
 			}
 
-			return pChWork - pCh;
-		} break;
+			return;
+		}
     case TINK_Float:
 		{
 			if (!grfdbgstr.FIsSet(FDBGSTR_UseSizedNumerics))
-				return CChCopy(pTin->m_strName.PChz(), pCh, pChEnd - pCh); 
+			{
+				AppendCoz(pStrbuf, pTin->m_strName.PChz()); 
+				return;
+			}
 
 			// print out the size resolved type (rather than any type aliases - ie. double)
-			char * pChWork = pCh;
 			auto pTinfloat = (STypeInfoFloat *)pTin;
-			pChWork += CChCopy((pTinfloat->m_cBit == 32) ? "f32" : "f64", pChWork, pChEnd - pChWork);
-
-			return pChWork - pCh;
-		} break;
+			AppendCoz(pStrbuf, (pTinfloat->m_cBit == 32) ? "f32" : "f64");
+			return;
+		}
     case TINK_Bool:			// fall through ...
     case TINK_String:		// fall through ...
     case TINK_Void:			// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
 	default:
-		return CChCopy(pTin->m_strName.PChz(), pCh, pChEnd - pCh); 
+		AppendCoz(pStrbuf, pTin->m_strName.PChz()); 
+		return;
 	}
 }
 
-size_t CChPrintStnodName(CSTNode * pStnod, char * pCh, char * pChEnd)
+void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 {
 	switch (pStnod->m_park)
 	{
-	case PARK_Identifier:			return CChFormat(pCh, pChEnd-pCh, "$%s", StrFromIdentifier(pStnod).PChz());
-	case PARK_ReservedWord:			return CChCopy(PChzFromRword(pStnod->m_pStval->m_rword), pCh, pChEnd - pCh); 
-	case PARK_Nop:					return CChCopy("nop", pCh, pChEnd - pCh); 
+	case PARK_Identifier:			FormatCoz(pStrbuf, "$%s", StrFromIdentifier(pStnod).PChz());	return;
+	case PARK_ReservedWord:			AppendCoz(pStrbuf, PChzFromRword(pStnod->m_pStval->m_rword));	return;
+	case PARK_Nop:					AppendCoz(pStrbuf, "nop");										return;
 	case PARK_Literal:				
 		{
 			switch (pStnod->m_pStval->m_stvalk)
 			{
-			case STVALK_String:			return CChFormat(pCh, pChEnd - pCh, "\"%s\"", pStnod->m_pStval->m_str.PChz());
-			case STVALK_UnsignedInt:	return CChFormat(pCh, pChEnd - pCh, "%llu", pStnod->m_pStval->m_nUnsigned);
-			case STVALK_SignedInt:		return CChFormat(pCh, pChEnd - pCh, "%lld", pStnod->m_pStval->m_nSigned);
-			case STVALK_Float:			return CChFormat(pCh, pChEnd - pCh, "%f", pStnod->m_pStval->m_g);
+			case STVALK_String:			FormatCoz(pStrbuf, "\"%s\"", pStnod->m_pStval->m_str.PChz());	return;
+			case STVALK_UnsignedInt:	FormatCoz(pStrbuf, "%llu", pStnod->m_pStval->m_nUnsigned);		return;
+			case STVALK_SignedInt:		FormatCoz(pStrbuf, "%lld", pStnod->m_pStval->m_nSigned);		return;
+			case STVALK_Float:			FormatCoz(pStrbuf, "%f", pStnod->m_pStval->m_g);				return;
 			default:
 				EWC_ASSERT(false, "unknown literal %s", PChzFromJtok(pStnod->m_jtok));
-				return 0;
+				return;
 			}
 		}
-	case PARK_AdditiveOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_MultiplicativeOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_ShiftOp:			    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_EqualityOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_RelationalOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_BitwiseAndOrOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_LogicalAndOrOp:	    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_UnaryOp:			    return CChFormat(pCh, pChEnd-pCh, "unary[%s]", PChzFromJtok(pStnod->m_jtok));
-	case PARK_PostfixUnaryOp:		return CChFormat(pCh, pChEnd-pCh, "postUnary[%s]", PChzFromJtok(pStnod->m_jtok));
-	case PARK_AssignmentOp:		    return CChFormat(pCh, pChEnd-pCh, "%s", PChzFromJtok(pStnod->m_jtok));
-	case PARK_ArrayElement:		    return CChCopy("elem", pCh, pChEnd - pCh);
-	case PARK_MemberLookup:		    return CChCopy("member", pCh, pChEnd - pCh);
-	case PARK_ProcedureCall:		return CChCopy("procCall", pCh, pChEnd - pCh);
-	case PARK_List:				    return CChCopy("{}", pCh, pChEnd - pCh);
-	case PARK_ParameterList:	    return CChCopy("params", pCh, pChEnd - pCh);
-	case PARK_If:				    return CChCopy("if", pCh, pChEnd - pCh);
-	case PARK_Else:				    return CChCopy("else", pCh, pChEnd - pCh);
-	case PARK_ArrayDecl:		    return CChCopy("[]", pCh, pChEnd - pCh);
+	case PARK_AdditiveOp:		    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_MultiplicativeOp:	    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_ShiftOp:			    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_EqualityOp:		    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_RelationalOp:		    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_BitwiseAndOrOp:	    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_LogicalAndOrOp:	    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_UnaryOp:			    FormatCoz(pStrbuf, "unary[%s]", PChzFromJtok(pStnod->m_jtok));		return;
+	case PARK_PostfixUnaryOp:		FormatCoz(pStrbuf, "postUnary[%s]", PChzFromJtok(pStnod->m_jtok));	return;
+	case PARK_AssignmentOp:		    FormatCoz(pStrbuf, "%s", PChzFromJtok(pStnod->m_jtok));				return;
+	case PARK_ArrayElement:		    AppendCoz(pStrbuf, "elem");					return;
+	case PARK_MemberLookup:		    AppendCoz(pStrbuf, "member");				return;
+	case PARK_ProcedureCall:		AppendCoz(pStrbuf, "procCall");				return;
+	case PARK_List:				    AppendCoz(pStrbuf, "{}");					return;
+	case PARK_ParameterList:	    AppendCoz(pStrbuf, "params");				return;
+	case PARK_If:				    AppendCoz(pStrbuf, "if");					return;
+	case PARK_Else:				    AppendCoz(pStrbuf, "else");					return;
+	case PARK_ArrayDecl:		    AppendCoz(pStrbuf, "[]");					return;
 	case PARK_ProcedureReferenceDecl:
-									return CChCopy("procref", pCh, pChEnd - pCh);
-	case PARK_Uninitializer:		return CChCopy("---",pCh, pChEnd-pCh);
-	case PARK_ReferenceDecl:		return CChCopy("ptr", pCh, pChEnd - pCh);
-	case PARK_Decl:					return CChCopy("decl", pCh, pChEnd - pCh);
-	case PARK_Typedef:				return CChCopy("typedef", pCh, pChEnd - pCh);
-	case PARK_ConstantDecl:			return CChCopy("const", pCh, pChEnd - pCh);
-	case PARK_ProcedureDefinition:	return CChCopy("func", pCh, pChEnd - pCh);
-	case PARK_EnumDefinition:		return CChCopy("enum", pCh, pChEnd - pCh);
-	case PARK_StructDefinition:		return CChCopy("struct", pCh, pChEnd - pCh);
-	case PARK_EnumConstant:			return CChCopy("enumConst", pCh, pChEnd - pCh);
-	case PARK_VariadicArg:			return CChCopy("..", pCh, pChEnd - pCh);
-	case PARK_ArrayLiteral:			return CChCopy("arrayLit", pCh, pChEnd - pCh);
-	case PARK_Cast:					return CChCopy("cast", pCh, pChEnd - pCh);
+									AppendCoz(pStrbuf, "procref");				return;
+	case PARK_Uninitializer:		AppendCoz(pStrbuf, "---");					return;
+	case PARK_ReferenceDecl:		AppendCoz(pStrbuf, "ptr");					return;
+	case PARK_Decl:					AppendCoz(pStrbuf, "decl");					return;
+	case PARK_Typedef:				AppendCoz(pStrbuf, "typedef");				return;
+	case PARK_ConstantDecl:			AppendCoz(pStrbuf, "const");				return;
+	case PARK_ProcedureDefinition:	AppendCoz(pStrbuf, "func");					return;
+	case PARK_EnumDefinition:		AppendCoz(pStrbuf, "enum");					return;
+	case PARK_StructDefinition:		AppendCoz(pStrbuf, "struct");				return;
+	case PARK_EnumConstant:			AppendCoz(pStrbuf, "enumConst");			return;
+	case PARK_VariadicArg:			AppendCoz(pStrbuf, "..");					return;
+	case PARK_ArrayLiteral:			AppendCoz(pStrbuf, "arrayLit");				return;
+	case PARK_Cast:					AppendCoz(pStrbuf, "cast");					return;
 	case PARK_Error:
-	default:						return CChCopy("error", pCh, pChEnd-pCh);
+	default:						AppendCoz(pStrbuf, "error");				return;
 	}
 }
 
-size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr)
+void PrintStnod(SStringBuffer * pStrbuf, CSTNode * pStnod, GRFDBGSTR grfdbgstr)
 {
-	char * pChWork = pCh;
 	if (grfdbgstr.FIsSet(FDBGSTR_Name))
 	{
-		pChWork += CChPrintStnodName(pStnod, pChWork, pChEnd);
+		PrintStnodName(pStrbuf, pStnod);
 		grfdbgstr.Clear(FDBGSTR_Name);
 
-		if (pChEnd - pChWork > 1 && grfdbgstr != FDBGSTR_None)
+		if (CBFree(*pStrbuf) > 1 && grfdbgstr != FDBGSTR_None)
 		{
-			*pChWork = '|';
-			++pChWork;
-			*pChWork = '\0';
+			*pStrbuf->m_pCozAppend++ = '|';
+			*pStrbuf->m_pCozAppend = '\0';
 		}
 	}
 
@@ -3126,11 +3115,11 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 	{
 		if (pStnod->m_park == PARK_Identifier && pStnod->m_pTin == nullptr)
 		{
-			pChWork += CChPrintStnodName(pStnod, pChWork, pChEnd);
+			PrintStnodName(pStrbuf, pStnod);
 		}
 		else
 		{
-			pChWork += CChPrintTypeInfo(pStnod->m_pTin, pStnod->m_park, pChWork, pChEnd, grfdbgstr);
+			PrintTypeInfo(pStrbuf, pStnod->m_pTin, pStnod->m_park, grfdbgstr);
 		}
 		grfdbgstr.Clear(FDBGSTR_Type);
 	}
@@ -3141,74 +3130,72 @@ size_t CChPrintStnod(CSTNode * pStnod, char * pCh, char * pChEnd, GRFDBGSTR grfd
 		{
 			const SLiteralType & litty = ((STypeInfoLiteral *)pStnod->m_pTin)->m_litty;
 
-			pChWork += CChFormat(pChWork, pChEnd - pChWork, ":%s", PChzFromLitk(litty.m_litk));
+			FormatCoz(pStrbuf, ":%s", PChzFromLitk(litty.m_litk));
 
 			if (litty.m_cBit >= 0)
 			{
-				pChWork += CChFormat(pChWork, pChEnd - pChWork, "%d", litty.m_cBit);
+				FormatCoz(pStrbuf, "%d", litty.m_cBit);
 			}
 		}
 		grfdbgstr.Clear(FDBGSTR_LiteralSize);
 	}
-	return pChWork - pCh;
 }
 
-size_t CSTNode::CChWriteDebugString(char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr)
+void CSTNode::WriteDebugString(EWC::SStringBuffer * pStrbuf, GRFDBGSTR grfdbgstr)
 {
-
 	if (m_park == PARK_Literal)
 	{
 		EWC_ASSERT(m_pStval, "operand without value struct");
-		return CChPrintStnod(this, pCh, pChEnd, grfdbgstr);
+		PrintStnod(pStrbuf, this, grfdbgstr);
+		return;
 	}
 	if (m_park == PARK_Identifier)
 	{
 		EWC_ASSERT(m_pStident, "identifier operand without string struct");
-		return CChPrintStnod(this, pCh, pChEnd, grfdbgstr);
+		PrintStnod(pStrbuf, this, grfdbgstr);
+		return;
 	}
 
-	size_t cChMax = pChEnd - pCh;
-	size_t cCh = CChCopy("(", pCh, cChMax);
-	cCh += CChPrintStnod(this, &pCh[cCh], pChEnd, grfdbgstr);
+	AppendCoz(pStrbuf, "(");
+	PrintStnod(pStrbuf, this, grfdbgstr);
 
 	for (size_t ipStnod = 0; ipStnod < m_arypStnodChild.C(); ++ipStnod)
 	{
-		if (EWC_FVERIFY(pChEnd - &pCh[cCh] >= 1, "debug string overflow"))
+		if (EWC_FVERIFY(CBFree(*pStrbuf) > 0, "debug string overflow"))
 		{
-			pCh[cCh++] = ' ';
+			*pStrbuf->m_pCozAppend++ = ' ';
 		}
-		if (EWC_FVERIFY(cCh < cChMax, "debug string storage overflow"))
+		if (EWC_FVERIFY(CBFree(*pStrbuf) > 0, "debug string storage overflow"))
 		{
 			CSTNode * pStnod = m_arypStnodChild[ipStnod];
-			cCh += pStnod->CChWriteDebugString(&pCh[cCh], pChEnd, grfdbgstr);
+			pStnod->WriteDebugString(pStrbuf, grfdbgstr);
 		}
 	}
 
-	if (EWC_FVERIFY(pChEnd - &pCh[cCh] >= 2, "debug string overflow"))
+	if (EWC_FVERIFY(CBFree(*pStrbuf) > 1, "debug string overflow"))
 	{
-		pCh[cCh++] = ')';
-		pCh[cCh] = 0;
+		*pStrbuf->m_pCozAppend++ = ')';
 	}
-	return cCh;
+
+	EnsureTerminated(pStrbuf, '\0');
 }
 
-void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChMax, GRFDBGSTR grfdbgstr)
+void WriteDebugStringForEntries(CWorkspace * pWork, char * pCo, char * pCoMax, GRFDBGSTR grfdbgstr)
 {
+	EWC::SStringBuffer strbuf(pCo, pCoMax - pCo);
+
 	for (size_t ipStnod = 0; ipStnod < pWork->m_aryEntry.C(); ++ipStnod)
 	{
 		CSTNode * pStnod = pWork->m_aryEntry[ipStnod].m_pStnod;
-		pCh += pStnod->CChWriteDebugString(pCh, pChMax, grfdbgstr);
+		pStnod->WriteDebugString(&strbuf, grfdbgstr);
 
-		if ((pCh != pChMax) & (ipStnod+1 != pWork->m_aryEntry.C()))
+		if ((CBFree(strbuf) > 0) & (ipStnod+1 != pWork->m_aryEntry.C()))
 		{
-			*pCh++ = ' ';
+			*strbuf.m_pCozAppend++ = ' ';
 		}
 	}
 
-	if (pCh != pChMax)
-	{
-		*pCh = '\0';
-	}
+	EnsureTerminated(&strbuf, '\0');
 }
 
 CString StrFromIdentifier(CSTNode * pStnod)
@@ -3252,9 +3239,9 @@ void AssertParseMatchTailRecurse(
 	char * pCh = aCh;
 	char * pChMax = &aCh[EWC_DIM(aCh)];
 
-	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Name);
+	WriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Name);
 
-	EWC_ASSERT(FAreSame(aCh, pChzExpected), "parse debug string doesn't match expected value");
+	EWC_ASSERT(FAreCozEqual(aCh, pChzExpected), "parse debug string doesn't match expected value");
 
 	if (apChzExpectedImport)
 	{
@@ -3345,7 +3332,7 @@ void TestParse()
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "SOut :: struct { SIn :: struct { ConstTwo :: 2; }} n := SOut.SIn.ConstTwo; ";
-		pChzOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $sIn) $ConstTwo))";
+		pChzOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $SIn) $ConstTwo))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "PtrType :: typedef & s16; ArrayType :: typedef [2] s8; ";
@@ -3444,7 +3431,7 @@ void TestParse()
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ FooFunc(); n:=BarFunc(x+(ack)); }";
-		pChzOut = "({} (procCall $FooFunc) (decl $n (procCall $barFunc (+ $x $ack))))";
+		pChzOut = "({} (procCall $FooFunc) (decl $n (procCall $BarFunc (+ $x $ack))))";
 		AssertParseMatchTailRecurse(&work, pChzIn, pChzOut);
 
 		pChzIn = "{ NopFunc :: () { guh := 2; } wha : & int; }";

@@ -184,6 +184,80 @@ public:
 	static CStringTable * s_pStrtab;
 };
 
+/*
+// utf8 - wide char strings
+class CWstring // tag=str
+{
+public:
+	static void		StaticInit(CAlloc * pAlloc);
+	static void		StaticShutdown(CAlloc * pAlloc);
+
+					CWstring()
+					:m_pCoz(nullptr)
+					,m_shash(0)
+						{ ; }
+
+					CWstring(const char * pCoz)
+					:m_pCoz(nullptr)
+					,m_shash(0)
+						{ SetPCoz(pCoz); }
+
+					CWstring(const char * pCh, size_t cCh)
+					:m_pCoz(nullptr)
+					,m_shash(0)
+						{ SetPCo(pCh, cCh); }
+
+					CWstring(const CWstring & strOther)
+					:m_pCoz(nullptr)
+					,m_shash(0)
+						{ SetPCoz(strOther.m_pCoz); }
+
+					~CWstring()
+						{ SetPCoz(nullptr); }
+
+	bool			operator==(const CWstring & strOther) const
+						{ return m_shash == strOther.m_shash; }
+	bool			operator!=(const CWstring & strOther) const
+						{ return !(*this == strOther); }
+
+	CWstring &		operator=(const CWstring & strOther)
+						{ return *this = strOther.m_pCoz; }
+	CWstring &		operator=(const char * pCoz)
+						{
+							if (m_pCoz != pCoz)
+								SetPCoz(pCoz);
+
+							return *this;
+						}
+
+	CStringHash		Shash() const
+						{ return m_shash; }
+	HV				Hv() const 
+						{ return m_shash.HvRaw(); }
+	bool			FIsEmpty() const
+						{ return m_pCoz == nullptr || *m_pCoz == '\0'; }
+	const char*		PCoz() const
+						{ return m_pCoz; }
+
+	void			SetPCoz(const char * pCozNew);
+	void			SetPCo(const char * pChNew, size_t cCodepoint);
+
+	size_t			CB() const
+						{ return EWC::CCh(m_pCoz); }
+	size_t			CCodepoint() const
+						{ return EWC::CCodepoint(m_pCoz); }
+
+protected:
+
+	const char *		  m_pCoz;
+	CStringHash			  m_shash;
+
+public:
+	static CStringTable * s_pStrtab;
+};
+*/
+
+
 // OID - Is essentially a hashed string, but you can look up the pChz value at runtime
 
 struct OID // tag=oid

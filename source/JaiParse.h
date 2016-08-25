@@ -298,7 +298,7 @@ public:
 
 	void				ReplaceChild(CSTNode * pStnodOld, CSTNode * pStnodNew);
 
-	size_t				CChWriteDebugString(char * pCh, char * pChEnd, GRFDBGSTR = FDBGSTR_Name);
+	void				WriteDebugString(EWC::SStringBuffer * pStrbuf, GRFDBGSTR = FDBGSTR_Name);
 
 	int					CStnodChild() const
 							{ return (int)m_arypStnodChild.C(); }
@@ -327,8 +327,8 @@ public:
 };
 
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
-size_t CChPrintTypeInfo(STypeInfo * pTin, PARK park, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr = FDBGSTR_None);
-void CChWriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
+void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GRFDBGSTR grfdbgstr = FDBGSTR_None);
+void WriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
 
 inline bool FIsReservedWord(CSTNode * pStnod, RWORD rword)
 {

@@ -374,12 +374,42 @@ bool	FAreSameAB(const void * aB0, void * aB1, size_t cB);
 
 // String functions
 
-size_t	CChCopy(const char * pChzSource, char * aChDest, size_t cBDest);
-size_t	CChFormat(char * aChDest, size_t cChMax, const char * pChzFormat, ...);
+struct SStringBuffer // tag=strbuf
+{
+			SStringBuffer()
+			:m_pCozBegin(nullptr)
+			,m_pCozAppend(nullptr)
+			,m_cBMax(0)
+				{ ; }
+
+			SStringBuffer(char * pCoz, size_t cBMax)
+			:m_pCozBegin(pCoz)
+			,m_pCozAppend(pCoz)
+			,m_cBMax(cBMax)
+				{ ; }
+
+	char *	m_pCozBegin;
+	char *	m_pCozAppend;
+	size_t	m_cBMax;
+};
+
+inline bool FIsValid(const SStringBuffer & strbuf)
+{
+	return strbuf.m_pCozBegin != nullptr && strbuf.m_pCozAppend != nullptr;
+}
+
+size_t  CBFree(const SStringBuffer & strbuf);
+size_t	CBCopyCoz(const char * pCozSource, char * aCoDest, size_t cBDest);
+void	AppendCoz(SStringBuffer * pStrbuf, const char * pCozSource);
+void	FormatCoz(SStringBuffer * pStrbuf, const char * pChzFormat, ...);
+void	EnsureTerminated(SStringBuffer * pStrbuf, char ch);
+size_t	CBCoz(const char * pCoz);
 size_t	CCh(const char * pChz);
+size_t  CCodepoint(const char * pCoz);
+size_t  CBFromCoz(const char * pCoz, size_t cCodepoint);
 void	ConcatPChz(const char* pChzA, const char * pChzB, char * pChOut, size_t cChOutMax);
-bool	FAreSame(const char * pChzA, const char * pChzB);
-bool	FAreSame(const char * pChzA, const char * pChzB, size_t cCh);
+bool	FAreCozEqual(const char * pChzA, const char * pChzB);
+bool	FAreCozEqual(const char * pChzA, const char * pChzB, size_t cCh);
 void	ConvertChToWch(const char * pChz, size_t cWchMax, WChar * pWchz);
 bool	FPChzContainsChar(const char * pChz, char ch);
 void	ReplaceChars(const char * pChSrc, size_t cCh, const char * pChzRemove, char chFill, char * pChDst);
@@ -1328,39 +1358,132 @@ bool FAreSameAB(const void * aB0, void * aB1, size_t cB)
 	return memcmp(aB0, aB1, cB) == 0;
 }
 
-size_t CChCopy(const char * pChzSource, char * aChDest, size_t cBDest)
+void AppendCoz(SStringBuffer * pStrbuf, const char *pCozSource)
 {
-	EWC_ASSERT(pChzSource && aChDest, "Null pointer passed to CopyPchz");
-	if ((pChzSource == 0) | (aChDest == 0))
-		return 0;
+	if (!EWC_FVERIFY(pCozSource && FIsValid(*pStrbuf), "Null pointer passed to CCoCopy"))
+		return;
 
-	char * aChDestCur = aChDest;
-	char * pChDestEnd = &aChDest[cBDest-1];
-	for ( ; (*pChzSource != '\0') & (aChDestCur != pChDestEnd); ++pChzSource, ++aChDestCur)
+	char * pCozDest = pStrbuf->m_pCozAppend;
+	char * pCozDestEnd = &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax-1];
+	for ( ; (*pCozSource != '\0') & (pCozDest != pCozDestEnd); ++pCozSource, ++pCozDest)
 	{
-		*aChDestCur = *pChzSource;
+		*pCozDest = *pCozSource;
 	}
 
-	size_t cReturn = aChDestCur - aChDest; // don't count the null terminator
-	*aChDestCur++ = '\0';
-	return cReturn;
+	pStrbuf->m_pCozAppend = pCozDest;
+	EnsureTerminated(pStrbuf, '\0');
 }
 
-size_t CChFormat(char * aChDest, size_t cChMax, const char * pChzFormat, ...)
+void EnsureTerminated(SStringBuffer * pStrbuf, char ch)
 {
-	va_list ap;
-	va_start(ap, pChzFormat);
-	size_t c = vsnprintf_s(aChDest, cChMax, _TRUNCATE, pChzFormat, ap);
-	va_end(ap);
+	auto pCozMax = &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax];
+	size_t iB = pStrbuf->m_pCozAppend - pStrbuf->m_pCozBegin;
 
-	return c;
+	if (pStrbuf->m_cBMax <= 0)
+		return;
+
+	if (iB + 1 > pStrbuf->m_cBMax - 1)
+	{
+		iB = pStrbuf->m_cBMax - 1;
+	}
+
+	auto pCoz = &pStrbuf->m_pCozBegin[iB];
+	while (pCoz != pStrbuf->m_pCozBegin && ((*pCoz & 0xC) == 0xF))
+	{
+		--pCoz;
+	}
+
+	*pCoz = ch;
+}
+
+size_t CBFree(const SStringBuffer & strbuf)
+{
+	return strbuf.m_cBMax - (strbuf.m_pCozAppend - strbuf.m_pCozBegin) - 1; // -1 because pCozAppend points at the null term, need to count it.
+}
+
+size_t	CBCopyCoz(const char * pCozSource, char * aCoDest, size_t cBDest)
+{
+	SStringBuffer strbuf(aCoDest, cBDest);
+	AppendCoz(&strbuf, pCozSource);
+	return strbuf.m_pCozAppend - strbuf.m_pCozBegin + 1;
+}
+
+void FormatCoz(SStringBuffer * pStrbuf, const char * pCozFormat, ...)
+{
+	int cBMax = &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax] - pStrbuf->m_pCozAppend;
+	if (cBMax > 1)
+	{
+		va_list ap;
+		va_start(ap, pCozFormat);
+		size_t cCh = vsnprintf_s(pStrbuf->m_pCozAppend, cBMax, _TRUNCATE, pCozFormat, ap);
+		va_end(ap);
+
+		pStrbuf->m_pCozAppend += cCh;
+	}
+
+	// handle truncation within utf8 multibyte char
+	EnsureTerminated(pStrbuf, '\0');
+}
+
+size_t CBCoz(const char * pCoz)
+{
+	// bytes needed for this string (including the null terminator)
+	if (!pCoz)
+		return 0;
+
+	auto pCozIt = pCoz;
+	while (*pCozIt != '\0')
+		++pCozIt;
+
+	++pCozIt;
+	return pCozIt - pCoz;
 }
 
 size_t CCh(const char * pChz)
 {
+	// characters included in this string (excluding the null terminator)
+
 	if (!pChz)
 		return 0;
 	return strlen(pChz);
+}
+
+size_t CCodepoint(const char * pCoz) 
+{
+	// utf-8 codepoints included in this string (excluding the null terminator)
+	size_t cCodepoint = 0;
+	while (*pCoz != '\0')
+	{
+		u8 codepoint = *pCoz;
+		if ((0xf8 & codepoint) == 0xf0)			{ pCoz += 4; }
+		else if ((0xf0 & codepoint) == 0xe0)	{ pCoz += 3; }
+		else if ((0xc0 & codepoint) == 0xc0)	{ pCoz += 2; }
+		else									{ pCoz += 1; }
+
+		++cCodepoint;
+	}
+
+	return cCodepoint;
+}
+
+size_t CBFromCoz(const char * pCoz, size_t cCodepoint) 
+{
+	// bytes needed for this utf-8 string, up to a given codepoint (including the null terminator)
+	size_t iCodepoint = 0;
+	auto pCozIt = pCoz;
+	while ((*pCozIt != '\0') & (iCodepoint < cCodepoint))
+	{
+		u8 codepoint = *pCozIt;
+		if ((0xf8 & codepoint) == 0xf0)			{ pCozIt += 4; }
+		else if ((0xf0 & codepoint) == 0xe0)	{ pCozIt += 3; }
+		else if ((0xc0 & codepoint) == 0xc0)	{ pCozIt += 2; }
+		else									{ pCozIt += 1; }
+
+		++iCodepoint;
+	}
+	++pCozIt;
+
+	return pCozIt - pCoz;
 }
 
 void ConcatPChz(const char* pChzA, const char * pChzB, char * pChOut, size_t cChOutMax)
@@ -1379,18 +1502,70 @@ void ConcatPChz(const char* pChzA, const char * pChzB, char * pChOut, size_t cCh
 	*pChzOutIt = '\0';
 }
 
-bool FAreSame(const char * pChzA, const char * pChzB)
+int NCmpCoz(const char * pCozA, const char * pCozB)
 {
-	if ((pChzA == nullptr) | (pChzB == nullptr))
+	if ((pCozA == nullptr) | (pCozB == nullptr))
 	{
-		return pChzA == pChzB;
+		if (pCozA == pCozB)
+			return 0;
+		
+		return (pCozA == nullptr) ? -1 : 1;
 	}
-	return _stricmp(pChzA, pChzB) == 0;
+
+	while ((*pCozA != '\0') & (*pCozB != '\0'))
+	{
+		auto chA = *pCozA;
+		auto chB = *pCozB;
+		if (chA < chB)
+			return -1;
+		else if (chA > chB)
+			return 1;
+
+		++pCozA;
+		++pCozB;
+	}
+
+	return 0;
 }
 
-bool FAreSame(const char * pChzA, const char * pChzB, size_t cCh)
+bool FAreCozEqual(const char * pCozA, const char * pCozB)
 {
-	return _strnicmp(pChzA, pChzB, cCh) == 0;
+	return NCmpCoz(pCozA, pCozB) == 0;
+}
+
+int NCmpCoz(const char * pCozA, const char * pCozB, size_t cCodepoint)
+{
+	if ((pCozA == nullptr) | (pCozB == nullptr))
+	{
+		if (pCozA == pCozB)
+			return 0;
+		
+		return (pCozA == nullptr) ? -1 : 1;
+	}
+
+	size_t iCodepoint = 0;
+	while ((iCodepoint < cCodepoint) & (*pCozA != '\0') & (*pCozB != '\0'))
+	{
+		auto chA = *pCozA;
+		auto chB = *pCozB;
+		if (chA < chB)
+			return -1;
+		else if (chA > chB)
+			return 1;
+
+		++pCozA;
+		++pCozB;
+
+		if ((chA & 0xc) != 0x8)	// only count the first bytes of each codepoint
+			++cCodepoint;
+	}
+
+	return 0;
+}
+
+bool FAreCozEqual(const char * pChzA, const char * pChzB, size_t cCodepoint)
+{
+	return NCmpCoz(pChzA, pChzB, cCodepoint) == 0;
 }
 
 void ConvertChToWch(const char* pChz, size_t cWchMax, WChar * pWchz)

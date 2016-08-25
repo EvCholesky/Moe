@@ -63,8 +63,6 @@ public:
 					~CNameMangler();
 
 	void			Resize(size_t cBStartingMax);
-	void			Append(const char * pChz, size_t cCh = 0);
-	void			AppendNumber(size_t n);
 	void			AppendName(const char * pChz);
 	void			AppendType(STypeInfo * pTin);
 
@@ -72,10 +70,8 @@ public:
 	STypeInfoProcedure * 
 					PTinprocDemangle(const EWC::CString & strName, CSymbolTable * pSymtab);
 
-	EWC::CAlloc *	m_pAlloc;
-	char *			m_aB;
-	size_t			m_cB;
-	size_t			m_cBMax;
+	EWC::CAlloc *		m_pAlloc;
+	EWC::SStringBuffer	m_strbuf;
 };
 
 
@@ -122,9 +118,7 @@ STypeInfo * PTinPromoteLiteralDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 
 CNameMangler::CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax)
 :m_pAlloc(pAlloc)
-,m_aB(nullptr)
-,m_cB(0)
-,m_cBMax(0)
+,m_strbuf()
 {
 	Resize(cBStartingMax);
 }
@@ -141,51 +135,24 @@ void CNameMangler::Resize(size_t cBNew)
 	{
 		aBNew = (char *)m_pAlloc->EWC_ALLOC_TYPE_ARRAY(char, cBNew);
 
-		if (m_cBMax)
+		if (m_strbuf.m_cBMax)
 		{
-			CChCopy(m_aB, aBNew, m_cBMax);
+			(void) CBCopyCoz(m_strbuf.m_pCozBegin, aBNew, m_strbuf.m_cBMax);
 		}
 	}
 
-	if (m_cBMax)
+	if (m_strbuf.m_cBMax)
 	{
-		m_pAlloc->EWC_DELETE(m_aB);
+		m_pAlloc->EWC_DELETE(m_strbuf.m_pCozBegin);
 	}
 
-	m_aB = aBNew;
-	m_cBMax = cBNew;
-	m_cB = ewcMin(m_cB, cBNew);
-}
-
-void CNameMangler::Append(const char * pChz, size_t cCh)
-{
-	if (cCh < 1)
-	{
-		cCh = CCh(pChz);
-	}
-
-	while (m_cB + cCh >= m_cBMax)
-	{
-		Resize(m_cBMax * 2);
-	}
-
-	CChCopy(pChz, &m_aB[m_cB], m_cBMax - m_cB);
-
-	m_cB += cCh;
-}
-
-void CNameMangler::AppendNumber(size_t n)
-{
-	char aB[32];
-	size_t cCh = CChFormat(aB, EWC_DIM(aB), "%d", n);
-	Append(aB, cCh);
+	m_strbuf = EWC::SStringBuffer(aBNew, cBNew);
 }
 
 void CNameMangler::AppendName(const char * pChz)
 {
 	size_t cCh = CCh(pChz);
-	AppendNumber(cCh);
-	Append(pChz);
+	FormatCoz(&m_strbuf, "%d%s", cCh, pChz);
 }
 
 void CNameMangler::AppendType(STypeInfo * pTin)
@@ -205,7 +172,7 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 			case 32:	aChz[2] = 'w';	break;	// word
 			case 64:	aChz[2] = 'd';	break;	// double
 			}
-			Append(aChz);
+			AppendCoz(&m_strbuf, aChz);
 		} break;
     case TINK_Float:
 		{
@@ -216,15 +183,15 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 			case 32:	aChz[1] = 'g';	break;	// float
 			case 64:	aChz[1] = 'd';	break;	// double
 			}
-			Append(aChz);
+			AppendCoz(&m_strbuf, aChz);
 		} break;
-	case TINK_Bool:		Append("Bf");	break;
-	case TINK_String:	Append("Bs");	break;
-	case TINK_Void:		Append("Bv");	break;
+	case TINK_Bool:		AppendCoz(&m_strbuf, "Bf");	break;
+	case TINK_String:	AppendCoz(&m_strbuf, "Bs");	break;
+	case TINK_Void:		AppendCoz(&m_strbuf, "Bv");	break;
     case TINK_Pointer:
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
-			Append("P");
+			AppendCoz(&m_strbuf, "P");
 			AppendType(pTinptr->m_pTinPointedTo);
 		} break;
     case TINK_Struct:	AppendName(pTin->m_strName.PChz());	break;
@@ -236,13 +203,12 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 			{
 			case ARYK_Fixed:
 				{
-					Append("A");
-					AppendNumber((size_t)pTinary->m_c);
+					FormatCoz(&m_strbuf, "A%d", pTinary->m_c);
 					AppendType(pTinary->m_pTin);
 				} break;
 			case ARYK_Reference:
 				{
-					Append("AR");
+					AppendCoz(&m_strbuf, "AR");
 					AppendType(pTinary->m_pTin);
 				} break;
 			default: EWC_ASSERT(false, "unhandled array type");
@@ -251,13 +217,11 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 	case TINK_Procedure:
 		{
 			auto pTinproc = (STypeInfoProcedure *)pTin;
-			Append("F");
-			AppendNumber((size_t)pTinproc->m_arypTinReturns.C());
-			Append("_"); // arguments
+			FormatCoz(&m_strbuf, "F%d_", pTinproc->m_arypTinReturns.C());
 
 			if (pTinproc->m_fHasVarArgs)
 			{
-				Append("VA");
+				AppendCoz(&m_strbuf, "VA");
 			}
 
 			size_t ipTinMax = pTinproc->m_arypTinParams.C();
@@ -267,7 +231,7 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 				AppendType(pTin);
 			}
 
-			Append("_"); // return types
+			AppendCoz(&m_strbuf, "_"); // return types
 			ipTinMax = pTinproc->m_arypTinReturns.C();
 			for (size_t ipTin = 0; ipTin < ipTinMax; ++ipTin)
 			{
@@ -354,13 +318,14 @@ STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
 		case 'u':
 			{
 				char aCh[4];
-				aCh[0] = (chBuiltIn == 'i') ? 's' : 'u';
+				EWC::SStringBuffer strbufScratch(aCh, EWC_DIM(aCh));
+				*strbufScratch.m_pCozAppend++ = (chBuiltIn == 'i') ? 's' : 'u';
 				switch(*(*ppChz)++)
 				{
-					case 'c':	CChCopy("8", &aCh[1], 3);	break;
-					case 's':	CChCopy("16", &aCh[1], 3);	break;
-					case 'w':	CChCopy("32", &aCh[1], 3);	break;
-					case 'd':	CChCopy("64", &aCh[1], 3);	break;
+					case 'c':	AppendCoz(&strbufScratch, "8");		break;
+					case 's':	AppendCoz(&strbufScratch, "16");	break;
+					case 'w':	AppendCoz(&strbufScratch, "32");	break;
+					case 'd':	AppendCoz(&strbufScratch, "64");	break;
 				}
 
 				return pSymtab->PTinBuiltin(aCh);
@@ -465,15 +430,15 @@ STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
 
 CString	CNameMangler::StrMangleMethodName(STypeInfoProcedure * pTinproc)
 {
-	m_cB = 0;
-	Append("__F"); // function
+	m_strbuf.m_pCozAppend = m_strbuf.m_pCozBegin;
+	AppendCoz(&m_strbuf, "__F"); // function
 	AppendName(pTinproc->m_strName.PChz());
 
-	Append("_"); // arguments
+	AppendCoz(&m_strbuf, "_"); // arguments
 
 	if (pTinproc->m_fHasVarArgs)
 	{
-		Append("VA");
+		AppendCoz(&m_strbuf, "VA");
 	}
 
 	size_t ipTinMax = pTinproc->m_arypTinParams.C();
@@ -483,14 +448,14 @@ CString	CNameMangler::StrMangleMethodName(STypeInfoProcedure * pTinproc)
 		AppendType(pTin);
 	}
 
-	Append("_"); // return types
+	AppendCoz(&m_strbuf, "_"); // return types
 	ipTinMax = pTinproc->m_arypTinReturns.C();
 	for (size_t ipTin = 0; ipTin < ipTinMax; ++ipTin)
 	{
 		auto pTin = pTinproc->m_arypTinReturns[ipTin];
 		AppendType(pTin);
 	}
-	return CString(m_aB, m_cB);
+	return CString(m_strbuf.m_pCozBegin, m_strbuf.m_pCozAppend - m_strbuf.m_pCozBegin);
 }
 
 STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSymbolTable * pSymtab)
@@ -569,8 +534,7 @@ void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCh
 CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 {
 	char aCh[2048];
-	char * pCh = aCh;
-	char * pChEnd = EWC_PMAC(aCh);
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
 
 	CSTNode * pStnodIt = pStnod;
 	while (pStnodIt)
@@ -581,12 +545,12 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 			{
 				if (!EWC_FVERIFY(pStnod->m_pStval, "identifier without value string detected"))
 					break;
-				pCh += CChCopy(StrFromIdentifier(pStnod).PChz(), pCh, pChEnd - pCh); 
+				AppendCoz(&strbuf, StrFromIdentifier(pStnod).PChz()); 
 				pStnodIt = nullptr;
 			}break;
 			case PARK_ReferenceDecl:
 
-				pCh += CChCopy("* ", pCh, pChEnd - pCh); 
+				AppendCoz(&strbuf, "* "); 
 
 				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
 				pStnodIt = pStnodIt->PStnodChild(0);
@@ -598,7 +562,7 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 
 				break;
 			default:
-				pCh += CChCopy("<BadPark> ", pCh, pChEnd - pCh); 
+				AppendCoz(&strbuf, "<BadPark> "); 
 				pStnod = nullptr;
 				break;
 		}
@@ -610,15 +574,17 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 CString StrFromTypeInfo(STypeInfo * pTin)
 {
 	char aCh[1024];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
 
-	CChPrintTypeInfo(pTin, PARK_Nil, aCh, EWC_PMAC(aCh));
+	PrintTypeInfo(&strbuf, pTin, PARK_Nil);
 	return CString(aCh);
 }
 
 CString StrFullyQualifiedSymbol(SSymbol * pSym)
 {
 	char aCh[256];
-	CChFormat(aCh, EWC_DIM(aCh), "TBD::TBD::%s",pSym->m_strName.PChz());
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+	FormatCoz(&strbuf, "TBD::TBD::%s",pSym->m_strName.PChz());
 	return CString(aCh);
 }
 
@@ -2477,7 +2443,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pTinproc->m_strMangled = pTcwork->m_mang.StrMangleMethodName(pTinproc);
 #if VALIDATE_NAME_MANGLING
 							char aCh[1024];
-							CChPrintTypeInfo(pTinproc, PARK_Nil, aCh, EWC_PMAC(aCh), FDBGSTR_UseSizedNumerics);
+							EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+							PrintTypeInfo(&strbuf, pTinproc, PARK_Nil, FDBGSTR_UseSizedNumerics);
 
 							STypeInfoProcedure * pTinprocDemangled = pTcwork->m_mang.PTinprocDemangle(pTinproc->m_strMangled, pTcsentTop->m_pSymtab);
 
@@ -2489,8 +2456,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							if (EWC_FVERIFY(pTinprocDemangled, "Name demangling failed - null procedure type"))
 							{
 								char aChAfter[1024];
-								CChPrintTypeInfo(pTinprocDemangled, PARK_Nil, aChAfter, EWC_PMAC(aChAfter), FDBGSTR_UseSizedNumerics);
-								EWC_ASSERT(FAreSame(aCh, aChAfter), "Unmangled type info doesn't match initial info");
+								EWC::SStringBuffer strbufAfter(aChAfter, EWC_DIM(aChAfter));
+								PrintTypeInfo(&strbufAfter, pTinprocDemangled, PARK_Nil, FDBGSTR_UseSizedNumerics);
+								EWC_ASSERT(FAreCozEqual(aCh, aChAfter), "Unmangled type info doesn't match initial info");
 							}
 #endif
 						}
@@ -4764,7 +4732,7 @@ void AssertTestTypeCheck(
 	char * pCh = aCh;
 	char * pChMax = &aCh[EWC_DIM(aCh)];
 
-	(void) CChWriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type|FDBGSTR_LiteralSize);
+	WriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type|FDBGSTR_LiteralSize);
 
 #if EWC_X64
 	const char * pChzWord = "64";
@@ -4788,7 +4756,7 @@ void AssertTestTypeCheck(
 		}
 	}
 
-	EWC_ASSERT(FAreSame(aCh, aChExpected), "type check debug string doesn't match expected value");
+	EWC_ASSERT(FAreCozEqual(aCh, aChExpected), "type check debug string doesn't match expected value");
 
 	EndWorkspace(pWork);
 }
@@ -4994,7 +4962,7 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
-	pChzOut		= "(ParamFunc(s32, float)->void $ParamFunc (params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
+	pChzOut		= "(ParamFunc(s32, float)->void $ParamFunc (Params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
 	AssertTestTypeCheck(&work, pChzIn, pChzOut);
 
 	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : &u8 = \"huzzah\";";

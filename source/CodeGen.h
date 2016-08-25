@@ -314,7 +314,7 @@ public:
 						~CIRBuilder();
 	
 	void				PrintDump();
-	size_t				CChGenerateUniqueName(const char * pChzIn, char * pChzOut, size_t cChMax);
+	void				GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax);
 
 	CIRBasicBlock *		PBlockCreate(CIRProcedure * pProc, const char * pChzName);
 
