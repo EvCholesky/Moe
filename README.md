@@ -9,7 +9,6 @@ Currently supports:
   * Pointers
   * String literals
   * Variadic functions
-  * Pre/post increment/decrement
   * While loops
   * Arrays
     - fixed size arrays (with count/data members)
@@ -25,6 +24,7 @@ Currently supports:
   * Proper handling of global variables (including default initialization)
   * Method overloading
   * Method pointers
+  * UTF8 identifiers
 
 Coming soon:
   * Operator overloading
@@ -38,9 +38,6 @@ Coming soon:
 Clean up
   * consolidate PARK_ReferenceDecl, PARK_ArrayDecl, ParkMethodReferenceDecl into PARK_Decl
   * clean up CAlloc - It's currently overflowing into system memory, which is ok, but needs to track cbAllocated, not cBFree.
-
-Further out:
-  * UTF8 identifier support
 
 Deviations from current JAI syntax:
   * pointers use & for pointer type specification/referencing and @ for a dereference operator, rather than <<

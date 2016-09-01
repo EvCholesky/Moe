@@ -4187,8 +4187,16 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		if (!pFile->m_pChzFileBody)
 			continue;
 
+		// skip a unicode byte order mark
+		const u8 * pCozFileBody = (u8 *)pFile->m_pChzFileBody;
+		// utf8 BOM
+		if (pCozFileBody[0] == 0xEF && pCozFileBody[1] == 0xBB && pCozFileBody[2] == 0xBF)
+		{
+			pCozFileBody += 3;
+		}
+
 		printf("Parsing %s\n", pFile->m_strFilename.PCoz());
-		BeginParse(pWork, &jlex, pFile->m_pChzFileBody);
+		BeginParse(pWork, &jlex, (char *)pCozFileBody);
 		jlex.m_pCozFilename = pFile->m_strFilename.PCoz();
 
 		ParseGlobalScope(pWork, &jlex, true);

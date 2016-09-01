@@ -5,12 +5,6 @@
 
 
 
-#define TEST_AGAINST_RFC 0
-
-#if TEST_AGAINST_RFC
-#include "PunnyRfc.cpp"
-#endif
-
 namespace Puny
 {
 	static const u32 s_nBase = 36;
@@ -19,11 +13,7 @@ namespace Puny
 	static const int s_nSkew = 38;
 	static const int s_nDamp = 700;
 	static const u32 s_nBiasInitial = 72;
-#if TEST_AGAINST_RFC
-	static const char s_chDelimiter = '-';
-#else
 	static const char s_chDelimiter = '_';
-#endif
 	static const int s_cWrapInitial = 0x80;
 	static const u32 s_nU32Max = 0xFFFFFFFF;
 
@@ -221,12 +211,7 @@ PUNYRET PunyretEncode(const char * pCozInput, char * pCozOut, size_t cBMaxOut)
 	int cHandled = pCozDest - pCozOut;
 
 	// BB - would like to change this to only add a delimiter when we have extended characters (or another delimiter)
-#if TEST_AGAINST_RFC
-	if (cBasic != 0)
-#else
 	if ((pNExt - aNExtSorted) != 0 || fFoundDelimiter)
-#endif
-//	if (cBasic != 0)
 	{
 		*pCozDest++ = s_chDelimiter;
 	}
@@ -329,12 +314,7 @@ PUNYRET PunyretDecode(const char * pCozInput, char * pCozOut, size_t cBOutMax)
 	bool fAllBasic = pCozDelimiter == nullptr;
 	if (fAllBasic)
 	{
-#if !TEST_AGAINST_RFC
-	// BB - would like to change this to only add a delimiter when we have extended characters (or another delimiter)
 		pCozDelimiter = pCozInputMax;
-#else
-		pCozDelimiter = pCozInput;
-#endif
 	}
 
 	while (pCoz != pCozDelimiter)
@@ -573,27 +553,8 @@ void TestUnicode()
 
 		EWC_ASSERT(EWC::FAreCozEqual((char*)aCozScratch, s_aTestr[ipCoz].m_pCozUtf8), "conversion error");
 
-#if TEST_AGAINST_RFC
-		char aChzPunyRfc[1024];
-		u32 cNScratch = CNFromWchz(aNScratch);
-		u32 cChPunyRfc = EWC_DIM(aChzPunyRfc);
-		punycode_status punys = punycode_encode(cNScratch, aNScratch, nullptr, &cChPunyRfc, aChzPunyRfc);
-		EWC_ASSERT(punys == punycode_success, "bad rfc puyncode encoding");
-
-		EWC::ZeroAB(aNScratch, EWC_DIM(aNScratch));
-
-		cNScratch = EWC_DIM(aNScratch);
-		punys = punycode_decode(cChPunyRfc, aChzPunyRfc, &cNScratch, aNScratch, nullptr);
-		EWC_ASSERT(punys == punycode_success, "bad rfc puyncode encoding");
-		EWC_ASSERT(FAreWchzEqual(s_aTestr[ipCoz].m_pWchzTest, (const char32_t *)aNScratch), "rtf punycode error");
-#endif
-
 		auto punyret = Puny::PunyretEncode(s_aTestr[ipCoz].m_pCozUtf8, (char *)aCozScratch, EWC_DIM(aCozScratch));
 		EWC_ASSERT(punyret == Puny::PUNYRET_Success, "bad punycode encode");
-
-#if TEST_AGAINST_RFC
-		EWC_ASSERT(EWC::FAreCozEqual((char*)aCozScratch, aChzPunyRfc), "doesen't match the punycode RFC implementation.");
-#endif
 
 		punyret = Puny::PunyretDecode((char *)aCozScratch, aCozPuny, EWC_DIM(aCozPuny));
 		EWC_ASSERT(punyret == Puny::PUNYRET_Success, "bad punycode decode");
