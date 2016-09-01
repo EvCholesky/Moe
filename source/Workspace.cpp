@@ -22,7 +22,7 @@
 
 using namespace EWC;
 
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap)
 {
 	if (pLexloc && pLexloc->FIsValid())
 	{
@@ -30,7 +30,7 @@ void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const 
 		s32 iCol;
 		CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
 
-		printf("%s(%d,%d) Warning: ", pLexloc->m_strFilename.PChz(), iLine, iCol);
+		printf("%s(%d,%d) Warning: ", pLexloc->m_strFilename.PCoz(), iLine, iCol);
 	}
 	else
 	{
@@ -38,38 +38,38 @@ void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const 
 	}
 	++pErrman->m_cWarning;
 	
-	if (pChz)
+	if (pCoz)
 	{
-		vprintf(pChz, ap);
+		vprintf(pCoz, ap);
 		printf("\n");
 	}
 }
 
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...)
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...)
 {
 	va_list ap;
-	va_start(ap, pChz);
-	EmitWarning(pErrman, pLexloc, pChz, ap);
+	va_start(ap, pCoz);
+	EmitWarning(pErrman, pLexloc, pCoz, ap);
 }
 
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap)
 {
 	SError error(pErrman);
-	PrintErrorLine(&error, "Error:", pLexloc, pChz, ap);
+	PrintErrorLine(&error, "Error:", pLexloc, pCoz, ap);
 }
 
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...)
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...)
 {
 	va_list ap;
-	va_start(ap, pChz);
-	EmitError(pErrman, pLexloc, pChz, ap);
+	va_start(ap, pCoz);
+	EmitError(pErrman, pLexloc, pCoz, ap);
 }
 
-void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pChz, ...)
+void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pCoz, ...)
 {
 	va_list ap;
-	va_start(ap, pChz);
-	EmitError(pWork->m_pErrman, pLexloc, pChz, ap);
+	va_start(ap, pCoz);
+	EmitError(pWork->m_pErrman, pLexloc, pCoz, ap);
 }
 
 
@@ -80,7 +80,7 @@ SError::SError(SErrorManager * pErrman)
 	++pErrman->m_cError;
 }
 
-void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, va_list ap)
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pCoz, va_list ap)
 {
 	if (pLexloc && pLexloc->FIsValid())
 	{
@@ -88,25 +88,25 @@ void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocati
 		s32 iCol;
 		CalculateLinePosition(pError->m_pErrman->m_pWork, pLexloc, &iLine, &iCol);
 
-		printf("%s(%d,%d) %s ", pLexloc->m_strFilename.PChz(), iLine, iCol, pChzPrefix);
+		printf("%s(%d,%d) %s ", pLexloc->m_strFilename.PCoz(), iLine, iCol, pChzPrefix);
 	}
 	else
 	{
 		printf("Internal %s ", pChzPrefix);
 	}
 	
-	if (pChz)
+	if (pCoz)
 	{
-		vprintf(pChz, ap);
+		vprintf(pCoz, ap);
 		printf("\n");
 	}
 }
 
-void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, ...)
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pCoz, ...)
 {
 	va_list ap;
-	va_start(ap, pChz);
-	PrintErrorLine(pError, pChzPrefix, pLexloc, pChz, ap);
+	va_start(ap, pCoz);
+	PrintErrorLine(pError, pChzPrefix, pLexloc, pCoz, ap);
 }
 
 inline void CalculateLinePositionRaw(const char * pChBegin, s32 dBLoc, s32 * piLine, s32 * piCol)
@@ -218,10 +218,10 @@ CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strName)
 	return pSymtabNew;
 }
 
-CWorkspace::SFile * CWorkspace::PFileEnsure(const char * pChzFile, FILEK filek)
+CWorkspace::SFile * CWorkspace::PFileEnsure(const char * pCozFile, FILEK filek)
 {
 	EWC::CHash<HV, int> * phashHvIPFile = PHashHvIPFile(filek);
-	EWC::CString strFilename(pChzFile);
+	EWC::CString strFilename(pCozFile);
 
 	int * pipFile = nullptr;
 	FINS fins = phashHvIPFile->FinsEnsureKey(strFilename.Hv(), &pipFile);
@@ -272,7 +272,7 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork->m_pErrman);
 }
 
-void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn, const char * pChzFilename)
+void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pCozIn, const char * pCozFilename)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 	CParseContext * pParctx = EWC_NEW(pAlloc, CParseContext) CParseContext(pAlloc, pWork);
@@ -280,11 +280,11 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn, cons
 
 	static const size_t cChStorage = 1024 * 8;
 	char * aChStorage = (char *)pAlloc->EWC_ALLOC(cChStorage, 4);
-	InitJaiLexer(pJlex, pChzIn, &pChzIn[CCh(pChzIn)], aChStorage, cChStorage);
+	InitJaiLexer(pJlex, pCozIn, &pCozIn[CBCoz(pCozIn)-1], aChStorage, cChStorage);
 
-	if (pChzFilename)
+	if (pCozFilename)
 	{
-		pJlex->m_pChzFilename = pChzFilename;
+		pJlex->m_pCozFilename = pCozFilename;
 	}
 
 	SLexerLocation lexloc(pJlex);
@@ -396,13 +396,13 @@ char * CWorkspace::PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * 
 	SLexerLocation lexloc(strFilename);
 #if defined( _MSC_VER )
 	FILE * pFile;
-	fopen_s(&pFile, strFilename.PChz(), "rb");
+	fopen_s(&pFile, strFilename.PCoz(), "rb");
 #else
-	FILE * pFile = fopen(strFilename.PChz(), "rb");
+	FILE * pFile = fopen(strFilename.PCoz(), "rb");
 #endif
 	if (!pFile)
 	{
-		EmitError(m_pErrman, &lexloc, "Failed opening file %s", strFilename.PChz());
+		EmitError(m_pErrman, &lexloc, "Failed opening file %s", strFilename.PCoz());
 		return nullptr;
 	}
 
@@ -416,7 +416,7 @@ char * CWorkspace::PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * 
 
 	if (cB != cBRead)
 	{
-		EmitError(m_pErrman, &lexloc, "Failed reading file %s", strFilename.PChz());
+		EmitError(m_pErrman, &lexloc, "Failed reading file %s", strFilename.PCoz());
 		pAlloc->EWC_FREE(pChzFile);
 		return nullptr;
 	}

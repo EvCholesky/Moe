@@ -47,9 +47,9 @@ const char * PChzFromTink(TINK tink);
 
 struct STypeInfo	// tag = tin
 {
-						STypeInfo(const char * pChzName, TINK tink)
+						STypeInfo(const char * pCozName, TINK tink)
 						:m_tink(tink)
-						,m_strName(pChzName)
+						,m_strName(pCozName)
 						,m_pLvalDIType(nullptr)
 							{ ; }
 
@@ -77,8 +77,8 @@ struct STypeInfoInteger : public STypeInfo // tag = tinint
 {
 	static const TINK s_tink = TINK_Integer;
 
-			STypeInfoInteger(const char * pChzName, u32 cBit, bool fSigned)
-			:STypeInfo(pChzName, s_tink)
+			STypeInfoInteger(const char * pCozName, u32 cBit, bool fSigned)
+			:STypeInfo(pCozName, s_tink)
 			,m_cBit(cBit)
 			,m_fIsSigned(fSigned)
 				{ ; }
@@ -91,8 +91,8 @@ struct STypeInfoFloat : public STypeInfo	// tag = tinfloat
 {
 	static const TINK s_tink = TINK_Float;
 
-			STypeInfoFloat(const char * pChzName, u32 cBit)
-			:STypeInfo(pChzName, s_tink)
+			STypeInfoFloat(const char * pCozName, u32 cBit)
+			:STypeInfo(pCozName, s_tink)
 			,m_cBit(cBit)
 				{ ; }
 
@@ -134,8 +134,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
 
-						STypeInfoProcedure(const char * pChzName)
-						:STypeInfo(pChzName, s_tink)
+						STypeInfoProcedure(const char * pCozName)
+						:STypeInfo(pCozName, s_tink)
 						,m_strMangled()
 						,m_pStnodDefinition(nullptr)
 						,m_arypTinParams()
@@ -159,8 +159,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 {
 	static const TINK s_tink = TINK_ForwardDecl;
-						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const char * pChzName)
-						:STypeInfo(pChzName, s_tink)
+						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const char * pCozName)
+						:STypeInfo(pCozName, s_tink)
 						,m_arypTinReferences(pAlloc)
 							{ ; }
 
@@ -208,8 +208,8 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 {
 	static const TINK s_tink = TINK_Struct;
 
-									STypeInfoStruct(const char * pChzName)
-									:STypeInfo(pChzName, s_tink)
+									STypeInfoStruct(const char * pCozName)
+									:STypeInfo(pCozName, s_tink)
 									,m_pLvalInitMethod(nullptr)
 									,m_pLtype(nullptr)
 									,m_pStnodStruct(nullptr)
@@ -236,13 +236,13 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 {
 	static const TINK s_tink = TINK_Enum;
 
-						STypeInfoEnum(const char * pChzName)
-						:STypeInfo(pChzName, s_tink)
+						STypeInfoEnum(const char * pCozName)
+						:STypeInfo(pCozName, s_tink)
 						,m_pTinLoose(nullptr)
 						,m_bintMin()
 						,m_bintMax()
 						,m_bintLatest()
-						,m_tinstructProduced(pChzName)
+						,m_tinstructProduced(pCozName)
 							{ ; }
 
 	STypeInfo *			m_pTinLoose;

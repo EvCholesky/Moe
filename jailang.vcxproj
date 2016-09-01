@@ -215,6 +215,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
     <ClInclude Include="source\JaiParse.h" />
     <ClInclude Include="source\JaiTypes.h" />
     <ClInclude Include="source\stb_malloc.h" />
+    <ClInclude Include="source\Util.h" />
     <ClInclude Include="source\WindowsStub.h" />
     <ClInclude Include="source\Workspace.h" />
   </ItemGroup>
@@ -225,6 +226,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
     <ClCompile Include="source\JaiParse.cpp" />
     <ClCompile Include="source\Main.cpp" />
     <ClCompile Include="source\TypeCheck.cpp" />
+    <ClCompile Include="source\Util.cpp" />
     <ClCompile Include="source\Workspace.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

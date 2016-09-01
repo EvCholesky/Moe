@@ -1,0 +1,48 @@
+#import "Basic"
+	
+エヌマ :: enum
+{
+	フー,
+	バル,
+	アク,	
+}
+
+fÜnction :: ()
+{
+	printf("called fÜnction\n");
+}
+
+fÜnction :: (n: s32)
+{
+	printf("called overloaded fÜnction\n");
+}
+
+main :: () -> int
+{
+	😁 := 5;
+	✂ := 2;
+	printf("test = %d\n", 😁+✂);
+
+	e1 := エヌマ.フー;
+	e2 := エヌマ.アク;
+	e3 := エヌマ.nil;
+	printf("enum = %d, %d, %d\n", e1, e2, e3);
+
+	fÜnction();
+	fÜnction(2);
+
+	//pChzHirigana := "い"; //ろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす";
+	pCozHirigana := "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす";
+	printf("Japanese: %s\n", pCozHirigana);
+
+	pCozGerman := "Falsches Üben von Xylophonmusik quält jeden größeren Zwerg";
+	printf("German: %s\n", pCozGerman);
+
+	pCozGreek := "Γαζέες καὶ μυρτιὲς δὲν θὰ βρῶ πιὰ στὸ χρυσαφὶ ξέφωτο";
+	printf("Greek: %s\n", pCozGreek);
+
+	pCozEmoji := "😁😄😔✂✋🚀⏰⏳";
+	printf("Emoji: %s\n", pCozEmoji);
+
+	return 1;
+}

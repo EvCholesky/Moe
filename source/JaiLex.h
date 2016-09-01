@@ -159,7 +159,7 @@ struct SJaiLexer // tag = jlex
    u32				m_cChScratch;
 
    // lexer parse location for error messages
-   const char *		m_pChzFilename;
+   const char *		m_pCozFilename;
    const char *		m_pChBegin;
    const char *		m_pChEnd;
 
@@ -187,7 +187,7 @@ struct SLexerLocation // tag = lexloc
 					{ ; }
 
 	explicit		SLexerLocation(SJaiLexer * pJlex)
-					:m_strFilename(pJlex->m_pChzFilename)
+					:m_strFilename(pJlex->m_pCozFilename)
 					,m_dB((s32)(pJlex->m_pChBegin - pJlex->m_pChInput))
 						{ ; }
 
@@ -206,12 +206,12 @@ struct SLexerLocation // tag = lexloc
 	s32				m_dB;
 };
 
-void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, u32 cChStorage);
+void InitJaiLexer(SJaiLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage);
 bool FConsumeToken(SJaiLexer * pJlex, JTOK jtok);
 int JtokNextToken(SJaiLexer * pJlex);
 void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit);
 RWORD RwordLookup(SJaiLexer * pJlex);
 
-const char * PChzFromJtok(JTOK jtok);
-const char * PChzFromRword(RWORD rword);
-const char * PChzCurrentToken(SJaiLexer * pJlex);
+const char * PCozFromJtok(JTOK jtok);
+const char * PCozFromRword(RWORD rword);
+const char * PCozCurrentToken(SJaiLexer * pJlex);

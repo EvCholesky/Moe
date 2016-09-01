@@ -53,15 +53,15 @@ struct SError
 	SErrorManager *		m_pErrman;
 };
 
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...);
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap);
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...);
 
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pChz, ...);
-void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pChz, ...);
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap);
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...);
+void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pCoz, ...);
 
-void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, va_list ap);
-void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pChz, ...);
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pCoz, va_list ap);
+void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pCoz, ...);
 
 
 
@@ -137,7 +137,7 @@ public:
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
 	CSymbolTable *			PSymtabNew(const EWC::CString & strName);
 
-	SFile *					PFileEnsure(const char * pChzFile, FILEK filek);
+	SFile *					PFileEnsure(const char * pCozFile, FILEK filek);
 	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek) 
 								{ return (filek == FILEK_Source) ? &m_hashHvIPFileSource :  &m_hashHvIPFileLibrary; }
 	int						CFile(FILEK filek)
@@ -165,7 +165,7 @@ public:
 };
 
 void BeginWorkspace(CWorkspace * pWork);
-void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pChzIn, const char * pChzFilename = nullptr);
+void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pCozIn, const char * pCozFilename = nullptr);
 void EndParse(CWorkspace * pWork, SJaiLexer * pJlex);
 void EndWorkspace(CWorkspace * pWork);
 

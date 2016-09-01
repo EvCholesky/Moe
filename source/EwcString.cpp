@@ -154,6 +154,7 @@ public:
 	CHash<HV, Entry>	m_mpHvEntry;
 };
 
+CStringTable * CAsciString::s_pStrtab = nullptr;
 CStringTable * CString::s_pStrtab = nullptr;
 
 typedef CHash<OID, CString> OidTable;
@@ -162,19 +163,19 @@ OidTable * s_pHashOidStr = nullptr;
 OID OID_Nil;
 
 
-// CString Methods:
-void CString::StaticInit(CAlloc * pAlloc)
+// CAsciString Methods:
+void CAsciString::StaticInit(CAlloc * pAlloc)
 {
 	s_pStrtab = EWC_NEW(pAlloc, CStringTable) CStringTable(pAlloc);
 }
 
-void CString::StaticShutdown(CAlloc * pAlloc)
+void CAsciString::StaticShutdown(CAlloc * pAlloc)
 {
 	pAlloc->EWC_DELETE(s_pStrtab);
 	s_pStrtab = nullptr;
 }
 
-void CString::SetPChz(const char * pChzNew)
+void CAsciString::SetPChz(const char * pChzNew)
 {
 	EWC_ASSERT(s_pStrtab, "String table has not been allocated");
 	if (!s_pStrtab)
@@ -199,7 +200,7 @@ void CString::SetPChz(const char * pChzNew)
 	}
 }
 
-void CString::SetPCh(const char * pChNew, size_t cCh)
+void CAsciString::SetPCh(const char * pChNew, size_t cCh)
 {
 	EWC_ASSERT(s_pStrtab, "String table has not been allocated");
 	if (!s_pStrtab)
@@ -226,20 +227,19 @@ void CString::SetPCh(const char * pChNew, size_t cCh)
 
 
 
-/*
 // CWstring Methods:
-void CWstring::StaticInit(CAlloc * pAlloc)
+void CString::StaticInit(CAlloc * pAlloc)
 {
 	s_pStrtab = EWC_NEW(pAlloc, CStringTable) CStringTable(pAlloc);
 }
 
-void CWstring::StaticShutdown(CAlloc * pAlloc)
+void CString::StaticShutdown(CAlloc * pAlloc)
 {
 	pAlloc->EWC_DELETE(s_pStrtab);
 	s_pStrtab = nullptr;
 }
 
-void CWstring::SetPCoz(const char * pCozNew)
+void CString::SetPCoz(const char * pCozNew)
 {
 	EWC_ASSERT(s_pStrtab, "String table has not been allocated");
 	if (!s_pStrtab)
@@ -251,7 +251,7 @@ void CWstring::SetPCoz(const char * pCozNew)
 
 	if(m_pCoz)
 	{
-		size_t cB = EWC::CB(m_pCoz);
+		size_t cB = CBCoz(m_pCoz);
 		s_pStrtab->FreePCoz(m_pCoz, cB, m_shash.HvRaw());
 		m_pCoz = nullptr;
 		m_shash = CStringHash(0);
@@ -264,7 +264,7 @@ void CWstring::SetPCoz(const char * pCozNew)
 	}
 }
 
-void CWstring::SetPCo(const char * pCoNew, size_t cCodepoint)
+void CString::SetPCo(const char * pCoNew, size_t cCodepoint)
 {
 	EWC_ASSERT(s_pStrtab, "String table has not been allocated");
 	if (!s_pStrtab)
@@ -276,7 +276,7 @@ void CWstring::SetPCo(const char * pCoNew, size_t cCodepoint)
 
 	if(m_pCoz)
 	{
-		size_t cB = EWC::CB(m_pCoz);
+		size_t cB = CBCoz(m_pCoz);
 		s_pStrtab->FreePCoz(m_pCoz, cB, m_shash.HvRaw());
 		m_pCoz = nullptr;
 		m_shash = CStringHash(0);
@@ -288,7 +288,6 @@ void CWstring::SetPCo(const char * pCoNew, size_t cCodepoint)
 		m_pCoz = s_pStrtab->PCozAlloc(pCoNew, cCodepoint, m_shash.HvRaw());
 	}
 }
-*/
 
 
 
@@ -305,7 +304,7 @@ OID	OidEnsure(const char * pChz)
 	return oid;
 }
 
-const char * PChzFromOid(OID oid)
+const char * PCozFromOid(OID oid)
 {
 	if (!EWC_FVERIFY(s_pHashOidStr, "did not initialize oid table"))
 		return "<uninit>";
@@ -313,7 +312,7 @@ const char * PChzFromOid(OID oid)
 	CString * pStr = s_pHashOidStr->Lookup(oid);
 	if (!pStr)
 		return "<unknown>";
-	return pStr->PChz();
+	return pStr->PCoz();
 }
 
 

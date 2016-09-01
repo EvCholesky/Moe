@@ -17,6 +17,7 @@
 #include "EwcTypes.h"
 #include "JaiParse.h"
 #include "JaiTypes.h"
+#include "Util.h"
 #include "Workspace.h"
 
 using namespace EWC;
@@ -328,7 +329,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 				return pTinstruct->m_pLtype;
 			}
 
-			LLVMOpaqueType * pLtype = LLVMStructCreateNamed(LLVMGetGlobalContext(), pTinstruct->m_strName.PChz());
+			LLVMOpaqueType * pLtype = LLVMStructCreateNamed(LLVMGetGlobalContext(), PChzVerifyAscii(pTinstruct->m_strName.PCoz()));
 			pTinstruct->m_pLtype = pLtype;
 
 			int cTypemembField = (int)pTinstruct->m_aryTypemembField.C();
@@ -339,7 +340,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			for ( auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMac; ++pTypememb)
 			{
 				auto pLtypeMember = PLtypeFromPTin(pTypememb->m_pTin);
-				EWC_ASSERT(pLtypeMember, "failed to compute type for structure member %s", pTypememb->m_strName.PChz());
+				EWC_ASSERT(pLtypeMember, "failed to compute type for structure member %s", pTypememb->m_strName.PCoz());
 				*ppLtypeMember++ = pLtypeMember;
 			}
 
@@ -405,7 +406,7 @@ SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & st
 	size_t cBFilename = pFile->m_strFilename.CB() + 1;
 	char * pCozCopy = (char *)alloca(sizeof(char) * cBFilename);
 	EWC::SStringBuffer strbuf(pCozCopy, cBFilename);
-	AppendCoz(&strbuf, pFile->m_strFilename.PChz());
+	AppendCoz(&strbuf, pFile->m_strFilename.PCoz());
 
 	const char * pCozPath;	
 	const char * pCozFile;	
@@ -511,7 +512,7 @@ CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CIRBuilder * pBuild, SSymbol *
 
 	// this happens when calling a method that is defined later
 	CSTNode * pStnodProc = pSym->m_pStnodDefinition;
-	auto pDif = PDifEnsure(pWork, pBuild, pStnodProc->m_lexloc.m_strFilename.PChz());
+	auto pDif = PDifEnsure(pWork, pBuild, pStnodProc->m_lexloc.m_strFilename.PCoz());
 	auto pLvalParentScope = PLvalParentScopeForProcedure(pWork, pBuild, pStnodProc, pDif);
 
 	PushDIScope(pDif, pLvalParentScope);
@@ -565,7 +566,7 @@ static inline LLVMOpaqueValue * PLvalCreateDebugFunction(
 	s32 iLineBody, iColBody;
 	CalculateLinePosition(pWork, &pStnodBody->m_lexloc, &iLineBody, &iColBody);
 
-	auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PChz());
+	auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PCoz());
 	LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
 
 	return LLVMDIBuilderCreateFunction(
@@ -591,7 +592,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 	if (pTin->m_pLvalDIType)
 		return;
 
-	const char * pChzName = pTin->m_strName.PChz();
+	auto strPunyName = StrPunyEncode(pTin->m_strName.PCoz());
 	auto pDib = pBuild->m_pDib;
 
 	switch (pTin->m_tink)
@@ -600,18 +601,18 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 		{
 			auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTin);
 			unsigned nDwarf = (pTinint->m_fIsSigned) ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned;
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, pChzName, pTinint->m_cBit, pTinint->m_cBit, nDwarf);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), pTinint->m_cBit, pTinint->m_cBit, nDwarf);
 		} break;
 	case TINK_Float:
 		{
 			auto pTinfloat = PTinRtiCast<STypeInfoFloat *>(pTin);
 			unsigned nDwarf = llvm::dwarf::DW_ATE_float;
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, pChzName, pTinfloat->m_cBit, pTinfloat->m_cBit, nDwarf);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), pTinfloat->m_cBit, pTinfloat->m_cBit, nDwarf);
 		} break;
 	case TINK_Bool:
 		{
 			unsigned nDwarf = llvm::dwarf::DW_ATE_boolean;
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, pChzName, 1, 1, nDwarf);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), 1, 1, nDwarf);
 		} break;
     case TINK_Pointer:
 		{
@@ -630,7 +631,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 
 			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
 			u64 cBitAlign = cBitSize;
-			pTin->m_pLvalDIType = LLVMDIBuilderCreatePointerType(pDib, pTinptr->m_pTinPointedTo->m_pLvalDIType, cBitSize, cBitAlign, pChzName);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreatePointerType(pDib, pTinptr->m_pTinPointedTo->m_pLvalDIType, cBitSize, cBitAlign, strPunyName.PCoz());
 		} break;
 	case TINK_Procedure:
 		{
@@ -744,14 +745,15 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			auto pLtypeStruct =  PLtypeFromPTin(pTinstruct);
 			CalculateSizeAndAlign(pBuild, pLtypeStruct, &cBitSize, &cBitAlign);
 
-			const char * pChzUniqueName = pTinstruct->m_strName.PChz(); // BB - should actually make unique name!
+			auto strPunyName = StrPunyEncode(pTinstruct->m_strName.PCoz()); // BB - should actually make unique name!
+			const char * pChzUniqueName = strPunyName.PCoz(); // BB - should actually make unique name!
 			unsigned nFlags = 0;
 
 			auto pLvalDicomp = LLVMDIBuilderCreateReplacableComposite(
 									pDib, 
 									llvm::dwarf::DW_TAG_structure_type,
 									pLvalScope, 
-									pTinstruct->m_strName.PChz(), 
+									strPunyName.PCoz(), 
 									pDif->m_pLvalFile,
 								    iLineBody, 
 									pBuild->m_nRuntimeLanguage,
@@ -777,11 +779,13 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 
 				u64 dBitMembOffset = LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeStruct, iTypememb);
 
+				auto strPunyNameMemb = StrPunyEncode(pTypememb->m_strName.PCoz());
+
 				unsigned nFlagsMember = 0;
 				apLvalMember[iTypememb] = LLVMDIBuilderCreateMemberType(
 											pDib,
 											pLvalDicomp,
-											pTypememb->m_strName.PChz(),
+											strPunyNameMemb.PCoz(),
 											pDif->m_pLvalFile,
 											iLineMember,
 											cBitSizeMember,
@@ -818,9 +822,11 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 				auto pTinecon = &pTinenum->m_aryTinecon[iTinecon];
 				s64 nValue = pTinecon->m_bintValue.S64Coerce();
 
-				apLvalConstant[iTinecon] = LLVMDIBuilderCreateEnumerator(pDib, pTinecon->m_strName.PChz(), nValue);
+				auto strPunyName = StrPunyEncode(pTinecon->m_strName.PCoz());
+				apLvalConstant[iTinecon] = LLVMDIBuilderCreateEnumerator(pDib, strPunyName.PCoz(), nValue);
 			}
 
+			auto strPunyName = StrPunyEncode(pTinenum->m_strName.PCoz());
 			
 			u64 cBitSize, cBitAlign;
 			auto pLtypeLoose = PLtypeFromPTin(pTinenum->m_pTinLoose);
@@ -828,7 +834,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			pTin->m_pLvalDIType = LLVMDIBuilderCreateEnumerationType(
 								    pDib, 
 									pLvalScope, 
-									pTinenum->m_strName.PChz(), 
+									strPunyName.PCoz(), 
 									pDif->m_pLvalFile,
 								    iLine,
 									cBitSize,
@@ -1549,7 +1555,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 				return nullptr;
 
 			// string literals aren't really constants in the eyes of llvm, but it'll work for now
-			pLval = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pStval->m_str.PChz(), "strlit");
+			pLval = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pStval->m_str.PCoz(), "strlit");
 		} break;
 	case LITK_Null:
 		{
@@ -2364,7 +2370,7 @@ static inline CIRValue * PValGenerateMethodBody(
 	EWC_ASSERT(pProc && pStnodBody, "bad parameters to PValGenerateMethodBody");
 	EWC_ASSERT(pProc->m_pLvalDIFunction, "Missing debug info function");
 
-	auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PChz());
+	auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PCoz());
 	PushDIScope(pDif, pProc->m_pLvalDIFunction);
 
 	pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
@@ -2579,7 +2585,7 @@ static inline CIRInstruction * PInstGenerateOperator(
 	}
 
 	// Note: This should be caught by the type checker! This function should match FIsOperatorDefined
-	EWC_ASSERT(pInstOp, "unexpected op in PInstGenerateOperator '%'", PChzFromJtok(jtok));
+	EWC_ASSERT(pInstOp, "unexpected op in PInstGenerateOperator '%'", PCozFromJtok(jtok));
 	return pInstOp;
 }
 
@@ -2607,17 +2613,17 @@ CIRValue * PValGenerateDecl(
 	CreateDebugInfo(pWork, pBuild, pStnod, pStnod->m_pTin);
 
 	bool fIsGlobal = pBuild->m_pProcCur == nullptr;
-	const char * pChzName = pStnod->m_pSym->m_strName.PChz();
+	auto strPunyName = StrPunyEncode(pStnod->m_pSym->m_strName.PCoz());
 	if (fIsGlobal)
 	{
-		auto pGlob = pBuild->PGlobCreate(pLtype, pChzName);
+		auto pGlob = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
 		pStnod->m_pSym->m_pVal = pGlob;
 
 		auto pLvalDIVariable = LLVMDIBuilderCreateGlobalVariable(
 								pBuild->m_pDib,
 								pLvalScope, 
-								pChzName,
-								pChzName,
+								strPunyName.PCoz(),
+								strPunyName.PCoz(),
 								pDif->m_pLvalFile,
 								iLine,
 								pStnod->m_pTin->m_pLvalDIType,
@@ -2644,13 +2650,13 @@ CIRValue * PValGenerateDecl(
 	}
 	else
 	{
-		auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, pChzName);
+		auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, strPunyName.PCoz());
 		pStnod->m_pSym->m_pVal = pInstAlloca;
 	
 		auto pLvalDIVariable = LLVMDIBuilderCreateAutoVariable(
 								pBuild->m_pDib,
 								pLvalScope, 
-								pChzName,
+								strPunyName.PCoz(),
 								pDif->m_pLvalFile,
 								iLine,
 								pStnod->m_pTin->m_pLvalDIType,
@@ -3041,7 +3047,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CIRValue * pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
 			if (EWC_FVERIFY(pVal, "unknown identifier in codegen") && valgenk != VALGENK_Reference && pVal->m_valk != VALK_ProcedureDefinition)
 			{
-				return pBuild->PInstCreate(IROP_Load, pVal, pStnod->m_pSym->m_strName.PChz());
+				auto strPunyName = StrPunyEncode(pStnod->m_pSym->m_strName.PCoz());
+				return pBuild->PInstCreate(IROP_Load, pVal, strPunyName.PCoz());
 			}
 			return pVal;
 		}
@@ -3089,7 +3096,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (pTinLhs && pTinLhs->m_tink == TINK_Array)
 			{
 				auto pTinary = (STypeInfoArray *)pTinLhs;
-				ARYMEMB arymemb = ArymembLookup(strMemberName.PChz());
+				ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
 				return PValFromArrayMember(pWork, pBuild, pValLhs, pTinary, arymemb);
 			}
 			if (pTinLhs && pTinLhs->m_tink == TINK_Literal)
@@ -3111,7 +3118,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			}
 			
 			auto pTypememb = PTypemembLookup(pTinstruct, strMemberName);
-			if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s", strMemberName.PChz()))
+			if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s", strMemberName.PCoz()))
 				return nullptr;
 
 			LLVMOpaqueValue * apLvalIndex[3] = {};
@@ -3230,7 +3237,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case JTOK_AndEqual:		jtok = JTOK('&');	break;
 			case JTOK_TildeEqual:	jtok = JTOK('~');	break;
 			case JTOK_XorEqual:		jtok = JTOK('^');	break;
-			default: EWC_ASSERT(false, "unexpected assignment operator '%s'", PChzFromJtok(pStnod->m_jtok));
+			default: EWC_ASSERT(false, "unexpected assignment operator '%s'", PCozFromJtok(pStnod->m_jtok));
 			}
 
 			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
@@ -3293,7 +3300,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 	
 			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_jtok, pTinOutput, pValLhsCast, pValRhsCast);
 
-			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PChzFromJtok(pStnod->m_jtok));
+			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PCozFromJtok(pStnod->m_jtok));
 			return pInstOp;
 		}
 	case PARK_PostfixUnaryOp:
@@ -3447,7 +3454,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			EWC_ASSERT(
 				pValOp != nullptr,
 				"bad operand '%s' for type '%s'",
-				PChzFromJtok(pStnod->m_jtok),
+				PCozFromJtok(pStnod->m_jtok),
 				PChzFromTink(tink));
 
 			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
@@ -3468,10 +3475,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			CreateDebugInfo(pWork, pBuild, pStnod, pSym->m_pTin);
 
+			auto strPunyName = StrPunyEncode(pSym->m_strName.PCoz());
 			(void) LLVMDIBuilderCreateTypeDef(
 					pBuild->m_pDib,
 					pSym->m_pTin->m_pLvalDIType,
-					pSym->m_strName.PChz(),
+					strPunyName.PCoz(),
 				    pDif->m_pLvalFile,
 					iLine,
 				    pLvalScope);
@@ -3548,7 +3556,8 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 
 	char aChName[128];
 	EWC::SStringBuffer strbufName(aChName, EWC_DIM(aChName));
-	FormatCoz(&strbufName, "_%s_INIT", pTinstruct->m_strName.PChz());
+	auto strPunyName = StrPunyEncode(pTinstruct->m_strName.PCoz());
+	FormatCoz(&strbufName, "_%s_INIT", strPunyName.PCoz());
 
 	LLVMOpaqueValue * pLvalFunc = LLVMAddFunction(pBuild->m_pLmoduleCur, aChName, pLtypeFunction);
 	pTinstruct->m_pLvalInitMethod = pLvalFunc;
@@ -3710,23 +3719,17 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 
 	char aCh[256];
-	const char * pChzName;
+	const char * pChzName = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());;
 
 	EWC_ASSERT(pTinproc, "Exected procedure type");
-	pChzName = pTinproc->m_strMangled.PChz();
 
 	if (pStproc->m_fIsForeign)
 	{
 		if (pStnodAlias)
 		{
 			CString strProcAlias = StrFromIdentifier(pStnodAlias);
-			pChzName = strProcAlias.PChz();
+			pChzName = PChzVerifyAscii(strProcAlias.PCoz());	// BB - should this be punnycoded? needs to match C
 		}
-	}
-	else
-	{
-		EWC_ASSERT(pTinproc, "Exected procedure type");
-		pChzName = pTinproc->m_strMangled.PChz();
 	}
 
 	if (!pChzName)
@@ -3769,7 +3772,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 											pWork,
 											pBuild,
 											pChzName,
-											pTinproc->m_strMangled.PChz(),
+											PChzVerifyAscii(pTinproc->m_strMangled.PCoz()),
 											pStnod,
 											pStnodBody,
 											pTinproc->m_pLvalDIType,
@@ -3815,8 +3818,8 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 			if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 			{
-				const char * pChzArgName = pStnodParam->m_pSym->m_strName.PChz();
-				LLVMSetValueName(*ppLvalParam, pChzArgName);
+				auto strArgName = StrPunyEncode(pStnodParam->m_pSym->m_strName.PCoz());
+				LLVMSetValueName(*ppLvalParam, strArgName.PCoz());
 
 				CIRArgument * pArg = EWC_NEW(pAlloc, CIRArgument) CIRArgument();
 				pArg->m_pLval = *ppLvalParam;
@@ -3824,7 +3827,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 				if (!pStproc->m_fIsForeign)
 				{
-					auto pInstAlloca = pBuild->PInstCreateAlloca(arypLtype[ipStnodParam], 1, pChzArgName);
+					auto pInstAlloca = pBuild->PInstCreateAlloca(arypLtype[ipStnodParam], 1, strArgName.PCoz());
 					pStnodParam->m_pSym->m_pVal = pInstAlloca;
 
 					(void)pBuild->PInstCreateStore(pStnodParam->m_pSym->m_pVal, pArg);
@@ -3838,7 +3841,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 					auto pLvalDIVariable = LLVMDIBuilderCreateParameterVariable(
 											pBuild->m_pDib,
 											pProc->m_pLvalDIFunction, 
-											pStnodParam->m_pSym->m_strName.PChz(),
+											strArgName.PCoz(),
 											ipStnodParam + 1,
 											pDif->m_pLvalFile,
 											iLine,
@@ -3959,7 +3962,7 @@ void CodeGenEntryPoint(
 			{
 				strName = pProc->m_pStnod->m_pTin->m_strName;
 			}
-			printf("\n\n Internal compiler error during codegen for '%s'\n", strName.PChz());
+			printf("\n\n Internal compiler error during codegen for '%s'\n", strName.PCoz());
 		}
 		fHaveAnyFailed |= fFunctionFailed;
 	}
@@ -4178,15 +4181,15 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 			continue;
 
 		char aChFilenameOut[256];
-		(void)CChConstructFilename(pFile->m_strFilename.PChz(), ".jaid", aChFilenameOut, EWC_DIM(aChFilenameOut));
+		(void)CChConstructFilename(pFile->m_strFilename.PCoz(), ".jaid", aChFilenameOut, EWC_DIM(aChFilenameOut));
 
 		pFile->m_pChzFileBody = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
 		if (!pFile->m_pChzFileBody)
 			continue;
 
-		printf("Parsing %s\n", pFile->m_strFilename.PChz());
+		printf("Parsing %s\n", pFile->m_strFilename.PCoz());
 		BeginParse(pWork, &jlex, pFile->m_pChzFileBody);
-		jlex.m_pChzFilename = pFile->m_strFilename.PChz();
+		jlex.m_pCozFilename = pFile->m_strFilename.PCoz();
 
 		ParseGlobalScope(pWork, &jlex, true);
 		EWC_ASSERT(pWork->m_aryEntry.C() > 0);

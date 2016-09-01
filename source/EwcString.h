@@ -114,43 +114,43 @@ protected:
 
 // reference-counted heap-allocated string class
 
-class CString // tag=str
+class CAsciString // tag=str
 {
 public:
 	static void		StaticInit(CAlloc * pAlloc);
 	static void		StaticShutdown(CAlloc * pAlloc);
 
-					CString()
+					CAsciString()
 					:m_pChz(nullptr)
 					,m_shash(0)
 						{ ; }
 
-					CString(const char * pChz)
+					CAsciString(const char * pChz)
 					:m_pChz(nullptr)
 					,m_shash(0)
 						{ SetPChz(pChz); }
 
-					CString(const char * pCh, size_t cCh)
+					CAsciString(const char * pCh, size_t cCh)
 					:m_pChz(nullptr)
 					,m_shash(0)
 						{ SetPCh(pCh, cCh); }
 
-					CString(const CString & strOther)
+					CAsciString(const CAsciString & strOther)
 					:m_pChz(nullptr)
 					,m_shash(0)
 						{ SetPChz(strOther.m_pChz); }
 
-					~CString()
+					~CAsciString()
 						{ SetPChz(nullptr); }
 
-	bool			operator==(const CString & strOther) const
+	bool			operator==(const CAsciString & strOther) const
 						{ return m_shash == strOther.m_shash; }
-	bool			operator!=(const CString & strOther) const
+	bool			operator!=(const CAsciString & strOther) const
 						{ return !(*this == strOther); }
 
-	CString &		operator=(const CString & strOther)
+	CAsciString &	operator=(const CAsciString & strOther)
 						{ return *this = strOther.m_pChz; }
-	CString &		operator=(const char * pChz)
+	CAsciString &	operator=(const char * pChz)
 						{
 							if (m_pChz != pChz)
 								SetPChz(pChz);
@@ -184,45 +184,44 @@ public:
 	static CStringTable * s_pStrtab;
 };
 
-/*
 // utf8 - wide char strings
-class CWstring // tag=str
+class CString // tag=str
 {
 public:
 	static void		StaticInit(CAlloc * pAlloc);
 	static void		StaticShutdown(CAlloc * pAlloc);
 
-					CWstring()
+					CString()
 					:m_pCoz(nullptr)
 					,m_shash(0)
 						{ ; }
 
-					CWstring(const char * pCoz)
+					CString(const char * pCoz)
 					:m_pCoz(nullptr)
 					,m_shash(0)
 						{ SetPCoz(pCoz); }
 
-					CWstring(const char * pCh, size_t cCh)
+					CString(const char * pCh, size_t cCh)
 					:m_pCoz(nullptr)
 					,m_shash(0)
 						{ SetPCo(pCh, cCh); }
 
-					CWstring(const CWstring & strOther)
+					CString(const CString & strOther)
 					:m_pCoz(nullptr)
 					,m_shash(0)
 						{ SetPCoz(strOther.m_pCoz); }
 
-					~CWstring()
+					~CString()
 						{ SetPCoz(nullptr); }
 
-	bool			operator==(const CWstring & strOther) const
+	bool			operator==(const CString & strOther) const
 						{ return m_shash == strOther.m_shash; }
-	bool			operator!=(const CWstring & strOther) const
+	bool			operator!=(const CString & strOther) const
 						{ return !(*this == strOther); }
 
-	CWstring &		operator=(const CWstring & strOther)
+	CString &		operator=(const CString & strOther)
 						{ return *this = strOther.m_pCoz; }
-	CWstring &		operator=(const char * pCoz)
+	CString &		operator=(const char * pCoz)
 						{
 							if (m_pCoz != pCoz)
 								SetPCoz(pCoz);
@@ -243,7 +242,7 @@ public:
 	void			SetPCo(const char * pChNew, size_t cCodepoint);
 
 	size_t			CB() const
-						{ return EWC::CCh(m_pCoz); }
+						{ return EWC::CBCoz(m_pCoz); }
 	size_t			CCodepoint() const
 						{ return EWC::CCodepoint(m_pCoz); }
 
@@ -255,7 +254,7 @@ protected:
 public:
 	static CStringTable * s_pStrtab;
 };
-*/
+
 
 
 // OID - Is essentially a hashed string, but you can look up the pChz value at runtime
@@ -280,7 +279,7 @@ void			StaticInitStrings(CAlloc * pAlloc);
 void			StaticShutdownStrings(CAlloc * pAlloc);
 
 OID				OidEnsure(const char * pChz);
-const char *	PChzFromOid(OID oid);
+const char *	PCozFromOid(OID oid);
 
 } // namespace EWC
 

@@ -19,6 +19,7 @@
 #include "CodeGen.h"
 #include "JaiLex.h"
 #include "JaiParse.h"
+#include "Util.h"
 #include "Workspace.h"
 
 #include "WindowsStub.h"
@@ -237,7 +238,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				if (file.m_filek != CWorkspace::FILEK_Library)
 					continue;
 
-				FormatCoz(&strbufCmd, "%s.lib ",file.m_strFilename.PChz());
+				FormatCoz(&strbufCmd, "%s.lib ",file.m_strFilename.PCoz());
 			}
 
 			// NOTE: This is a bit of a mess. We're not really handling library ordering properly (we need to track
@@ -309,6 +310,7 @@ int main(int cpChzArg, const char * apChzArg[])
 
 	if (comline.FHasCommand("-test"))
 	{
+		TestUnicode();
 		TestLexing();
 		TestParse();
 		TestTypeCheck();

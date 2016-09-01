@@ -16,6 +16,7 @@
 #include "BigMath.h"
 #include "JaiParse.h"
 #include "JaiTypes.h"
+#include "Util.h"
 #include "Workspace.h"
 #include <cstdarg>
 #include <limits.h>
@@ -63,7 +64,7 @@ public:
 					~CNameMangler();
 
 	void			Resize(size_t cBStartingMax);
-	void			AppendName(const char * pChz);
+	void			AppendName(const char * pCoz);
 	void			AppendType(STypeInfo * pTin);
 
 	EWC::CString	StrMangleMethodName(STypeInfoProcedure * pTinproc);
@@ -149,10 +150,10 @@ void CNameMangler::Resize(size_t cBNew)
 	m_strbuf = EWC::SStringBuffer(aBNew, cBNew);
 }
 
-void CNameMangler::AppendName(const char * pChz)
+void CNameMangler::AppendName(const char * pCoz)
 {
-	size_t cCh = CCh(pChz);
-	FormatCoz(&m_strbuf, "%d%s", cCh, pChz);
+	size_t cCh = CCh(pCoz);
+	FormatCoz(&m_strbuf, "%d%s", cCh, pCoz);
 }
 
 void CNameMangler::AppendType(STypeInfo * pTin)
@@ -194,8 +195,8 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 			AppendCoz(&m_strbuf, "P");
 			AppendType(pTinptr->m_pTinPointedTo);
 		} break;
-    case TINK_Struct:	AppendName(pTin->m_strName.PChz());	break;
-    case TINK_Enum:		AppendName(pTin->m_strName.PChz()); break;
+    case TINK_Struct:	AppendName(pTin->m_strName.PCoz());	break;
+    case TINK_Enum:		AppendName(pTin->m_strName.PCoz()); break;
     case TINK_Array:
 		{
 			auto pTinary = (STypeInfoArray *)pTin;
@@ -244,60 +245,60 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 	}
 }
 
-static inline s64 NReadNumber(const char ** ppChz)
+static inline s64 NReadNumber(const char ** ppCoz)
 {
-	const char * pChz = *ppChz;
-	if ((*pChz < '0') | (*pChz > '9'))
+	const char * pCoz = *ppCoz;
+	if ((*pCoz < '0') | (*pCoz > '9'))
 		return -1;
 	
 	s64 n = 0;
 	while (1)
 	{
-		if ((*pChz>= '0') & (*pChz<= '9'))
-			n = n*10 + (*pChz- '0');
+		if ((*pCoz>= '0') & (*pCoz<= '9'))
+			n = n*10 + (*pCoz- '0');
 		else
 			break;
-		++pChz;
+		++pCoz;
     }
 
-	*ppChz = pChz;
+	*ppCoz = pCoz;
 	return n;
 }
 
-static inline EWC::CString StrReadName(const char ** ppChz)
+static inline EWC::CString StrReadName(const char ** ppCoz)
 {
-	auto cCh = NReadNumber(ppChz);
+	auto cCh = NReadNumber(ppCoz);
 	if (cCh < 0)
 		return EWC::CString("");
 
-	const char * pChzName = *ppChz;
-	*ppChz = pChzName + cCh;
-	return EWC::CString(pChzName, (size_t)cCh);
+	const char * pCozName = *ppCoz;
+	*ppCoz = pCozName + cCh;
+	return EWC::CString(pCozName, (size_t)cCh);
 }
 
-static inline bool FMatchString(const char * pChzRef, const char ** ppChz)
+static inline bool FMatchString(const char * pCozRef, const char ** ppCoz)
 {
-	auto pChzRefIt = pChzRef;
-	const char * pChzIt = *ppChz;
-	while (*pChzRefIt != '\0')
+	auto pCozRefIt = pCozRef;
+	const char * pCozIt = *ppCoz;
+	while (*pCozRefIt != '\0')
 	{
-		if (*pChzRefIt != *pChzIt)
+		if (*pCozRefIt != *pCozIt)
 			return false;
-		++pChzRefIt;
-		++pChzIt;
+		++pCozRefIt;
+		++pCozIt;
 	}
 
-	*ppChz = pChzIt;
+	*ppCoz = pCozIt;
 	return true;
 }
 
-STypeInfoProcedure * PTinprocAlloc(EWC::CAlloc * pAlloc, size_t cParams, size_t cReturns, const char * pChzName)
+static STypeInfoProcedure * PTinprocAlloc(EWC::CAlloc * pAlloc, size_t cParams, size_t cReturns, const char * pCozName)
 {
 	size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 	cBAlloc = cBAlloc +	(cParams + cReturns) * sizeof(STypeInfo *);
 
 	u8 * pB = (u8 *)pAlloc->EWC_ALLOC(cBAlloc,8);
-	STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(pChzName);
+	STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(pCozName);
 	STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 
 	pTinproc->m_arypTinParams.SetArray(ppTin, 0, cParams);
@@ -305,13 +306,13 @@ STypeInfoProcedure * PTinprocAlloc(EWC::CAlloc * pAlloc, size_t cParams, size_t 
 	return pTinproc;
 }
 
-STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
+STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 {
-	int chFirst = **ppChz;
+	int chFirst = **ppCoz;
 	if (chFirst == 'B')	// built-in type
 	{
-		++(*ppChz);
-		char chBuiltIn = *(*ppChz)++;
+		++(*ppCoz);
+		char chBuiltIn = *(*ppCoz)++;
 		switch(chBuiltIn)
 		{
 		case 'i':
@@ -320,7 +321,7 @@ STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
 				char aCh[4];
 				EWC::SStringBuffer strbufScratch(aCh, EWC_DIM(aCh));
 				*strbufScratch.m_pCozAppend++ = (chBuiltIn == 'i') ? 's' : 'u';
-				switch(*(*ppChz)++)
+				switch(*(*ppCoz)++)
 				{
 					case 'c':	AppendCoz(&strbufScratch, "8");		break;
 					case 's':	AppendCoz(&strbufScratch, "16");	break;
@@ -340,29 +341,29 @@ STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
 	}
 	else if (chFirst == 'P') // Pointer
 	{
-		++(*ppChz);
-		auto pTinPointedTo = PTinReadType(ppChz, pSymtab);
+		++(*ppCoz);
+		auto pTinPointedTo = PTinReadType(ppCoz, pSymtab);
 		if (!pTinPointedTo)
 			return nullptr;
 		return pSymtab->PTinptrAllocReference(pTinPointedTo);
 	}
 	else if (chFirst == 'A') // Array
 	{
-		++(*ppChz);
+		++(*ppCoz);
 		STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
 
-		if (**ppChz == 'R') // ARYK_Reference
+		if (**ppCoz == 'R') // ARYK_Reference
 		{
-			++(*ppChz);
+			++(*ppCoz);
 			pTinary->m_aryk = ARYK_Reference;
 		}
 		else
 		{
 			pTinary->m_aryk = ARYK_Fixed;
-			pTinary->m_c = NReadNumber(ppChz);
+			pTinary->m_c = NReadNumber(ppCoz);
 		}
 
-		pTinary->m_pTin = PTinReadType(ppChz, pSymtab);
+		pTinary->m_pTin = PTinReadType(ppCoz, pSymtab);
 
 		if (pTinary->m_pTin == nullptr || pTinary->m_c < 0)
 		{
@@ -374,25 +375,25 @@ STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
 	}
 	else if (chFirst == 'F') // procedure reference
 	{
-		++(*ppChz);
-		auto cpTinReturn = NReadNumber(ppChz);
-		if (!FMatchString("_", ppChz))
+		++(*ppCoz);
+		auto cpTinReturn = NReadNumber(ppCoz);
+		if (!FMatchString("_", ppCoz))
 			return nullptr;
 
-		bool fHasVarArgs = FMatchString("VA", ppChz);
+		bool fHasVarArgs = FMatchString("VA", ppCoz);
 		EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc);
 		EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc);
 
-		while (!FMatchString("_", ppChz) && *ppChz != '\0')
+		while (!FMatchString("_", ppCoz) && *ppCoz != '\0')
 		{
-			arypTinParams.Append(PTinReadType(ppChz, pSymtab));
+			arypTinParams.Append(PTinReadType(ppCoz, pSymtab));
 			if (arypTinParams.Last() == nullptr)
 				return nullptr;
 		}
 
 		for (int ipTinReturn = 0; ipTinReturn < cpTinReturn; ++ipTinReturn)
 		{
-			arypTinReturns.Append(PTinReadType(ppChz, pSymtab));
+			arypTinReturns.Append(PTinReadType(ppCoz, pSymtab));
 			if (arypTinReturns.Last() == nullptr)
 				return nullptr;
 		}
@@ -419,7 +420,7 @@ STypeInfo * PTinReadType(const char ** ppChz, CSymbolTable * pSymtab)
 	{
 		// BB - need to handle namespacing and nesting.
 
-		auto strName = StrReadName(ppChz);
+		auto strName = StrReadName(ppCoz);
 		SLexerLocation lexloc;
 		auto pSym = pSymtab->PSymLookup(strName, lexloc);
 		return (pSym) ? pSym->m_pTin : nullptr;
@@ -432,7 +433,9 @@ CString	CNameMangler::StrMangleMethodName(STypeInfoProcedure * pTinproc)
 {
 	m_strbuf.m_pCozAppend = m_strbuf.m_pCozBegin;
 	AppendCoz(&m_strbuf, "__F"); // function
-	AppendName(pTinproc->m_strName.PChz());
+
+	auto strPunyName = StrPunyEncode(pTinproc->m_strName.PCoz());
+	AppendName(strPunyName.PCoz());
 
 	AppendCoz(&m_strbuf, "_"); // arguments
 
@@ -460,34 +463,35 @@ CString	CNameMangler::StrMangleMethodName(STypeInfoProcedure * pTinproc)
 
 STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSymbolTable * pSymtab)
 {
-	const char * pChz = strName.PChz();
-	if (!FMatchString("__F", &pChz))
+	const char * pCoz = strName.PCoz();
+	if (!FMatchString("__F", &pCoz))
 		return nullptr;
 
-	CString strProcName = StrReadName(&pChz);
+	CString strProcNamePuny = StrReadName(&pCoz);
+	CString strProcName = StrPunyDecode(strProcNamePuny.PCoz());
 
-	if (!FMatchString("_", &pChz))
+	if (!FMatchString("_", &pCoz))
 		return nullptr;
 
-	bool fHasVarArgs = FMatchString("VA", &pChz);
+	bool fHasVarArgs = FMatchString("VA", &pCoz);
 	EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc);
 	EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc);
 
-	while (!FMatchString("_", &pChz) && pChz != '\0')
+	while (!FMatchString("_", &pCoz) && pCoz != '\0')
 	{
-		arypTinParams.Append(PTinReadType(&pChz, pSymtab));
+		arypTinParams.Append(PTinReadType(&pCoz, pSymtab));
 		if (arypTinParams.Last() == nullptr)
 			return nullptr;
 	}
 
-	while (*pChz != '\0')
+	while (*pCoz != '\0')
 	{
-		arypTinReturns.Append(PTinReadType(&pChz, pSymtab));
+		arypTinReturns.Append(PTinReadType(&pCoz, pSymtab));
 		if (arypTinReturns.Last() == nullptr)
 			return nullptr;
 	}
 
-	auto pTinproc = PTinprocAlloc(pSymtab->m_pAlloc, arypTinParams.C(), arypTinReturns.C(), strProcName.PChz());
+	auto pTinproc = PTinprocAlloc(pSymtab->m_pAlloc, arypTinParams.C(), arypTinReturns.C(), strProcName.PCoz());
 	pSymtab->AddManagedTin(pTinproc);
 	pTinproc->m_fHasVarArgs = fHasVarArgs;
 
@@ -519,7 +523,7 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 // My (half-cooked) strategy for handling arbitrary ordering within non-global scopes is to insert TypeDefinitions 
 //  before any statements in their containing scope.
 
-void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pChzFormat, ...)
+void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCozFormat, ...)
 {
 	// BB - need to do file/line lookup from pStnod
 	//printf("%s(%d) Error:", pJlex->m_pChzFilename, NLine(pJlex));
@@ -527,8 +531,8 @@ void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCh
 	const SLexerLocation & lexloc = pStnod->m_lexloc;
 
 	va_list ap;
-	va_start(ap, pChzFormat);
-	EmitError(pTcwork->m_pErrman, &lexloc, pChzFormat, ap);
+	va_start(ap, pCozFormat);
+	EmitError(pTcwork->m_pErrman, &lexloc, pCozFormat, ap);
 }
 
 CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
@@ -545,7 +549,7 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 			{
 				if (!EWC_FVERIFY(pStnod->m_pStval, "identifier without value string detected"))
 					break;
-				AppendCoz(&strbuf, StrFromIdentifier(pStnod).PChz()); 
+				AppendCoz(&strbuf, StrFromIdentifier(pStnod).PCoz()); 
 				pStnodIt = nullptr;
 			}break;
 			case PARK_ReferenceDecl:
@@ -584,7 +588,7 @@ CString StrFullyQualifiedSymbol(SSymbol * pSym)
 {
 	char aCh[256];
 	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-	FormatCoz(&strbuf, "TBD::TBD::%s",pSym->m_strName.PChz());
+	FormatCoz(&strbuf, "TBD::TBD::%s",pSym->m_strName.PCoz());
 	return CString(aCh);
 }
 
@@ -1831,7 +1835,7 @@ STypeInfo * PTinFromTypeSpecification(
 				//if (!FIsType(pStnodIt))
 				if (!pSym->m_grfsym.FIsSet(FSYM_IsType))
 				{
-					EmitError(pTcwork, pStnodIt, "Expected type specification but encounted '%s'", strIdent.PChz());
+					EmitError(pTcwork, pStnodIt, "Expected type specification but encounted '%s'", strIdent.PCoz());
 					*pFIsValidTypeSpec = false;
 				}
 
@@ -2020,7 +2024,7 @@ bool FVerifyIsInstance(STypeCheckWorkspace * pTcwork, CSTNode * pStnod)
 	if (FIsType(pStnod))
 	{
 		CString strLhs = StrFromTypeInfo(pStnod->m_pTin);
-		EmitError(pTcwork, pStnod, "Invalid use of type '%s' as an instance type", strLhs.PChz());
+		EmitError(pTcwork, pStnod, "Invalid use of type '%s' as an instance type", strLhs.PCoz());
 		return false;
 	}
 	return true;
@@ -2086,7 +2090,7 @@ void ResolveSpoofTypedef(
 {
 	auto pSym = pSymtab->PSymLookup( strIdent, pStnod->m_lexloc, grfsymlook);
 
-	if (!EWC_FVERIFY(pSym && pSym->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz()))
+	if (!EWC_FVERIFY(pSym && pSym->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PCoz()))
 		return;
 	
 	EWC_ASSERT(pSym->m_pTin == nullptr, "spoof typedef already resolved");
@@ -2122,14 +2126,14 @@ TCRET TcretWaitForTypeSymbol(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pT
 	if (!pSymType)
 	{
 		CString strTypename = StrTypenameFromTypeSpecification(pStnodType);
-		EmitError(pTcwork, pStnodType, "'%s' unknown symbol detected", strTypename.PChz());
+		EmitError(pTcwork, pStnodType, "'%s' unknown symbol detected", strTypename.PCoz());
 		return TCRET_StoppingError;
 	}
 
 	if (!pSymType->m_grfsym.FIsSet(FSYM_IsType))
 	{
 		CString strName = StrFullyQualifiedSymbol(pSymType);
-		EmitError(pTcwork, pStnodType, "%s symbol refers to instance, but was expecting type", strName.PChz());
+		EmitError(pTcwork, pStnodType, "%s symbol refers to instance, but was expecting type", strName.PCoz());
 		return TCRET_StoppingError;
 	}
 	else
@@ -2184,7 +2188,7 @@ PROCMATCH ProcmatchCheckArguments(
 		if (fPrintErrors)
 		{
 			EmitError(pTcwork, pStnodCall, "Too few arguments to procedure '%s'. Expected %d but encountered %d",
-				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
+				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PCoz(),
 				pTinproc->m_arypTinParams.C(),
 				cStnodCall - iStnodArgMin);
 		}
@@ -2196,7 +2200,7 @@ PROCMATCH ProcmatchCheckArguments(
 		if (fPrintErrors)
 		{
 			EmitError(pTcwork, pStnodCall, "Too many arguments to procedure '%s'. Expected %d but encountered %d",
-				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
+				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PCoz(),
 				pTinproc->m_arypTinParams.C(),
 				cStnodCall - iStnodArgMin);
 		}
@@ -2231,7 +2235,7 @@ PROCMATCH ProcmatchCheckArguments(
 				if (fPrintErrors)
 				{
 					EmitError(pTcwork, pStnodCall, "procedure '%s' expected %d arguments but encountered %d",
-						(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
+						(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PCoz(),
 						pTinproc->m_arypTinParams.C(),
 						cStnodCall - iStnodArgMin);
 				}
@@ -2256,10 +2260,10 @@ PROCMATCH ProcmatchCheckArguments(
 				CString strTinCall = StrFromTypeInfo(pTinCall);
 				CString strTinParam = StrFromTypeInfo(pTinParam);
 				EmitError(pTcwork, pStnodCall, "procedure call '%s' cannot convert argument %d from type %s to %s",
-					(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PChz(),
+					(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PCoz(),
 					iStnodArg-iStnodArgMin+1,
-					strTinCall.PChz(),
-					strTinParam.PChz());
+					strTinCall.PCoz(),
+					strTinParam.PCoz());
 			}
 			procmatch = PROCMATCH_None;
 		}
@@ -2415,7 +2419,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										pTcwork, pStnod,
 										"Argument %d is not a valid argument type. '%s' does not define an assignment operator", 
 										iStnod + 1,
-										strType.PChz());
+										strType.PCoz());
 								}
 							}
 
@@ -2423,7 +2427,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								return TCRET_StoppingError;
 						}
 
-						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", strProcName.PChz()))
+						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", strProcName.PCoz()))
 							return TCRET_StoppingError;
 						if (!EWC_FVERIFY(pSymProc->m_pTin, "expected procedure type info to be created during parse"))
 							return TCRET_StoppingError;
@@ -2551,7 +2555,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 					if (symiter.FIsDone())
 					{
-						EmitError(pTcwork, pStnod, "unknown procedure in type check: %s", strProcName.PChz());
+						EmitError(pTcwork, pStnod, "unknown procedure in type check: %s", strProcName.PCoz());
 						return TCRET_StoppingError;
 					}
 
@@ -2614,7 +2618,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					{
 						if (cSymOptions == 0)
 						{
-							EmitError(pTcwork, pStnod, "'%s' does not evaluate to a procedure.", strProcName.PChz());
+							EmitError(pTcwork, pStnod, "'%s' does not evaluate to a procedure.", strProcName.PCoz());
 						}
 						else if (cSymOptions == 1)
 						{
@@ -2631,7 +2635,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							if (pTcwork->m_pErrman->m_cError == 0)
 							{
-								EmitError(pTcwork, pStnod, "error type matching procedure '%s'", strProcName.PChz());
+								EmitError(pTcwork, pStnod, "error type matching procedure '%s'", strProcName.PCoz());
 							}
 						}
 						else
@@ -2645,7 +2649,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								auto pTinproc = PTinDerivedCast<STypeInfoProcedure  *>(pSym->m_pTin);
 								CString strProc = StrFromTypeInfo(pTinproc);
 
-								PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s\n", strProc.PChz());
+								PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s\n", strProc.PCoz());
 							}
 						}
 						return TCRET_StoppingError;
@@ -2693,7 +2697,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							auto pTinproc = PTinDerivedCast<STypeInfoProcedure  *>(pSym->m_pTin);
 							CString strProc = StrFromTypeInfo(pTinproc);
 
-							PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s", strProc.PChz());
+							PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s", strProc.PCoz());
 						}
 					}
 
@@ -2737,7 +2741,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					if (!pTinproc)
 					{
 						CString strType = StrFromTypeInfo(pStnodCallee->m_pTin);
-						EmitError(pTcwork, pStnod, "Statement does not evaluate to a procedure, type is a %s", strType.PChz());
+						EmitError(pTcwork, pStnod, "Statement does not evaluate to a procedure, type is a %s", strType.PCoz());
 					}
 				}
 
@@ -2949,7 +2953,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				if (!pTinenum->m_pTinLoose)
 				{
-					EmitError(pTcwork, pStnod, "Unable to determine loose type for enum %s", pTinenum->m_strName.PChz());
+					EmitError(pTcwork, pStnod, "Unable to determine loose type for enum %s", pTinenum->m_strName.PCoz());
 					return TCRET_StoppingError;
 				}
 				else
@@ -2996,8 +3000,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							if (!FCanImplicitCast(pTinInit, pTinenum->m_pTinLoose))
 							{
 								EmitError(pTcwork, pStnodInit, "Cannot initialize constant of type %s with %s",
-									StrFromTypeInfo(pTinenum->m_pTinLoose).PChz(),
-									StrFromTypeInfo(pTinInit).PChz());
+									StrFromTypeInfo(pTinenum->m_pTinLoose).PCoz(),
+									StrFromTypeInfo(pTinInit).PCoz());
 							}
 						}
 
@@ -3076,7 +3080,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 					if (!fHasConstInt)
 					{
-						EmitError(pTcwork, pStnod, "initializing enum constant '%s' with non-constant", strIdent.PChz());
+						EmitError(pTcwork, pStnod, "initializing enum constant '%s' with non-constant", strIdent.PCoz());
 						return TCRET_StoppingError;
 					}
 
@@ -3097,7 +3101,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 												pStnodIdent->m_lexloc,
 												pTcsentTop->m_grfsymlook);
 
-				if (EWC_FVERIFY(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz()))
+				if (EWC_FVERIFY(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PCoz()))
 				{
 					pStnod->m_pSym = pSymIdent;
 					if (pSymIdent->m_pTin == nullptr)
@@ -3168,7 +3172,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					auto pSym = pSymtab->PSymLookup(strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
 					if (!pSym)
 					{
-						EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", strIdent.PChz());
+						EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", strIdent.PCoz());
 						return TCRET_StoppingError;
 					}
 
@@ -3283,7 +3287,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				CString strIdent = StrFromIdentifier(pStnodIdent);
 				if (FIsType(pStnodInit))
 				{
-					EmitError(pTcwork, pStnod, "Cannot initialize constant '%s' to non-instance value.",strIdent.PChz());
+					EmitError(pTcwork, pStnod, "Cannot initialize constant '%s' to non-instance value.",strIdent.PCoz());
 					return TCRET_StoppingError;
 				}
 
@@ -3313,8 +3317,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					else
 					{
 						EmitError(pTcwork, pStnod, "Cannot initialize constant of type %s with %s",
-							StrFromTypeInfo(pTinType).PChz(),
-							StrFromTypeInfo(pTinInit).PChz());
+							StrFromTypeInfo(pTinType).PCoz(),
+							StrFromTypeInfo(pTinInit).PCoz());
 					}
 				}
 
@@ -3329,7 +3333,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 													pStnodIdent->m_lexloc,
 													pTcsentTop->m_grfsymlook);
 
-					if (EWC_FVERIFY(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PChz()))
+					if (EWC_FVERIFY(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PCoz()))
 					{
 						pStnod->m_pSym = pSymIdent;
 						if (pSymIdent->m_pTin == nullptr)
@@ -3374,7 +3378,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (!fIsValidTypeSpec)
 				{
 					EmitError(pTcwork, pStnod, "Cannot determine type for typedef '%s'", 
-						(pStnodIdent) ? StrFromIdentifier(pStnodIdent).PChz() : "unknown");
+						(pStnodIdent) ? StrFromIdentifier(pStnodIdent).PCoz() : "unknown");
 					return TCRET_StoppingError;
 				}
 
@@ -3384,7 +3388,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					CString strIdent = StrFromIdentifier(pStnodIdent);
 					auto pSym = pSymtab->PSymLookup( strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook);
 
-					if (EWC_FVERIFY(pSym, "symbol lookup failed for '%s'", strIdent.PChz()))
+					if (EWC_FVERIFY(pSym, "symbol lookup failed for '%s'", strIdent.PCoz()))
 					{
 						if (pSym->m_pStnodDefinition != pStnod)
 						{
@@ -3394,8 +3398,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocDefinition , &iLine, &iCol);
 
 							EmitError(pTcwork, pStnod, "Symbol '%s' is also defined here: %s(%d,%d)",
-								strIdent.PChz(),
-								pLexlocDefinition->m_strFilename.PChz(), iLine, iCol);
+								strIdent.PCoz(),
+								pLexlocDefinition->m_strFilename.PCoz(), iLine, iCol);
 							return TCRET_StoppingError;
 						}
 						else
@@ -3470,8 +3474,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				else
 				{
 					EmitError(pTcwork, pStnod, "Cannot cast type '%s' to '%s'",
-						StrFromTypeInfo(pTinInit).PChz(),
-						StrFromTypeInfo(pStnod->m_pTin).PChz());
+						StrFromTypeInfo(pTinInit).PCoz(),
+						StrFromTypeInfo(pStnod->m_pTin).PCoz());
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
@@ -3576,8 +3580,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							else
 							{
 								EmitError(pTcwork, pStnod, "Cannot initialize variable of type '%s' with '%s'",
-									StrFromTypeInfo(pStnod->m_pTin).PChz(),
-									StrFromTypeInfo(pTinInit).PChz());
+									StrFromTypeInfo(pStnod->m_pTin).PCoz(),
+									StrFromTypeInfo(pTinInit).PCoz());
 							}
 						}
 						else if (pStnodInit->m_pTin)
@@ -3600,8 +3604,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					{
 						if (pStnod->m_pTin == nullptr)
 						{
-							const char * pChzIdent = (pStnodIdent) ? StrFromIdentifier(pStnodIdent).PChz() : "declaration";
-							EmitError(pTcwork, pStnod, "Unable to calculate type for %s", pChzIdent);
+							const char * pCozIdent = (pStnodIdent) ? StrFromIdentifier(pStnodIdent).PCoz() : "declaration";
+							EmitError(pTcwork, pStnod, "Unable to calculate type for %s", pCozIdent);
 							return TCRET_StoppingError;
 						}
 
@@ -3740,7 +3744,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							if (!fIsValidLhs)
 							{
 								CString strLhs = StrFromTypeInfo(pTinLhs);
-								EmitError(pTcwork, pStnod, "'%s' does not provide an assignment operator", strLhs.PChz());
+								EmitError(pTcwork, pStnod, "'%s' does not provide an assignment operator", strLhs.PCoz());
 								return TCRET_StoppingError;
 							}
 
@@ -3765,8 +3769,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							CString strRhs = StrFromTypeInfo(pTinRhsPromoted);
 							EmitError( pTcwork, pStnod,
 								"implicit cast from %s to %s is not allowed",
-								strRhs.PChz(),
-								strLhs.PChz());
+								strRhs.PCoz(),
+								strLhs.PCoz());
 						}
 
 						JTOK jtokOp = pStnod->m_jtok;
@@ -3783,14 +3787,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (fIsArithmeticOp & (fSupportsArithmetic == false))
 						{
 							CString strLhs = StrFromTypeInfo(pTinLhs);
-							EmitError(pTcwork, pStnod, "%s does not support arithmetic operations", strLhs.PChz());
+							EmitError(pTcwork, pStnod, "%s does not support arithmetic operations", strLhs.PCoz());
 							return TCRET_StoppingError;
 						}
 
 						if (fIsBitwiseOp & (fSupportsBitwise == false))
 						{
 							CString strLhs = StrFromTypeInfo(pTinLhs);
-							EmitError(pTcwork, pStnod, "%s does not support bitwise operations", strLhs.PChz());
+							EmitError(pTcwork, pStnod, "%s does not support bitwise operations", strLhs.PCoz());
 							return TCRET_StoppingError;
 						}
 
@@ -3873,7 +3877,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
 							if (!pSymMember)
 							{
-								EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PChz(), pTinstruct->m_strName.PChz());
+								EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PCoz(), pTinstruct->m_strName.PCoz());
 								return TCRET_StoppingError;
 							}
 
@@ -3896,7 +3900,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 							auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinLhs);
 
-							ARYMEMB arymemb = ArymembLookup(strMemberName.PChz());
+							ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
 
 							switch (arymemb)
 							{
@@ -3927,7 +3931,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									pTinMember = PTinptrAlloc(pSymtab, pTinary->m_pTin);
 								} break;
 							default: 
-								EmitError(pTcwork, pStnod, "unknown array member '%s'", strMemberName.PChz());
+								EmitError(pTcwork, pStnod, "unknown array member '%s'", strMemberName.PCoz());
 								return TCRET_StoppingError;
 							}
 
@@ -3938,7 +3942,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (!pTinMember)
 				{
 					CString strTin = StrFromTypeInfo(pTinLhs);
-					EmitError(pTcwork, pStnod, "Left hand type '%s' does not contain member '%s'", strTin.PChz(), strMemberName.PChz());
+					EmitError(pTcwork, pStnod, "Left hand type '%s' does not contain member '%s'", strTin.PCoz(), strMemberName.PCoz());
 					return TCRET_StoppingError;
 				}
 
@@ -3986,7 +3990,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					} break;
 				default: 
 					CString strLhs = StrFromTypeInfo(pStnodLhs->m_pTin);
-					EmitError(pTcwork, pStnod, "%s cannot be indexed as an array", strLhs.PChz());
+					EmitError(pTcwork, pStnod, "%s cannot be indexed as an array", strLhs.PCoz());
 					return TCRET_StoppingError;
 				}
 
@@ -4002,7 +4006,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (pTinIndex->m_tink != TINK_Integer)
 				{
 					CString strTinIndex = StrFromTypeInfo(pTinIndex);
-					EmitError(pTcwork, pStnod, "Cannot convert %s to integer for array index", strTinIndex.PChz());
+					EmitError(pTcwork, pStnod, "Cannot convert %s to integer for array index", strTinIndex.PCoz());
 				}
 
 				FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinIndex, pStnodIndex);
@@ -4032,7 +4036,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									pTcwork,
 									pStnod,
 									"encountered %s statement without expected predicate,child",
-									PChzFromRword(rword));
+									PCozFromRword(rword));
 								return TCRET_StoppingError;
 							}
 
@@ -4051,7 +4055,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							if (!FCanImplicitCast(pTinPredPromoted, pTinBool))
 							{
 								CString strTinPred = StrFromTypeInfo(pTinPredPromoted);
-								EmitError(pTcwork, pStnod, "No conversion between %s and bool", strTinPred.PChz());
+								EmitError(pTcwork, pStnod, "No conversion between %s and bool", strTinPred.PCoz());
 							}
 
 							pStnod->m_pTin = pTinBool;
@@ -4117,8 +4121,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										CString strRhs = StrFromTypeInfo(pTinRhs);
 										EmitError( pTcwork, pStnod,
 											"implicit cast from %s to %s is not allowed by return statement",
-											strRhs.PChz(),
-											strLhs.PChz());
+											strRhs.PCoz(),
+											strLhs.PCoz());
 									}
 								}
 								else
@@ -4133,7 +4137,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 						}break;
 					default:
-						EmitError(pTcwork, pStnod, "unhandled reserved word '%s' in type checker", PChzFromRword(rword));
+						EmitError(pTcwork, pStnod, "unhandled reserved word '%s' in type checker", PCozFromRword(rword));
 						return TCRET_StoppingError;
 					}
 				}
@@ -4195,7 +4199,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											pTcwork, 
 											pStnod, 
 											"invalid opcode %s for %s literal and %s literal", 
-											PChzFromJtok(pStnod->m_jtok),
+											PCozFromJtok(pStnod->m_jtok),
 											PChzFromLitk(((STypeInfoLiteral *)pTinLhs)->m_litty.m_litk),
 											PChzFromLitk(((STypeInfoLiteral *)pTinRhs)->m_litty.m_litk));
 										return TCRET_StoppingError;
@@ -4217,9 +4221,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										pTcwork,
 										pStnod,
 										"%s operator not defined for %s and %s",
-										PChzFromJtok(pStnod->m_jtok),
-										strLhs.PChz(),
-										strRhs.PChz());
+										PCozFromJtok(pStnod->m_jtok),
+										strLhs.PCoz(),
+										strRhs.PCoz());
 									return TCRET_StoppingError;
 								}
 
@@ -4288,7 +4292,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											pTcwork, 
 											pStnod, 
 											"invalid unary operand %s for %s literal", 
-											PChzFromJtok(pStnod->m_jtok),
+											PCozFromJtok(pStnod->m_jtok),
 											PChzFromLitk(((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk));
 										return TCRET_StoppingError;
 									}
@@ -4305,7 +4309,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										if (pTinOperand->m_tink != TINK_Pointer)
 										{
 											CString strOp = StrFromTypeInfo(pTinOperand);
-											EmitError(pTcwork, pStnod, "Cannot dereference type %s", strOp.PChz());
+											EmitError(pTcwork, pStnod, "Cannot dereference type %s", strOp.PCoz());
 											return TCRET_StoppingError;
 										}
 										else
@@ -4353,7 +4357,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										if (!fCanTakeReference)
 										{
 											CString strOp = StrFromTypeInfo(pTinOperand);
-											EmitError(pTcwork, pStnod, "Cannot take reference of constant %s", strOp.PChz());
+											EmitError(pTcwork, pStnod, "Cannot take reference of constant %s", strOp.PCoz());
 											return TCRET_StoppingError;
 										}
 
@@ -4369,7 +4373,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										if (!FCanImplicitCast(pTinOperand, pTinBool))
 										{
 											CString strOp = StrFromTypeInfo(pTinOperand);
-											EmitError(pTcwork, pStnod, "Cannot convert type %s to bool", strOp.PChz());
+											EmitError(pTcwork, pStnod, "Cannot convert type %s to bool", strOp.PCoz());
 										}
 
 										pStnod->m_pTin = pTinBool;
@@ -4409,7 +4413,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										if (!fIsSupported)
 										{
 											CString strOp = StrFromTypeInfo(pTinOperand);
-											EmitError(pTcwork, pStnod, "invalid unary operator for type %s", strOp.PChz());
+											EmitError(pTcwork, pStnod, "invalid unary operator for type %s", strOp.PCoz());
 										}
 										else
 										{
@@ -4423,7 +4427,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 														pTcwork,
 														pStnod,
 														"negate operand not valid for unsigned type %s",
-														strOp.PChz());
+														strOp.PCoz());
 												}
 											}
 										}
@@ -4603,7 +4607,7 @@ void PerformTypeCheck(
 			const STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
 			const STypeCheckStackEntry * pTcsent = tcfram.m_aryTcsent.PLast();
 
-			EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type '%s' reference found here", (*ppSym)->m_strName.PChz());
+			EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type '%s' reference found here", (*ppSym)->m_strName.PCoz());
 		}
 	}
 
@@ -4711,12 +4715,12 @@ void AssertTestSigned65()
 
 void AssertTestTypeCheck(
 	CWorkspace * pWork,
-	const char * pChzIn,
-	const char * pChzExpected)
+	const char * pCozIn,
+	const char * pCozExpected)
 {
 	SJaiLexer jlex;
 	BeginWorkspace(pWork);
-	BeginParse(pWork, &jlex, pChzIn);
+	BeginParse(pWork, &jlex, pCozIn);
 
 	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
 	pWork->m_pErrman->Clear();
@@ -4741,10 +4745,10 @@ void AssertTestTypeCheck(
 #endif
 
 	char aChExpected[1024];
-	int cCh = CCh(pChzExpected);
+	int cCh = CCh(pCozExpected);
 	for (int iCh = 0; iCh < cCh+1; ++iCh)
 	{
-		if (iCh < cCh - 1 && pChzExpected[iCh] == '#' && pChzExpected[iCh + 1] == '#')
+		if (iCh < cCh - 1 && pCozExpected[iCh] == '#' && pCozExpected[iCh + 1] == '#')
 		{
 			aChExpected[iCh] = pChzWord[0];
 			++iCh;
@@ -4752,7 +4756,7 @@ void AssertTestTypeCheck(
 		}
 		else
 		{
-			aChExpected[iCh] = pChzExpected[iCh];
+			aChExpected[iCh] = pCozExpected[iCh];
 		}
 	}
 
@@ -4776,269 +4780,269 @@ void TestTypeCheck()
 	SErrorManager errman;
 	CWorkspace work(&alloc, &errman);
 
-	const char * pChzIn;
-	const char * pChzOut;
+	const char * pCozIn;
+	const char * pCozOut;
 
-	pChzIn = "SFunc :: () { { n:=5; n=2; } }";
-	pChzOut = "(SFunc()->void $SFunc void ({} ({} (int $n Literal:Int##) (= int Literal:Int##)) (void)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "SFunc :: () { { n:=5; n=2; } }";
+	pCozOut = "(SFunc()->void $SFunc void ({} ({} (int $n Literal:Int##) (= int Literal:Int##)) (void)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ n:s32=0xFFFFFFFF; }";
-	pChzOut = "({} (s32 $n s32 Literal:Int32))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ n:s32=0xFFFFFFFF; }";
+	pCozOut = "({} (s32 $n s32 Literal:Int32))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ ch:= 'a'; }";
-	pChzOut = "({} (char $ch Literal:Int32))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ ch:= 'a'; }";
+	pCozOut = "({} (char $ch Literal:Int32))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ n1: int, g1, g2: float = ---; }";
-	pChzOut = "({} (??? (int $n1 int) (float $g1 float) (float $g2 float) (---)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ n1: int, g1, g2: float = ---; }";
+	pCozOut = "({} (??? (int $n1 int) (float $g1 float) (float $g2 float) (---)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ n1, n2: int, g: float; }";
-	pChzOut = "({} (??? (int $n1 int) (int $n2 int) (float $g float)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ n1, n2: int, g: float; }";
+	pCozOut = "({} (??? (int $n1 int) (int $n2 int) (float $g float)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= " SelfRef :: () { pfunc := SelfRef; }";
-	pChzOut		= "(SelfRef()->void $SelfRef void ({} (SelfRef()->void $pfunc SelfRef()->void) (void)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn		= " SelfRef :: () { pfunc := SelfRef; }";
+	pCozOut		= "(SelfRef()->void $SelfRef void ({} (SelfRef()->void $pfunc SelfRef()->void) (void)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= " { ppfunc: & (n: s32)->s32; }";
-	pChzOut		= "({} (&(s32)->s32 $ppfunc (&(s32)->s32 ((s32)->s32 (Params (s32 $n s32)) s32))))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn		= " { ppfunc: & (n: s32)->s32; }";
+	pCozOut		= "({} (&(s32)->s32 $ppfunc (&(s32)->s32 ((s32)->s32 (Params (s32 $n s32)) s32))))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= " { n:int=2; Foo :: ()->int { n2:=n; g:=Bar(); return 1;}    Bar :: ()->float { n:=Foo(); return 1;} }";
-	pChzOut		=	"(Foo()->int $Foo int ({} (int $n2 int) (float $g (float Bar()->float)) (int Literal:Int##)))"
+	pCozIn		= " { n:int=2; Foo :: ()->int { n2:=n; g:=Bar(); return 1;}    Bar :: ()->float { n:=Foo(); return 1;} }";
+	pCozOut		=	"(Foo()->int $Foo int ({} (int $n2 int) (float $g (float Bar()->float)) (int Literal:Int##)))"
 					" (Bar()->float $Bar float ({} (int $n (int Foo()->int)) (float Literal:Float32)))"
 					" ({} (int $n int Literal:Int##))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "fooFunc :: (n: s32) -> s64 { return 2; }     func: (n: s32)->s64 = fooFunc;";		// procedure reference declaration
-	pChzOut = "(fooFunc(s32)->s64 $fooFunc (Params (s32 $n s32)) s64 ({} (s64 Literal:Int64))) "
+	pCozIn = "fooFunc :: (n: s32) -> s64 { return 2; }     func: (n: s32)->s64 = fooFunc;";		// procedure reference declaration
+	pCozOut = "(fooFunc(s32)->s64 $fooFunc (Params (s32 $n s32)) s64 ({} (s64 Literal:Int64))) "
 			  "((s32)->s64 $func ((s32)->s64 (Params (s32 $n s32)) s64) fooFunc(s32)->s64)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "pFunc: (n: s32)->s64;   pFunc(33);";
-	pChzOut = "((s32)->s64 $pFunc ((s32)->s64 (Params (s32 $n s32)) s64)) (s64 (s32)->s64 Literal:Int32)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "pFunc: (n: s32)->s64;   pFunc(33);";
+	pCozOut = "((s32)->s64 $pFunc ((s32)->s64 (Params (s32 $n s32)) s64)) (s64 (s32)->s64 Literal:Int32)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "pG : & float = null; pN := cast(& int) pG;";
-	pChzOut = "(&float $pG (&float float) Literal:Null) (&int $pN (&int (&int int) &float))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "pG : & float = null; pN := cast(& int) pG;";
+	pCozOut = "(&float $pG (&float float) Literal:Null) (&int $pN (&int (&int int) &float))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "aN := {:s32: 2, 4, 5};";
-	pChzOut = "([3]s32 $aN (Literal:Array s32 ({} Literal:Int32 Literal:Int32 Literal:Int32)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "aN := {:s32: 2, 4, 5};";
+	pCozOut = "([3]s32 $aN (Literal:Array s32 ({} Literal:Int32 Literal:Int32 Literal:Int32)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "aN : [] int = {2, 4, 5};";
-	pChzOut = "([]int $aN ([]int int) (Literal:Array ({} Literal:Int## Literal:Int## Literal:Int##)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "aN : [] int = {2, 4, 5};";
+	pCozOut = "([]int $aN ([]int int) (Literal:Array ({} Literal:Int## Literal:Int## Literal:Int##)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "aN : [] & u8 = {\"foo\", \"bar\", \"ack\"};";
-	pChzOut = "([]&u8 $aN ([]&u8 (&u8 u8)) (Literal:Array ({} Literal:String Literal:String Literal:String)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "aN : [] & u8 = {\"foo\", \"bar\", \"ack\"};";
+	pCozOut = "([]&u8 $aN ([]&u8 (&u8 u8)) (Literal:Array ({} Literal:String Literal:String Literal:String)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "ArrayConst :: {2, 4, 5};";
-	pChzOut = "(Literal:Array $ArrayConst (Literal:Array ({} Literal:Int Literal:Int Literal:Int)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "ArrayConst :: {2, 4, 5};";
+	pCozOut = "(Literal:Array $ArrayConst (Literal:Array ({} Literal:Int Literal:Int Literal:Int)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ aN : [2] int; n := aN.count; }";
-	pChzOut = "({} ([2]int $aN ([2]int Literal:Int## int)) (int $n (Literal:Int## [2]int $count)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ aN : [2] int; n := aN.count; }";
+	pCozOut = "({} ([2]int $aN ([2]int Literal:Int## int)) (int $n (Literal:Int## [2]int $count)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ aN : [2] int; aNUnsized : [] int = aN; }";
-	pChzOut = "({} ([2]int $aN ([2]int Literal:Int## int)) ([]int $aNUnsized ([]int int) [2]int))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ aN : [2] int; aNUnsized : [] int = aN; }";
+	pCozOut = "({} ([2]int $aN ([2]int Literal:Int## int)) ([]int $aNUnsized ([]int int) [2]int))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
-	pChzOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
+	pCozIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
+	pCozOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
 		"(Literal:Array $names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array $values (Literal:Array Literal:Int32 Literal:Int32 Literal:Int32)) "
 		"(Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
 		"(ENUMK_enum $enumk (Literal:Int32 ENUMK_enum $Bah)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick; }";
-	pChzOut = "({} (EEK_enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
+	pCozIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick; }";
+	pCozOut = "({} (EEK_enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
 		"(Literal:Array $names (Literal:Array Literal:String)) (Literal:Array $values (Literal:Array Literal:Int16)) (Literal:Enum $Ick Literal:Int))) "
 		"(EEK_enum $eek (EEK_enum EEK_enum EEK_enum) (Literal:Int16 EEK_enum $Ick)) "
 		"(s16 $n (s16 EEK_enum s16) (Literal:Int16 EEK_enum $Ick)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "SomeConst : s16 : 0xFF; n := SomeConst;";
-	pChzOut = "(Literal:Int16 $SomeConst s16 Literal:Int16) (s16 $n Literal:Int16)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "SomeConst : s16 : 0xFF; n := SomeConst;";
+	pCozOut = "(Literal:Int16 $SomeConst s16 Literal:Int16) (s16 $n Literal:Int16)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "SomeConst :: 0xFF; n : s16 = SomeConst; n2 := SomeConst;";
-	pChzOut = "(Literal:Int $SomeConst Literal:Int) (s16 $n s16 Literal:Int16) (int $n2 Literal:Int##)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "SomeConst :: 0xFF; n : s16 = SomeConst; n2 := SomeConst;";
+	pCozOut = "(Literal:Int $SomeConst Literal:Int) (s16 $n s16 Literal:Int16) (int $n2 Literal:Int##)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "pUgh : & SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo; } SFoo :: struct { m_n : s8; }";
-	pChzOut = "(&SUgh_struct $pUgh (&SUgh_struct SUgh_struct)) (= (s8 (SFoo_struct &SUgh_struct $m_foo) $m_n) Literal:Int8) "
+	pCozIn = "pUgh : & SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo; } SFoo :: struct { m_n : s8; }";
+	pCozOut = "(&SUgh_struct $pUgh (&SUgh_struct SUgh_struct)) (= (s8 (SFoo_struct &SUgh_struct $m_foo) $m_n) Literal:Int8) "
 		"(SUgh_struct $SUgh ({} (SFoo_struct $m_foo SFoo_struct))) "
 		"(SFoo_struct $SFoo ({} (s8 $m_n s8)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "pFoo : & SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8; }";
-	pChzOut = "(&SFoo_struct $pFoo (&SFoo_struct SFoo_struct)) (= (s8 &SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "pFoo : & SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8; }";
+	pCozOut = "(&SFoo_struct $pFoo (&SFoo_struct SFoo_struct)) (= (s8 &SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "foo : SFoo; foo.m_n = 1; SFoo :: struct { m_n : s8; }";
-	pChzOut = "(SFoo_struct $foo SFoo_struct) (= (s8 SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "foo : SFoo; foo.m_n = 1; SFoo :: struct { m_n : s8; }";
+	pCozOut = "(SFoo_struct $foo SFoo_struct) (= (s8 SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
-	pChzOut = "(SFoo_struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo_struct $foo SFoo_struct)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
+	pCozOut = "(SFoo_struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo_struct $foo SFoo_struct)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "aN : [4] s32; pN : & s32; fEq := aN.data == pN; ";
-	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool (&s32 [4]s32 $data) &s32))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "aN : [4] s32; pN : & s32; fEq := aN.data == pN; ";
+	pCozOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool (&s32 [4]s32 $data) &s32))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "aN : [4] s32; paN : & [4] s32 = &aN;";
-	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (&[4]s32 $paN (&[4]s32 ([4]s32 Literal:Int## s32)) (&[4]s32 [4]s32))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "aN : [4] s32; paN : & [4] s32 = &aN;";
+	pCozOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (&[4]s32 $paN (&[4]s32 ([4]s32 Literal:Int## s32)) (&[4]s32 [4]s32))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "aN : [4] s32; n := aN[0];";
-	pChzOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (s32 $n (s32 [4]s32 Literal:Int##))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "aN : [4] s32; n := aN[0];";
+	pCozOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (s32 $n (s32 [4]s32 Literal:Int##))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "n:s32=2; n++; n--;";
-	pChzOut ="(s32 $n s32 Literal:Int32) (s32 s32) (s32 s32)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "n:s32=2; n++; n--;";
+	pCozOut ="(s32 $n s32 Literal:Int32) (s32 s32) (s32 s32)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ ; n : s32 = ---;}";
-	pChzOut ="({} (Nop) (s32 $n s32 (---)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ ; n : s32 = ---;}";
+	pCozOut ="({} (Nop) (s32 $n s32 (---)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "printf :: (pCh : & u8, ..) -> s32 #foreign;";
-	pChzOut ="(printf(&u8, ..)->s32 $printf (Params (&u8 $pCh (&u8 u8)) (..)) s32)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "printf :: (pCh : & u8, ..) -> s32 #foreign;";
+	pCozOut ="(printf(&u8, ..)->s32 $printf (Params (&u8 $pCh (&u8 u8)) (..)) s32)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000);";
-	pChzOut ="(Vararg(..)->void $Vararg (Params (..)) void) (void Vararg(..)->void Literal:Float64 Literal:Int## Literal:Int##)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000);";
+	pCozOut ="(Vararg(..)->void $Vararg (Params (..)) void) (void Vararg(..)->void Literal:Float64 Literal:Int## Literal:Int##)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "n:=7; pN:=&n; ppN:=&pN; pN2:=@ppN; n2:=@pN2;";
-	pChzOut ="(int $n Literal:Int##) (&int $pN (&int int)) (&&int $ppN (&&int &int)) "
+	pCozIn = "n:=7; pN:=&n; ppN:=&pN; pN2:=@ppN; n2:=@pN2;";
+	pCozOut ="(int $n Literal:Int##) (&int $pN (&int int)) (&&int $ppN (&&int &int)) "
 				"(&int $pN2 (&int &&int)) (int $n2 (int &int))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "pN : & int; @pN = 2;";
-	pChzOut ="(&int $pN (&int int)) (= (int &int) Literal:Int##)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "pN : & int; @pN = 2;";
+	pCozOut ="(&int $pN (&int int)) (= (int &int) Literal:Int##)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "pChz:&u8=\"teststring\"; ";
-	pChzOut ="(&u8 $pChz (&u8 u8) Literal:String)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "pChz:&u8=\"teststring\"; ";
+	pCozOut ="(&u8 $pChz (&u8 u8) Literal:String)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "a:=2-2; n:=-2;";
-	pChzOut ="(int $a (Literal:Int## Literal:Int Literal:Int)) (int $n (Literal:Int## Literal:Int))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "a:=2-2; n:=-2;";
+	pCozOut ="(int $a (Literal:Int## Literal:Int Literal:Int)) (int $n (Literal:Int## Literal:Int))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n; }"; 
-	pChzOut		= "(foo(bool)->void $foo (Params (bool $n bool)) void) (s16 $n s16) "
+	pCozIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n; }"; 
+	pCozOut		= "(foo(bool)->void $foo (Params (bool $n bool)) void) (s16 $n s16) "
 					"(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (s32 $test s32) (s64 $n s64) (s64 $test2 s64) (void)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ i:=5; foo:=i; g:=g_g; } g_g:=2.2;";
-	pChzOut = "({} (int $i Literal:Int##) (int $foo int) (float $g float)) (float $g_g Literal:Float32)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ i:=5; foo:=i; g:=g_g; } g_g:=2.2;";
+	pCozOut = "({} (int $i Literal:Int##) (int $foo int) (float $g float)) (float $g_g Literal:Float32)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"i:= (5-4) + (5-6); g:=2.2 + (3.3*10);";
-	pChzOut = "(int $i (Literal:Int## (Literal:Int Literal:Int Literal:Int) (Literal:Int Literal:Int Literal:Int))) "
+	pCozIn =	"i:= (5-4) + (5-6); g:=2.2 + (3.3*10);";
+	pCozOut = "(int $i (Literal:Int## (Literal:Int Literal:Int Literal:Int) (Literal:Int Literal:Int Literal:Int))) "
 				"(float $g (Literal:Float32 Literal:Float (Literal:Float Literal:Float Literal:Int)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "n:=2; n = 100-n;";
-	pChzOut ="(int $n Literal:Int##) (= int (int Literal:Int## int))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "n:=2; n = 100-n;";
+	pCozOut ="(int $n Literal:Int##) (= int (int Literal:Int## int))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : f64 = 2.2;";
-	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (s16 $bar s16 s8) (f64 $g f64)) (f64 $g_g f64 Literal:Float64)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : f64 = 2.2;";
+	pCozOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (s16 $bar s16 s8) (f64 $g f64)) (f64 $g_g f64 Literal:Float64)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";
-	pChzOut = "({} (bool $i Literal:Bool8) (bool $foo bool) (bool $g bool)) (bool $g_g bool Literal:Bool8)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";
+	pCozOut = "({} (bool $i Literal:Bool8) (bool $foo bool) (bool $g bool)) (bool $g_g bool Literal:Bool8)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
-	pChzOut		= "(ParamFunc(s32, float)->void $ParamFunc (Params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
+	pCozOut		= "(ParamFunc(s32, float)->void $ParamFunc (Params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : &u8 = \"huzzah\";";
-	pChzOut = "({} (&u8 $i Literal:String) (&u8 $foo &u8) (&u8 $g &u8)) (&u8 $g_g (&u8 u8) Literal:String)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : &u8 = \"huzzah\";";
+	pCozOut = "({} (&u8 $i Literal:String) (&u8 $foo &u8) (&u8 $g &u8)) (&u8 $g_g (&u8 u8) Literal:String)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ pN:& s8; pNInfer:=pN; pNTest:&s8=null;}";
-	pChzOut = "({} (&s8 $pN (&s8 s8)) (&s8 $pNInfer &s8) (&s8 $pNTest (&s8 s8) Literal:Null))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ pN:& s8; pNInfer:=pN; pNTest:&s8=null;}";
+	pCozOut = "({} (&s8 $pN (&s8 s8)) (&s8 $pNInfer &s8) (&s8 $pNTest (&s8 s8) Literal:Null))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ ppN:&& s8; ppNInfer:=ppN; ppNTest:&&s8=null;}";
-	pChzOut = "({} (&&s8 $ppN (&&s8 (&s8 s8))) (&&s8 $ppNInfer &&s8) (&&s8 $ppNTest (&&s8 (&s8 s8)) Literal:Null))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ ppN:&& s8; ppNInfer:=ppN; ppNTest:&&s8=null;}";
+	pCozOut = "({} (&&s8 $ppN (&&s8 (&s8 s8))) (&&s8 $ppNInfer &&s8) (&&s8 $ppNTest (&&s8 (&s8 s8)) Literal:Null))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ i:s8=5; foo:=i; foo=6; i = foo; }";
-	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (= s8 Literal:Int8) (= s8 s8))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ i:s8=5; foo:=i; foo=6; i = foo; }";
+	pCozOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (= s8 Literal:Int8) (= s8 s8))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ i:s8=5; foo:=i; fBool:bool = foo==i; fBool = i<2; }";
-	pChzOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (bool $fBool bool (bool s8 s8)) (= bool (bool s8 Literal:Int8)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ i:s8=5; foo:=i; fBool:bool = foo==i; fBool = i<2; }";
+	pCozOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (bool $fBool bool (bool s8 s8)) (= bool (bool s8 Literal:Int8)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i; }";
-	pChzOut = "({} (s8 $i s8) (s32 $foo s32) (= s32 (s32 s8 s32)) (= s32 (s32 s32 s8)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i; }";
+	pCozOut = "({} (s8 $i s8) (s32 $foo s32) (= s32 (s32 s8 s32)) (= s32 (s32 s32 s8)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ n:s8; pN:=&n; n2:=@pN; }";
-	pChzOut = "({} (s8 $n s8) (&s8 $pN (&s8 s8)) (s8 $n2 (s8 &s8)))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ n:s8; pN:=&n; n2:=@pN; }";
+	pCozOut = "({} (s8 $n s8) (&s8 $pN (&s8 s8)) (s8 $n2 (s8 &s8)))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ n:s64; pN:&s8; fN := !pN; ++n; --n;}";
-	pChzOut = "({} (s64 $n s64) (&s8 $pN (&s8 s8)) (bool $fN (bool &s8)) (s64 s64) (s64 s64))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ n:s64; pN:&s8; fN := !pN; ++n; --n;}";
+	pCozOut = "({} (s64 $n s64) (&s8 $pN (&s8 s8)) (bool $fN (bool &s8)) (s64 s64) (s64 s64))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
-	pChzOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) (= s64 Literal:Int64) (??? (= s64 Literal:Int64))))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
+	pCozOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) (= s64 Literal:Int64) (??? (= s64 Literal:Int64))))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ n:s64 = 5; while n > 0 { --n; } }";
-	pChzOut = "({} (s64 $n s64 Literal:Int64) (bool (bool s64 Literal:Int64) ({} (s64 s64))))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ n:s64 = 5; while n > 0 { --n; } }";
+	pCozOut = "({} (s64 $n s64 Literal:Int64) (bool (bool s64 Literal:Int64) ({} (s64 s64))))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA); }";
-	pChzOut = "({} (s8 $nA s8) (s8 $nB s8) (bool $nC (bool (bool s8 s8) (bool s8 s8))))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA); }";
+	pCozOut = "({} (s8 $nA s8) (s8 $nB s8) (bool $nC (bool (bool s8 s8) (bool s8 s8))))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn =	"{ n:s64; if n n = 5; else n = 6;}";
-	pChzOut = "({} (s64 $n s64) (bool s64 (= s64 Literal:Int64) (??? (= s64 Literal:Int64))))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn =	"{ n:s64; if n n = 5; else n = 6;}";
+	pCozOut = "({} (s64 $n s64) (bool s64 (= s64 Literal:Int64) (??? (= s64 Literal:Int64))))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= "AddNums :: (a : int, b := 1)->int { return a + b;} n := AddNums(2,3);";
-	pChzOut		= "(AddNums(int, int)->int $AddNums (Params (int $a int) (int $b Literal:Int##)) int ({} (int (int int int))))"
+	pCozIn		= "AddNums :: (a : int, b := 1)->int { return a + b;} n := AddNums(2,3);";
+	pCozOut		= "(AddNums(int, int)->int $AddNums (Params (int $a int) (int $b Literal:Int##)) int ({} (int (int int int))))"
 					" (int $n (int AddNums(int, int)->int Literal:Int## Literal:Int##))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
-	pChzOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
+	pCozOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
-	pChzOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
+	pCozOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
-	pChzIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		= "({} (int $ovr Literal:Int##) ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float)) (int $n int))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	pCozIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
+	pCozOut		= "({} (int $ovr Literal:Int##) ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float)) (int $n int))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
-	pChzIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
-	pChzOut		=	"(Foo()->void $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
+	pCozIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
+	pCozOut		=	"(Foo()->void $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
 					" ({} (int $ovr Literal:Int##) (int $n int))";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pChzIn		= "ack :: ( n : s32) { if (n < 2) foo(true); }  foo :: (n : bool) #foreign;"; 
-	pChzOut		= "(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) (void foo(bool)->void Literal:Bool8)) (void))) "
+	pCozIn		= "ack :: ( n : s32) { if (n < 2) foo(true); }  foo :: (n : bool) #foreign;"; 
+	pCozOut		= "(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) (void foo(bool)->void Literal:Bool8)) (void))) "
 					"(foo(bool)->void $foo (Params (bool $n bool)) void)";
-	AssertTestTypeCheck(&work, pChzIn, pChzOut);
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	StaticShutdownStrings(&allocString);
 }

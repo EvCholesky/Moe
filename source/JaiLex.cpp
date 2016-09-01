@@ -1,4 +1,4 @@
-/* Copyright (C) 2015 Evan Christensen
+﻿/* Copyright (C) 2015 Evan Christensen
 |
 | Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated 
 | documentation files (the "Software"), to deal in the Software without restriction, including without limitation the 
@@ -53,7 +53,7 @@ RWORD RwordFromHv(u32 hv)
 	return RWORD_Nil;
 }
 
-const char * PChzFromRword(RWORD rword)
+const char * PCozFromRword(RWORD rword)
 {
 	if (!EWC_FVERIFY((rword >= RWORD_Nil) & (rword < RWORD_Max), "unknown reserved word"))
 		return "(unknown)";
@@ -63,15 +63,15 @@ const char * PChzFromRword(RWORD rword)
 
 	#define RW(x) 
 	#define STR(x) #x
-	const char * s_mpRwordPchz[] =
+	const char * s_mpRwordPCoz[] =
 	{
 		RESERVED_WORD_LIST
 	};
 	#undef STR
 	#undef RW
 
-	EWC_CASSERT(EWC_DIM(s_mpRwordPchz) == RWORD_Max, "missing token string");
-	return s_mpRwordPchz[rword];
+	EWC_CASSERT(EWC_DIM(s_mpRwordPCoz) == RWORD_Max, "missing token string");
+	return s_mpRwordPCoz[rword];
 }
 
 static int FIsWhitespace(int ch)
@@ -291,7 +291,7 @@ void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit)
 {
 	pJlex->m_jtok = jtokSplit;
 
-	const char * pChzJtok = PChzFromJtok(jtokSplit);
+	const char * pChzJtok = PCozFromJtok(jtokSplit);
 	const char * pChIt = pJlex->m_pChBegin;
 	const char * pChEnd = pJlex->m_pChEnd;
 	while (pChIt != pChEnd)
@@ -382,7 +382,8 @@ int JtokNextToken(SJaiLexer * pJlex)
 						| ((pChz[iCh] >= '0') & (pChz[iCh] <= '9')) // allow digits in middle of identifier
 						| (pChz[iCh] == '_')
 						| (u8(pChz[iCh]) >= 128));
-				pJlex->m_str = EWC::CString(pChzScratch, iCh);
+				pChzScratch[iCh] = '\0';
+				pJlex->m_str = EWC::CString(pChzScratch);
 
 				u32 Hv = EWC::HvFromPChz(pChz, iCh);
 				RWORD rword = RwordFromHv(Hv);
@@ -609,15 +610,15 @@ int JtokNextToken(SJaiLexer * pJlex)
 	}
 }
 
-void InitJaiLexer(SJaiLexer * pJlex, const char * pChInput, const char * pChInputEnd, char * aChStorage, u32 cChStorage)
+void InitJaiLexer(SJaiLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage)
 {
-	pJlex->m_pChInput = pChInput;
-	pJlex->m_pChParse = pChInput;
-	pJlex->m_pChEof =  pChInputEnd;
+	pJlex->m_pChInput = pCoInput;
+	pJlex->m_pChParse = pCoInput;
+	pJlex->m_pChEof =  pCoInputEnd;
 	pJlex->m_aChScratch = aChStorage;
 	pJlex->m_cChScratch = cChStorage;
 
-	pJlex->m_pChzFilename = "unknown filename";
+	pJlex->m_pCozFilename = "unknown filename";
 	pJlex->m_pChBegin = nullptr;
 	pJlex->m_pChEnd = nullptr;
 	pJlex->m_n = 0;
@@ -633,7 +634,7 @@ RWORD RwordLookup(SJaiLexer * pJlex)
 	return pJlex->m_rword;
 }
 
-const char * PChzFromJtok(JTOK jtok)
+const char * PCozFromJtok(JTOK jtok)
 {
 	if (!EWC_FVERIFY((jtok >= JTOK_Nil) & (jtok < JTOK_Max), "bad token value"))
 		return "(err)";
@@ -648,7 +649,7 @@ const char * PChzFromJtok(JTOK jtok)
 		return &s_aB[jtok];
 	}
 
-	static const char * s_mpJtokPchz[] = 
+	static const char * s_mpJtokPCoz[] = 
 	{
 		"(Eof)",
 		"(ParseError)",
@@ -680,33 +681,33 @@ const char * PChzFromJtok(JTOK jtok)
 		":=",
 		"..",
 	};
-	EWC_CASSERT(EWC_DIM(s_mpJtokPchz) == JTOK_Max - JTOK_SimpleMax, "missing token string");
-	return s_mpJtokPchz[jtok - JTOK_SimpleMax];
+	EWC_CASSERT(EWC_DIM(s_mpJtokPCoz) == JTOK_Max - JTOK_SimpleMax, "missing token string");
+	return s_mpJtokPCoz[jtok - JTOK_SimpleMax];
 }
 
-const char * PChzCurrentToken(SJaiLexer * pJlex)
+const char * PCozCurrentToken(SJaiLexer * pJlex)
 {
 	JTOK jtok = (JTOK)pJlex->m_jtok;
 	if (jtok == JTOK_ReservedWord)
-		return PChzFromRword(pJlex->m_rword);
+		return PCozFromRword(pJlex->m_rword);
 
-	return PChzFromJtok(jtok);
+	return PCozFromJtok(jtok);
 }
 
 #define JLEX_TEST
 #ifdef JLEX_TEST
 void AssertMatches(
-	const char * pChzInput, 
+	const char * pCozInput, 
 	const JTOK * aJtok, 
 	const int * aN = nullptr, 
 	const F64 * aG = nullptr,
-	const char * apChz[] = nullptr,
+	const char * apCoz[] = nullptr,
 	const RWORD * aRword = nullptr,
 	const LITK * aLitk = nullptr)
 {
 	SJaiLexer jlex;
 	char aChStorage[1024 * 8];
-	InitJaiLexer(&jlex, pChzInput, &pChzInput[EWC::CCh(pChzInput)], aChStorage, EWC_DIM(aChStorage));
+	InitJaiLexer(&jlex, pCozInput, &pCozInput[EWC::CBCoz(pCozInput)-1], aChStorage, EWC_DIM(aChStorage));
 	
 	int iJtok = 0;
 	const JTOK * pJtok = aJtok;
@@ -717,17 +718,17 @@ void AssertMatches(
 		EWC_ASSERT(!pJtok || jlex.m_jtok == *pJtok, "lexed token doesn't match expected");
 		++pJtok;
 
-		if (apChz && apChz[iJtok] == nullptr)
-			apChz = nullptr;
+		if (apCoz && apCoz[iJtok] == nullptr)
+			apCoz = nullptr;
 
 		bool fIsStringLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_String;
-		if (apChz && (jlex.m_jtok == JTOK_Identifier || fIsStringLiteral))
+		if (apCoz && (jlex.m_jtok == JTOK_Identifier || fIsStringLiteral))
 		{
 			EWC_ASSERT(
-				EWC::CCh(apChz[iJtok]) == jlex.m_str.CCh(), 
+				EWC::CBCoz(apCoz[iJtok]) == jlex.m_str.CB(), 
 				"lexed string length doesn't match expected value");
 			EWC_ASSERT(
-				EWC::FAreCozEqual(apChz[iJtok], jlex.m_str.PChz(), jlex.m_str.CCh()), 
+				EWC::FAreCozEqual(apCoz[iJtok], jlex.m_str.PCoz(), jlex.m_str.CCodepoint()), 
 				"lexed string doesn't match expected value");
 		}
 
@@ -763,6 +764,14 @@ void TestLexing()
 	EWC::CAlloc allocString(aBString, sizeof(aBString));
 
 	StaticInitStrings(&allocString);
+
+	const char * s_pChz = u8"😁+✂";
+	const JTOK s_aJtokEmoji[] = {	
+										JTOK_Identifier, JTOK('+'),
+										JTOK_Identifier, JTOK(';'),
+										JTOK_Nil};
+
+	AssertMatches(s_pChz, s_aJtokEmoji);
 
 	const char * s_pChzLitString = " 'f'; \"foo\"; ";
 	const JTOK s_aJtokLitString[] = {	

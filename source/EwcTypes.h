@@ -414,7 +414,17 @@ void	ConvertChToWch(const char * pChz, size_t cWchMax, WChar * pWchz);
 bool	FPChzContainsChar(const char * pChz, char ch);
 void	ReplaceChars(const char * pChSrc, size_t cCh, const char * pChzRemove, char chFill, char * pChDst);
 
+inline const char * PChzVerifyAscii(const char * pChz)
+{
+	auto pChzIt = pChz;
+	while (*pChzIt != '\0')
+	{
+		EWC_ASSERT(((*pChzIt) & 0x80) == 0, "unexpected upper ascii character");
+		++pChzIt;
+	}
 
+	return pChz;
+}
 
 // Min/Max/Clamp
 
@@ -1374,6 +1384,9 @@ void AppendCoz(SStringBuffer * pStrbuf, const char *pCozSource)
 	EnsureTerminated(pStrbuf, '\0');
 }
 
+static inline bool FIsBasicChar(char ch)	{ return (ch & 0x80) == 0;}
+static inline bool FIsStarterChar(char ch)	{ return (ch & 0xC0) == 0xC0;}
+
 void EnsureTerminated(SStringBuffer * pStrbuf, char ch)
 {
 	auto pCozMax = &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax];
@@ -1382,18 +1395,32 @@ void EnsureTerminated(SStringBuffer * pStrbuf, char ch)
 	if (pStrbuf->m_cBMax <= 0)
 		return;
 
-	if (iB + 1 > pStrbuf->m_cBMax - 1)
+	iB = ewcMin(iB, pStrbuf->m_cBMax -1);
+
+	auto pCozEnd = &pStrbuf->m_pCozBegin[iB];
+	auto pCozBackup = pCozEnd; // - 1;	// skip the spot our terminator will go
+
+	while (pCozBackup != pStrbuf->m_pCozBegin)
 	{
-		iB = pStrbuf->m_cBMax - 1;
+		--pCozBackup;
+		if (FIsBasicChar(*pCozBackup) || FIsStarterChar(*pCozBackup))
+			break;
 	}
 
-	auto pCoz = &pStrbuf->m_pCozBegin[iB];
-	while (pCoz != pStrbuf->m_pCozBegin && ((*pCoz & 0xC) == 0xF))
-	{
-		--pCoz;
-	}
+	size_t cBBackup;
+	if ((*pCozBackup & 0xF8) == 0xF0)		cBBackup = 4;
+	else if ((*pCozBackup & 0xF0) == 0xE0)	cBBackup = 3;
+	else if ((*pCozBackup & 0xE0) == 0xC0)	cBBackup = 2;
+	else									cBBackup = 1;
 
-	*pCoz = ch;
+	if (cBBackup > size_t(pCozEnd - pCozBackup))
+	{
+		*pCozBackup = ch;
+	}
+	else
+	{
+		*pCozEnd = ch;
+	}
 }
 
 size_t CBFree(const SStringBuffer & strbuf)
@@ -1415,9 +1442,13 @@ void FormatCoz(SStringBuffer * pStrbuf, const char * pCozFormat, ...)
 	{
 		va_list ap;
 		va_start(ap, pCozFormat);
-		size_t cCh = vsnprintf_s(pStrbuf->m_pCozAppend, cBMax, _TRUNCATE, pCozFormat, ap);
+		int cCh = vsnprintf_s(pStrbuf->m_pCozAppend, cBMax, _TRUNCATE, pCozFormat, ap);
 		va_end(ap);
 
+		if (cCh == -1)
+		{
+			cCh = cBMax-1;
+		}
 		pStrbuf->m_pCozAppend += cCh;
 	}
 
@@ -1512,7 +1543,7 @@ int NCmpCoz(const char * pCozA, const char * pCozB)
 		return (pCozA == nullptr) ? -1 : 1;
 	}
 
-	while ((*pCozA != '\0') & (*pCozB != '\0'))
+	while ((*pCozA != '\0') | (*pCozB != '\0'))
 	{
 		auto chA = *pCozA;
 		auto chB = *pCozB;
@@ -1544,7 +1575,7 @@ int NCmpCoz(const char * pCozA, const char * pCozB, size_t cCodepoint)
 	}
 
 	size_t iCodepoint = 0;
-	while ((iCodepoint < cCodepoint) & (*pCozA != '\0') & (*pCozB != '\0'))
+	while ((iCodepoint < cCodepoint) & ((*pCozA != '\0') | (*pCozB != '\0')))
 	{
 		auto chA = *pCozA;
 		auto chB = *pCozB;
@@ -1556,8 +1587,8 @@ int NCmpCoz(const char * pCozA, const char * pCozB, size_t cCodepoint)
 		++pCozA;
 		++pCozB;
 
-		if ((chA & 0xc) != 0x8)	// only count the first bytes of each codepoint
-			++cCodepoint;
+		if ((chA & 0xC0) != 0x80)	// only count the first bytes of each codepoint
+			++iCodepoint;
 	}
 
 	return 0;
