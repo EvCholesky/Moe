@@ -174,6 +174,26 @@ public:
 	STypeInfo * 	m_pTin;
 };
 
+class CSTFor // tag = stfor
+{
+public:
+					CSTFor()
+					:m_iStnodDecl(-1)
+					,m_iStnodIterator(-1)
+					,m_iStnodInit(-1)
+					,m_iStnodBody(-1)
+					,m_iStnodPredicate(-1)
+					,m_iStnodIncrement(-1)
+						{ ; }
+
+	int				m_iStnodDecl;
+	int				m_iStnodIterator;	// lhs iterator if not a decl
+	int				m_iStnodInit;		// rhs init if not a decl
+	int				m_iStnodBody;
+	int				m_iStnodPredicate;
+	int				m_iStnodIncrement;
+};
+
 class CSTProcedure // tag = stproc
 {
 public:
@@ -316,6 +336,7 @@ public:
 	CSTIdentifier *			m_pStident;
 	CSTDecl *				m_pStdecl;
 	CSTProcedure *			m_pStproc;
+	CSTFor *				m_pStfor;
 	CSTEnum *				m_pStenum;
 	SLexerLocation			m_lexloc;
 	STypeInfo *				m_pTin;	
@@ -325,6 +346,9 @@ public:
 
 	EWC::CDynAry<CSTNode *>	m_arypStnodChild;
 };
+
+CSTValue * PStvalCopy(EWC::CAlloc * pAlloc, CSTValue * pStval);
+CSTNode * PStnodCopy(EWC::CAlloc * pAlloc, CSTNode * pStnodSrc);
 
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
 void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GRFDBGSTR grfdbgstr = FDBGSTR_None);

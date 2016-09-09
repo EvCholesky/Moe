@@ -1,5 +1,6 @@
 #import "Basic"
 
+
 TestOperators :: ()
 {
 	printf("\nOperators:\n");
@@ -465,7 +466,7 @@ TestCasting :: ()
 
 }
 
-TestOveloading :: ()
+TestOverloading :: ()
 {
 	printf("\nOverloading:\n");
 
@@ -613,6 +614,48 @@ HERE;
 	printf("\n%s\n", pChzTest);
 }
 
+TestForLoop :: ()
+{
+	printf("\nFor Loops:\n");
+
+	printf ("Expect 1,2,3,4,5:  ");
+	for iter := iterMake(1,6)
+	{
+		printf("%d,", iter.m_i);
+	}
+
+	printf ("\nExpect 2,3,4:  ");
+	iter: SIntIterator;
+	for iter = iterMake(2,5)
+	{
+		printf("%d,", iter.m_i);
+	}
+
+	printf ("\nExpect 0,1,2,3:  ");
+	iter2:= iterMake(0, 4);
+	for iter2
+	{
+		printf("%d,", iter2.m_i);
+	}
+	printf("\n");
+
+	for pCoz := "Test"
+	{
+		printf("'%c',", @pCoz);
+	}
+	printf("\n");
+	for pCoz := "😁Test✂"
+	{
+		printf("%s\n", pCoz);
+	}
+	printf("\n expect'' :'");
+	for pCoz := ""
+	{
+		printf("'%c',", @pCoz);
+	}
+	printf("'\n");
+}
+
 main :: () -> int 
 {
 
@@ -627,10 +670,11 @@ main :: () -> int
 	TestEnums();
 	TestArrays();
 	TestCasting();
-	TestOveloading();
+	TestOverloading();
 	TestGlobals();
 	TestProcedureRef();
 	TestHereStrings();
+	TestForLoop();
 
 	return 1;
 }

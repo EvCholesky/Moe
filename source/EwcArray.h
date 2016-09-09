@@ -61,6 +61,9 @@ public:
 				,m_cMax(cMax)
 					{ ; }
 
+				CAry(const CAry&) = delete;
+	CAry &		operator=(const CAry&) = delete;
+
 	void		SetArray(T * a, s32 c, s32 cMax)
 				{
 					EWC_ASSERT((m_a == nullptr) | (a == nullptr), "overwriting nonzero buffer, leaking memory");
@@ -192,6 +195,32 @@ public:
 
 				~CDynAry()
 					{ Clear(); }
+
+				CDynAry(const CDynAry & rhs)
+					{
+						m_pAlloc = rhs.m_pAlloc;
+						EnsureSize(rhs.C());
+
+						const T * pMac = rhs.PMac();
+						for (const T * pT = rhs.A(); pT != pMac; ++pT)
+						{
+							Append(*pT);
+						}
+					}
+
+	CDynAry<T> & operator= (const CDynAry & rhs)
+					{
+						Clear();
+						m_pAlloc = rhs.m_pAlloc;
+						EnsureSize(rhs.C());
+
+						const T * pMac = rhs.PMac();
+						for (const T * pT = rhs.A(); pT != pMac; ++pT)
+						{
+							Append(*pT);
+						}
+						return *this;
+					}
 
 	void		SetAlloc(CAlloc * pAlloc, size_t cMaxStarting = 32)
 					{
@@ -325,13 +354,34 @@ class CFixAry : public CAry<T> // tag=ary
 {
 public:
 	typedef T Type;
-
+	
 				CFixAry()
 				:CAry<T>(reinterpret_cast<T*>(m_alby.A()), 0, C_MAX)
 					{ ; }
 
 				~CFixAry()
 					{ Clear(); }
+
+				CFixAry(const CFixAry & rhs)
+					{
+						const T * pMac = rhs.PMac();
+						for (const T * pT = rhs.A(); pT != pMac; ++pT)
+						{
+							Append(*pT);
+						}
+					}
+
+	CFixAry& operator=(const CFixAry & rhs)
+					{
+						Clear();
+
+						const T * pMac = rhs.PMac();
+						for (const T * pT = rhs.A(); pT != pMac; ++pT)
+						{
+							Append(*pT);
+						}
+						return *this;
+					}
 
 	void		Append(const Type t)
 					{

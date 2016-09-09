@@ -3,6 +3,9 @@ Work in progress compiler inspired by JAI
 
 Slowly building a LLVM frontend for a language inspired by Jon Blow's JAI videos.
 
+The name is likely going to change and this document (which has become a dumping ground for task bullet points) 
+needs to be rewritten.
+
 It currently can compile and link simple programs. It doesn't do runtime code execution yet.
 
 Currently supports:
@@ -10,6 +13,7 @@ Currently supports:
   * String literals
   * Variadic functions
   * While loops
+  * For Loops.
   * Arrays
     - fixed size arrays (with count/data members)
     - base array references (fixed/dynamic agnostic)
@@ -33,7 +37,6 @@ Coming soon:
   * break/continue to labels;
   * Dynamic arrays
   * Improved error handling and unit testing of error cases.
-  * For Loops.
 
 Clean up
   * consolidate PARK_ReferenceDecl, PARK_ArrayDecl, ParkMethodReferenceDecl into PARK_Decl
@@ -45,7 +48,13 @@ Deviations from current JAI syntax:
   * float types are: float, double, f32 and f64. because... why wouldn't they be?
   * type aliasing uses the typedef keyword to disambiguate constant values from type aliases. (ie 'IntAlias :: typedef s32;')
   * Implicit enum constants are nil(-1), min, last and max rather than lowest_value and highest_value.
+  * Different for loop syntax
 
 Known ambiguities:
    * Contants with parens in the literal "APlusB :: (A + B)" parses as a method declaration.
    * Boolean expressions are not wrapped in parens so "if pN *pN = 2" could be a multiply or a dereference.
+   * while fSomeBool ++pV; doesn't know if the increment is for the condition or the loop body.
+
+Open Asthetic Questions:
+   * Ditch semicolons except for multiple statements on one line, ala Swift?
+   * Force all flow control structure bodies to use brackets (even one line)

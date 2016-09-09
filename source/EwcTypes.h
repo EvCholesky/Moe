@@ -1200,7 +1200,8 @@ public:
 			{
 #ifdef EWC_TRACK_ALLOCATION
 				char aCh[2048];
-				CChFormat(aCh, EWC_DIM(aCh), "%s:%d", pChzFile, cLine);
+				SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+				FormatCoz(&strbuf, "%s:%d", pChzFile, cLine);
 				return HvFromPChz(aCh);
 #else
 				return 0;

@@ -2009,16 +2009,6 @@ STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString 
 	return nullptr;
 }
 
-CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
-{
-	if (!pStval)
-		return nullptr;
-
-	auto pStvalRet = EWC_NEW(pAlloc, CSTValue) CSTValue();
-	*pStvalRet = *pStval;
-	return pStvalRet;
-}
-
 bool FVerifyIsInstance(STypeCheckWorkspace * pTcwork, CSTNode * pStnod)
 {
 	if (FIsType(pStnod))
@@ -4021,6 +4011,92 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					RWORD rword = pStnod->m_pStval->m_rword;
 					switch (rword)
 					{
+					case RWORD_For:
+						{
+							if (pTcsentTop->m_nState < pStnod->CStnodChild())
+							{
+								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+								pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
+								EWC_ASSERT(pTcsentPushed->m_pSymtab, "null symbol table");
+
+								break;
+							}
+
+							if (pStnod->m_pStfor == nullptr)
+							{
+								EmitError(pTcwork, pStnod, "for loop was improperly parsed.");
+								return TCRET_StoppingError;
+							}
+
+							STypeInfo * pTinIterator = nullptr;
+							auto pStfor = pStnod->m_pStfor;
+							auto pStnodDecl = pStnod->PStnodChildSafe(pStfor->m_iStnodDecl);
+							if (pStnodDecl)
+							{
+								pTinIterator = pStnodDecl->m_pTin;
+							}
+							else
+							{
+								auto pStnodIterator = pStnod->PStnodChildSafe(pStfor->m_iStnodIterator);
+								if (pStnodIterator && pStnodIterator->m_pTin)
+								{
+									pTinIterator = pStnodIterator->m_pTin;
+
+									auto pStnodInit = pStnod->PStnodChildSafe(pStfor->m_iStnodInit);
+									if (pStnodInit)
+									{
+										bool fIsValidLhs = FIsValidLhs(pStnodIterator);
+										if (!fIsValidLhs)
+										{
+											CString strLhs = StrFromTypeInfo(pTinIterator);
+											EmitError(pTcwork, pStnod, "'%s' is not a valid left-hand-side", strLhs.PCoz());
+											return TCRET_StoppingError;
+										}
+
+										STypeInfo * pTinRhsPromoted = PTinPromoteLiteralTightest(
+																		pTcwork,
+																		pTcsentTop->m_pSymtab,
+																		pStnodInit,
+																		pTinIterator);
+										if (FCanImplicitCast(pTinRhsPromoted, pTinIterator))
+										{
+											FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinIterator, pStnodInit);
+										}
+										else
+										{
+											CString strLhs = StrFromTypeInfo(pTinIterator);
+											CString strRhs = StrFromTypeInfo(pTinRhsPromoted);
+											EmitError( pTcwork, pStnod,
+												"implicit cast from %s to %s is not allowed",
+												strRhs.PCoz(),
+												strLhs.PCoz());
+										}
+									}
+								}
+							}
+
+							if (!pTinIterator)
+							{
+								EmitError(pTcwork, pStnod, "Cannot determine for loop iterator type");
+								return TCRET_StoppingError;
+							}
+
+							auto pStnodPredicate = pStnod->PStnodChildSafe(pStfor->m_iStnodPredicate);
+							if (EWC_FVERIFY(pStnodPredicate, "for loop missing predicate child"))
+							{
+								if (!pStnodPredicate->m_pTin || pStnodPredicate->m_pTin->m_tink != TINK_Bool)
+								{
+									CString strTin = StrFromTypeInfo(pStnodPredicate->m_pTin);
+									EmitError(pTcwork, pStnod,
+										"For loop predicate must evaluate to a bool, but evaluates to a %s",
+										strTin.PCoz());
+								}
+							}
+
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+						} break;
 					case RWORD_While:
 					case RWORD_If:
 						{
@@ -4782,6 +4858,26 @@ void TestTypeCheck()
 
 	const char * pCozIn;
 	const char * pCozOut;
+
+	pCozIn = "iterMake :: (n: u8) -> u8 { return n; } "
+			 "iterIsDone :: (pN: & u8) -> bool { return false; } "
+			 "iterNext :: (pN: & u8) { } "
+			"it: u8; for it = iterMake(2) { }";
+	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
+				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
+				"(iterNext(&u8)->void $iterNext (Params (&u8 $pN (&u8 u8))) void ({} (void))) "
+				"(u8 $it u8) (??? u8 (u8 iterMake(u8)->u8 Literal:Int8) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
+
+	pCozIn = "iterMake :: (n: u8) -> u8 { return n; } "
+			 "iterIsDone :: (pN: & u8) -> bool { return false; } "
+			 "iterNext :: (pN: & u8) { } "
+			"for it := iterMake(2) { }";
+	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
+				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
+				"(iterNext(&u8)->void $iterNext (Params (&u8 $pN (&u8 u8))) void ({} (void))) "
+				"(??? (u8 $it (u8 iterMake(u8)->u8 Literal:Int8)) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn = "SFunc :: () { { n:=5; n=2; } }";
 	pCozOut = "(SFunc()->void $SFunc void ({} ({} (int $n Literal:Int##) (= int Literal:Int##)) (void)))";

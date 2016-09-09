@@ -123,3 +123,56 @@ fverify :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
 	}
 	return fPredicate;
 }
+
+// for loop Iterators
+
+// int range iterator
+SIntIterator :: struct
+{
+    m_i: int;
+    m_nMax: int; // one past the end
+}
+
+iterMake :: (iBegin: int, nMax: int) -> SIntIterator
+{
+    iter : SIntIterator;
+    iter.m_i = iBegin;
+    iter.m_nMax = nMax;
+    return iter;
+}
+
+iterIsDone :: (pIter: &SIntIterator) -> bool
+{
+    return pIter.m_i >= pIter.m_nMax;
+}
+
+iterNext :: (pIter: &SIntIterator)
+{
+    ++pIter.m_i;
+}
+
+// utf8 null terminated string iterator
+iterIsDone :: (ppCoz: &&u8) -> bool
+{
+    return @ppCoz == null || @@ppCoz == '\0';
+}
+
+iterNext :: (ppCoz: &&u8)
+{
+    pCoz := @ppCoz; 
+    pCozEnd : &u8;
+
+    if ((@pCoz & 0xF8) == 0xF0)         pCozEnd = pCoz + 4;
+    else if ((@pCoz & 0xF0) == 0xE0)    pCozEnd = pCoz + 3;
+    else if ((@pCoz & 0xE0) == 0xC0)    pCozEnd = pCoz + 2;
+    else                                pCozEnd = pCoz + 1;
+
+    ++pCoz;
+    while ((@pCoz & 0xC0) == 0x80) && (pCoz != pCozEnd)
+    {
+        ++pCoz;
+    }
+
+    @ppCoz = pCoz;
+}
+

@@ -2526,7 +2526,7 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 				case '+':				CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
 				case '-': 				
 					{
-						CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
+						CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
 						pOpinfo->m_fNegateFirst = true;
 					} break;
 			}
@@ -2895,6 +2895,55 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case RWORD_Else:
 				EWC_ASSERT(false, "Else reserved word should be handled during codegen for if");
 				return nullptr;
+			case RWORD_For:
+				{
+					auto pStfor = pStnod->m_pStfor;
+					if (!EWC_FVERIFY(pStfor, "bad for loop"))
+						return nullptr;
+
+					EmitLocation(pWork, pBuild, pStnod->m_lexloc);
+
+					CSTNode * pStnodFor = pStnod;
+					if (pStfor->m_iStnodDecl >= 0)
+					{
+						(void) PValGenerate(pWork, pBuild, pStnodFor->PStnodChild(pStfor->m_iStnodDecl), VALGENK_Instance);
+					}
+					else if (pStfor->m_iStnodInit >= 0 && pStfor->m_iStnodIterator >= 0)
+					{
+						auto pStnodIterator = pStnodFor->PStnodChild(pStfor->m_iStnodIterator);
+						auto pStnodInit = pStnodFor->PStnodChild(pStfor->m_iStnodInit);
+
+						CIRValue * pValIterator = PValGenerate(pWork, pBuild, pStnodIterator, VALGENK_Reference);
+						PInstGenerateAssignment(pWork, pBuild, pStnodIterator->m_pTin, pValIterator, pStnodInit);
+					}
+
+					CIRProcedure * pProc = pBuild->m_pProcCur;
+					CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "wpred");
+					CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "wbody");
+					CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "wpost");
+					(void) pBuild->PInstCreateBranch(pBlockPred);	
+
+					pBuild->ActivateBlock(pBlockPred);
+
+					CSTNode * pStnodPred = pStnodFor->PStnodChild(pStfor->m_iStnodPredicate);
+
+					STypeInfo * pTinBool = pStnodPred->m_pTin;
+					EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for for loop predicate");
+
+					// NOTE: we're swapping the true/false blocks here because the predicate is reversed, ie fIsDone
+					GeneratePredicate(pWork, pBuild, pStnodPred, pBlockPost, pBlockBody, pTinBool);
+
+					pBuild->ActivateBlock(pBlockBody);
+					(void) PValGenerate(pWork, pBuild, pStnodFor->PStnodChild(pStfor->m_iStnodBody), VALGENK_Instance);
+
+					CSTNode * pStnodIncrement = pStnodFor->PStnodChild(pStfor->m_iStnodIncrement);
+					(void) PValGenerate(pWork, pBuild, pStnodIncrement, VALGENK_Instance);
+
+					(void) pBuild->PInstCreateBranch(pBlockPred);	
+
+					pBuild->ActivateBlock(pBlockPost);
+
+				} break;
 			case RWORD_While:
 				{
 					if (pStnod->CStnodChild() < 2)
@@ -2903,7 +2952,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 
 					CIRProcedure * pProc = pBuild->m_pProcCur;
-
 					CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "wpred");
 					CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "wbody");
 					CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "wpost");
@@ -3272,6 +3320,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				{
 					pValPtr = pValRhs;
 					pValIndex = pValLhs;
+				}
+				if (pStnod->m_jtok == JTOK('-'))
+				{
+					pValIndex = pBuild->PInstCreate(IROP_NNeg, pValIndex, "NNeg");
 				}
 
 				auto pInstGep = pBuild->PInstCreateGEP(pValPtr, &pValIndex->m_pLval, 1, "ptrGep");

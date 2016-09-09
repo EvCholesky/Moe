@@ -214,6 +214,69 @@ const char * PChzFromEnumimp(ENUMIMP enumimp)
 	return s_mpEnumimpPChz[enumimp];
 }
 
+CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
+{
+	if (!pStval)
+		return nullptr;
+
+	auto pStvalRet = EWC_NEW(pAlloc, CSTValue) CSTValue();
+	*pStvalRet = *pStval;
+	return pStvalRet;
+}
+
+CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc)
+{
+	auto pStnodDst = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, pStnodSrc->m_lexloc);
+	*pStnodDst = *pStnodSrc;
+
+	if (pStnodSrc->m_pStval)
+	{
+		pStnodDst->m_pStval = PStvalCopy(pAlloc, pStnodSrc->m_pStval);
+	}
+
+	if (pStnodSrc->m_pStident)
+	{
+		pStnodDst->m_pStident = EWC_NEW(pAlloc, CSTIdentifier) CSTIdentifier();
+		*pStnodDst->m_pStident = *pStnodSrc->m_pStident;
+	}
+
+	if (pStnodSrc->m_pStdecl)
+	{
+		pStnodDst->m_pStdecl = EWC_NEW(pAlloc, CSTDecl) CSTDecl();
+		*pStnodDst->m_pStdecl = *pStnodSrc->m_pStdecl;
+	}
+
+	if (pStnodSrc->m_pStproc)
+	{
+		pStnodDst->m_pStproc = EWC_NEW(pAlloc, CSTProcedure) CSTProcedure();
+		*pStnodDst->m_pStproc = *pStnodSrc->m_pStproc;
+	}
+
+	if (pStnodSrc->m_pStfor)
+	{
+		pStnodDst->m_pStfor = EWC_NEW(pAlloc, CSTFor) CSTFor();
+		*pStnodDst->m_pStfor = *pStnodSrc->m_pStfor;
+	}
+
+	if (pStnodSrc->m_pStenum)
+	{
+		pStnodDst->m_pStenum = EWC_NEW(pAlloc, CSTEnum) CSTEnum();
+		*pStnodDst->m_pStenum = *pStnodSrc->m_pStenum;
+	}
+
+	auto cpStnodChild = pStnodSrc->m_arypStnodChild.C();
+	for (size_t ipStnod = 0; ipStnod < cpStnodChild; ++ipStnod)
+	{
+		auto pStnodChild = pStnodSrc->m_arypStnodChild[ipStnod];
+		CSTNode * pStnodChildCopy = nullptr;
+		if (pStnodChild)
+		{
+			pStnodChildCopy = PStnodCopy(pAlloc, pStnodChild);
+		}
+		pStnodDst->m_arypStnodChild[ipStnod] = pStnodChildCopy;
+	}
+	return pStnodDst;
+}
 
 void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChzFormat, ...)
 {
@@ -1293,22 +1356,24 @@ CSTNode * PStnodParseParameter(
 		{
 			if (pStnodCompound)
 			{
-				// we back up and pare the type for each child decl in this group (because we don't have a deep CSTNode copy)
-
 				EWC_ASSERT(cTypeNeeded, "No compound children?");
 
-				int iStnodType = pStnodCompound->m_pStdecl->m_iStnodChildMax - cTypeNeeded;
-				for ( ; iStnodType < pStnodCompound->m_pStdecl->m_iStnodChildMax; ++iStnodType)
-				{
-					jlexPeek = *pJlex;
-					auto pStnodType = PStnodParseTypeSpecifier(pParctx, &jlexPeek);
+				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
 
-					auto pStnodChild = pStnodCompound->PStnodChild(iStnodType);
+				int iStnodChild = pStnodCompound->m_pStdecl->m_iStnodChildMax - cTypeNeeded;
+				int iChild = 0;
+				for ( ; iStnodChild < pStnodCompound->m_pStdecl->m_iStnodChildMax; ++iStnodChild)
+				{
+					auto pStnodChild = pStnodCompound->PStnodChild(iStnodChild);
 
 					EWC_ASSERT(pStnodChild->m_pStdecl->m_iStnodType == -1, "shouldn't set the type child twice");
-					pStnodChild->m_pStdecl->m_iStnodType = pStnodChild->IAppendChild(pStnodType);
+
+					auto pStnodTypeCopy = (iChild == 0) ? pStnodType : PStnodCopy(pParctx->m_pAlloc, pStnodType);
+					++iChild;
+
+					pStnodChild->m_pStdecl->m_iStnodType = pStnodChild->IAppendChild(pStnodTypeCopy);
 				}
-				*pJlex = jlexPeek;
+
 				cTypeNeeded = 0;
 			}
 			else
@@ -2252,11 +2317,104 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJl
 	RWORD rword = RwordLookup(pJlex);
 	if (rword == RWORD_For)
 	{
-		JtokNextToken(pJlex);
+		//for decl := iterMake {}
+		//for decl : iterType = iterMake {}
+		//for decl = iterMake {}
+		//for iter {}
+		//and maybe anonymous iterator...    for : iterMake {}			(I like the simplicity of this, but it's not really cohesive)
+		//and maybe anonymous iterator...    for --- := iterMake {}		(This one matches the other syntaxes, but is ugly and verbose)
 
-		//for decl : expression..expression statement
-		EWC_ASSERT(false, "for loops statements are not supported yet");
-		return nullptr;
+		CSTNode * pStnodFor = PStnodParseReservedWord(pParctx, pJlex, RWORD_For);
+		
+		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
+		pStnodFor->m_pStfor = pStfor;
+
+		SLexerLocation lexloc(pJlex);
+		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for");
+		pStnodFor->m_pSymtab = pSymtabLoop;
+
+		PushSymbolTable(pParctx, pSymtabLoop, lexloc);
+		CSTNode * pStnodDecl = PStnodParseParameter(pParctx, pJlex, pSymtabLoop, FPDECL_None);
+		CSTNode * pStnodIterator = nullptr;
+		if (pStnodDecl)
+		{
+			pStfor->m_iStnodDecl = pStnodFor->IAppendChild(pStnodDecl);
+
+			auto pStdecl = pStnodDecl->m_pStdecl;
+			if (EWC_FVERIFY(pStdecl, "bad declaration in for loop"))
+			{
+				pStnodIterator = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
+			}
+		}
+		else
+		{
+			pStnodIterator = PStnodParseCastExpression(pParctx, pJlex);
+			EWC_ASSERT(pStnodIterator, "null iterator");
+			pStfor->m_iStnodIterator = pStnodFor->IAppendChild(pStnodIterator);
+
+			if (FConsumeToken(pJlex, JTOK('=')))
+			{
+				auto pStnodInit = PStnodParseExpression(pParctx, pJlex);
+				pStfor->m_iStnodInit = pStnodFor->IAppendChild(pStnodInit);
+			}
+
+			if (pStfor->m_iStnodIterator == -1 && pStfor->m_iStnodInit == -1)
+			{
+				ParseError(pParctx, pJlex, "Could not determine for loop iterator");
+			}
+		}
+
+		if (!pStnodIterator)
+		{
+			ParseError(pParctx, pJlex, "Could not determine iterator used by for loop");
+		}
+		else
+		{
+			// add iterIsDone AST
+			{
+				CSTNode * pStnodPredIdent = PStnodAllocateIdentifier(pParctx, lexloc, "iterIsDone");
+
+				CSTNode * pStnodArg = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodArg->m_jtok = JTOK_Reference;
+				pStnodArg->m_park = PARK_UnaryOp;
+				pStnodArg->IAppendChild(PStnodCopy(pParctx->m_pAlloc, pStnodIterator));
+
+				CSTNode * pStnodCall = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodCall->m_jtok = JTOK(pJlex->m_jtok);
+				pStnodCall->m_park = PARK_ProcedureCall;
+				pStnodCall->IAppendChild(pStnodPredIdent);
+				pStnodCall->IAppendChild(pStnodArg);
+
+				pStfor->m_iStnodPredicate = pStnodFor->IAppendChild(pStnodCall);
+			}
+
+			// add iterNext 
+			{
+				CSTNode * pStnodIncIdent = PStnodAllocateIdentifier(pParctx, lexloc, "iterNext");
+
+				CSTNode * pStnodArg = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodArg->m_jtok = JTOK_Reference;
+				pStnodArg->m_park = PARK_UnaryOp;
+				pStnodArg->IAppendChild(PStnodCopy(pParctx->m_pAlloc, pStnodIterator));
+
+				CSTNode * pStnodCall = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodCall->m_jtok = JTOK(pJlex->m_jtok);
+				pStnodCall->m_park = PARK_ProcedureCall;
+				pStnodCall->IAppendChild(pStnodIncIdent);
+				pStnodCall->IAppendChild(pStnodArg);
+
+				pStfor->m_iStnodIncrement = pStnodFor->IAppendChild(pStnodCall);
+			}
+
+		}
+
+		CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pJlex);
+		pStfor->m_iStnodBody = pStnodFor->IAppendChild(pStnodStatement);
+
+		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+		EWC_ASSERT(pSymtabLoop == pSymtabPop, "CSymbol table push/pop mismatch (list)");
+
+		return pStnodFor;
 	}
 	if (rword == RWORD_While)
 	{
@@ -2835,6 +2993,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_pStident(nullptr)
 ,m_pStdecl(nullptr)
 ,m_pStproc(nullptr)
+,m_pStfor(nullptr)
 ,m_pStenum(nullptr)
 ,m_lexloc(lexLoc)
 ,m_pTin(nullptr)
@@ -2853,6 +3012,7 @@ CSTNode::~CSTNode()
 	for (size_t ipStnod = m_arypStnodChild.C(); ipStnod > 0; --ipStnod)
 	{
 		pAlloc->EWC_DELETE(m_arypStnodChild[ipStnod-1]);
+		m_arypStnodChild[ipStnod-1] = nullptr;
 	}
 	m_arypStnodChild.Clear();
 
@@ -2878,6 +3038,12 @@ CSTNode::~CSTNode()
 	{
 		pAlloc->EWC_DELETE(m_pStproc);
 		m_pStproc = nullptr;
+	}
+
+	if (m_pStfor)
+	{
+		pAlloc->EWC_DELETE(m_pStfor);
+		m_pStfor = nullptr;
 	}
 
 	if (m_pStenum)
@@ -3182,8 +3348,15 @@ void CSTNode::WriteDebugString(EWC::SStringBuffer * pStrbuf, GRFDBGSTR grfdbgstr
 
 void WriteDebugStringForEntries(CWorkspace * pWork, char * pCo, char * pCoMax, GRFDBGSTR grfdbgstr)
 {
-	EWC::SStringBuffer strbuf(pCo, pCoMax - pCo);
+	auto cB = pCoMax - pCo;
 
+#define TEST_STNODE_COPY 1
+#if TEST_STNODE_COPY
+	auto pCoCopy = (char *)alloca(cB);
+	EWC::SStringBuffer strbufCopy(pCoCopy, cB);
+#endif
+
+	EWC::SStringBuffer strbuf(pCo, cB);
 	for (size_t ipStnod = 0; ipStnod < pWork->m_aryEntry.C(); ++ipStnod)
 	{
 		CSTNode * pStnod = pWork->m_aryEntry[ipStnod].m_pStnod;
@@ -3193,9 +3366,25 @@ void WriteDebugStringForEntries(CWorkspace * pWork, char * pCo, char * pCoMax, G
 		{
 			*strbuf.m_pCozAppend++ = ' ';
 		}
+
+#if TEST_STNODE_COPY
+		CSTNode * pStnodCopy = PStnodCopy(pWork->m_pAlloc, pStnod);
+		pStnodCopy->WriteDebugString(&strbufCopy, grfdbgstr);
+		pWork->m_pAlloc->EWC_DELETE(pStnodCopy);
+
+		if ((CBFree(strbufCopy) > 0) & (ipStnod+1 != pWork->m_aryEntry.C()))
+		{
+			*strbufCopy.m_pCozAppend++ = ' ';
+		}
+#endif
 	}
 
 	EnsureTerminated(&strbuf, '\0');
+
+#if TEST_STNODE_COPY
+	EnsureTerminated(&strbufCopy, '\0');
+	EWC_ASSERT(FAreCozEqual(strbuf.m_pCozBegin, strbufCopy.m_pCozBegin), "AST copy failed to produce an identical copy.");
+#endif
 }
 
 CString StrFromIdentifier(CSTNode * pStnod)
@@ -3297,6 +3486,14 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pCozIn = "for it := iterMake(foo) { }";
+		pCozOut = "(for (decl $it (procCall $iterMake $foo)) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
+		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+
+		pCozIn = "for it = iterMake(foo) { }";
+		pCozOut = "(for $it (procCall $iterMake $foo) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
+		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = u8"😁+✂;";
 		pCozOut = u8"(+ $😁 $✂)";
