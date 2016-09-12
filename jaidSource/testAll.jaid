@@ -464,6 +464,9 @@ TestCasting :: ()
 	pFoo := cast(&SFoo) pN;
 	printf("%d(1234), %d(5678)\n", pFoo.m_a, pFoo.m_b);
 
+	gAcast : f32 = acast acast n;
+	nAcast : int = acast acast g;
+	printf("acast (278.0f, 12) %f %d\n", gAcast, nAcast);
 }
 
 TestOverloading :: ()

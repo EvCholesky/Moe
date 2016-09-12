@@ -753,7 +753,8 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 {
 	CSTNode * pStnodCast = nullptr;
 	CSTDecl * pStdecl = nullptr;
-	if (RwordLookup(pJlex) != RWORD_Cast)
+	auto rword = RwordLookup(pJlex);
+	if (rword != RWORD_Cast && rword != RWORD_AutoCast)
 	{
 		return PStnodParseUnaryExpression(pParctx, pJlex);
 	}
@@ -767,12 +768,15 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 	pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
 	pStnodCast->m_pStdecl = pStdecl;
 
-	Expect(pParctx, pJlex, JTOK('('));
+	if (rword == RWORD_Cast)
+	{
+		Expect(pParctx, pJlex, JTOK('('));
 
-	auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
-	pStdecl->m_iStnodType = pStnodCast->IAppendChild(pStnodType);
+		auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
+		pStdecl->m_iStnodType = pStnodCast->IAppendChild(pStnodType);
 
-	Expect(pParctx, pJlex, JTOK(')'));
+		Expect(pParctx, pJlex, JTOK(')'));
+	}
 
 	auto pStnodChild = PStnodParseCastExpression(pParctx, pJlex);
 	if (!pStnodCast)
@@ -785,7 +789,7 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, "Cast statement missing right hand side");
 	}
 
-	if (pStdecl->m_iStnodType < 0)
+	if (pStdecl->m_iStnodType < 0 && rword != RWORD_AutoCast)
 	{
 		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, "Cast statement missing type");
 	}
@@ -1111,6 +1115,16 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SJaiLexer *
 		pTinproc->m_arypTinReturns.AppendFill(cStnodReturns, nullptr);
 		pParctx->m_pSymtab->AddManagedTin(pTinproc);
 		pStnodProc->m_pTin = pTinproc;
+
+		if (pJlex->m_jtok == JTOK_ReservedWord)
+		{
+			RWORD rword = RwordLookup(pJlex);
+			if (rword == RWORD_StdCall)
+			{
+				pTinproc->m_callconv = CALLCONV_StdcallX86;
+				JtokNextToken(pJlex);
+			}
+		}
 
 		return pStnodProc;
 	}

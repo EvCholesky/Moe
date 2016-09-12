@@ -1661,11 +1661,11 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 		pTinDst = pTinenum->m_pTinLoose;
 	}
 
-	if (pTinSrc->m_tink == TINK_Pointer)
+	if (pTinSrc->m_tink == TINK_Pointer || pTinSrc->m_tink == TINK_Procedure)
 	{
 		if (pTinDst->m_tink != TINK_Bool)
 		{
-			if (EWC_FVERIFY(pTinDst->m_tink == TINK_Pointer, "trying to cast pointer to non-pointer. (not supported yet)"))
+			if (EWC_FVERIFY(pTinDst->m_tink == pTinSrc->m_tink, "trying to cast pointer to non-pointer. (not supported yet)"))
 			{
 				return pBuild->PInstCreateCast(IROP_Bitcast, pValSrc, pTinDst, "Bitcast");
 			}

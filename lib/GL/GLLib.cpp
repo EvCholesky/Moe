@@ -233,6 +233,11 @@ static void GlfwErrorCallback(int nError, const char* pChz)
 	printf("Glfw Error: (%d) %s\n", nError, pChz);
 }
 
+typedef void (*pfnGlProc)(void);
+extern "C" pfnGlProc PFnGlProcLookup(const char * pChzProcname)
+{
+	return glfwGetProcAddress(pChzProcname);
+}
 
 extern "C" void CreateWindow(s64 dX, s64 dY, const char * pChzName, void ** ppVHwnd)
 {

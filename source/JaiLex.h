@@ -92,6 +92,7 @@ enum JTOK
 		RW(StringDirective) STR(#string), \
 		RW(ForeignLibraryDirective) STR(#foreign_library), \
 		RW(Cast) STR(cast), \
+		RW(AutoCast) STR(acast), \
 		RW(CDecl) STR(#cdecl), \
 		RW(StdCall) STR(#stdcall)
 
