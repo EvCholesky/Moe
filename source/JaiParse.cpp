@@ -712,6 +712,41 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 
 	switch(pJlex->m_jtok)
 	{
+	case JTOK_ReservedWord:
+		{
+			auto rword = RwordLookup(pJlex);
+			switch (rword)
+			{
+			case RWORD_Sizeof:
+			case RWORD_Alignof:
+				{
+					JTOK jtokPrev = JTOK(pJlex->m_jtok);	
+					SLexerLocation lexloc(pJlex);
+					JtokNextToken(pJlex);
+
+					CSTNode * pStnodChild = PStnodParseUnaryExpression(pParctx, pJlex);
+					if (!pStnodChild)
+					{
+						ParseError(pParctx, pJlex, "%s missing right hand side.", PCozFromRword(rword));
+					}
+
+					CSTNode * pStnodRword = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+					pStnodRword->m_jtok = jtokPrev;
+					pStnodRword->m_park = PARK_ReservedWord;
+					pStnodRword->IAppendChild(pStnodChild);
+
+					auto pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
+					pStval->m_rword = rword;
+					pStnodRword->m_pStval = pStval;
+
+					return pStnodRword;
+				} 
+			case RWORD_Typeof:
+				{
+					ParseError(pParctx, pJlex, "typeof not implemented yet.");
+				} break;
+			}
+		} break;
 	case JTOK_Dereference:
 	case JTOK_Reference:
 	case JTOK('+'):
@@ -745,8 +780,10 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 
 			return pStnodUnary;
 		}
-	default: return PStnodParsePostfixExpression(pParctx, pJlex);
+	default: break;
 	}
+
+	return PStnodParsePostfixExpression(pParctx, pJlex);
 }
 
 CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
@@ -2738,9 +2775,13 @@ void CSymbolTable::AddBuiltInSymbols(SErrorManager * pErrman)
 #if EWC_X64
 	AddBuiltInInteger(pErrman, this, "int", 64, true);
 	AddBuiltInInteger(pErrman, this, "uint", 64, false);
+	AddBuiltInInteger(pErrman, this, "uSize", 64, false);
+	AddBuiltInInteger(pErrman, this, "sSize", 64, true);
 #else
 	AddBuiltInInteger(pErrman, this, "int", 32, true);
 	AddBuiltInInteger(pErrman, this, "uint", 32, false);
+	AddBuiltInInteger(pErrman, this, "uSize", 32, false);
+	AddBuiltInInteger(pErrman, this, "sSize", 32, true);
 #endif
 
 	AddBuiltInFloat(pErrman, this, "float", 32);

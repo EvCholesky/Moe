@@ -4102,6 +4102,30 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					RWORD rword = pStnod->m_pStval->m_rword;
 					switch (rword)
 					{
+					case RWORD_Sizeof:
+					case RWORD_Alignof:
+						{
+							if (pTcsentTop->m_nState < pStnod->CStnodChild())
+							{
+								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								break;
+							}
+
+							auto pStnodChild = pStnod->PStnodChild(0);
+							if (!EWC_FVERIFY(pStnodChild, "sizeof/typeof missing child"))
+								break;
+
+							if (!pStnodChild->m_pTin)
+							{
+								EmitError(pTcwork, pStnod, "%s unable to determine target type", PCozFromRword(rword)); 
+							}
+
+							auto pSymtab = pTcsentTop->m_pSymtab;
+							pStnod->m_pTin = pSymtab->PTinBuiltin("uSize");
+
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+						} break;
 					case RWORD_For:
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())

@@ -1,0 +1,24 @@
+g_spriteMainVertex :: #string END
+varying vec4 vecColor;
+
+void main()
+{
+	gl_Position 	= gl_ModelViewProjectionMatrix * gl_Vertex;
+   vecColor	    = gl_Color;
+   gl_TexCoord[0]  = gl_MultiTexCoord0;
+}
+END;
+
+
+
+g_spriteMainFragment :: #string END
+uniform sampler2D s_sampTexture;
+varying vec4 vecColor;
+
+void main()
+{
+	vec4 vecSample = texture2D(s_sampTexture, gl_TexCoord[0].xy);
+	gl_FragColor = vecSample * vecColor;
+}
+END;
+

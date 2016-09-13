@@ -500,7 +500,7 @@ SDIFile * PDifEmitLocation(
 void CalculateSizeAndAlign(CIRBuilder * pBuild, LLVMOpaqueType * pLtype, u64 * pCBitSize, u64 *pCBitAlign)
 {
 	*pCBitSize = LLVMSizeOfTypeInBits(pBuild->m_pTargd, pLtype);
-	*pCBitAlign = *pCBitSize;
+	*pCBitAlign = LLVMABIAlignmentOfType(pBuild->m_pTargd, pLtype) * 8;
 }
 
 CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CIRBuilder * pBuild, SSymbol * pSym)
@@ -2791,6 +2791,33 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			RWORD rword = pStnod->m_pStval->m_rword;
 			switch (rword)
 			{
+			case RWORD_Sizeof:
+			case RWORD_Alignof:
+				{
+					u64 cBitSize;
+					u64 cBitAlign;
+
+					auto pStnodChild = pStnod->PStnodChildSafe(0);
+					if (!EWC_FVERIFY(pStnodChild && pStnodChild->m_pTin, "bad alignof/typeof"))
+						return nullptr;
+
+					auto pLtype = PLtypeFromPTin(pStnodChild->m_pTin);
+					CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
+
+					u64 cBit = (rword == RWORD_Sizeof) ? cBitSize : cBitAlign;
+
+					auto pTinint = PTinDerivedCast<STypeInfoInteger *>(pStnod->m_pTin);
+					if (!pTinint)
+						return nullptr;
+
+					auto pLval = PLvalConstantInt(pTinint->m_cBit, false, cBit / 8);
+
+					CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+					pConst->m_pLval = pLval;
+					pBuild->AddManagedVal(pConst);
+
+					return pConst;
+				} break;
 			case RWORD_If:
 				{
 
