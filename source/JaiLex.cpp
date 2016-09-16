@@ -35,7 +35,7 @@ RWORD RwordFromHv(u32 hv)
 	// BB - Should switch to hash?
 
 	#define RW(x)
-	#define STR(x) EWC::HvFromPChz(#x)
+	#define STR(x) EWC::HvFromPCoz(#x)
 	u32 s_aHv[] =
 	{
 		RESERVED_WORD_LIST
@@ -385,7 +385,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 				pChzScratch[iCh] = '\0';
 				pJlex->m_str = EWC::CString(pChzScratch);
 
-				u32 Hv = EWC::HvFromPChz(pChz, iCh);
+				u32 Hv = EWC::HvFromPCoz(pChz, iCh);
 				RWORD rword = RwordFromHv(Hv);
 				pJlex->m_rword = rword;
 

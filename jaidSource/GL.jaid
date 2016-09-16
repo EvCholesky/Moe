@@ -18,6 +18,7 @@ CreateWindow :: (dX : s64, dY : s64, pChzName : & u8, ppVHwnd : && void) -> bool
 ClearWindow :: (uRed : float, uGreen : float, uBlue : float, uAlpha : float) -> void #foreign;
 UpdateWindowEvents :: () -> void #foreign;
 SwapBuffers :: (pVHwnd : & void) -> void #foreign SwapBuffers_JAI;
+FGetNextEvent :: (pEvent: & SEvent) -> bool #foreign;
 
 GL_TRIANGLES ::             0x0004;
 GL_TEXTURE_2D ::            0x0DE1;
@@ -64,21 +65,19 @@ glBindTexture :: (target: glenum, texture: gluint) #foreign #stdcall;
 glTexParameteri :: (target: glenum, pname: glenum, param: glint) #foreign #stdcall;
 glTexImage2D :: (target: glenum, level: glint, internalformat: glint, width: glsizei, height: glsizei, border: glint, format: glenum, type: glenum, pixels: &void) #foreign #stdcall;
 
-glCreateProgram :: () -> gluint #foreign #stdcall;
-glDeleteProgram :: (program: gluint) #foreign #stdcall;
-glLinkProgram :: (program: gluint) #foreign #stdcall;
-glCreateShader :: (type: glenum) -> gluint #foreign #stdcall;
-glDeleteShader :: (shader: gluint) #foreign #stdcall;
-glShaderSource :: (shader: gluint, count: glsizei, string: &&u8, length: &glint) #foreign #stdcall;
-glCompileShaderSource :: (shader: gluint) #foreign #stdcall;
-glCompileShader :: (handle: gluint) #foreign #stdcall;
-FGetNextEvent :: (pEvent: & SEvent) -> bool #foreign;
-glGetShaderiv :: (shader: gluint, pname: glenum, param: &glint) #foreign #stdcall;
-glGetProgramiv :: (shader: gluint, pname: glenum, param: &glint) #foreign #stdcall;
-glGetShaderInfoLog :: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #foreign #stdcall;
-glGetProgramInfoLog :: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #foreign #stdcall;
-glAttachShader :: (program: gluint, shader: gluint) #foreign #stdcall;
-
+// GL extension function pointers
+glCreateProgram : () -> gluint #stdcall;
+glDeleteProgram : (program: gluint) #stdcall;
+glLinkProgram : (program: gluint) #stdcall;
+glCreateShader : (type: glenum) -> gluint #stdcall;
+glDeleteShader : (shader: gluint) #stdcall;
+glShaderSource : (shader: gluint, count: glsizei, string: &&u8, length: &glint) #stdcall;
+glCompileShader : (handle: gluint) #stdcall;
+glGetShaderiv : (shader: gluint, pname: glenum, param: &glint) #stdcall;
+glGetProgramiv : (shader: gluint, pname: glenum, param: &glint) #stdcall;
+glGetShaderInfoLog : (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall;
+glGetProgramInfoLog : (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall;
+glAttachShader : (program: gluint, shader: gluint) #stdcall;
 
 EVENTK :: enum s32 
 {  // If we set this to u8, our packing will stop matching C's.
@@ -138,4 +137,37 @@ SEvent :: struct
     m_nTextInput : u32;
 }
 
+GlfwProc :: typedef ()->void;
+PFnGlProcLookup :: (pChzName: &u8) -> GlfwProc #foreign;
+
+FTryInitExtension :: (pChzName: &u8, pfSuccess: &bool) -> GlfwProc 
+{
+   pFn := PFnGlProcLookup(pChzName); 
+   if pFn == null
+   {
+    printf("Failed to lookup glProc '%s'\n", pChzName);
+        @pfSuccess = false;
+   }
+   return pFn;
+}
+
+FTryInitGLExtensions :: () -> bool
+{
+    // Hopefully this gets less gross when we have reflection
+
+    fSuccess:= true;
+    glCreateProgram = acast FTryInitExtension("glCreateProgram", &fSuccess);
+    glDeleteProgram  = acast FTryInitExtension("glDeleteProgram", &fSuccess);
+    glLinkProgram = acast FTryInitExtension("glLinkProgram", &fSuccess);
+    glCreateShader = acast FTryInitExtension("glCreateShader", &fSuccess);
+    glDeleteShader = acast FTryInitExtension("glDeleteShader", &fSuccess);
+    glShaderSource = acast FTryInitExtension("glShaderSource", &fSuccess);
+    glCompileShader = acast FTryInitExtension("glCompileShader", &fSuccess);
+    glGetShaderiv = acast FTryInitExtension("glGetShaderiv", &fSuccess);
+    glGetProgramiv = acast FTryInitExtension("glGetProgramiv", &fSuccess);
+    glGetShaderInfoLog = acast FTryInitExtension("glGetShaderInfoLog", &fSuccess);
+    glGetProgramInfoLog = acast FTryInitExtension("glGetProgramInfoLog", &fSuccess);
+    glAttachShader = acast FTryInitExtension("glAttachShader", &fSuccess);
+    return fSuccess;
+}
 

@@ -47,7 +47,7 @@ CloseHandle  :: (handle: HANDLE) -> s32 #foreign #stdcall;
 
 GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall;
 
-ReadFile32 :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign #stdcall;
+ReadFile :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign #stdcall;
 
 SFile :: struct // tag = file
 {
@@ -144,7 +144,7 @@ CBReadFile :: (file: SFile, pB: & u8, cBLength: s64) -> s64
             cBToRead = 0x7fffffff;
         }
 
-        fSuccess = ReadFile32(file.m_hnd, pB + cBWasRead, cBToRead, &cBSingleRead, null);
+        fSuccess = ReadFile(file.m_hnd, pB + cBWasRead, cBToRead, &cBSingleRead, null);
         cBWasRead += cBSingleRead;
         if !fSuccess || cBSingleRead <= 0 
         { 

@@ -3,6 +3,37 @@
 #import "Gl"
 #import "Hash"
 #import "stb_image"
+#import "fontShaders"
+#import "spriteShaders"
+
+SDrawContext :: struct // tag=drac
+{
+
+	m_pShman: & SShaderManager;
+	m_pFontman: & SFontManager;
+	m_pDras: & SDrawState;
+	m_pDrasstk: & SDrawStateStack;
+};
+
+g_drac : SDrawContext;
+g_drasstk: SDrawStateStack;
+g_fontman: SFontManager;
+g_shman: SShaderManager;
+
+
+PushDras :: (pDrac: & SDrawContext)	
+{
+	PushDras(pDrac.m_pDrasstk);
+	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk);
+}
+
+PopDras :: (pDrac: & SDrawContext)	
+{
+	PopDras(pDrac.m_pDrasstk);
+	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk);
+}
+
+
 
 ALIGNK :: enum
 {
@@ -31,6 +62,40 @@ SFontData :: struct // tag = fontd
 	m_alignkY: ALIGNK;
 	m_fUseFixedWidth: bool;
 	m_fUseWordWrap: bool;
+}
+
+SDrawState :: struct // tag = dras
+{
+	m_fontd : SFontData;
+}
+
+SDrawStateStack :: struct	// tag = drasstk
+{
+	m_aDras : [10] SDrawState;
+	m_iDrasTop : s16;
+};
+
+
+PushDras :: (pDrasstk: & SDrawStateStack)
+{
+	if !fverify(pDrasstk.m_iDrasTop + 1 < pDrasstk.m_aDras.count, "DrawStateStack Overflow", #file, #line)
+		return;
+
+	pDrasstk.m_aDras[pDrasstk.m_iDrasTop + 1] = pDrasstk.m_aDras[pDrasstk.m_iDrasTop];
+	++pDrasstk.m_iDrasTop;
+}
+
+PopDras :: (pDrasstk: & SDrawStateStack)
+{
+	if !fverify(pDrasstk.m_iDrasTop > 0, "DrawStateStack Underflow", #file, #line)
+		return;
+
+	--pDrasstk.m_iDrasTop;
+}
+
+PDrasTop :: (pDrasstk: & SDrawStateStack) -> & SDrawState
+{
+	return &pDrasstk.m_aDras[pDrasstk.m_iDrasTop];
 }
 
 /*
@@ -228,6 +293,32 @@ DYFromTex :: (pTex: & STexture)->DrawInt
 {
 	return pTex.m_aTexmip[0].m_dY;
 }
+
+SQuadSortKey :: struct // tag=qskey
+{
+	m_iTexture : s16;
+
+	m_x: s16;
+	m_z: s16;
+	m_yNeg: s16;
+	m_nLayer: s16;
+
+	m_cQvert: s16;
+	m_iQvert: s32;
+	}
+
+SQuadVertex :: struct // tag=qvert
+{
+	m_x, m_y, m_z: f32;
+	m_u, m_v: f32;
+	m_r, m_g, m_b, m_a: f32;
+}
+
+g_cQskeyMax :: 16 * 1024;
+g_cQvertMax :: g_cQskeyMax * 4;
+g_aQskey : & SQuadSortKey;
+g_aQvert : & SQuadVertex;
+g_aQvertSorted : & SQuadVertex;
 	
 FONTK :: enum
 {
@@ -283,7 +374,6 @@ SFontManager :: struct // tag=fontman
 	m_aFont: [FONTK.max] SFont;
 	m_aShhand: [FONTSHK.max] SHHAND;
 }
-g_fontman: SFontManager;
 
 SFontVertex :: struct // tag=fvert
 {
@@ -303,13 +393,28 @@ SShader :: struct// tag=shad
 CORESHK :: enum // core shader kind
 {
 	Sprite,
-	Environment,	// like sprite, but with "perspective" distortion
 }
 
 SShaderManager  :: struct // tag=shman
 {
 	m_aShad: [16] SShader;
 	m_mpCoreshkShhand : [CORESHK.max] SHHAND;
+}
+
+PShmanStaticInit :: () -> & SShaderManager
+{
+	if !FTryInitGLExtensions()
+	{
+		printf ("Error loading GL Extensions.");
+		return null;
+	}
+
+	g_shman.m_mpCoreshkShhand[CORESHK.Sprite] = ShhandLoad(
+													&g_shman,
+													"BasicSpriteShader",
+													g_spriteMainVertex,
+													g_spriteMainFragment);
+	return &g_shman;
 }
 
 ShhandFindUnused :: inline (pShman: &SShaderManager) -> SHHAND
@@ -364,6 +469,9 @@ ShhandLoad :: (pShman: &SShaderManager, pChzMaterialName: &u8, pChzVertexSource:
 	pShad.m_driFragmentShader	= glCreateShader(GL_FRAGMENT_SHADER_ARB);
 
 	glShaderSource(pShad.m_driVertexShader, 1, &pChzVertexSource, null);
+	glShaderSource(pShad.m_driVertexShader, 1, &pChzVertexSource, null);
+
+
 	glShaderSource(pShad.m_driFragmentShader, 1, &pChzFragmentSource, null);
 
 	glCompileShader(pShad.m_driVertexShader);
@@ -431,22 +539,29 @@ I32 IParamFind(const CShaderManager * pShman, ShaderHandle shhand, const char* p
 }
 */
 
-g_fontMainVertex :: "";
-g_fontMainFragment :: "";
+PDracStaticInit :: (procAlloc: ProcAlloc) -> & SDrawContext
+{
+	g_aQskey = cast (& SQuadSortKey)PVAllocSimple(procAlloc, sizeof(SQuadSortKey) * g_cQskeyMax);
+	g_aQvert 		= cast (& SQuadVertex)PVAllocSimple(procAlloc, sizeof(SQuadVertex) * g_cQvertMax);
+	g_aQvertSorted 	= cast (& SQuadVertex)PVAllocSimple(procAlloc, sizeof(SQuadVertex) * g_cQvertMax);
+
+	g_drac.m_pShman   = PShmanStaticInit();
+	g_drac.m_pFontman = PFontmanStaticInit(procAlloc, g_drac.m_pShman);
+
+	if g_drac.m_pShman == null || g_drac.m_pFontman == null
+		{ return null; }
+
+	g_drac.m_pDrasstk = &g_drasstk;
+	g_drac.m_pDras 	  = PDrasTop(&g_drasstk);
+
+	return &g_drac;
+}
+
 
 PFontmanStaticInit :: (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SFontManager
 {
-	iFont := 0;
-	while (iFont < g_fontman.m_aFont.count)
-	{
-		g_fontman.m_aFont[iFont].m_pTex			= null;
-		g_fontman.m_aFont[iFont].m_pGlyphf		= null;
-		g_fontman.m_aFont[iFont].m_aWchKerning	= null;
-		g_fontman.m_aFont[iFont].m_aDxKerning	= null;
-		++iFont;
-	}
-
-	LoadFont(&g_fontman, FONTK.Regular, "Fonts/Calibri", procAlloc);
+	if !FTryLoadFont(&g_fontman, FONTK.Regular, "Assets/Fonts/Calibri", procAlloc)
+		{ return null; }
 
 	g_fontman.m_aShhand[FONTSHK.Basic] = ShhandLoad(pShman, "BasicFontShader", g_fontMainVertex, g_fontMainFragment);
 	return &g_fontman;
@@ -488,7 +603,6 @@ PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
             return pTex;
         ++iTex;
     }
-
 
     if ((!fverify(iTex == cast(s32) cast(s16)iTex, "iTex overflow", #file, #line)) |
         (!fverify(g_cTex < g_aTex.count, "s_aryTex overflow", #file, #line)))
@@ -567,22 +681,29 @@ PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
     return pTex;
 }
 
-LoadFont :: (pFontman: & SFontManager, fontk: FONTK, pChzFilename: & u8, procAlloc: ProcAlloc)
+FTryLoadFont :: (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & u8, procAlloc: ProcAlloc) -> bool
 {
 	aCh: [1024] u8;
 
-	ConcatPChz(pChzFilename, ".png", aCh);
+	// BB - need to change to ConcatPCoz
+	ConcatPChz(pCozFilename, ".png", aCh);
 	pFontman.m_aFont[fontk].m_pTex = PTexLoad(aCh, false);
-	//assert(pFontman.m_aFont[fontk].m_pTex, "Failed to load font texture: %s", aCh);
-	assert(pFontman.m_aFont[fontk].m_pTex, "Failed to load font texture", #file, #line);
 
-	ConcatPChz(pChzFilename, ".font", aCh);
+	if !pFontman.m_aFont[fontk].m_pTex
+	{
+		printf("Failed to load font texture %s\n", aCh);
+		return false;
+	}
+
+	// BB - need to change to ConcatPCoz
+	ConcatPChz(pCozFilename, ".font", aCh);
 
 	cBRead: s64;
 	pB := PBReadEntireFile(aCh, &cBRead);
 	if (!pB)
 	{
-		assert(false, "failed to load glyph file", #file, #line);
+		printf("Failed to load glyph file %s\n", aCh);
+		return false;
 	}
 	else
 	{
@@ -593,29 +714,10 @@ LoadFont :: (pFontman: & SFontManager, fontk: FONTK, pChzFilename: & u8, procAll
 		assert(cast(&void)pFont.m_aWchKerning == cast(&void)&pGlyphf.m_aGlyph[pGlyphf.m_cGlyph], "bad offsets", #file, #line);
 
 		pFont.m_aDxKerning = cast(&f32)(pB + pGlyphf.m_iBaDxKerning);
+
 	}
-	/*
-	FILE * pFile;
-	fopen_s(&pFile, aCh, "rb");
-	EWC_ASSERT(pFile, "Failed to load font glyph file: %s", aCh);
 
-	if(pFile != 0)
-	{
-		fseek(pFile, 0L, SEEK_END);
-		size_t cBFile = ftell(pFile);
-		fseek(pFile, 0L, SEEK_SET);
-
-		SFont * pFont = &pFontman->m_aFont[fontk];
-		pFont->m_pGlyphf = (SFontGlyphFile *)pAlloc->EWC_ALLOC(cBFile, 16);
-		fread(pFont->m_pGlyphf, 1, cBFile, pFile);
-		fclose(pFile);
-
-		SFontGlyphFile * pGlyphf = pFont->m_pGlyphf;
-		pFont->m_aWchKerning = (WChar *)(reinterpret_cast<U8 *>(pGlyphf) + pGlyphf->m_iBaWchKerning);
-		EWC_ASSERT((void *)pFont->m_aWchKerning == (void *)&pGlyphf->m_aGlyph[pGlyphf->m_cGlyph], "bad offsets");
-
-		pFont->m_aDxKerning = (F32 *)(reinterpret_cast<U8 *>(pGlyphf) + pGlyphf->m_iBaDxKerning);
-	}*/
+	return true;
 }
 
 
@@ -642,4 +744,11 @@ FillOutVert :: inline (
 	pVert.m_uMax = pGlyph.m_uMax;
 	pVert.m_vMax = pGlyph.m_vMax;
 }
+
+/*
+// stub main for link testing
+main :: () -> int
+{
+	return 1;
+}*/
 

@@ -2824,8 +2824,17 @@ SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strN
 			pSymPrev = pSym;
 			pSym = nullptr;
 
-			// Should shadowing a symbol be an error?
-			//EmitError(pErrman, &lexloc, "Shadowing symbol '%s' in unordered symbol table", strName.PCoz());
+			/* Need to check for collisions, but allow overloading... but types aren't resolved yet.
+			PARK parkPrev = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_park : PARK_Nil;
+			PARK park = (pStnodDefinition) ? pStnodDefinition->m_park : PARK_Nil;
+
+			bool fFoundCollision = true;
+			if (park == PARK_ProcedureDefinition && parkPrev == PARK_ProcedureDefinition)
+			{
+			}
+
+			EmitError(pErrman, &lexloc, "Shadowing symbol '%s' in unordered symbol table", strName.PCoz());
+			*/
 		}
 	}
 	
@@ -2842,14 +2851,22 @@ SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strN
 	pSym->m_pVal = nullptr;
 	pSym->m_pSymPrev = pSymPrev;
 
+	/* This is trying to check fo ensure previous symbols are in reverse lexical order, but once they
+	    have a different file scope the lexloc comparisons are meaningless
+
 	while (pSymPrev)
 	{
-		SLexerLocation lexlocPrev = (pSymPrev->m_pStnodDefinition) ? pSymPrev->m_pStnodDefinition->m_lexloc : SLexerLocation();
-		EWC_ASSERT(lexlocPrev <= lexloc, "expected previous symbols sorted in reverse lexical order");
+		if (pSymPrev->m_pStnodDefinition)
+		{
+			SLexerLocation lexlocPrev =  pSymPrev->m_pStnodDefinition->m_lexloc;
+			EWC_ASSERT(lexlocPrev <= lexloc, "expected previous symbols sorted in reverse lexical order");
 
-		lexloc = lexlocPrev;
+			lexloc = lexlocPrev;
+		}
+
 		pSymPrev = pSymPrev->m_pSymPrev;
 	}
+	*/
 
 	return pSym;
 }
@@ -3496,8 +3513,7 @@ void AssertParseMatchTailRecurse(
 			if (!pCoz)
 				break;
 
-			HV hvImport = HvFromPChz(pCoz);
-			EWC_ASSERT(pWork->PFileLookup(hvImport, CWorkspace::FILEK_Source), "expected import %s", pCoz);
+			EWC_ASSERT(pWork->PFileLookup(pCoz, CWorkspace::FILEK_Source), "expected import %s", pCoz);
 		}
 		EWC_ASSERT(pWork->CFile(CWorkspace::FILEK_Source), "missing import");
 	}
@@ -3511,8 +3527,7 @@ void AssertParseMatchTailRecurse(
 			if (!pCoz)
 				break;
 
-			HV hvImport = HvFromPChz(pCoz);
-			EWC_ASSERT(pWork->PFileLookup(hvImport, CWorkspace::FILEK_Library), "expected import %s", pCoz);
+			EWC_ASSERT(pWork->PFileLookup(pCoz, CWorkspace::FILEK_Library), "expected import %s", pCoz);
 		}
 		EWC_ASSERT(pWork->CFile(CWorkspace::FILEK_Library) == ipCoz, "missing import");
 	}

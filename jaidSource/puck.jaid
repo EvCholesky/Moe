@@ -1,4 +1,5 @@
 #import "Basic"
+#import "Font"
 #import "GL"
 #import "Math"
 
@@ -51,6 +52,9 @@ main :: () -> int
 {
 	pWindow : HWND;
 	CreateWindow(g_dXWindow, g_dYWindow, "Puck", &pWindow);
+
+	if !PDracStaticInit(PVAllocDefault)
+		return 0;
 
     glOrtho(0, g_dXWindow, 0, g_dYWindow, -1, 1);
 

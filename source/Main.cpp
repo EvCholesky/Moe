@@ -62,7 +62,7 @@ public:
 				else
 				{
 					SCommand * pCom = m_aryCom.AppendNew();
-					pCom->m_hvName = HvFromPChz(pChzArg);
+					pCom->m_hvName = HvFromPCoz(pChzArg);
 				}
 			}
 			else
@@ -78,7 +78,7 @@ public:
 
 	bool FHasCommand(const char * pChzCommand)
 	{
-		HV hvCommand = HvFromPChz(pChzCommand);
+		HV hvCommand = HvFromPCoz(pChzCommand);
 
 		for (size_t iCom = 0; iCom < m_aryCom.C(); ++iCom)
 		{

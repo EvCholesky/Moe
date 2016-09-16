@@ -140,7 +140,7 @@ inline void CalculateLinePositionRaw(const char * pChBegin, s32 dBLoc, s32 * piL
 
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCol)
 {
-	auto pFile = pWork->PFileLookup(pLexloc->m_strFilename.Hv(), CWorkspace::FILEK_Source);
+	auto pFile = pWork->PFileLookup(pLexloc->m_strFilename.PCoz(), CWorkspace::FILEK_Source);
 	if (!pFile)
 	{
 		*piLine = -1;
@@ -224,7 +224,7 @@ CWorkspace::SFile * CWorkspace::PFileEnsure(const char * pCozFile, FILEK filek)
 	EWC::CString strFilename(pCozFile);
 
 	int * pipFile = nullptr;
-	FINS fins = phashHvIPFile->FinsEnsureKey(strFilename.Hv(), &pipFile);
+	FINS fins = phashHvIPFile->FinsEnsureKey(EWC::HvFromPCozLowercase(strFilename.PCoz()), &pipFile);
 	if (fins == EWC::FINS_Inserted)
 	{
 		SFile * pFile = EWC_NEW(m_pAlloc, SFile) SFile(strFilename, filek);
@@ -236,8 +236,9 @@ CWorkspace::SFile * CWorkspace::PFileEnsure(const char * pCozFile, FILEK filek)
 	return m_arypFile[*pipFile];
 }
 
-CWorkspace::SFile * CWorkspace::PFileLookup(HV hv, FILEK filek)
+CWorkspace::SFile * CWorkspace::PFileLookup(const char * pCozFile, FILEK filek)
 {
+	int hv = EWC::HvFromPCozLowercase(pCozFile);
 	EWC::CHash<HV, int> * phashHvIPFile = PHashHvIPFile(filek);
 	int * pipFile = phashHvIPFile->Lookup(hv);
 	if (pipFile)

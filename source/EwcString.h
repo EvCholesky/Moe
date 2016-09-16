@@ -18,29 +18,37 @@
 
 #include "EwcTypes.h"
 
-namespace FastHash
-{
-	u32 NSuperFastHash(const char * data, size_t len);
-}
+u32 HvFromPBFVN(const void * pV, size_t cB);
+u32 HvFromPCozLowercaseFVN(const char * pV, size_t cB);
 
 namespace EWC
 {
 	class CStringTable;
 
 
-inline u32		HvFromPChz(const char * pChz, size_t cB = 0)
+inline u32		HvFromPCoz(const char * pCoz, size_t cB = 0)
 					{
-						if (!pChz)
+						if (!pCoz)
 							return 0;
 						if (cB == 0)
-							cB = CCh(pChz);
+							cB = CBCoz(pCoz)-1;
 
-						return FastHash::NSuperFastHash(pChz, cB);
+						return HvFromPBFVN(pCoz, cB);
+					}
+
+inline u32		HvFromPCozLowercase(const char * pCoz, size_t cB = 0)
+					{
+						if (!pCoz)
+							return 0;
+						if (cB == 0)
+							cB = CBCoz(pCoz)-1;
+
+						return HvFromPCozLowercaseFVN(pCoz, cB);
 					}
 
 inline u32		HvFromAB(const void * aB, size_t cB)
 					{
-						return FastHash::NSuperFastHash((const char *)aB, cB);
+						return HvFromPBFVN(aB, cB);
 					}
 
 inline u32		HvFromP(void * pV)
@@ -70,7 +78,7 @@ public:
 					}
 
 				CStringHash(const char * pChz, size_t cB = 0)
-				:m_hv(HvFromPChz(pChz, cB))
+				:m_hv(HvFromPCoz(pChz, cB))
 #if EWC_SHASH_DEBUG_POINTER
 				,m_pChzDebugSource(pChz)
 #endif

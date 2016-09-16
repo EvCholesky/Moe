@@ -1179,6 +1179,11 @@ STypeInfo *PTinPromoteVarArg(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymt
 			auto pTinenum = (STypeInfoEnum *)pTinIn;
 			return PTinPromoteVarArg(pTcwork, pSymtab, pTinenum->m_pTinLoose);
 		}
+	case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTinIn;
+			return pSymtab->PTinptrAllocReference(pTinary->m_pTin);
+		}
 	default: return pTinIn;
 	}
 }
@@ -2268,6 +2273,17 @@ PROCMATCH ProcmatchCheckArguments(
 	for (int iStnodArg = iStnodArgMin; iStnodArg < cStnodCall; ++iStnodArg)
 	{
 		CSTNode * pStnodArg = pStnodCall->PStnodChild(iStnodArg);
+
+		if (FIsType(pStnodArg))
+		{
+			if (fPrintErrors)
+			{
+				EmitError(pTcwork, pStnodCall, "Procedure argument %d, Expected an instance, but encountered a type.",
+						iStnodArg-iStnodArgMin+1);
+			}
+			return PROCMATCH_None;
+		}
+
 		STypeInfo * pTinCall = pStnodArg->m_pTin;
 		
 		// Find the default literal promotion, as we need this to check for exact matches (which have precedence for matching)
@@ -3404,7 +3420,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 													pStnodIdent->m_lexloc,
 													pTcsentTop->m_grfsymlook);
 
-					if (EWC_FVERIFY(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PCoz()))
+					if (!pSymIdent || pSymIdent->m_pStnodDefinition != pStnod)
+					{
+						EmitError(pTcwork, pStnod, "symbol lookup failed for '%s'", strIdent.PCoz());
+						return TCRET_StoppingError;
+					}
+					else
 					{
 						pStnod->m_pSym = pSymIdent;
 						if (pSymIdent->m_pTin == nullptr)
@@ -4718,6 +4739,23 @@ STVALK StvalkFromTin(STypeInfo * pTin)
 	return STVALK_Nil;
 }
 
+PARK ParkDefinition(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
+{
+	if (EWC_FVERIFY(pSym->m_pStnodDefinition, "symbol without definition"))
+	{
+		PARK parkDef = pSym->m_pStnodDefinition->m_park;
+		switch (parkDef)
+		{
+		case PARK_ProcedureDefinition:	return parkDef;
+		case PARK_Decl:					return parkDef; 
+		case PARK_StructDefinition:		return PARK_Decl; // instances and types shadow each other
+		default: 
+			EmitError(pTcwork, pSym->m_pStnodDefinition, "Unexpected PARK %s for symbol definition", PChzFromPark(parkDef));
+		}
+	}
+	return PARK_Nil;
+}
+
 void PerformTypeCheck(
 	CAlloc * pAlloc,
 	SErrorManager * pErrman,
@@ -4803,6 +4841,52 @@ void PerformTypeCheck(
 	}
 
 	//PerformFlushResolvedLiteralsPass(pTcwork, paryEntry);
+
+	//check for top level collisions
+
+	{
+		EWC::CHash<HV, SSymbol *>::CIterator iterSym(&pSymtabTop->m_hashHvPSym);
+		SSymbol ** ppSym;
+		while (ppSym = iterSym.Next())
+		{
+			auto pSym = *ppSym;
+			for (auto pSymSrc = pSym; pSymSrc; pSymSrc = pSymSrc->m_pSymPrev)
+			{
+				for (auto pSymDst = pSymSrc->m_pSymPrev; pSymDst; pSymDst = pSymDst->m_pSymPrev)
+				{
+					PARK parkSrc = ParkDefinition(pTcwork, pSymSrc);
+					PARK parkDst = ParkDefinition(pTcwork, pSymDst);
+
+					if (parkSrc != parkDst)
+						continue;
+
+					if (parkSrc == PARK_ProcedureDefinition)
+					{
+						if (!FTypesAreSame(pSymSrc->m_pTin, pSymDst->m_pTin))
+							continue;
+					}
+
+					if (pSymDst->m_pStnodDefinition)
+					{
+						auto pLexlocDst = &pSymDst->m_pStnodDefinition->m_lexloc;
+
+						s32 iLineDst;
+						s32 iColDst;
+						CalculateLinePosition(pErrman->m_pWork, pLexlocDst, &iLineDst, &iColDst);
+
+						EmitError(
+							pTcwork,
+							pSym->m_pStnodDefinition, 
+							"Top level symbol '%s' is also defined here %s(%d,%d)",
+							pSym->m_strName.PCoz(),
+							pLexlocDst->m_strFilename.PCoz(),
+							iLineDst,
+							iColDst);
+					}
+				}
+			}
+		}
+	}
 
 	pAlloc->EWC_DELETE(pTcwork);
 }

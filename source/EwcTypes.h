@@ -1202,7 +1202,7 @@ public:
 				char aCh[2048];
 				SStringBuffer strbuf(aCh, EWC_DIM(aCh));
 				FormatCoz(&strbuf, "%s:%d", pChzFile, cLine);
-				return HvFromPChz(aCh);
+				return HvFromPCoz(aCh);
 #else
 				return 0;
 #endif

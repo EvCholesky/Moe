@@ -236,7 +236,13 @@ static void GlfwErrorCallback(int nError, const char* pChz)
 typedef void (*pfnGlProc)(void);
 extern "C" pfnGlProc PFnGlProcLookup(const char * pChzProcname)
 {
-	return glfwGetProcAddress(pChzProcname);
+	auto pFnGlProc = glfwGetProcAddress(pChzProcname);
+	auto nGlError = glGetError();
+	if (nGlError != GL_NO_ERROR)
+	{
+		printf("GL Error: %d\n", nGlError);
+	}
+	return pFnGlProc;
 }
 
 extern "C" void CreateWindow(s64 dX, s64 dY, const char * pChzName, void ** ppVHwnd)

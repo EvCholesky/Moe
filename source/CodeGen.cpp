@@ -393,7 +393,7 @@ void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath
 
 SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & strFilename)
 {
-	auto pFile = pWork->PFileLookup(strFilename.Hv(), CWorkspace::FILEK_Source);
+	auto pFile = pWork->PFileLookup(strFilename.PCoz(), CWorkspace::FILEK_Source);
 	if (!EWC_FVERIFY(pFile, "bad file lookup in PDifEnsure"))
 		return nullptr;
 
@@ -961,7 +961,7 @@ void CIRBuilder::GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t 
 	HV hv = 0;
 	if (iCh >= 0)
 	{
-		hv = HvFromPChz(pCozIn, iCh+1);
+		hv = HvFromPCoz(pCozIn, iCh+1);
 	}
 
 	u32 * pN = nullptr;
@@ -3114,11 +3114,21 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 									arypLvalArgs.A(),
 									(u32)arypLvalArgs.C(),
 									"");
+				if (pTinproc->m_callconv != CALLCONV_Nil)
+				{
+					LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
+				}
 				return pInst;
 			}
 		}
 	case PARK_Identifier:
 		{
+			if (!pStnod->m_pSym || !pStnod->m_pSym->m_pVal)
+			{
+				CString strName(StrFromIdentifier(pStnod));
+				EmitError(pWork, &pStnod->m_lexloc, "INTERNAL ERROR: Missing value for symbol %s", strName.PCoz());
+			}
+
 			CIRValue * pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
 			if (EWC_FVERIFY(pVal, "unknown identifier in codegen") && valgenk != VALGENK_Reference && pVal->m_valk != VALK_ProcedureDefinition)
 			{

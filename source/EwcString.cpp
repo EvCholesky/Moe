@@ -19,83 +19,32 @@
 
 using namespace EWC;
 
-namespace FastHash
+// simple hash function with meh avalanching, works for now. replace with MUM hash or xxHash
+u32 HvFromPBFVN(const void * pV, size_t cB)
 {
-	/* By Paul Hsieh (C) 2004, 2005.  Covered under the Paul Hsieh derivative 
-	   license. See: 
-	   http://www.azillionmonkeys.com/qed/weblicense.html for license details.
+	auto pB = (u8*)pV;
+    u32 hv = 2166136261;
 
-	   http://www.azillionmonkeys.com/qed/hash.html */
+	for (size_t iB=0; iB < cB; ++iB)
+    {
+        hv = (hv * 16777619) ^ pB[iB];
+    }
 
-	/*
-	#undef get16bits
-	#if (defined(__GNUC__) && defined(__i386__)) || defined(__WATCOMC__) \
-	  || defined(_MSC_VER) || defined (__BORLANDC__) || defined (__TURBOC__)
-	#define get16bits(d) (*((const uint16_t *) (d)))
-	#endif
+    return hv;
+}
 
-	#if !defined (get16bits)
-	#define get16bits(d) ((((uint32_t)(((const uint8_t *)(d))[1])) << 8)\
-						   +(uint32_t)(((const uint8_t *)(d))[0]) )
-	#endif
-	*/
+u32 HvFromPCozLowercaseFVN(const char * pV, size_t cB)
+{
+	auto pB = (u8*)pV;
+    u32 hv = 2166136261;
 
-	EWC_FORCE_INLINE u16 NGet16bits ( const void * p )
-	{
-	  return *(const u16*)p;
-	}
+	for (size_t iB=0; iB < cB; ++iB)
+    {
+        hv = (hv * 16777619) ^ (u8)tolower(pB[iB]);
+    }
 
-	u32 NSuperFastHash (const char * pB, size_t cB) 
-	{
-		u32 hash = 0, tmp;
-		int cBRemain;
-
-		if (cB <= 0 || pB == nullptr) return 0;
-
-		cBRemain = cB & 3;
-		cB >>= 2;
-
-		// Main loop
-		for (;cB > 0; --cB)
-		{
-			hash  += NGet16bits (pB);
-			tmp    = (NGet16bits (pB+2) << 11) ^ hash;
-			hash   = (hash << 16) ^ tmp;
-			pB  += 2*sizeof(u16);
-			hash  += hash >> 11;
-		}
-
-		// Handle end cases
-		switch (cBRemain) 
-		{
-		case 3:
-			hash += NGet16bits (pB);
-			hash ^= hash << 16;
-			hash ^= pB[sizeof(u16)] << 18;
-			hash += hash >> 11;
-			break;
-		case 2:
-			hash += NGet16bits (pB);
-			hash ^= hash << 11;
-			hash += hash >> 17;
-			break;
-		case 1:
-			hash += *pB;
-			hash ^= hash << 10;
-			hash += hash >> 1;
-		}
-
-		// Force "avalanching" of final 127 bits
-		hash ^= hash << 3;
-		hash += hash >> 5;
-		hash ^= hash << 4;
-		hash += hash >> 17;
-		hash ^= hash << 25;
-		hash += hash >> 6;
-
-		return hash;
-	}
-} // namespace FastHash	
+    return hv;
+}
 
 namespace EWC
 {

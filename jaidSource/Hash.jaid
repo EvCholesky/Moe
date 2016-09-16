@@ -10,11 +10,9 @@ HvHashFVN :: (pV: &void, cB: s32) -> u32
 	pB := cast (& u8) pV;
     hv: u32 = 2166136261;
 
-    i: int;
-    while (i < cB)
+    for iterB := iterMake(0, cB)
     {
-        hv = (hv * 16777619) ^ pB[i];
-        ++i;
+        hv = (hv * 16777619) ^ pB[iterB.m_i];
     }
 
     return hv;
@@ -25,11 +23,9 @@ HvHashFVNLower :: (pV: & void, cB: int) -> u32
 	pB := cast (& u8) pV;
     hv: u32 = 2166136261;
 
-    i: int;
-    while (i < cB)
+    for iterB := iterMake(0, cB)
     {
-        hv = (hv * 16777619) ^ cast (u8) tolower(pB[i]);
-        ++i;
+        hv = (hv * 16777619) ^ cast (u8) tolower(pB[iterB.m_i]);
     }
 
     return hv;

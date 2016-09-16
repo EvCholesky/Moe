@@ -142,7 +142,7 @@ public:
 								{ return (filek == FILEK_Source) ? &m_hashHvIPFileSource :  &m_hashHvIPFileLibrary; }
 	int						CFile(FILEK filek)
 								{ return PHashHvIPFile(filek)->C(); }
-	SFile *					PFileLookup(HV hv, FILEK filek);
+	SFile *					PFileLookup(const char * pCozFile, FILEK filek);
 	void					SetObjectFilename(const char * pChzObjectFilename, size_t cB = 0);
 
 	EWC::CAlloc *					m_pAlloc;

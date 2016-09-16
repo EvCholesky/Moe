@@ -55,12 +55,19 @@ DebugBreak :: () -> void #foreign;
 PVMalloc :: (cB : s64) -> & void #foreign;
 FreeMalloc :: (pV: &void) #foreign;
 
-ProcAlloc :: typedef (allock: ALLOCK, cB: s64, cBPrev: s64, pVPrev: & void, pVAllocator: & void, options: s64) -> & void;
+ProcAlloc :: typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void;
 
 memcpy :: (dest: &void, source: &void, count: s64) -> &void #foreign;
 memset :: (dest: &void, value: int, count: s64)    -> &void #foreign;
 
-PVAllocateDefault :: (allock: ALLOCK, cB: s64, cBPrev: s64, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
+PVAllocSimple :: inline (pFnAlloc : ProcAlloc, cB: uSize) -> & void
+{
+    // This is just a simple wrapper for allocations that won't be necessary once default args are done.
+
+    return pFnAlloc(ALLOCK.Allocate, cB, 0, null, null, 0);
+}
+
+PVAllocDefault :: (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
 {
     if allock == ALLOCK.Allocate
     {

@@ -1,0 +1,49 @@
+g_fontMainVertex :: #string END
+
+varying vec4 color;
+varying vec4 minMaxUV;
+void main()
+{
+	gl_Position 	= gl_ModelViewProjectionMatrix * gl_Vertex;
+	color	    	= gl_Color;
+	gl_TexCoord[0]  = gl_MultiTexCoord0;
+	minMaxUV		= gl_MultiTexCoord1;
+}
+END;
+
+// ok, this is a mess... but good enough for now. It's doing both distance map AA and 4x supersampling to
+//  deal with tiny fonts. It currently hard codes the font size and AA distance in a really hacky way
+//  and doesn't deal with DuDy being different from DuDx, but it'll do for now.
+
+// "Real-Time Texture-Mapped Vector Glyphs" is very unclear about how to compute the smoothstep scalar
+//  (and wrong? s is in pixels?)
+
+g_fontMainFragment :: #string END
+
+uniform sampler2D s_glyphTexture;
+varying vec4 color;
+varying vec4 minMaxUV;
+
+vec2 clampMinMax(vec4 minMax, vec2 uv)
+{
+	return clamp(uv.xy, minMax.xy, minMax.zw);
+}
+
+void main()
+{
+	float dudx	= dFdx(gl_TexCoord[0].x);
+	float dvdx	= dFdx(gl_TexCoord[0].y);
+	float dvdy	= dFdy(gl_TexCoord[0].y);
+	float width = 512.0 / 12.0;
+	float s = sqrt(dudx*dudx + dvdx*dvdx);
+	float rF = 1.0 / (2.0 * width * s);
+	dudx *= 0.25;
+	dvdy *= 0.25;
+
+	float alpha =	smoothstep(-0.5f, 0.5f, (texture2D(s_glyphTexture, clampMinMax(minMaxUV, gl_TexCoord[0].xy + vec2(dudx, dvdy) )).g - 0.5f) * rF) +
+	 				smoothstep(-0.5f, 0.5f, (texture2D(s_glyphTexture, clampMinMax(minMaxUV, gl_TexCoord[0].xy + vec2(dudx, -dvdy) )).g - 0.5f) * rF) +
+	 				smoothstep(-0.5f, 0.5f, (texture2D(s_glyphTexture, clampMinMax(minMaxUV, gl_TexCoord[0].xy + vec2(-dudx, -dvdy) )).g - 0.5f) * rF) +
+	 				smoothstep(-0.5f, 0.5f, (texture2D(s_glyphTexture, clampMinMax(minMaxUV, gl_TexCoord[0].xy + vec2(-dudx, dvdy) )).g - 0.5f) * rF);
+	alpha *= 0.25;
+	gl_FragColor = vec4(color.rgb, alpha);
+END;
