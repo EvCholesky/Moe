@@ -253,7 +253,7 @@ enum ENUMIMP	// implicit enum members (added as STNodes during parse)
 
 const char * PChzFromEnumimp(ENUMIMP enumimp);
 
-// Syntax tree string values - used for identifiers and reserved words
+// Syntax tree string values - used for identifiers, labels and reserved words
 class CSTIdentifier // tag = stident
 {
 public:
@@ -528,7 +528,7 @@ public:
 	EWC::CAlloc * 		m_pAlloc;
 	CWorkspace *		m_pWork;
 	CSymbolTable *		m_pSymtab;
-	CSTNode *			m_pStnodScope;	// current containng scope
+	CSTNode *			m_pStnodScope;	// current containg scope
 	GRFSYMLOOK			m_grfsymlook;
 };
 

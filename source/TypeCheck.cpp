@@ -4123,6 +4123,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					RWORD rword = pStnod->m_pStval->m_rword;
 					switch (rword)
 					{
+					case RWORD_Continue:
+					case RWORD_Break:
+						{
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+						} break;
 					case RWORD_Sizeof:
 					case RWORD_Alignof:
 						{

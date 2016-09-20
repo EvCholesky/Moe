@@ -29,12 +29,12 @@ Currently supports:
   * Method overloading
   * Method pointers
   * UTF8 identifiers
+  * break/continue to labels;
 
 Coming soon:
   * Operator overloading
   * Debug info
     - handle nested scopes
-  * break/continue to labels;
   * Dynamic arrays
   * Improved error handling and unit testing of error cases.
 

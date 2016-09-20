@@ -659,6 +659,59 @@ TestForLoop :: ()
 	printf("'\n");
 }
 
+TestBreakContinue :: ()
+{
+	printf("\nBreak & Continue:\n");
+
+	for iter := iterMake(0, 10)
+	{
+		if (iter.m_i == 3 || iter.m_i == 4)
+			continue;
+
+		printf("i=%d, ", iter.m_i);
+
+		if (iter.m_i == 6)
+			break;
+	}
+
+	printf("\n");
+	i: int;
+	while i < 10
+	{
+		iPrev:= i;
+		++i;	
+		if iPrev == 3 || iPrev == 4
+			{ continue; }
+
+		printf("i=%d, ", iPrev);
+
+		if (iPrev == 6)
+			{ break; }
+	}
+	printf("\n");
+
+	// labels
+	#label Outer
+	for iterY := iterMake(0, 10)
+	{
+		printf("\n");
+		for iterX := iterMake(0, 10)
+		{
+			if iterX.m_i == 4
+			{ 
+				printf("continue.");
+				continue Outer; 
+			}
+
+			printf("(%d,%d),", iterX.m_i, iterY.m_i);
+
+			if iterX.m_i == 3 && iterY.m_i == 4
+				break Outer;
+		}
+		printf("Never print\n");
+	}
+}
+
 main :: () -> int 
 {
 
@@ -678,6 +731,7 @@ main :: () -> int
 	TestProcedureRef();
 	TestHereStrings();
 	TestForLoop();
+	TestBreakContinue();
 
 	return 1;
 }

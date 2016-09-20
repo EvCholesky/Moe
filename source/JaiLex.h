@@ -90,6 +90,7 @@ enum JTOK
 		RW(FileDirective) STR(#file), \
 		RW(LineDirective) STR(#line), \
 		RW(StringDirective) STR(#string), \
+		RW(LabelDirective) STR(#label), \
 		RW(ForeignLibraryDirective) STR(#foreign_library), \
 		RW(Cast) STR(cast), \
 		RW(AutoCast) STR(acast), \

@@ -17,6 +17,7 @@
 
 #include "EwcArray.h"
 #include "EwcHash.h"
+#include "EwcString.h"
 
 struct LLVMOpaqueBasicBlock;
 struct LLVMOpaqueBuilder;
@@ -307,6 +308,22 @@ enum NCMPPRED
 #undef JAI_PRED
 #undef LLVM_PRED
 
+
+
+struct SJumpTargets // tag = jumpt
+{
+					SJumpTargets()
+					:m_pBlockBreak(nullptr)
+					,m_pBlockContinue(nullptr)
+						{ ; }
+
+	CIRBasicBlock * m_pBlockBreak;
+	CIRBasicBlock * m_pBlockContinue;
+	EWC::CString	m_strLabel;
+};
+
+
+
 class CIRBuilder		// tag = build
 {
 public:
@@ -364,6 +381,7 @@ public:
 
 	EWC::CDynAry<CIRProcedure *>		m_arypProcVerify;	// all the procedures that need verification.
 	EWC::CDynAry<CIRValue *> *			m_parypValManaged;
+	EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
 	EWC::CHash<HV, u32>					m_hashHvNUnique;	// map for generating unique strings
 
 };

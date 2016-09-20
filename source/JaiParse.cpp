@@ -2283,6 +2283,14 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 	case RWORD_Break:
 		{
 			CSTNode * pStnod = PStnodParseReservedWord(pParctx, pJlex, rword);
+			if (pJlex->m_jtok == JTOK_Identifier)
+			{
+				auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+				pStident->m_str = pJlex->m_str;
+				pStnod->m_pStident = pStident;
+				JtokNextToken(pJlex);
+			}
+
 			Expect(pParctx, pJlex, JTOK(';'));
 
 			return pStnod;
@@ -2365,7 +2373,25 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SJaiLexer * pJl
 
 CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 {
+	CSTIdentifier * pStidentLabel = nullptr;
 	RWORD rword = RwordLookup(pJlex);
+	if (rword == RWORD_LabelDirective)
+	{
+		JtokNextToken(pJlex);
+
+		if (pJlex->m_jtok != JTOK_Identifier)
+		{
+			ParseError(pParctx, pJlex, "Encountered Label directive without label string");
+		}
+		else
+		{
+			pStidentLabel = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+			pStidentLabel->m_str = pJlex->m_str;
+			JtokNextToken(pJlex);
+		}
+	}
+
+	rword = RwordLookup(pJlex);
 	if (rword == RWORD_For)
 	{
 		//for decl := iterMake {}
@@ -2379,6 +2405,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJl
 		
 		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
 		pStnodFor->m_pStfor = pStfor;
+		pStnodFor->m_pStident = pStidentLabel;
 
 		SLexerLocation lexloc(pJlex);
 		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for");
@@ -2472,10 +2499,18 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJl
 		CSTNode * pStnodWhile = PStnodParseReservedWord(pParctx, pJlex, RWORD_While);
 		CSTNode * pStnodExp = PStnodParseExpression(pParctx, pJlex);
 		pStnodWhile->IAppendChild(pStnodExp);
+		pStnodWhile->m_pStident = pStidentLabel;
 		
 		CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pJlex);
 		pStnodWhile->IAppendChild(pStnodStatement);
 		return pStnodWhile;
+	}
+
+
+	if (pStidentLabel)
+	{
+		ParseError(pParctx, pJlex, "Label directive should precede 'while' or 'for' loop.");
+		pParctx->m_pAlloc->EWC_FREE(pStidentLabel);
 	}
 	return nullptr;
 }

@@ -869,6 +869,7 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 ,m_pBlockCur(nullptr)
 ,m_arypProcVerify(pAlloc)
 ,m_parypValManaged(parypValManaged)
+,m_aryJumptStack(pAlloc)
 ,m_hashHvNUnique(pAlloc)
 { 
 	m_pLbuild = LLVMCreateBuilder();
@@ -2945,9 +2946,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					}
 
 					CIRProcedure * pProc = pBuild->m_pProcCur;
-					CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "wpred");
-					CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "wbody");
-					CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "wpost");
+					CIRBasicBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "fpred");
+					CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "fbody");
+					CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "fpost");
+					CIRBasicBlock * pBlockIncrement = pBuild->PBlockCreate(pProc, "finc");
 					(void) pBuild->PInstCreateBranch(pBlockPred);	
 
 					pBuild->ActivateBlock(pBlockPred);
@@ -2960,9 +2962,20 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					// NOTE: we're swapping the true/false blocks here because the predicate is reversed, ie fIsDone
 					GeneratePredicate(pWork, pBuild, pStnodPred, pBlockPost, pBlockBody, pTinBool);
 
+					auto pJumpt = pBuild->m_aryJumptStack.AppendNew();
+					pJumpt->m_pBlockBreak = pBlockPost;
+					pJumpt->m_pBlockContinue = pBlockIncrement;
+					if (pStnodFor->m_pStident)
+					{
+						pJumpt->m_strLabel = pStnodFor->m_pStident->m_str;
+					}
+
 					pBuild->ActivateBlock(pBlockBody);
 					(void) PValGenerate(pWork, pBuild, pStnodFor->PStnodChild(pStfor->m_iStnodBody), VALGENK_Instance);
+					(void) pBuild->PInstCreateBranch(pBlockIncrement);	
+					pBuild->m_aryJumptStack.PopLast();
 
+					pBuild->ActivateBlock(pBlockIncrement);
 					CSTNode * pStnodIncrement = pStnodFor->PStnodChild(pStfor->m_iStnodIncrement);
 					(void) PValGenerate(pWork, pBuild, pStnodIncrement, VALGENK_Instance);
 
@@ -2997,7 +3010,17 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					GeneratePredicate(pWork, pBuild, pStnodPred, pBlockBody, pBlockPost, pTinBool);
 
 					pBuild->ActivateBlock(pBlockBody);
+
+					auto pJumpt = pBuild->m_aryJumptStack.AppendNew();
+					pJumpt->m_pBlockBreak = pBlockPost;
+					pJumpt->m_pBlockContinue = pBlockPred;
+					if (pStnodWhile->m_pStident)
+					{
+						pJumpt->m_strLabel = pStnodWhile->m_pStident->m_str;
+					}
+
 					(void) PValGenerate(pWork, pBuild, pStnodWhile->PStnodChild(1), VALGENK_Instance);
+					pBuild->m_aryJumptStack.PopLast();
 
 					(void) pBuild->PInstCreateBranch(pBlockPred);	
 
@@ -3017,7 +3040,55 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					(void) pBuild->PInstCreate(IROP_Ret, pValRhs, "RetTmp");
 
-				}break;
+				} break;
+			case RWORD_Break:
+			case RWORD_Continue:
+				{
+					CIRBasicBlock * pBlock = nullptr;
+					CString * pString = nullptr;
+					if (pStnod->m_pStident)
+					{
+						pString = &pStnod->m_pStident->m_str;
+					}
+
+					if (rword == RWORD_Break)
+					{
+						for (int iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
+						{
+							auto pJumpt = &pBuild->m_aryJumptStack[iJumpt];
+							if (pJumpt->m_pBlockBreak && (pString == nullptr || pJumpt->m_strLabel == *pString))
+							{
+								pBlock = pJumpt->m_pBlockBreak;
+								break;
+							}
+						}
+					}
+					else //RWORD_Continue
+					{
+						for (int iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
+						{
+							auto pJumpt = &pBuild->m_aryJumptStack[iJumpt];
+							if (pJumpt->m_pBlockBreak && (pString == nullptr || pJumpt->m_strLabel == *pString))
+							{
+								pBlock = pJumpt->m_pBlockContinue;
+								break;
+							}
+						}
+					}
+
+					if (pBlock)
+					{
+						(void) pBuild->PInstCreateBranch(pBlock);	
+					}
+					else
+					{
+						if (pString)
+							EmitError(pWork, &pStnod->m_lexloc, "Could not loop with %s label matching '%s'", PCozFromRword(rword), *pString);
+						else
+							EmitError(pWork, &pStnod->m_lexloc, "Encountered %s statement outside of a loop or switch", PCozFromRword(rword));
+					}
+
+				} break;
 			default:
 				EWC_ASSERT(false, "Unhandled reserved word in code gen");
 				break;
