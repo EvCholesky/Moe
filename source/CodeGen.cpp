@@ -3458,6 +3458,14 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinLhs != nullptr) & (pTinRhs != nullptr), "bad cast"))
 				return nullptr;
 	
+			if (LLVMTypeOf(pValLhsCast->m_pLval) != LLVMTypeOf(pValRhsCast->m_pLval))
+			{
+				EmitError(pWork, &pStnod->m_lexloc, "INTERNAL ERROR: bad cast");
+				DumpLtype("Lhs", pValLhsCast);
+				DumpLtype("Rhs", pValRhsCast);
+				return nullptr;
+			}
+
 			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_jtok, pTinOutput, pValLhsCast, pValRhsCast);
 
 			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PCozFromJtok(pStnod->m_jtok));

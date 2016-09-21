@@ -1,5 +1,5 @@
 g_fontMainVertex :: #string END
-
+#version 120
 varying vec4 color;
 varying vec4 minMaxUV;
 void main()
@@ -19,7 +19,7 @@ END;
 //  (and wrong? s is in pixels?)
 
 g_fontMainFragment :: #string END
-
+#version 120
 uniform sampler2D s_glyphTexture;
 varying vec4 color;
 varying vec4 minMaxUV;
@@ -46,4 +46,5 @@ void main()
 	 				smoothstep(-0.5f, 0.5f, (texture2D(s_glyphTexture, clampMinMax(minMaxUV, gl_TexCoord[0].xy + vec2(-dudx, dvdy) )).g - 0.5f) * rF);
 	alpha *= 0.25;
 	gl_FragColor = vec4(color.rgb, alpha);
+}
 END;

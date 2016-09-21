@@ -1663,7 +1663,7 @@ STypeInfo * PTinOperandFromPark(
 				auto pTinElemRhs = PTinElement(pTinRhs);
 				if (FTypesAreSame(pTinElemLhs, pTinElemRhs))
 					return pTinPtr;
-			}
+			} break;
 		case PARK_AdditiveOp:
 			{
 				if (pTinOther->m_tink == TINK_Integer)
@@ -4416,7 +4416,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										EmitError(
 											pTcwork, 
 											pStnod, 
-											"invalid opcode %s for %s literal and %s literal", 
+											"invalid operation %s for %s literal and %s literal", 
 											PCozFromJtok(pStnod->m_jtok),
 											PChzFromLitk(((STypeInfoLiteral *)pTinLhs)->m_litty.m_litk),
 											PChzFromLitk(((STypeInfoLiteral *)pTinRhs)->m_litty.m_litk));

@@ -20,7 +20,18 @@ UpdateWindowEvents :: () -> void #foreign;
 SwapBuffers :: (pVHwnd : & void) -> void #foreign SwapBuffers_JAI;
 FGetNextEvent :: (pEvent: & SEvent) -> bool #foreign;
 
+GL_POINTS ::                0x0000;
+GL_LINES ::                 0x0001;
+GL_LINE_LOOP ::             0x0002;
+GL_LINE_STRIP ::            0x0003;
 GL_TRIANGLES ::             0x0004;
+GL_TRIANGLE_STRIP ::        0x0005;
+GL_TRIANGLE_FAN ::          0x0006;
+GL_QUADS ::                 0x0007;
+GL_QUAD_STRIP ::            0x0008;
+GL_POLYGON ::               0x0009;
+
+GL_BLEND ::                 0x0BE2;
 GL_TEXTURE_2D ::            0x0DE1;
 GL_BYTE ::                  0x1400;
 GL_UNSIGNED_BYTE ::         0x1401;
@@ -35,8 +46,48 @@ GL_4_BYTES ::               0x1409;
 GL_DOUBLE ::                0x140A;
 GL_RGBA ::                  0x1908;
 
+GL_VERTEX_ARRAY ::          0x8074;
+GL_NORMAL_ARRAY ::          0x8075;
+GL_COLOR_ARRAY ::           0x8076;
+GL_INDEX_ARRAY ::           0x8077;
+GL_TEXTURE_COORD_ARRAY ::   0x8078;
+GL_EDGE_FLAG_ARRAY ::       0x8079;
+
 GL_TEXTURE_BASE_LEVEL ::    0x813C;
 GL_TEXTURE_MAX_LEVEL  ::    0x813D;
+
+GL_TEXTURE0 ::              0x84C0;
+GL_TEXTURE1 ::              0x84C1;
+GL_TEXTURE2 ::              0x84C2;
+GL_TEXTURE3 ::              0x84C3;
+GL_TEXTURE4 ::              0x84C4;
+GL_TEXTURE5 ::              0x84C5;
+GL_TEXTURE6 ::              0x84C6;
+GL_TEXTURE7 ::              0x84C7;
+GL_TEXTURE8 ::              0x84C8;
+GL_TEXTURE9 ::              0x84C9;
+GL_TEXTURE10 ::             0x84CA;
+GL_TEXTURE11 ::             0x84CB;
+GL_TEXTURE12 ::             0x84CC;
+GL_TEXTURE13 ::             0x84CD;
+GL_TEXTURE14 ::             0x84CE;
+GL_TEXTURE15 ::             0x84CF;
+GL_TEXTURE16 ::             0x84D0;
+GL_TEXTURE17 ::             0x84D1;
+GL_TEXTURE18 ::             0x84D2;
+GL_TEXTURE19 ::             0x84D3;
+GL_TEXTURE20 ::             0x84D4;
+GL_TEXTURE21 ::             0x84D5;
+GL_TEXTURE22 ::             0x84D6;
+GL_TEXTURE23 ::             0x84D7;
+GL_TEXTURE24 ::             0x84D8;
+GL_TEXTURE25 ::             0x84D9;
+GL_TEXTURE26 ::             0x84DA;
+GL_TEXTURE27 ::             0x84DB;
+GL_TEXTURE28 ::             0x84DC;
+GL_TEXTURE29 ::             0x84DD;
+GL_TEXTURE30 ::             0x84DE;
+GL_TEXTURE31 ::             0x84DF;
 
 GL_FRAGMENT_SHADER_ARB ::   0x8B30;
 GL_VERTEX_SHADER_ARB ::     0x8B31;
@@ -45,11 +96,33 @@ GL_COMPILE_STATUS ::        0x8B81;
 GL_LINK_STATUS ::           0x8B82;
 GL_INFO_LOG_LENGTH ::       0x8B84;
 
+
+
+
+// BlendingFactorDest
+GL_ZERO ::                  0;
+GL_ONE ::                   1;
+GL_SRC_COLOR ::             0x0300;
+GL_ONE_MINUS_SRC_COLOR ::   0x0301;
+GL_SRC_ALPHA ::             0x0302;
+GL_ONE_MINUS_SRC_ALPHA ::   0x0303;
+GL_DST_ALPHA ::             0x0304;
+GL_ONE_MINUS_DST_ALPHA ::   0x0305;
+
+// BlendingFactorSrc
+GL_DST_COLOR ::             0x0306;
+GL_ONE_MINUS_DST_COLOR ::   0x0307;
+GL_SRC_ALPHA_SATURATE ::    0x0308;
+
+
 glsizei :: typedef s32;
 glint :: typedef s32;
 gluint :: typedef u32;
 glenum :: typedef u32;
 glchar :: typedef u8;
+glboolean :: typedef u8;
+glfloat :: typedef f32;
+glbitfield :: typedef u32;
 
 glBegin :: (mode: s32) #foreign #stdcall;
 glEnd :: () #foreign #stdcall;
@@ -64,20 +137,57 @@ glGenTextures :: (n: glsizei, textures: & gluint) #foreign #stdcall;
 glBindTexture :: (target: glenum, texture: gluint) #foreign #stdcall;
 glTexParameteri :: (target: glenum, pname: glenum, param: glint) #foreign #stdcall;
 glTexImage2D :: (target: glenum, level: glint, internalformat: glint, width: glsizei, height: glsizei, border: glint, format: glenum, type: glenum, pixels: &void) #foreign #stdcall;
+glBlendFunc :: (sfactor: glenum, dfactor: glenum) #foreign #stdcall;
+
+
+glEnable :: (cap: glenum) #foreign #stdcall;
+glEnableClientState :: (array: glenum) #foreign #stdcall;
+glDisable :: (cap: glenum) #foreign #stdcall;
+glDisableClientState :: (array: glenum) #foreign #stdcall;
+
+glPopAttrib :: () #foreign #stdcall;
+glPopClientAttrib :: () #foreign #stdcall;
+glPopMatrix :: () #foreign #stdcall;
+glPushAttrib :: (mask: glbitfield) #foreign #stdcall;
+glPushClientAttrib :: (mask: glbitfield) #foreign #stdcall;
+glPushMatrix :: () #foreign #stdcall;
+glVertexPointer :: (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall;
+glColorPointer :: (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall;
+glTexCoordPointer :: (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall;
+
+glDrawArrays :: (mode: glenum, first: glint, count: glsizei) #foreign #stdcall;
+
+
 
 // GL extension function pointers
-glCreateProgram : () -> gluint #stdcall;
-glDeleteProgram : (program: gluint) #stdcall;
-glLinkProgram : (program: gluint) #stdcall;
-glCreateShader : (type: glenum) -> gluint #stdcall;
-glDeleteShader : (shader: gluint) #stdcall;
-glShaderSource : (shader: gluint, count: glsizei, string: &&u8, length: &glint) #stdcall;
-glCompileShader : (handle: gluint) #stdcall;
-glGetShaderiv : (shader: gluint, pname: glenum, param: &glint) #stdcall;
-glGetProgramiv : (shader: gluint, pname: glenum, param: &glint) #stdcall;
-glGetShaderInfoLog : (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall;
-glGetProgramInfoLog : (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall;
-glAttachShader : (program: gluint, shader: gluint) #stdcall;
+glCreateProgram: () -> gluint #stdcall;
+glDeleteProgram: (program: gluint) #stdcall;
+glLinkProgram: (program: gluint) #stdcall;
+glCreateShader: (type: glenum) -> gluint #stdcall;
+glDeleteShader: (shader: gluint) #stdcall;
+glShaderSource: (shader: gluint, count: glsizei, string: &&u8, length: &glint) #stdcall;
+glCompileShader: (handle: gluint) #stdcall;
+glGetShaderiv: (shader: gluint, pname: glenum, param: &glint) #stdcall;
+glGetProgramiv: (shader: gluint, pname: glenum, param: &glint) #stdcall;
+glGetShaderInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall;
+glGetProgramInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall;
+glAttachShader: (program: gluint, shader: gluint) #stdcall;
+glUseProgram: (program: gluint) #stdcall;
+glGetUniformLocation: (program: gluint, name: & s8) -> glint #stdcall;
+
+glUniform1f: (location: glint, v0: glfloat) #stdcall;
+glUniform2f: (location: glint, v0: glfloat, v1: glfloat) #stdcall;
+glUniform3f: (location: glint, v0: glfloat, v1: glfloat, v2: glfloat) #stdcall;
+glUniform4f: (location: glint, v0: glfloat, v1: glfloat, v2: glfloat, v3: glfloat) #stdcall;
+glUniform1i: (location: glint, v0: glint) #stdcall;
+glUniform2i: (location: glint, v0: glint, v1: glint) #stdcall;
+glUniform3i: (location: glint, v0: glint, v1: glint, v2: glint) #stdcall;
+glUniform4i: (location: glint, v0: glint, v1: glint, v2: glint, v3: glint) #stdcall;
+glUnifformMatrix4fv: (location: glint, count: glsizei, transpose: glboolean, value: & glfloat) #stdcall;
+glActiveTexture: (texture: glenum) #stdcall;
+glClientActiveTexture: (texture: glenum) #stdcall;
+
+
 
 EVENTK :: enum s32 
 {  // If we set this to u8, our packing will stop matching C's.
@@ -168,6 +278,19 @@ FTryInitGLExtensions :: () -> bool
     glGetShaderInfoLog = acast FTryInitExtension("glGetShaderInfoLog", &fSuccess);
     glGetProgramInfoLog = acast FTryInitExtension("glGetProgramInfoLog", &fSuccess);
     glAttachShader = acast FTryInitExtension("glAttachShader", &fSuccess);
+    glUseProgram = acast FTryInitExtension("glUseProgram", &fSuccess);
+    glGetUniformLocation = acast FTryInitExtension("glGetUniformLocation", &fSuccess);
+    glUniform1f = acast FTryInitExtension("glUniform1f", &fSuccess);
+    glUniform2f = acast FTryInitExtension("glUniform2f", &fSuccess);
+    glUniform3f = acast FTryInitExtension("glUniform3f", &fSuccess);
+    glUniform4f = acast FTryInitExtension("glUniform4f", &fSuccess);
+    glUniform1i = acast FTryInitExtension("glUniform1i", &fSuccess);
+    glUniform2i = acast FTryInitExtension("glUniform2i", &fSuccess);
+    glUniform3i = acast FTryInitExtension("glUniform3i", &fSuccess);
+    glUniform4i = acast FTryInitExtension("glUniform4i", &fSuccess);
+    glUnifformMatrix4fv = acast FTryInitExtension("glUnifformMatrix4fv", &fSuccess);
+    glActiveTexture = acast FTryInitExtension ("glActiveTexture", &fSuccess);
+    glClientActiveTexture = acast FTryInitExtension ("glClientActiveTexture", &fSuccess);
     return fSuccess;
 }
 
