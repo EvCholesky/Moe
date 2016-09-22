@@ -434,7 +434,7 @@ protected:
 							,m_hashHvPSym(pAlloc)
 							,m_hashHvPTinBuiltIn(pAlloc)
 							,m_hashHvPTinfwd(pAlloc)
-							,m_arypTinManaged(pAlloc)
+							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
 							,m_grfsymtab(FSYMTAB_Default)

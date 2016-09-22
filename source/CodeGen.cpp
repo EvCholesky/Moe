@@ -116,7 +116,7 @@ CIRValue::CIRValue(VALK valk)
 
 CIRBasicBlock::CIRBasicBlock(EWC::CAlloc * pAlloc)
 :m_pLblock(nullptr)
-,m_arypInst(pAlloc)
+,m_arypInst(pAlloc, EWC::BK_IR)
 ,m_fIsTerminated(false)
 {
 }
@@ -415,7 +415,7 @@ SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & st
 	pDif->m_pLvalScope = pBuild->m_pLvalCompileUnit;
 	pDif->m_pLvalFile = LLVMDIBuilderCreateFile(pBuild->m_pDib, pCozFile, pCozPath);
 
-	pDif->m_aryLvalScopeStack.SetAlloc(pWork->m_pAlloc);
+	pDif->m_aryLvalScopeStack.SetAlloc(pWork->m_pAlloc, EWC::BK_WorkspaceFile);
 	pDif->m_aryLvalScopeStack.Append(pDif->m_pLvalFile);
 
 	return pDif;
@@ -867,9 +867,9 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 ,m_inspt()
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
-,m_arypProcVerify(pAlloc)
+,m_arypProcVerify(pAlloc, EWC::BK_CodeGen)
 ,m_parypValManaged(parypValManaged)
-,m_aryJumptStack(pAlloc)
+,m_aryJumptStack(pAlloc, EWC::BK_CodeGen)
 ,m_hashHvNUnique(pAlloc)
 { 
 	m_pLbuild = LLVMCreateBuilder();
@@ -3120,7 +3120,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 
-			CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc);
+			CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 			for (size_t iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
 				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodChild + 1);
@@ -3849,7 +3849,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	}
 
 	bool fHasVarArgs = false;
-	CDynAry<LLVMTypeRef> arypLtype(pBuild->m_pAlloc);
+	CDynAry<LLVMTypeRef> arypLtype(pBuild->m_pAlloc, EWC::BK_CodeGen);
 	if (pStnodParamList && EWC_FVERIFY(pStnodParamList->m_park == PARK_ParameterList, "expected parameter list"))
 	{
 		int cpStnodParams = pStnodParamList->CStnodChild();

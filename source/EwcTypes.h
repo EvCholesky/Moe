@@ -449,8 +449,24 @@ typedef u32 TID;
 extern TID TID_Nil;
 
 // Allocator
+enum BK // block kind
+{
+	BK_Nil			= -1,
+	BK_Core			= 0,
+	BK_Workspace,
+	BK_WorkspaceVal,
+	BK_WorkspaceFile,
+	BK_Parse,
+	BK_TypeCheck,
+	BK_CodeGen,
+	BK_SyntaxTree,
+	BK_IR,
+	BK_Symbol,
+	BK_Stack,	// should be stack array allocated
+};
 
 #define EWC_ALLOC(numBytes, alignment) 			AllocImpl(numBytes, alignment, __FILE__, __LINE__)
+#define EWC_ALLOC_BK(numBytes, alignment, bk) 	AllocImpl(numBytes, alignment, __FILE__, __LINE__, bk)
 #define EWC_ALLOC_TYPE(TYPE_NAME) 				AllocImpl(sizeof(TYPE_NAME), EWC_ALIGN_OF(TYPE_NAME), __FILE__, __LINE__)
 #define EWC_ALLOC_TYPE_ARRAY(TYPE_NAME, C_MAX) 	AllocImpl(sizeof(TYPE_NAME) * C_MAX, EWC_ALIGN_OF(TYPE_NAME), __FILE__, __LINE__)
 #define EWC_NEW(PALLOC, TYPE_NAME)				new ( (PALLOC)->AllocImpl(sizeof(TYPE_NAME), EWC_ALIGN_OF(TYPE_NAME), __FILE__, __LINE__))
@@ -530,7 +546,7 @@ public:
 	CAllocTracker *		PAltrac()
 							{ return m_pAltrac; }
 
-	void *				AllocImpl(size_t cB, size_t cBAlign, const char* pChzFile, int cLine)
+	void *				AllocImpl(size_t cB, size_t cBAlign, const char* pChzFile, int cLine, BK bk = BK_Nil)
 							{
 								size_t cBPrefix = CBAllocationPrefix();
 								size_t alignOffset = ((cBAlign > cBPrefix) & (cBPrefix > 0)) ? cBAlign - cBPrefix : 0;
@@ -563,7 +579,7 @@ public:
 
 #ifdef EWC_TRACK_ALLOCATION
 								if (m_pAltrac)
-									TrackAlloc(cBActual, pChzFile, cLine, pHv);
+									TrackAlloc(cBActual, pChzFile, cLine, bk, pHv);
 #endif
 
 								return pVAdjust;
@@ -595,7 +611,7 @@ public:
 								FreeImpl(p, pChzFile, cLine);
 							}
 
-	void				TrackAlloc(size_t cB, const char * pChzFile, int cLine, HV * pHv);
+	void				TrackAlloc(size_t cB, const char * pChzFile, int cLine, BK bk, HV * pHv);
 	void				TrackFree(size_t cBt, HV * pHv);
 	void				PrintAllocations();
 
@@ -1178,12 +1194,12 @@ class CAllocTracker //tag=altrac
 public:
 #ifdef EWC_TRACK_ALLOCATION
 			CAllocTracker()
-			:m_aryEntry()
+			:m_aryEntry(BK_Core)
 			,m_hashHvIentry()
 				{ ; }
 
 			CAllocTracker(CAlloc * pAlloc)
-			:m_aryEntry(pAlloc)
+			:m_aryEntry(pAlloc, BK_Core)
 			,m_hashHvIentry(pAlloc)
 				{ ; }
 #endif 
@@ -1196,23 +1212,23 @@ public:
 #endif
 			}
 
-	HV		HvFromFileLine(const char * pChzFile, int cLine)
+	HV		HvFromFileLineBk(const char * pChzFile, int cLine, BK bk)
 			{
 #ifdef EWC_TRACK_ALLOCATION
 				char aCh[2048];
 				SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-				FormatCoz(&strbuf, "%s:%d", pChzFile, cLine);
+				FormatCoz(&strbuf, "%s:%d%d", pChzFile, cLine, bk);
 				return HvFromPCoz(aCh);
 #else
 				return 0;
 #endif
 			}
 
-	void	TrackAlloc(size_t cB, const char * pChzFile, int cLine, HV * pHv)
+	void	TrackAlloc(size_t cB, const char * pChzFile, int cLine, BK bk, HV * pHv)
 			{
 #ifdef EWC_TRACK_ALLOCATION
 
-				HV hv = HvFromFileLine(pChzFile, cLine);
+				HV hv = HvFromFileLineBk(pChzFile, cLine, bk);
 				*pHv = hv;
 
 				int * piEntry;
@@ -1221,6 +1237,8 @@ public:
 					SEntry * pEntry = &m_aryEntry[*piEntry];
 					pEntry->m_cB += cB;
 					pEntry->m_cBHighwater = ewcMax(pEntry->m_cBHighwater, pEntry->m_cB);
+					EWC_ASSERT(pEntry->m_cLine == cLine, "line mismatch in TrackAlloc");
+					EWC_ASSERT(pEntry->m_bk == bk, "Block kind mismatch in TrackAlloc");
 					++pEntry->m_cAllocations;
 				}
 				else
@@ -1232,6 +1250,7 @@ public:
 					pEntry->m_cAllocations = 1;
 					pEntry->m_pChzFile 	   = pChzFile;
 					pEntry->m_cLine    	   = cLine;
+					pEntry->m_bk			= bk;
 				}
 #endif // EWC_TRACK_ALLOCATION
 			}
@@ -1261,7 +1280,7 @@ public:
 		{
 			if (pEntry->m_cB == 0)
 				continue;
-			printf("%zd / %zd\t\t %s : %d\n", pEntry->m_cB, pEntry->m_cBHighwater, pEntry->m_pChzFile, pEntry->m_cLine);
+			printf("%zd / %zd\t\t %s (%d) : %d\n", pEntry->m_cB, pEntry->m_cBHighwater, pEntry->m_pChzFile, pEntry->m_bk, pEntry->m_cLine);
 			cBTotal += pEntry->m_cB;
 		}
 		printf("%zd tracked\n", cBTotal);
@@ -1275,6 +1294,7 @@ public:
 		int				m_cAllocations;
 		const char *	m_pChzFile;
 		int				m_cLine;
+		BK				m_bk;
 	};
 
 #ifdef EWC_TRACK_ALLOCATION
@@ -1320,9 +1340,9 @@ void CAlloc::VerifyHeap()
 	STBM__CHECK_LOCKED(m_pStbheap);
 }
 
-void CAlloc::TrackAlloc(size_t cB, const char * pChzFile, int cLine, HV * pHv)
+void CAlloc::TrackAlloc(size_t cB, const char * pChzFile, int cLine, BK bk, HV * pHv)
 {
-	m_pAltrac->TrackAlloc(cB, pChzFile, cLine, pHv);
+	m_pAltrac->TrackAlloc(cB, pChzFile, cLine, bk, pHv);
 }
 
 void CAlloc::TrackFree(size_t cB, HV * pHv)

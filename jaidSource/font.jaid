@@ -946,4 +946,83 @@ FlushVerts :: (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 	pFvbuf.m_cFvert = 0;
 }	
 
+DXDYExtentsFromAWch :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
+{
+	pDras := pDrac.m_pDras;
+	fontk := pDras.m_fontd.m_fontk;
+	pFontman := pDrac.m_pFontman;
+	pGlyphf := pFontman.m_aFont[fontk].m_pGlyphf;
 
+	posCursor: SVector2;
+	yMin: f32 = F32_MAX;
+	yMax: f32 = 0; 
+	rXY := pDras.m_fontd.m_gCharSize;
+
+	//for(const WChar * pWchzIt = pWchz; *pWchzIt != 0; ++pWchzIt)
+	pWchzIt := pWchz;
+	while (@pWchzIt != 0)
+	{
+		pGlyph := PGlyphFind(pGlyphf, @pWchzIt);
+
+		xRight := posCursor.m_x;
+		if (pGlyph)
+		{
+			yBottom: f32 	= posCursor.m_y + pGlyph.m_yOffset * rXY;
+			yTop: f32 		= yBottom + pGlyph.m_dYPixels * rXY;
+
+			yMin = GMin(yMin, yBottom);
+			yMax = GMax(yMax, yTop);
+
+			xLeft: f32 = posCursor.m_x + pGlyph.m_xOffset * rXY;
+			xRight = xLeft + pGlyph.m_dXPixels * rXY;
+		}
+
+		kerningAdvance: f32 = 0;
+		++pWchzIt;
+		if(@pWchzIt == 0)
+		{
+			return Vec2Create(xRight, yMax - yMin);
+		}
+
+		if(!pGlyph)
+		{
+			// missing character...
+			continue;
+		}
+		kerningAdvance = DXFindKerning(
+							&pFontman.m_aFont[fontk], 
+							pGlyph.m_iDxKerningMin, 
+							pGlyph.m_iDxKerningMax, 
+							@pWchzIt);
+		
+		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * rXY;
+	}
+
+	vecZero: SVector2;
+	return vecZero;
+}
+
+/*
+CVec2 DXDYCalculateExtents(SDrawContext * pDrac, const WChar * pWchzFormat, ...)
+{
+	WChar aWch[CMAX_DRAW_TEXT];
+	va_list ap;
+	va_start(ap, pWchzFormat);
+	vswprintf_s(aWch, pWchzFormat, ap);
+
+	return DXDYExtentsFromAWch(pDrac, aWch);
+}
+
+CVec2 DXDYCalculateExtents(SDrawContext * pDrac, const char * pWchzFormat, ...)
+{
+	char aCh[CMAX_DRAW_TEXT];
+	va_list ap;
+	va_start(ap, pWchzFormat);
+	vsprintf_s(aCh, pWchzFormat, ap);
+
+	WChar aWch[CMAX_DRAW_TEXT];
+	ConvertChToWch(aCh, EWC_DIM(aWch), aWch);
+
+	return DXDYExtentsFromAWch(pDrac, aWch);
+}
+*/

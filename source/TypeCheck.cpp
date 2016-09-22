@@ -382,8 +382,8 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 			return nullptr;
 
 		bool fHasVarArgs = FMatchString("VA", ppCoz);
-		EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc);
-		EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc);
+		EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc, EWC::BK_Stack);
+		EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc, EWC::BK_Stack);
 
 		while (!FMatchString("_", ppCoz) && *ppCoz != '\0')
 		{
@@ -475,8 +475,8 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 		return nullptr;
 
 	bool fHasVarArgs = FMatchString("VA", &pCoz);
-	EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc);
-	EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc);
+	EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc, EWC::BK_Stack);
+	EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc, EWC::BK_Stack);
 
 	while (!FMatchString("_", &pCoz) && pCoz != '\0')
 	{
@@ -599,7 +599,7 @@ SUnknownType * PUntypeEnsure(STypeCheckWorkspace * pTcwork, const SSymbol * pSym
 	if (!pUntype)
 	{
 		pTcwork->m_hashPSymUntype.FinsEnsureKey(pSym, &pUntype);
-		pUntype->m_aryiTcframDependent.SetAlloc(pTcwork->m_pAlloc);
+		pUntype->m_aryiTcframDependent.SetAlloc(pTcwork->m_pAlloc, EWC::BK_TypeCheck);
 	}
 	return pUntype;
 }
@@ -4779,7 +4779,7 @@ void PerformTypeCheck(
 		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
 		pTcfram->m_ipTcframQueue = ipTcfram;
 
-		pTcfram->m_aryTcsent.SetAlloc(pAlloc);
+		pTcfram->m_aryTcsent.SetAlloc(pAlloc, EWC::BK_TypeCheck);
 		STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
 		pTcsent->m_nState = 0;
 		pTcsent->m_pStnod = pEntry->m_pStnod;

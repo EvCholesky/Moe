@@ -2785,7 +2785,7 @@ void AddBuiltInLiteral(SErrorManager * pErrman, CSymbolTable * pSymtab, const CS
 	EWC::CDynAry<STypeInfoLiteral *> * paryPTinlit = &pSymtab->m_mpLitkArypTinlit[litk];
 	if (!paryPTinlit->m_pAlloc)
 	{
-		paryPTinlit->SetAlloc(pSymtab->m_pAlloc, 8);
+		paryPTinlit->SetAlloc(pSymtab->m_pAlloc, EWC::BK_Parse, 8);
 	}
 	paryPTinlit->Append(pTinlit);
 }
@@ -3107,7 +3107,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_pTinOperand(nullptr)
 ,m_pSymtab(nullptr)
 ,m_pSym(nullptr)
-,m_arypStnodChild(pAlloc)
+,m_arypStnodChild(pAlloc, EWC::BK_SyntaxTree)
 {
 }
 

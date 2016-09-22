@@ -49,16 +49,18 @@ public:
 	};
 
 
-				CAry()
+				CAry(BK bk = BK_Nil)
 				:m_a(nullptr)
 				,m_c(0)
 				,m_cMax(0)
+				,m_bk(bk)
 					{ ; }
 
-				CAry(T * a, s32 c, s32 cMax)
+				CAry(T * a, s32 c, s32 cMax, BK bk = BK_Nil)
 				:m_a(a)
 				,m_c(c)
 				,m_cMax(cMax)
+				,m_bk(bk)
 					{ ; }
 
 				CAry(const CAry&) = delete;
@@ -76,7 +78,7 @@ public:
 					EWC_ASSERT(m_a == nullptr, "overwriting nonzero buffer, leaking memory");
 
 					size_t cB = sizeof(T) * cMax;
-					m_a = (T *)pAlloc->EWC_ALLOC(cB, EWC_ALIGN_OF(T));
+					m_a = (T *)pAlloc->EWC_ALLOC_BK(cB, EWC_ALIGN_OF(T), m_bk);
 
 					m_c    = 0;
 					m_cMax = cMax;
@@ -173,6 +175,7 @@ public:
 	T *			m_a;
 	size_t		m_c;
 	size_t		m_cMax;
+	BK			m_bk;
 };
 
 
@@ -184,12 +187,12 @@ class CDynAry : public CAry<T> //tag=ary
 public:
 	typedef T Type;
 
-				CDynAry(CAlloc * pAlloc, s32 cMaxStarting = 16)
-				:CAry<T>(nullptr, 0, 0)
-					{ SetAlloc(pAlloc, cMaxStarting); }
+				CDynAry(CAlloc * pAlloc, BK bk, s32 cMaxStarting = 16)
+				:CAry<T>(nullptr, 0, 0, BK_Nil)
+					{ SetAlloc(pAlloc, bk, cMaxStarting); }
 
-				CDynAry()
-				:CAry<T>(nullptr, 0, 0)
+				CDynAry(BK bk = BK_Nil)
+				:CAry<T>(nullptr, 0, 0, bk)
 				,m_pAlloc(nullptr)
 					{ ; }
 
@@ -222,9 +225,10 @@ public:
 						return *this;
 					}
 
-	void		SetAlloc(CAlloc * pAlloc, size_t cMaxStarting = 32)
+	void		SetAlloc(CAlloc * pAlloc, BK bk, size_t cMaxStarting = 32)
 					{
 						m_pAlloc = pAlloc;
+						m_bk = bk;
 						Resize(cMaxStarting);
 					}
 
@@ -331,7 +335,8 @@ public:
 						if (cNewMax > 0)
 						{
 							size_t cB = sizeof(T) * cNewMax;
-							m_a = (T *)m_pAlloc->EWC_ALLOC(cB, EWC_ALIGN_OF(T));
+							m_a = (T *)m_pAlloc->EWC_ALLOC_BK(cB, EWC_ALIGN_OF(T), m_bk);
+
 							if (aOld)
 								CopyAB(aOld, m_a, cB);
 						}

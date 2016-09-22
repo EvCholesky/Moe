@@ -161,7 +161,7 @@ struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 	static const TINK s_tink = TINK_ForwardDecl;
 						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const char * pCozName)
 						:STypeInfo(pCozName, s_tink)
-						,m_arypTinReferences(pAlloc)
+						,m_arypTinReferences(pAlloc, EWC::BK_TypeCheck)
 							{ ; }
 
 	EWC::CDynAry<STypeInfo *>	m_arypTinReferences;

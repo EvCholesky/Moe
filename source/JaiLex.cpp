@@ -129,9 +129,10 @@ static F64 GParse(const char * pChzIn, char const ** pChzOut)
 	if (*pChzIn == 'e' || *pChzIn == 'E') 
 	{
 		int nSign = pChzIn[1] == '-';
+		int fHasSign = (pChzIn[1] == '-') | (pChzIn[1] == '+');
 		int nExponent = 0;
 		double gPow10 = 10;
-		pChzIn += 1+nSign;
+		pChzIn += 1+fHasSign;
 		while ((*pChzIn >= '0') & (*pChzIn <= '9'))
 		{
 			nExponent = nExponent*10 + (*pChzIn++ - '0');

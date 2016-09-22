@@ -247,7 +247,7 @@ public:
 						,m_pLvalFunction(nullptr)
 						,m_pLvalDebugLocCur(nullptr)
 						,m_pBlockEntry(nullptr)
-						,m_arypBlockManaged(pAlloc)
+						,m_arypBlockManaged(pAlloc, EWC::BK_IR)
 							{ ; }
 
 						~CIRProcedure();

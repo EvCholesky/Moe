@@ -442,6 +442,7 @@ public:
 					{
 						// NOTE: can be called with the current capacity to force a realloc and rehash for testing.
 
+						auto cCapacityOld = m_cCapacity;
 						if (cCapacityNew == 0)
 						{
 							m_aEntry = nullptr;
@@ -457,6 +458,8 @@ public:
 						if (m_aEntry)
 						{
 							Rehash(m_aEntry, m_cCapacity, aEntryNew, cCapacityNew); 
+
+							DestructN<SEntry>(m_aEntry, cCapacityOld);
 							m_pAlloc->EWC_FREE(m_aEntry);
 						}
 
