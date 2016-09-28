@@ -264,6 +264,12 @@ CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc)
 		*pStnodDst->m_pStenum = *pStnodSrc->m_pStenum;
 	}
 
+	if (pStnodSrc->m_pOptype)
+	{
+		pStnodDst->m_pOptype = EWC_NEW(pAlloc, SOpTypes) SOpTypes();
+		*pStnodDst->m_pOptype = *pStnodSrc->m_pOptype;
+	}
+
 	auto cpStnodChild = pStnodSrc->m_arypStnodChild.C();
 	for (size_t ipStnod = 0; ipStnod < cpStnodChild; ++ipStnod)
 	{
@@ -3104,7 +3110,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_pStenum(nullptr)
 ,m_lexloc(lexLoc)
 ,m_pTin(nullptr)
-,m_pTinOperand(nullptr)
+,m_pOptype(nullptr)
 ,m_pSymtab(nullptr)
 ,m_pSym(nullptr)
 ,m_arypStnodChild(pAlloc, EWC::BK_SyntaxTree)
@@ -3157,6 +3163,12 @@ CSTNode::~CSTNode()
 	{
 		pAlloc->EWC_DELETE(m_pStenum);
 		m_pStenum = nullptr;
+	}
+
+	if (m_pOptype)
+	{
+		pAlloc->EWC_DELETE(m_pOptype);
+		m_pOptype = nullptr;
 	}
 
 	m_pTin = nullptr;

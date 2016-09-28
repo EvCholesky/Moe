@@ -1050,6 +1050,17 @@ void AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBasicBlock * 
 	LLVMAddIncoming(pInstPhi->m_pLval, &pVal->m_pLval, &pBlock->m_pLblock, 1);
 }
 
+CIRInstruction * CIRBuilder::PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName)
+{
+	CIRInstruction * pInst = PInstCreateRaw(IROP_PtrToInt, pValOperand, nullptr, pChzName);
+	if (pInst->FIsError())
+		return pInst;
+
+	auto pLtypeDst = PLtypeFromPTin(pTinint);
+	pInst->m_pLval = LLVMBuildPtrToInt(m_pLbuild, pValOperand->m_pLval, pLtypeDst, pChzName);
+	return pInst;
+}
+
 CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValOperand, const char * pChzName)
 {
 	// Unary Ops
@@ -2428,26 +2439,110 @@ void CreateOpinfo(GCMPPRED gcmppred, const char * pChzName, SOperatorInfo * pOpi
 	pOpinfo->m_pChzName = pChzName;
 }
 
-static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pOpinfo)
+static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorInfo * pOpinfo)
 {
-	bool fIsSigned = true;
-	TINK tink = pTin->m_tink;
-	if (tink == TINK_Literal)
+	STypeInfo * apTin[2] = {pOptype->m_pTinLhs, pOptype->m_pTinRhs};
+	bool aFIsSigned[2];
+	TINK aTink[2];
+
+	for (int iOperand = 0; iOperand < 2; ++iOperand)
 	{
-		STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pTin;
-		fIsSigned = pTinlit->m_litty.m_fIsSigned;
-		switch (pTinlit->m_litty.m_litk)
+		bool fIsSigned = true;
+		TINK tink = apTin[iOperand]->m_tink;
+
+		if (tink == TINK_Literal)
 		{
-		case LITK_Integer:	tink = TINK_Integer;	break;
-		case LITK_Float:	tink = TINK_Float;		break;
-		case LITK_Enum:		tink = TINK_Enum;		break;
-		default:			tink = TINK_Nil;
+			STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)apTin[iOperand];
+			fIsSigned = pTinlit->m_litty.m_fIsSigned;
+
+			switch (pTinlit->m_litty.m_litk)
+			{
+			case LITK_Integer:	tink = TINK_Integer;	break;
+			case LITK_Float:	tink = TINK_Float;		break;
+			case LITK_Enum:		tink = TINK_Enum;		break;
+			case LITK_Bool:		tink = TINK_Bool;		break;
+			default:			tink = TINK_Nil;
+			}
 		}
+		else if (tink == TINK_Integer)
+		{
+			fIsSigned = ((STypeInfoInteger *)apTin[iOperand])->m_fIsSigned;
+		}
+		
+		aFIsSigned[iOperand] = fIsSigned;
+		aTink[iOperand] = tink;
 	}
-	else if (pTin->m_tink == TINK_Integer)
+
+	if (aTink[0] != aTink[1])
 	{
-		fIsSigned = ((STypeInfoInteger *)pTin)->m_fIsSigned;
+		TINK tinkMin = aTink[0];
+		TINK tinkMax = aTink[1];
+		if (tinkMin > tinkMax)
+		{
+			ewcSwap(tinkMin, tinkMax);
+		}
+
+		if (tinkMin == TINK_Pointer && tinkMax == TINK_Array)
+		{
+			// BB- check that it's a pointer to the array type.
+			switch(jtok)
+			{
+			case '=':
+				{
+					CreateOpinfo(IROP_Store, "store", pOpinfo);
+				} break;
+			case '-': 				
+				{
+					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
+					pOpinfo->m_fNegateFirst = true;
+				} break;
+			}
+		}
+		else if (tinkMin == TINK_Integer && tinkMax == TINK_Array)
+		{
+			switch(jtok)
+			{
+			case '+':				
+				{
+					CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo);
+				} break;
+			case '-': 				
+				{
+					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
+					pOpinfo->m_fNegateFirst = true;
+				} break;
+			}
+		}
+		else if (tinkMin == TINK_Integer && tinkMax == TINK_Pointer)
+		{
+			switch(jtok)
+			{
+			case '+':				
+				{
+					CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo);
+				} break;
+			case '-': 				
+				{
+					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
+					pOpinfo->m_fNegateFirst = true;
+				} break;
+			case JTOK_PlusEqual:
+				{
+					CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo);
+				} break;
+			case JTOK_MinusEqual:
+				{
+					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
+					pOpinfo->m_fNegateFirst = true;
+				} break;
+			}
+		}
+
+		return;
 	}
+
+	TINK tink = aTink[0];
+	bool fIsSigned = aFIsSigned[0];
 
 	CIRInstruction * pInstOp = nullptr;
 	switch (tink)
@@ -2455,9 +2550,12 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 	case TINK_Bool:
 		switch (jtok)
 		{
+			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 			case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
 			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case JTOK_AndEqual:
 			case '&':				CreateOpinfo(IROP_And, "nAndTmp", pOpinfo); break;
+			case JTOK_OrEqual:
 			case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
 			case JTOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 			case JTOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
@@ -2465,13 +2563,22 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 	case TINK_Integer:
 		switch (jtok)
 		{
+			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
+			case JTOK_PlusEqual:
 			case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
+			case JTOK_MinusEqual:
 			case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
+			case JTOK_MulEqual:
 			case '*': 				CreateOpinfo(IROP_NMul, "nMulTmp", pOpinfo); break;
+			case JTOK_DivEqual:
 			case '/':				CreateOpinfo((fIsSigned) ? IROP_SDiv : IROP_UDiv, "nDivTmp", pOpinfo); break;
+			case JTOK_ModEqual:
 			case '%':				CreateOpinfo((fIsSigned) ? IROP_SRem : IROP_URem, "nRemTmp", pOpinfo); break;
+			case JTOK_AndEqual:
 			case '&':				CreateOpinfo(IROP_And, "rAndTmp", pOpinfo); break;
+			case JTOK_OrEqual:
 			case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
+			case JTOK_XorEqual:
 			case '^':				CreateOpinfo(IROP_Xor, "nXorTmp", pOpinfo); break;
 			case JTOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 									CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
@@ -2498,10 +2605,16 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 	case TINK_Float:
 		switch (jtok)
 		{
+			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
+			case JTOK_PlusEqual:
 			case '+': 				CreateOpinfo(IROP_GAdd, "gAddTmp", pOpinfo); break;
+			case JTOK_MinusEqual:
 			case '-': 				CreateOpinfo(IROP_GSub, "SubTmp", pOpinfo); break;
+			case JTOK_MulEqual:
 			case '*': 				CreateOpinfo(IROP_GMul, "gMulTmp", pOpinfo); break;
+			case JTOK_DivEqual:
 			case '/': 				CreateOpinfo(IROP_GDiv, "gDivTmp", pOpinfo); break;
+			case JTOK_ModEqual:
 			case '%': 				CreateOpinfo(IROP_GRem, "gRemTmp", pOpinfo); break;
 			case JTOK_EqualEqual:	CreateOpinfo(GCMPPRED_GCmpOEQ, "NCmpOEQ", pOpinfo); break;
 			case JTOK_NotEqual:		CreateOpinfo(GCMPPRED_GCmpONE, "NCmpONE", pOpinfo); break;
@@ -2514,22 +2627,39 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 		{
 			switch (jtok)
 			{
+				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
 				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 			}
 		} break;
-	case TINK_Pointer:
+	case TINK_Struct:
 		{
 			switch (jtok)
 			{
+				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
+			}
+		} break;
+	case TINK_Pointer:
+	case TINK_Array:
+		{
+			switch (jtok)
+			{
+				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
+				case '-': 			
+					{
+						CreateOpinfo(IROP_PtrDiff, "ptrDif", pOpinfo);
+					} break;
 				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
 				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
-				case '+':				CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
-				case '-': 				
+/*				case JTOK_PlusEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case JTOK_MinusEqual:	CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case '+=':				CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
+				case '-=': 				
 					{
 						CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
 						pOpinfo->m_fNegateFirst = true;
 					} break;
+					*/
 			}
 		} break;
 	case TINK_Enum:
@@ -2539,6 +2669,7 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 
 			switch (jtok)
 			{
+				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
 				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 				case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
@@ -2550,10 +2681,10 @@ static void GenerateOperatorInfo(JTOK jtok, STypeInfo * pTin, SOperatorInfo * pO
 	}
 }
 
-bool FDoesOperatorExist(JTOK jtok, STypeInfo * pTin)
+bool FDoesOperatorExist(JTOK jtok, const SOpTypes * pOptype)
 {
 	SOperatorInfo opinfo;
-	GenerateOperatorInfo(jtok, pTin, &opinfo);
+	GenerateOperatorInfo(jtok, pOptype, &opinfo);
 
 	return opinfo.m_irop != IROP_Nil;
 }
@@ -2561,12 +2692,18 @@ bool FDoesOperatorExist(JTOK jtok, STypeInfo * pTin)
 static inline CIRInstruction * PInstGenerateOperator(
 	CIRBuilder * pBuild,
 	JTOK jtok,
-	STypeInfo * pTin,
+	const SOpTypes * pOptype,
 	CIRValue * pValLhs,
 	CIRValue * pValRhs)
 {
 	SOperatorInfo opinfo;
-	GenerateOperatorInfo(jtok, pTin, &opinfo);
+	GenerateOperatorInfo(jtok, pOptype, &opinfo);
+	if (!EWC_FVERIFY(opinfo.m_irop != IROP_Store, "bad optype"))
+	{
+		// IROP_Store is just used to signal that a store operation exists, but codegen should call CreateStore rather
+		//  than this function
+		return nullptr;
+	}
 
 	CIRInstruction * pInstOp = nullptr;
 	switch (opinfo.m_irop)
@@ -2580,12 +2717,40 @@ static inline CIRInstruction * PInstGenerateOperator(
 			LLVMOpaqueValue * pLvalIndex = pValRhs->m_pLval;
 			pInstOp = pBuild->PInstCreateGEP(pValLhs, &pLvalIndex, 1, opinfo.m_pChzName); break;
 		} break;
+	case IROP_PtrDiff:
+		{
+			u64 cBitSize;
+			u64 cBitAlign;
+
+			auto pTinptr = PTinDerivedCast<STypeInfoPointer*>(pOptype->m_pTinLhs);
+			auto pLtype = PLtypeFromPTin(pTinptr->m_pTinPointedTo);
+			CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
+
+			if (!EWC_FVERIFY(pOptype->m_pTinResult->m_tink == TINK_Integer))
+				return nullptr;
+
+			auto pTinintResult = PTinRtiCast<STypeInfoInteger *>(pOptype->m_pTinResult);
+
+			pValLhs = pBuild->PInstCreatePtrToInt(pValLhs, pTinintResult, "PDifL");
+			pValRhs = pBuild->PInstCreatePtrToInt(pValRhs, pTinintResult, "PDifR");
+			pInstOp = pBuild->PInstCreate(IROP_NSub, pValLhs, pValRhs, "PtrSub");
+
+			if (cBitSize > 8)
+			{
+				auto pLval = PLvalConstantInt(pTinintResult->m_cBit, false, cBitSize / 8);
+				CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+				pConst->m_pLval = pLval;
+				pBuild->AddManagedVal(pConst);
+
+				pInstOp = pBuild->PInstCreate(IROP_SDiv, pInstOp, pConst, "PtrDif");
+			}
+		} break;
 	case IROP_NCmp:		pInstOp = pBuild->PInstCreateNCmp(opinfo.m_ncmppred, pValLhs, pValRhs, opinfo.m_pChzName); break;
 	case IROP_GCmp:		pInstOp = pBuild->PInstCreateGCmp(opinfo.m_gcmppred, pValLhs, pValRhs, opinfo.m_pChzName); break;
 	default:			pInstOp = pBuild->PInstCreate(opinfo.m_irop, pValLhs, pValRhs, opinfo.m_pChzName); break;
 	}
 
-	// Note: This should be caught by the type checker! This function should match FIsOperatorDefined
+	// Note: This should be caught by the type checker! This function should match FDoesOperatorExist
 	EWC_ASSERT(pInstOp, "unexpected op in PInstGenerateOperator '%'", PCozFromJtok(jtok));
 	return pInstOp;
 }
@@ -3217,7 +3382,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			{
 				if (pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Enum)
 				{
-					auto pTinenum = (STypeInfoEnum *)pStnod->m_pTinOperand;
+					EWC_ASSERT(pStnod->m_pOptype, "missing operand type for enum member");
+					auto pTinenum = (STypeInfoEnum *)pStnod->m_pOptype->m_pTinLhs;
 					if (EWC_FVERIFY(pStnod->m_pStval, "Enum constant lookup without value"))
 					{
 						auto pLval = PLvalFromEnumConstant(pBuild, pTinenum->m_pTinLoose, pStnod->m_pStval);
@@ -3381,33 +3547,26 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return pInstOp;
 			}
 
-			JTOK jtok = JTOK_Nil;
-			switch (pStnod->m_jtok)
-			{
-			case JTOK_PlusEqual:	jtok = JTOK('+');	break;
-			case JTOK_MinusEqual:	jtok = JTOK('-');	break;
-			case JTOK_MulEqual:		jtok = JTOK('*');	break;
-			case JTOK_DivEqual:		jtok = JTOK('~');	break;
-			case JTOK_ModEqual:		jtok = JTOK('%');	break;
-			case JTOK_OrEqual:		jtok = JTOK('|');	break;
-			case JTOK_AndEqual:		jtok = JTOK('&');	break;
-			case JTOK_TildeEqual:	jtok = JTOK('~');	break;
-			case JTOK_XorEqual:		jtok = JTOK('^');	break;
-			default: EWC_ASSERT(false, "unexpected assignment operator '%s'", PCozFromJtok(pStnod->m_jtok));
-			}
-
 			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 
+			auto pTinOperandRhs = (EWC_FVERIFY(pStnod->m_pOptype, "missing operator types")) ? pStnod->m_pOptype->m_pTinRhs : pStnodLhs->m_pTin;
+
 			CIRValue * pValLhsLoad = pBuild->PInstCreate(IROP_Load, pValLhs, "lhsLoad");
-			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pStnodLhs->m_pTin);
+			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pTinOperandRhs);
 			EWC_ASSERT(pValRhsCast, "bad cast");
 
-			auto pInstOp = PInstGenerateOperator(pBuild, jtok, pStnodLhs->m_pTin, pValLhsLoad, pValRhsCast);
+			SOpTypes optype(pStnodLhs->m_pTin, pStnodRhs->m_pTin, pStnod->m_pTin);
+			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_jtok, &optype, pValLhsLoad, pValRhsCast);
 			return pBuild->PInstCreateStore(pValLhs, pInstOp);
 		}
 	case PARK_AdditiveOp:
 		{
-			if (pStnod->m_pTinOperand->m_tink == TINK_Pointer)
+			SOpTypes * pOptype = pStnod->m_pOptype;
+			EWC_ASSERT(pOptype && pOptype->m_pTinLhs && pOptype->m_pTinRhs, "missing operand types for AdditiveOp");
+			TINK tinkLhs = pOptype->m_pTinLhs->m_tink;
+			TINK tinkRhs = pOptype->m_pTinRhs->m_tink;
+			if (((tinkLhs == TINK_Pointer) & (tinkRhs == TINK_Integer)) | 
+				((tinkLhs == TINK_Integer) & (tinkRhs == TINK_Pointer)))
 			{
 				//handle pointer arithmetic
 
@@ -3447,16 +3606,23 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
 
-			STypeInfo * pTinOutput = pStnod->m_pTinOperand;
-			CIRValue * pValLhsCast = PValGenerateRefCast(pWork, pBuild, pStnodLhs, pTinOutput);
-			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pTinOutput);
+			SOpTypes * pOptype = pStnod->m_pOptype;
+			EWC_ASSERT(pOptype && pOptype->FIsValid(), "missing operand types");
+			STypeInfo * pTinOperandLhs = pOptype->m_pTinLhs;
+			STypeInfo * pTinOperandRhs = pOptype->m_pTinRhs;
+			CIRValue * pValLhsCast = PValGenerateRefCast(pWork, pBuild, pStnodLhs, pTinOperandLhs);
+			CIRValue * pValRhsCast = PValGenerateRefCast(pWork, pBuild, pStnodRhs, pTinOperandRhs);
 			if (!EWC_FVERIFY((pValLhsCast != nullptr) & (pValRhsCast != nullptr), "null operand"))
 				return nullptr;
 
 			STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 			STypeInfo * pTinRhs = pStnodRhs->m_pTin;
-			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinLhs != nullptr) & (pTinRhs != nullptr), "bad cast"))
+			if (!EWC_FVERIFY(
+					(pOptype->m_pTinResult != nullptr) & (pTinLhs != nullptr) & (pTinRhs != nullptr), 
+					"bad cast"))
+			{
 				return nullptr;
+			}
 	
 			if (LLVMTypeOf(pValLhsCast->m_pLval) != LLVMTypeOf(pValRhsCast->m_pLval))
 			{
@@ -3466,7 +3632,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return nullptr;
 			}
 
-			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_jtok, pTinOutput, pValLhsCast, pValRhsCast);
+			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_jtok, pOptype, pValLhsCast, pValRhsCast);
 
 			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PCozFromJtok(pStnod->m_jtok));
 			return pInstOp;
@@ -3490,7 +3656,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!EWC_FVERIFY(pValOperand->m_pLval != nullptr, "null llvm operand"))
 				return nullptr;
 
-			STypeInfo * pTinOutput = pStnod->m_pTinOperand;
+			EWC_ASSERT(pStnod->m_pOptype, "mising operator types in unary op");
+			STypeInfo * pTinOutput = pStnod->m_pOptype->m_pTinResult;
 			STypeInfo * pTinOperand = pStnodOperand->m_pTin;
 
 			if (pTinOutput->m_tink == TINK_Enum)

@@ -34,6 +34,7 @@ class CWorkspace;
 struct SSymbol;
 struct SErrorManager;
 struct STypeInfo;
+struct STypeInfoInteger;
 
 
 
@@ -131,6 +132,7 @@ EWC_ENUM_UTILS(VALK);
 		OP(Load), \
 		OP(Store), \
 		OP(GEP), \
+		OP(PtrDiff), \
 		OP_RANGE(MemoryOp, LogicOpMax) \
 		\
 		OP(NTrunc), \
@@ -350,6 +352,7 @@ public:
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 
 	CIRInstruction *	PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, const char * pChzName);
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateCast(IROP irop, CIRValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);

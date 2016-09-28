@@ -113,10 +113,11 @@ struct STypeCheckWorkspace // tag = tcwork
 };
 
 
-extern bool FDoesOperatorExist(JTOK jtok, STypeInfo * pTin);
+extern bool FDoesOperatorExist(JTOK jtok, const SOpTypes * pOptype);
 bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst);
 void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
 STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit);
+bool FDoesOperatorReturnBool(PARK park);
 
 CNameMangler::CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax)
 :m_pAlloc(pAlloc)
@@ -534,6 +535,12 @@ void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCo
 	va_list ap;
 	va_start(ap, pCozFormat);
 	EmitError(pTcwork->m_pErrman, &lexloc, pCozFormat, ap);
+}
+
+void AllocateOptype(CSTNode * pStnod)
+{
+	CAlloc * pAlloc = pStnod->m_arypStnodChild.m_pAlloc;
+	pStnod->m_pOptype = EWC_NEW(pAlloc, SOpTypes) SOpTypes();
 }
 
 CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
@@ -1591,16 +1598,131 @@ STypeInfoPointer * PTinptrAlloc(CSymbolTable * pSymtab, STypeInfo * pTinPointedT
 	return pTinptr;
 }
 
-STypeInfo * PTinOperandFromPark(
+bool FDoesOperatorReturnBool(PARK park)
+{
+	// return if operator returns a bool (rather than the operand type)
+	return  (park == PARK_RelationalOp) | (park == PARK_EqualityOp) | (park == PARK_LogicalAndOrOp);
+}
+
+inline STypeInfo * PTinResult(PARK park, CSymbolTable * pSymtab, STypeInfo * pTinOp)
+{
+	if (FDoesOperatorReturnBool(park))
+		return pSymtab->PTinBuiltin("bool");
+	return pTinOp;
+}
+
+SOpTypes OptypeFromPark(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
+	JTOK jtok,
 	PARK parkOperator,
 	STypeInfo * pTinLhs,
 	STypeInfo * pTinRhs)
 {
 	if (parkOperator == PARK_LogicalAndOrOp)
 	{
-		return pSymtab->PTinBuiltin("bool");
+		auto pTinBool = pSymtab->PTinBuiltin("bool");
+		return SOpTypes(pTinBool, pTinBool, pTinBool);
+	}
+
+	bool fLhsIsReference = (pTinLhs->m_tink == TINK_Pointer) | (pTinLhs->m_tink == TINK_Array);
+	bool fRhsIsReference = (pTinRhs->m_tink == TINK_Pointer) | (pTinRhs->m_tink == TINK_Array);
+
+	// BB - Could this be cleaner with a table?
+	if (fLhsIsReference | fRhsIsReference)
+	{
+		STypeInfo * pTinMin = pTinLhs;
+		STypeInfo * pTinMax = pTinRhs;
+		if (pTinMin->m_tink > pTinMax->m_tink)
+		{
+			ewcSwap(pTinMin, pTinMax);
+		}
+		TINK tinkMin = pTinMin->m_tink;
+		TINK tinkMax = pTinMax->m_tink;
+
+		if (fLhsIsReference & fRhsIsReference)
+		{
+			STypeInfo * pTinRefMax;
+			if (tinkMax == TINK_Array)
+			{
+				if (tinkMin != TINK_Pointer) // no operand for array & array
+					return SOpTypes();
+
+				pTinRefMax = ((STypeInfoArray *)pTinMax)->m_pTin;
+			}
+			else if (EWC_FVERIFY(tinkMax == TINK_Pointer, "unexpected reference type info"))
+			{
+				pTinRefMax = ((STypeInfoPointer *)pTinMax)->m_pTinPointedTo;
+			}
+
+			auto pTinRefMin = ((STypeInfoPointer*)pTinMin)->m_pTinPointedTo;
+			bool fAreRefTypesSame = FTypesAreSame(pTinRefMin, pTinRefMax);
+
+			if (parkOperator == PARK_AssignmentOp)
+			{
+				if (jtok == JTOK('='))
+				{
+					if (pTinLhs->m_tink == TINK_Array)
+						return SOpTypes();
+
+					if (!fAreRefTypesSame && 
+						(pTinLhs->m_tink != TINK_Pointer || ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo->m_tink != TINK_Void))
+						return SOpTypes();
+
+					return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin("bool"));
+				}
+			}
+
+			bool fIsOneTypeVoid = (pTinRefMin->m_tink == TINK_Void) | (pTinRefMax->m_tink == TINK_Void);
+			if (parkOperator == PARK_EqualityOp && (fAreRefTypesSame | fIsOneTypeVoid))
+			{
+				return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin("bool"));
+			}
+
+			if (parkOperator == PARK_AdditiveOp)
+			{
+				if (jtok == JTOK('-') && fAreRefTypesSame)
+				{
+					return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin("sSize"));
+				}
+			}
+
+			return SOpTypes();
+		}
+
+		STypeInfo * pTinPtr = pTinLhs;
+		STypeInfo * pTinOther = pTinRhs;
+		if (pTinOther->m_tink == TINK_Pointer)
+		{
+			pTinPtr = pTinRhs;
+			pTinOther = pTinLhs;
+		}
+
+		if (((STypeInfoPointer *)pTinPtr)->m_pTinPointedTo->m_tink == TINK_Void)
+		{
+			return SOpTypes();
+		}
+		
+		PARK parkOperatorAdj = parkOperator;
+		if (parkOperator == PARK_AssignmentOp && ((jtok == JTOK_PlusEqual) | (jtok == JTOK_MinusEqual)))
+		{
+			parkOperatorAdj = PARK_AdditiveOp;
+		}
+
+		switch (parkOperatorAdj)
+		{
+		case PARK_AdditiveOp:
+			{
+				if (pTinOther->m_tink == TINK_Integer)
+				{
+					return SOpTypes(pTinLhs, pTinRhs, pTinPtr);
+				}
+				else
+				{
+					EWC_ASSERT(false, "unexpected Additive operator");
+				}
+			} break;
+		}
 	}
 
 	if (pTinLhs->m_tink == pTinRhs->m_tink)
@@ -1611,7 +1733,9 @@ STypeInfo * PTinOperandFromPark(
 			{
 				STypeInfoFloat * pTinfloatA = (STypeInfoFloat *)pTinLhs;
 				STypeInfoFloat * pTinfloatB = (STypeInfoFloat *)pTinRhs;
-				return (pTinfloatA->m_cBit >= pTinfloatB->m_cBit) ? pTinLhs : pTinRhs;
+
+				auto pTinOp = (pTinfloatA->m_cBit >= pTinfloatB->m_cBit) ? pTinLhs : pTinRhs;
+				return SOpTypes(pTinOp, pTinOp, PTinResult(parkOperator, pSymtab, pTinOp));
 			}
 		case TINK_Integer:
 			{
@@ -1619,16 +1743,19 @@ STypeInfo * PTinOperandFromPark(
 				STypeInfoInteger * pTinintB = (STypeInfoInteger *)pTinRhs;
 
 				if (pTinintA->m_fIsSigned != pTinintB->m_fIsSigned)
-					return nullptr;
+					return SOpTypes();
 			
-				return (pTinintA->m_cBit >= pTinintB->m_cBit) ? pTinLhs : pTinRhs;
+				auto pTinOp = (pTinintA->m_cBit >= pTinintB->m_cBit) ? pTinLhs : pTinRhs;
+				return SOpTypes(pTinOp, pTinOp, PTinResult(parkOperator, pSymtab, pTinOp));
 			}
 		case TINK_Array:
-			return nullptr;
+			return SOpTypes();
 		}
 
 		if (FTypesAreSame(pTinLhs, pTinRhs))
-			return pTinLhs;
+		{
+			return SOpTypes(pTinLhs, pTinLhs, PTinResult(parkOperator, pSymtab, pTinLhs));
+		}
 	}
 
 	if (pTinLhs->m_tink == TINK_Enum || pTinRhs->m_tink == TINK_Enum)
@@ -1641,37 +1768,20 @@ STypeInfo * PTinOperandFromPark(
 			pTinOther = pTinLhs;
 		}
 
-		if (parkOperator ==PARK_AdditiveOp && pTinOther->m_tink == TINK_Integer)
-			return pTinEnum;
+		if (parkOperator == PARK_AdditiveOp && pTinOther->m_tink == TINK_Integer)
+		{
+			return SOpTypes(pTinEnum, pTinEnum, pTinEnum);
+		}
 	}
 
-	if (pTinLhs->m_tink == TINK_Pointer || pTinRhs->m_tink == TINK_Pointer)
+	if (pTinLhs->m_tink == TINK_Bool || pTinRhs->m_tink == TINK_Integer)
 	{
-		STypeInfo * pTinPtr = pTinLhs;
-		STypeInfo * pTinOther = pTinRhs;
-		if (pTinOther->m_tink == TINK_Pointer)
+		if (parkOperator == PARK_AssignmentOp)
 		{
-			pTinPtr = pTinRhs;
-			pTinOther = pTinLhs;
-		}
-
-		switch (parkOperator)
-		{
-		case PARK_EqualityOp:
-			{
-				auto pTinElemLhs = PTinElement(pTinLhs);
-				auto pTinElemRhs = PTinElement(pTinRhs);
-				if (FTypesAreSame(pTinElemLhs, pTinElemRhs))
-					return pTinPtr;
-			} break;
-		case PARK_AdditiveOp:
-			{
-				if (pTinOther->m_tink == TINK_Integer)
-					return pTinPtr;
-			} break;
+			return SOpTypes(pTinLhs, pTinLhs, pTinLhs);
 		}
 	}
-	return nullptr;
+	return SOpTypes();
 }
 
 inline bool FIsNumericTink(TINK tink)
@@ -2061,12 +2171,6 @@ STypeInfo * PTinReturnFromStnodProcedure(CSTNode * pStnod)
 	if (pStproc->m_iStnodReturnType < 0)
 		return nullptr;
 	return pStnod->PStnodChild(pStproc->m_iStnodReturnType)->m_pTin;
-}
-
-bool FDoesOperatorReturnBool(PARK park)
-{
-	// return if operator returns a bool (rather than the operand type)
-	return  (park == PARK_RelationalOp) | (park == PARK_EqualityOp) | (park == PARK_LogicalAndOrOp);
 }
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
@@ -2860,7 +2964,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					if (pStnodArg->m_pTin->m_tink == TINK_Literal)
 					{
 						FinalizeLiteralType(pSymtab, pTinParam, pStnodArg);
-						pStnodArg->m_pTinOperand = pStnodArg->m_pTin;
 					}
 					else
 					{
@@ -2869,7 +2972,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							auto pAlloc = pTcwork->m_pAlloc;
 							CSTNode * pStnodCast = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, pStnodArg->m_lexloc);
 							pStnodCast->m_park = PARK_Cast;
-							pStnodCast->m_pTinOperand = pStnodArg->m_pTin;
 							pStnodCast->m_pTin = pTinParam;
 
 							auto  pStdecl = EWC_NEW(pAlloc, CSTDecl) CSTDecl();
@@ -3860,9 +3962,26 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 														pTcsentTop->m_pSymtab,
 														pStnodRhs,
 														pTinLhs);
-						if (FCanImplicitCast(pTinRhsPromoted, pTinLhs))
+
+						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+						SOpTypes optype = OptypeFromPark(pTcwork, pSymtab, pStnod->m_jtok, pStnod->m_park, pTinLhs, pTinRhsPromoted);
+
+						if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_jtok, &optype))
 						{
-							pStnod->m_pTinOperand = pTinLhs;
+							CString strLhs = StrFromTypeInfo(pTinLhs);
+							CString strRhs = StrFromTypeInfo(pTinRhsPromoted);
+							EmitError( pTcwork, pStnod,
+								"operator '%s' is not defined for %s and %s",
+								PCozFromJtok(pStnod->m_jtok),
+								strLhs.PCoz(),
+								strRhs.PCoz());
+							return TCRET_StoppingError;
+						}
+
+						if (FCanImplicitCast(pTinRhsPromoted, optype.m_pTinRhs))
+						{
+							AllocateOptype(pStnod);
+							*pStnod->m_pOptype = optype;
 							FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinLhs, pStnodRhs);
 						}
 						else
@@ -3874,32 +3993,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								strRhs.PCoz(),
 								strLhs.PCoz());
 						}
-
-						JTOK jtokOp = pStnod->m_jtok;
-						bool fIsArithmeticOp =	(jtokOp == JTOK_MulEqual) | (jtokOp == JTOK_DivEqual) |
-												(jtokOp == JTOK_PlusEqual) | (jtokOp == JTOK_MinusEqual) |
-												(jtokOp == JTOK_ModEqual);
-
-						bool fIsBitwiseOp =		(jtokOp == JTOK_AndEqual) | (jtokOp == JTOK_OrEqual) |
-												(jtokOp == JTOK_XorEqual);
-
-						bool fSupportsArithmetic = (tinkLhs == TINK_Integer) | (tinkLhs == TINK_Float);
-						bool fSupportsBitwise = (tinkLhs == TINK_Integer) | (tinkLhs == TINK_Bool);
-
-						if (fIsArithmeticOp & (fSupportsArithmetic == false))
-						{
-							CString strLhs = StrFromTypeInfo(pTinLhs);
-							EmitError(pTcwork, pStnod, "%s does not support arithmetic operations", strLhs.PCoz());
-							return TCRET_StoppingError;
-						}
-
-						if (fIsBitwiseOp & (fSupportsBitwise == false))
-						{
-							CString strLhs = StrFromTypeInfo(pTinLhs);
-							EmitError(pTcwork, pStnod, "%s does not support bitwise operations", strLhs.PCoz());
-							return TCRET_StoppingError;
-						}
-
 					}
 
 					EWC_ASSERT(pStnod->m_pTin == nullptr, "assignment op has no 'return' value");
@@ -4049,7 +4142,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				pStnod->m_pTin = pTinMember;
-				pStnod->m_pTinOperand = pStnod->m_pTin;
 				pStnod->m_strees = STREES_TypeChecked;
 
 				if (pStvalMember)
@@ -4408,7 +4500,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											&pStval))
 									{
 										pStnod->m_pTin = pTinReturn;
-										pStnod->m_pTinOperand = pTinOperand;
+
+										AllocateOptype(pStnod);
+										*pStnod->m_pOptype = SOpTypes(pTinOperand, pTinOperand, pTinReturn);
 										pStnod->m_pStval = pStval;
 									}
 									else
@@ -4429,9 +4523,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								PARK park = pStnod->m_park;
 								STypeInfo * pTinUpcastLhs = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodLhs, pTinRhs);
 								STypeInfo * pTinUpcastRhs = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodRhs, pTinLhs);
-								STypeInfo * pTinOperand = PTinOperandFromPark(pTcwork, pSymtab, park, pTinUpcastLhs, pTinUpcastRhs);
 
-								if (!pTinOperand || !FDoesOperatorExist(pStnod->m_jtok, pTinOperand))
+								SOpTypes optype = OptypeFromPark(pTcwork, pSymtab, pStnod->m_jtok, park, pTinUpcastLhs, pTinUpcastRhs);
+
+								if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_jtok, &optype))
 								{
 									CString strLhs = StrFromTypeInfo(pTinLhs);
 									CString strRhs = StrFromTypeInfo(pTinRhs);
@@ -4445,13 +4540,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									return TCRET_StoppingError;
 								}
 
-								pStnod->m_pTin = (FDoesOperatorReturnBool(park)) ? 
-													pSymtab->PTinBuiltin("bool") :
-													pTinOperand;
-								pStnod->m_pTinOperand = pTinOperand;
+								AllocateOptype(pStnod);
+								*pStnod->m_pOptype = optype;
+								pStnod->m_pTin = optype.m_pTinResult;
 
-								FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinOperand, pStnodLhs);
-								FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinOperand, pStnodRhs);
+								FinalizeLiteralType(pTcsentTop->m_pSymtab, optype.m_pTinLhs, pStnodLhs);
+								FinalizeLiteralType(pTcsentTop->m_pSymtab, optype.m_pTinRhs, pStnodRhs);
 							}
 						}
 					}
@@ -4471,7 +4565,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					{
 						CSTNode * pStnodOperand = pStnod->PStnodChild(0);
 						STypeInfo * pTinOperand = pStnodOperand->m_pTin;
-						pStnod->m_pTinOperand = pTinOperand;
+
+						AllocateOptype(pStnod);
+						*pStnod->m_pOptype = SOpTypes(pTinOperand, pTinOperand, pTinOperand);
 
 						if (!FVerifyIsInstance(pTcwork, pStnodOperand))
 							return TCRET_StoppingError;
@@ -4595,7 +4691,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										}
 
 										pStnod->m_pTin = pTinBool;
-										pStnod->m_pTinOperand = pTinBool;
+										pStnod->m_pOptype->m_pTinResult = pTinBool;
 									}break;
 
 								case JTOK('~'):
@@ -5063,6 +5159,10 @@ void TestTypeCheck()
 
 	const char * pCozIn;
 	const char * pCozOut;
+
+	pCozIn = "pN: &s16; cB := pN - pN; pN = pN + 2; pN += 1;";
+	pCozOut = "(&s16 $pN (&s16 s16)) (sSize $cB (sSize &s16 &s16)) (= &s16 (&s16 &s16 Literal:Int8)) (= &s16 Literal:Int64)";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn = "iterMake :: (n: u8) -> u8 { return n; } "
 			 "iterIsDone :: (pN: & u8) -> bool { return false; } "

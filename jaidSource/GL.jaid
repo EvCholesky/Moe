@@ -183,7 +183,7 @@ glUniform1i: (location: glint, v0: glint) #stdcall;
 glUniform2i: (location: glint, v0: glint, v1: glint) #stdcall;
 glUniform3i: (location: glint, v0: glint, v1: glint, v2: glint) #stdcall;
 glUniform4i: (location: glint, v0: glint, v1: glint, v2: glint, v3: glint) #stdcall;
-glUnifformMatrix4fv: (location: glint, count: glsizei, transpose: glboolean, value: & glfloat) #stdcall;
+glUniformMatrix4fv: (location: glint, count: glsizei, transpose: glboolean, value: & glfloat) #stdcall;
 glActiveTexture: (texture: glenum) #stdcall;
 glClientActiveTexture: (texture: glenum) #stdcall;
 
@@ -288,7 +288,7 @@ FTryInitGLExtensions :: () -> bool
     glUniform2i = acast FTryInitExtension("glUniform2i", &fSuccess);
     glUniform3i = acast FTryInitExtension("glUniform3i", &fSuccess);
     glUniform4i = acast FTryInitExtension("glUniform4i", &fSuccess);
-    glUnifformMatrix4fv = acast FTryInitExtension("glUnifformMatrix4fv", &fSuccess);
+    glUniformMatrix4fv = acast FTryInitExtension("glUniformMatrix4fv", &fSuccess);
     glActiveTexture = acast FTryInitExtension ("glActiveTexture", &fSuccess);
     glClientActiveTexture = acast FTryInitExtension ("glClientActiveTexture", &fSuccess);
     return fSuccess;

@@ -296,3 +296,27 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 
 void DeleteTypeInfo(EWC::CAlloc * pAlloc, STypeInfo * pTin);
 bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs);
+
+
+
+struct SOpTypes // tag = optype
+{
+				SOpTypes()
+				:m_pTinLhs(nullptr)
+				,m_pTinRhs(nullptr)
+				,m_pTinResult(nullptr)
+					{ ; }
+
+				SOpTypes(STypeInfo * pTinLhs, STypeInfo * pTinRhs, STypeInfo * pTinResult)
+				:m_pTinLhs(pTinLhs)
+				,m_pTinRhs(pTinRhs)
+				,m_pTinResult(pTinResult)
+					{ ; }
+
+				bool FIsValid() const
+					{ return m_pTinResult != nullptr; }
+
+	STypeInfo * m_pTinLhs;
+	STypeInfo * m_pTinRhs;
+	STypeInfo * m_pTinResult;
+};

@@ -29,6 +29,7 @@ class CSTNode;
 class CSymbolTable;
 class CWorkspace;
 struct SErrorManager;
+struct SOpTypes;
 struct SSymbol;
 struct STypeInfo;
 struct STypeInfoEnum;
@@ -150,7 +151,6 @@ const char * PChzFromPark(PARK park);
 const char * PChzFromLitk(LITK litk);
 EWC::CString StrFromIdentifier(CSTNode * pStnod);
 EWC::CString StrFromTypeInfo(STypeInfo * pTin);
-bool FDoesOperatorReturnBool(PARK park);
 
 
 
@@ -340,7 +340,7 @@ public:
 	CSTEnum *				m_pStenum;
 	SLexerLocation			m_lexloc;
 	STypeInfo *				m_pTin;	
-	STypeInfo *				m_pTinOperand;		// used for implicit casts, could be replaced with an explicit PARK_Cast
+	SOpTypes *				m_pOptype;
 	CSymbolTable *			m_pSymtab;
 	SSymbol *				m_pSym;
 
