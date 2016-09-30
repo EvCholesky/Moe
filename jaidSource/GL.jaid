@@ -44,6 +44,11 @@ GL_2_BYTES ::               0x1407;
 GL_3_BYTES ::               0x1408;
 GL_4_BYTES ::               0x1409;
 GL_DOUBLE ::                0x140A;
+
+GL_MODELVIEW ::             0x1700;
+GL_PROJECTION ::            0x1701;
+GL_TEXTURE ::               0x1702;
+
 GL_RGBA ::                  0x1908;
 
 GL_VERTEX_ARRAY ::          0x8074;
@@ -126,10 +131,14 @@ glbitfield :: typedef u32;
 
 glBegin :: (mode: s32) #foreign #stdcall;
 glEnd :: () #foreign #stdcall;
-glColor4f       :: (r: float, g: float, b: float, a: float) -> void #foreign #stdcall;
-glColor3f       :: (r: float, g: float, b: float) -> void #foreign #stdcall;
-glVertex3f   :: (x: float, y: float, z: float) #foreign #stdcall;
-glVertex2f   :: (x: float, y: float) #foreign #stdcall;
+glColor3f       :: (r: glfloat, g: glfloat, b: glfloat) -> void #foreign #stdcall;
+glColor4f       :: (r: glfloat, g: glfloat, b: glfloat, a: glfloat) -> void #foreign #stdcall;
+glVertex2f   :: (x: glfloat, y: glfloat) #foreign #stdcall;
+glVertex3f   :: (x: glfloat, y: glfloat, z: glfloat) #foreign #stdcall;
+glTexCoord2f :: (s: glfloat, t: glfloat) #foreign #stdcall;
+glTexCoord3f :: (s: glfloat, t: glfloat, r: glfloat) #foreign #stdcall;
+glTexCoord4f :: (s: glfloat, t: glfloat, r: glfloat, q: glfloat) #foreign #stdcall;
+
 
 glLoadIdentity :: () -> void #foreign #stdcall;
 glOrtho :: (xLeft: f64, xRight: f64, yBottom: f64, yTop: f64, zNear: f64, zFar: f64) -> void #foreign #stdcall;
@@ -139,11 +148,11 @@ glTexParameteri :: (target: glenum, pname: glenum, param: glint) #foreign #stdca
 glTexImage2D :: (target: glenum, level: glint, internalformat: glint, width: glsizei, height: glsizei, border: glint, format: glenum, type: glenum, pixels: &void) #foreign #stdcall;
 glBlendFunc :: (sfactor: glenum, dfactor: glenum) #foreign #stdcall;
 
-
 glEnable :: (cap: glenum) #foreign #stdcall;
 glEnableClientState :: (array: glenum) #foreign #stdcall;
 glDisable :: (cap: glenum) #foreign #stdcall;
 glDisableClientState :: (array: glenum) #foreign #stdcall;
+glMatrixMode :: (mode: glenum) #foreign #stdcall;
 
 glPopAttrib :: () #foreign #stdcall;
 glPopClientAttrib :: () #foreign #stdcall;

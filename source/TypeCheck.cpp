@@ -2763,6 +2763,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					while (pSymProc = symiter.PSymNext())
 					{
 						CSTNode * pStnodDefinition = pSymProc->m_pStnodDefinition;
+						if (!pStnodDefinition)
+							continue;
+
 						if (pStnodDefinition->m_strees < STREES_SignatureTypeChecked)
 						{
 							// wait for this procedure's signature to be type checked.

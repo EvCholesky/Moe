@@ -4,12 +4,12 @@
 #import "Gl"
 #import "Hash"
 #import "stb_image"
+#import "string"
 #import "fontShaders"
 #import "spriteShaders"
 
 SDrawContext :: struct // tag=drac
 {
-
 	m_pShman: & SShaderManager;
 	m_pFontman: & SFontManager;
 	m_pDras: & SDrawState;
@@ -47,24 +47,21 @@ ALIGNK :: enum
 	Top:		SideMax,
 }
 
-SDrawData :: struct // tag = drawd
-{
-	m_fontd: SFontData;
-}
-
 SFontData :: struct // tag = fontd
 {
 	m_colMain: SColor;
 	m_colShadow: SColor;
-	m_gCharSize: f32;
-	m_uOpacit: f32;
+	m_gCharSize: f32 	= 48;
+	m_uOpacit: f32 		= 1;
 	m_fontk: FONTK;
-	m_alignkX: ALIGNK;
-	m_alignkY: ALIGNK;
+	m_alignkX: ALIGNK 	= ALIGNK.Left;
+	m_alignkY: ALIGNK 	= ALIGNK.Bottom;
 	m_fUseFixedWidth: bool;
 	m_fUseWordWrap: bool;
 
 	m_posCursor: SVector2;
+	m_alignkX: ALIGNK;
+	m_alignkY: ALIGNK;
 }
 
 SDrawState :: struct // tag = dras
@@ -336,7 +333,7 @@ FONTSHK :: enum
 
 SFontGlyph :: struct // tag=glyph
 {
-	m_wch: u32;				// UCS2 Codepoint for this glyph
+	m_wch: u16;				// UCS2 Codepoint for this glyph
 	m_dXPixels: f32;
 	m_dYPixels: f32;
 	m_xOffset: f32;				// offset from the glyph origin to the top-left of the bitmap
@@ -361,7 +358,8 @@ SFontGlyphFile :: struct //tag=glyphf
 	m_dYLineGap: f32;				// lineGap is the spacing between one row's descent and the next row's ascent...
 									// you should advance the vertical position by "ascent - descent + lineGap"
 
-	m_aGlyph: [1] SFontGlyph;		// sorted by UCS2 glyph (for binary search)
+	//m_aGlyph: [1] SFontGlyph;		// sorted by UCS2 glyph (for binary search)
+	m_aGlyph_CArray: SFontGlyph;
 }
 
 SFont :: struct // tag=font
@@ -386,6 +384,8 @@ SFontVertex :: struct // tag=fvert
 	m_r, m_g, m_b, m_a: f32;
 	m_uMin, m_vMin, m_uMax, m_vMax: f32; // glyph bounds for clamping texture filtering
 }
+
+kChMaxDrawText :: 1024;
 
 SFontVertexBuffer :: struct // tag=fvbuf
 {
@@ -579,6 +579,7 @@ PDracStaticInit :: (procAlloc: ProcAlloc) -> & SDrawContext
 
 	g_drac.m_pDrasstk = &g_drasstk;
 	g_drac.m_pDras 	  = PDrasTop(&g_drasstk);
+	g_drac.m_pDras.m_fontd.m_colMain = ColCreate(255,255,255,255);
 
 	return &g_drac;
 }
@@ -684,6 +685,7 @@ PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
 
     glGenTextures(1, cast(&gluint)&pTex.m_driId);
     glBindTexture(GL_TEXTURE_2D, pTex.m_driId);
+ 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, pTex.m_cTexmip - 1);
 
     iTexmip: u32;
     texmipEnd := &pTex.m_aTexmip[pTex.m_cTexmip];
@@ -737,30 +739,60 @@ FTryLoadFont :: (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & u8, pro
 		pFont: & SFont = &pFontman.m_aFont[fontk];
 
 		pGlyphf := cast (&SFontGlyphFile)pB;
+		pFont.m_pGlyphf = pGlyphf;
 		pFont.m_aWchKerning = cast(&u32)(pB + pGlyphf.m_iBaWchKerning);
-		assert(cast(&void)pFont.m_aWchKerning == cast(&void)&pGlyphf.m_aGlyph[pGlyphf.m_cGlyph], "bad offsets", #file, #line);
+
+		aGlyph := &pGlyphf.m_aGlyph_CArray;
+		assert(cast(&void)pFont.m_aWchKerning == cast(&void)&aGlyph[pGlyphf.m_cGlyph], "bad offsets", #file, #line);
 
 		pFont.m_aDxKerning = cast(&f32)(pB + pGlyphf.m_iBaDxKerning);
-
 	}
 
 	return true;
 }
 
+DrawTexturedQuad :: (pTex: & STexture, dX: float, dY: float)
+{
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, pTex.m_driId);
+
+	glBegin(GL_QUADS);
+	glTexCoord2f(0.0, 0.0);
+	glColor3f(1, 1, 1);
+	glVertex3f(0.0, 0.0, 0.0);
+
+	glTexCoord2f(1.0, 0.0);
+	glColor3f(1, 1, 1);
+	glVertex3f(dX, 0.0, 0.0);
+
+	glTexCoord2f(1.0, 1.0);
+	glColor3f(1, 1, 1);
+	glVertex3f(dX, dY, 0.0);
+
+	glTexCoord2f(0.0, 1.0);
+	glColor3f(1, 1, 1);
+	glVertex3f(0.0, dY, 0.0);
+	glEnd();
+	glDisable(GL_TEXTURE_2D);
+}
 
 PGlyphFind :: (pGlyphf: & SFontGlyphFile, wch: u32) -> & SFontGlyph
 {
 	// binary search through the glyphs to find our data
+
 	iLb: int = 0;
 	iUb: int = pGlyphf.m_cGlyph;
 
-	aGlyph: & SFontGlyph = pGlyphf.m_aGlyph;
+	//pGlyph: & SFontGlyph = pGlyphf.m_aGlyph;
+	pGlyph := &pGlyphf.m_aGlyph_CArray;
 	while iLb <= iUb
 	{
 		iMid := (iLb + iUb) >> 1;
-		chMid := aGlyph[iMid].m_wch;
+		chMid := pGlyph[iMid].m_wch;
 		if chMid == wch
-			return &aGlyph[iMid];
+		{
+			return &pGlyph[iMid];
+		}
 
 		if wch < chMid
 		{
@@ -771,6 +803,7 @@ PGlyphFind :: (pGlyphf: & SFontGlyphFile, wch: u32) -> & SFontGlyph
 			iLb = iMid + 1;
 		}
 	}
+
 	return null;
 }
 
@@ -794,7 +827,7 @@ FillOutVert :: inline (
 					pGlyph: & SFontGlyph, 
 					pFvbuf: & SFontVertexBuffer)
 {
-	pFvert: & SFontVertex = pFvbuf.m_aFvert;
+	pFvert: & SFontVertex = &pFvbuf.m_aFvert[pFvbuf.m_cFvert];
 	++pFvbuf.m_cFvert;
 
 	pFvert.m_x = x;
@@ -832,12 +865,13 @@ CreateVerts :: (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFontVe
 	//for (const WChar * pWchzIt = pWchz; *pWchzIt != 0; ++pWchzIt)
 	//for pWchzIt := pWchz until null; ++pWchzIt
 	pWchzIt := pWchz;
-	while pWchzIt != null
+	while @pWchzIt != 0
 	{
 		pGlyph := PGlyphFind(pGlyphf, @pWchzIt);
-		if !pGlyph
+		if pGlyph == null
 		{
 			// missing character...
+			++pWchzIt;
 			continue;
 		}
 
@@ -931,7 +965,7 @@ FlushVerts :: (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 	glTexCoordPointer(4, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_uMin);
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY);		
 
-	glDrawArrays(GL_QUADS, 0, cast (s32) aFvert.count);
+	glDrawArrays(GL_QUADS, 0, cast (s32) pFvbuf.m_cFvert);
 
 	if (pTex)
 		glDisable(pTex.m_druTarget);
@@ -959,6 +993,7 @@ DXDYExtentsFromAWch :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
 	rXY := pDras.m_fontd.m_gCharSize;
 
 	//for(const WChar * pWchzIt = pWchz; *pWchzIt != 0; ++pWchzIt)
+
 	pWchzIt := pWchz;
 	while (@pWchzIt != 0)
 	{
@@ -994,7 +1029,7 @@ DXDYExtentsFromAWch :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
 							pGlyph.m_iDxKerningMin, 
 							pGlyph.m_iDxKerningMax, 
 							@pWchzIt);
-		
+
 		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * rXY;
 	}
 
@@ -1024,5 +1059,114 @@ CVec2 DXDYCalculateExtents(SDrawContext * pDrac, const char * pWchzFormat, ...)
 	ConvertChToWch(aCh, EWC_DIM(aWch), aWch);
 
 	return DXDYExtentsFromAWch(pDrac, aWch);
+}*/
+
+DXDYCalculateExtents :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
+{
+	return DXDYExtentsFromAWch(pDrac, pWchz);
 }
-*/
+
+DXDYCalculateExtents :: (pDrac: & SDrawContext, pCoz: & u8) -> SVector2
+{
+	aWch: [kChMaxDrawText] u32;
+
+	if !FTryConvertUtf8ToUcs4(pCoz, aWch, &aWch[aWch.count])
+	{
+		return Vec2Create(0,0);
+	}
+	//ConvertChToWch(aCh, EWC_DIM(aWch), aWch);
+
+	return DXDYExtentsFromAWch(pDrac, aWch);
+}
+
+DrawTextRaw :: (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
+{
+	// draw characters to the right. pos is the left side baseline
+
+	CreateVerts(pDrac.m_pFontman, pDrac.m_pDras, &g_Fvbuf, pos, pWchz);
+	FlushVerts(pDrac, &g_Fvbuf);
+}
+
+DrawTextAligned :: inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
+{
+	pDras := pDrac.m_pDras;
+
+	// BB - could mix extents calculation with vertex creation
+
+	vecDxDy: SVector2;
+	alignkX := pDras.m_fontd.m_alignkX;
+	alignkY := pDras.m_fontd.m_alignkY;
+	if alignkX != ALIGNK.Left || alignkY != ALIGNK.Bottom
+	{
+		// Don't need to calculate extents if we're x=ALIGNK_Left, y=ALIGNK_Bottom
+		vecDxDy = DXDYExtentsFromAWch(pDrac, pWchz);
+	}
+
+	x, y: f32;
+
+	/*switch (alignkX)
+	{
+		case ALIGNK.Left:	x = pos.X();						break;
+		case ALIGNK.Center:	x = pos.X() - vecDxDy.X() * 0.5f;	break;
+		case ALIGNK.Right:	x = pos.X() - vecDxDy.X();			break;
+		default: EWC_ASSERT(false, "unknown ALIGNK");
+	}
+
+	switch (alignkY)
+	{
+		case ALIGNK.Top:	y = pos.Y() - vecDxDy.Y();			break;
+		case ALIGNK.Center:	y = pos.Y() - vecDxDy.Y() * 0.5f;	break;
+		case ALIGNK.Bottom:	y = pos.Y() ;						break;
+		default: EWC_ASSERT(false, "unknown ALIGNK");
+	}*/
+
+	if alignkX == ALIGNK.Left			{ x = pos.m_x; }
+	else if alignkX == ALIGNK.Center	{ x = pos.m_x - vecDxDy.m_x * 0.5; }
+	else if alignkX == ALIGNK.Right		{ x = pos.m_x - vecDxDy.m_x; }
+	else 								{ assert(false, "unknown ALIGNK", #file, #line); }
+
+	if alignkY == ALIGNK.Top 			{ y = pos.m_y - vecDxDy.m_y; }
+	else if alignkY == ALIGNK.Center	{ y = pos.m_y - vecDxDy.m_y * 0.5;	}
+	else if alignkY == ALIGNK.Bottom	{ y = pos.m_y; }
+	else 								{ assert(false, "unknown ALIGNK", #file, #line); }
+
+	// draw characters to the right. pos is the left side baseline
+
+	posCursor := Vec2Create(x, y);
+	DrawTextRaw(pDrac, posCursor, pWchz);
+}
+
+DrawText :: (pDrac: & SDrawContext, pos: SVector2, pCoz: & u8)
+{
+	aWch: [kChMaxDrawText] u32;
+	if FTryConvertUtf8ToUcs4(pCoz, aWch, &aWch[aWch.count])
+	{
+		DrawTextAligned(pDrac, pos, aWch);
+	}
+}
+
+SetupOrthoViewport :: (xMin: f64, yMin: f64, xMax: f64, yMax: f64)
+{
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(xMin, xMax, yMin, yMax, 1, -1);
+	glMatrixMode(GL_MODELVIEW);
+}
+
+/* Camera2d
+void ActivateForDraw(SDrawContext * pDrac)
+{
+	const CViewport * pViewp = CViewport::PViewp(m_iViewp);
+	EWC_ASSERT(pViewp, "called ActivateForDraw on camera with no view");
+	if (!pViewp)
+		return;
+
+	CVec2 vecDxDy = pViewp->m_rectBounds.VecDXDY() * m_rScale * 0.5f;
+	CVec2 posMin = m_posCenter - vecDxDy;
+	CVec2 posMax = m_posCenter + vecDxDy;
+	CRect rectViewport(posMin, posMax);
+	SetupOrthoViewport(rectViewport);
+
+	//CDrawState * pDras = pDrac->m_pDras;
+	//pDras->SetVec(DRASK_PosSortOriginWs, m_posFocus);
+}*/

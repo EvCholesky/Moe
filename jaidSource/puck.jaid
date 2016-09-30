@@ -53,10 +53,11 @@ main :: () -> int
 	pWindow : HWND;
 	CreateWindow(g_dXWindow, g_dYWindow, "Puck", &pWindow);
 
-	if !PDracStaticInit(PVAllocDefault)
+	pDrac := PDracStaticInit(PVAllocDefault);
+	if !pDrac
 		return 0;
 
-    glOrtho(0, g_dXWindow, 0, g_dYWindow, -1, 1);
+	SetupOrthoViewport(0, 0, g_dXWindow, g_dYWindow);
 
     dRadSpin :: 0.001;
     gRadSpin: float;
@@ -70,6 +71,9 @@ main :: () -> int
 
 		gRadSpin += dRadSpin;
 		DrawTestTriangle(gRadSpin);
+
+		DrawText(pDrac, Vec2Create(100, 100), "TheQuickBrownFoxJumpsOverTheLazyDog");
+		//DrawTexturedQuad(pDrac.m_pFontman.m_aFont[0].m_pTex, 400, 400);
 
         SwapBuffers(pWindow);
 
