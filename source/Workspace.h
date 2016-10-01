@@ -106,6 +106,9 @@ public:
 		FILES_Complete,
 	};
 
+	static const int	s_cBFilenameMax = 1024;
+	static const char * s_pCozSourceExtension;
+
 	struct SFile // tag = file
 	{
 						SFile(const EWC::CString & strFilename, FILEK filek)
@@ -170,6 +173,7 @@ void EndParse(CWorkspace * pWork, SJaiLexer * pJlex);
 void EndWorkspace(CWorkspace * pWork);
 
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint);
+size_t CChConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax);
 
 void PerformTypeCheck(
 	EWC::CAlloc * pAlloc,

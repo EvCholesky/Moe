@@ -2569,7 +2569,9 @@ bool FParseImportDirectives(CWorkspace * pWork, SJaiLexer * pJlex)
 			{
 				if (rword == RWORD_ImportDirective)
 				{
-					(void) pWork->PFileEnsure(pJlex->m_str.PCoz(), CWorkspace::FILEK_Source);
+					char aChFilename[CWorkspace::s_cBFilenameMax];
+					(void)CChConstructFilename(pJlex->m_str.PCoz(), CWorkspace::s_pCozSourceExtension, aChFilename, EWC_DIM(aChFilename));
+					(void)pWork->PFileEnsure(aChFilename, CWorkspace::FILEK_Source);
 				}
 				else if (EWC_FVERIFY(rword == RWORD_ForeignLibraryDirective, "unknown directive"))
 				{
@@ -3773,7 +3775,7 @@ void TestParse()
 				"#import \"basic\" ";
 
 		pCozOut = "";
-		const char * apChzExpectedImport[] = { "foo/blah/ack", "test\\wha\\huh", "basic",nullptr };
+		const char * apChzExpectedImport[] = { "foo/blah/ack.jaid", "test\\wha\\huh.jaid", "basic.jaid",nullptr };
 		const char * apChzExpectedLibrary[] = { "foo/blah/ack", "test\\wha\\huh", nullptr };
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut, apChzExpectedImport, apChzExpectedLibrary);
 

@@ -95,6 +95,7 @@ LLVMDIBuilderRef LLVMCreateDIBuilder(LLVMModuleRef pMod)
 {
 	Module * pModule = unwrap(pMod);
 	pModule->addModuleFlag(Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);	
+	pModule->addModuleFlag(Module::Warning, "CodeView", 1);	
 
 	return wrap(new DIBuilder(*pModule));
 }
@@ -591,12 +592,6 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 											fIsOptimized,
 											tupelaryTemplateParm,
 											pDisubDecl);
-
-
-	if (pFunc->getName() != pDisub->getName())
-	{
-		printf("ERROR: %s != %s\n", pFunc->getName().str().c_str(), pDisub->getName().str().c_str());
-	}
 
 	pFunc->setMetadata(LLVMContext::MD_dbg, pDisub); // this is the same as pFunc->setSubprogram(pDisub); but that's only in 3.8
 	return wrap(pDisub);

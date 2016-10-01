@@ -178,6 +178,7 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 	*piCol = iCol + 1;		// 1 relative
 }
 
+const char * CWorkspace::s_pCozSourceExtension = ".jaid";
 
 CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 :m_pAlloc(pAlloc)

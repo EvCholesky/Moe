@@ -4054,7 +4054,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 
 	char aCh[256];
-	const char * pChzName = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());;
+	const char * pChzName = PChzVerifyAscii(pTinproc->m_strName.PCoz());
 
 	EWC_ASSERT(pTinproc, "Exected procedure type");
 
@@ -4460,7 +4460,7 @@ void CompileToObjectFile(CWorkspace * pWork, LLVMModuleRef pLmodule, const char 
     else
       pChzExtension = ".o";
 
-	char aChFilenameOut[256];
+	char aChFilenameOut[CWorkspace::s_cBFilenameMax];
 	size_t cCh = CChConstructFilename(pChzFilenameIn, pChzExtension, aChFilenameOut, EWC_DIM(aChFilenameOut));
 	pWork->SetObjectFilename(aChFilenameOut, cCh);
 
@@ -4515,8 +4515,8 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		if (pFile->m_filek != CWorkspace::FILEK_Source)
 			continue;
 
-		char aChFilenameOut[256];
-		(void)CChConstructFilename(pFile->m_strFilename.PCoz(), ".jaid", aChFilenameOut, EWC_DIM(aChFilenameOut));
+		char aChFilenameOut[CWorkspace::s_cBFilenameMax];
+		(void)CChConstructFilename(pFile->m_strFilename.PCoz(), CWorkspace::s_pCozSourceExtension, aChFilenameOut, EWC_DIM(aChFilenameOut));
 
 		pFile->m_pChzFileBody = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
 		if (!pFile->m_pChzFileBody)
