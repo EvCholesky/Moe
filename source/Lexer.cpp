@@ -19,7 +19,7 @@
 
 
 
-static int JtokSetTokinf(SJaiLexer * pJlex, JTOK jtok, const char * pChStart, const char * pChEnd)
+static int JtokSetTokinf(SLexer * pJlex, JTOK jtok, const char * pChStart, const char * pChEnd)
 {
 	pJlex->m_jtok = jtok;
 	pJlex->m_pChBegin = pChStart;
@@ -97,7 +97,7 @@ static inline char NToLower(char c)
 }
 
 // copy suffixes at the end of a number into the working string
-static int JtokParseSuffixes(SJaiLexer * pJlex, JTOK jtok, LITK litk, const char * pChzStart, const char * pChzCur)
+static int JtokParseSuffixes(SLexer * pJlex, JTOK jtok, LITK litk, const char * pChzStart, const char * pChzCur)
 {
 	pJlex->m_str = EWC::CString();
 
@@ -176,7 +176,7 @@ static int JtokParseChar(const char * pChzIn, char const ** pChzOut)
 	return (unsigned char) *pChzIn;
 }
 
-static int JtokParseString(SJaiLexer * pJlex, const char * pChz)
+static int JtokParseString(SLexer * pJlex, const char * pChz)
 {
 	const char * pChzStart = pChz;
 	char chDelim = *pChz++; // grab the " or ' for later matching
@@ -217,7 +217,7 @@ static int JtokParseString(SJaiLexer * pJlex, const char * pChz)
 	return jtok;
 }
 
-static int JtokLexHereString(SJaiLexer * pJlex, const char * pChz)
+static int JtokLexHereString(SLexer * pJlex, const char * pChz)
 {
 	while (pChz != pJlex->m_pChEof && FIsWhitespace(*pChz))
 	{
@@ -288,7 +288,7 @@ static int JtokLexHereString(SJaiLexer * pJlex, const char * pChz)
 }
 
 // method used to split compound tokens (ie '&&' split into two '&' '&' tokens)
-void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit)
+void SplitToken(SLexer * pJlex, JTOK jtokSplit)
 {
 	pJlex->m_jtok = jtokSplit;
 
@@ -309,7 +309,7 @@ void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit)
 	pJlex->m_pChParse = pChIt;
 }
 
-bool FConsumeToken(SJaiLexer * pJlex, JTOK jtok)
+bool FConsumeToken(SLexer * pJlex, JTOK jtok)
 {
 	if (pJlex->m_jtok == jtok)
 	{
@@ -319,7 +319,7 @@ bool FConsumeToken(SJaiLexer * pJlex, JTOK jtok)
 	return false;
 }
 
-int JtokNextToken(SJaiLexer * pJlex)
+int JtokNextToken(SLexer * pJlex)
 {
 	const char * pChz = pJlex->m_pChParse;
 
@@ -611,7 +611,7 @@ int JtokNextToken(SJaiLexer * pJlex)
 	}
 }
 
-void InitJaiLexer(SJaiLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage)
+void InitLexer(SLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage)
 {
 	pJlex->m_pChInput = pCoInput;
 	pJlex->m_pChParse = pCoInput;
@@ -628,7 +628,7 @@ void InitJaiLexer(SJaiLexer * pJlex, const char * pCoInput, const char * pCoInpu
 	pJlex->m_rword = RWORD_Nil;
 }
 
-RWORD RwordLookup(SJaiLexer * pJlex)
+RWORD RwordLookup(SLexer * pJlex)
 {
 	if (pJlex->m_jtok != JTOK_ReservedWord)
 		return RWORD_Nil;
@@ -686,7 +686,7 @@ const char * PCozFromJtok(JTOK jtok)
 	return s_mpJtokPCoz[jtok - JTOK_SimpleMax];
 }
 
-const char * PCozCurrentToken(SJaiLexer * pJlex)
+const char * PCozCurrentToken(SLexer * pJlex)
 {
 	JTOK jtok = (JTOK)pJlex->m_jtok;
 	if (jtok == JTOK_ReservedWord)
@@ -706,9 +706,9 @@ void AssertMatches(
 	const RWORD * aRword = nullptr,
 	const LITK * aLitk = nullptr)
 {
-	SJaiLexer jlex;
+	SLexer jlex;
 	char aChStorage[1024 * 8];
-	InitJaiLexer(&jlex, pCozInput, &pCozInput[EWC::CBCoz(pCozInput)-1], aChStorage, EWC_DIM(aChStorage));
+	InitLexer(&jlex, pCozInput, &pCozInput[EWC::CBCoz(pCozInput)-1], aChStorage, EWC_DIM(aChStorage));
 	
 	int iJtok = 0;
 	const JTOK * pJtok = aJtok;

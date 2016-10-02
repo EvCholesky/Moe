@@ -34,15 +34,15 @@ enum FPDECL
 };
 EWC_DEFINE_GRF(GRFPDECL, FPDECL, u32);
 
-CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtab);
-CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex);
-CSTNode * PStnodParseExpression(CParseContext * pParctx, SJaiLexer * pJlex);
-CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SJaiLexer * pJlex);
-CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SJaiLexer * pJlex);
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtabProc);
-CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SJaiLexer * pJlex);
-CSTNode * PStnodParseStatement(CParseContext * pParctx, SJaiLexer * pJlex);
-CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex);
+CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pJlex, CSymbolTable * pSymtab);
+CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pJlex);
+CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pJlex);
+CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pJlex);
+CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pJlex);
+CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pJlex, CSymbolTable * pSymtabProc);
+CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pJlex);
+CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pJlex);
+CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pJlex);
 
 const char * PChzFromPark(PARK park)
 {
@@ -284,7 +284,7 @@ CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc)
 	return pStnodDst;
 }
 
-void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChzFormat, ...)
+void ParseError(CParseContext * pParctx, SLexer * pJlex, const char * pChzFormat, ...)
 {
 	SLexerLocation lexloc(pJlex);
 	va_list ap;
@@ -292,7 +292,7 @@ void ParseError(CParseContext * pParctx, SJaiLexer * pJlex, const char * pChzFor
 	EmitError(pParctx->m_pWork->m_pErrman, &lexloc, pChzFormat, ap);
 }
 
-EWC::CString StrUnexpectedToken(SJaiLexer * pJlex)
+EWC::CString StrUnexpectedToken(SLexer * pJlex)
 {
 	if (pJlex->m_jtok == JTOK_Identifier)
 	{
@@ -301,7 +301,7 @@ EWC::CString StrUnexpectedToken(SJaiLexer * pJlex)
 	return CString(PCozCurrentToken(pJlex));
 }
 
-void SkipToToken(SJaiLexer * pJlex, JTOK const * const aJtok, int cJtok)
+void SkipToToken(SLexer * pJlex, JTOK const * const aJtok, int cJtok)
 {
 	while (1)
 	{
@@ -321,7 +321,7 @@ void SkipToToken(SJaiLexer * pJlex, JTOK const * const aJtok, int cJtok)
 	}
 }
 
-void Expect(CParseContext * pParctx, SJaiLexer * pJlex, JTOK jtokExpected, const char * pCozInfo = nullptr, ...)
+void Expect(CParseContext * pParctx, SLexer * pJlex, JTOK jtokExpected, const char * pCozInfo = nullptr, ...)
 {
 	if (pJlex->m_jtok != jtokExpected)
 	{
@@ -353,7 +353,7 @@ CSTNode * PStnodAllocateIdentifier(CParseContext * pParctx, const SLexerLocation
 	return pStnod;
 }
 
-CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SLexer * pJlex)
 {
 	if (pJlex->m_jtok != JTOK_Identifier)
 		return nullptr;
@@ -377,7 +377,7 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnod;
 }
 
-CSTNode * PStnodParseReservedWord(CParseContext * pParctx, SJaiLexer * pJlex, RWORD rwordExpected = RWORD_Nil)
+CSTNode * PStnodParseReservedWord(CParseContext * pParctx, SLexer * pJlex, RWORD rwordExpected = RWORD_Nil)
 {
 	if (pJlex->m_jtok != JTOK_ReservedWord)
 		return nullptr;
@@ -416,7 +416,7 @@ STypeInfo * PTinForInt(CSymbolTable * pSymtab, u64 uMin, u64 nLast)
 
 CSTNode * PStnodParseExpressionList(
 	CParseContext * pParctx,
-	SJaiLexer * pJlex)
+	SLexer * pJlex)
 {
 	SLexerLocation lexloc(pJlex);
 
@@ -446,7 +446,7 @@ CSTNode * PStnodParseExpressionList(
 }
 
 
-CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	switch(pJlex->m_jtok)
 	{
@@ -603,7 +603,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SJaiLexer * pJle
 	}
 }
 
-CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParsePrimaryExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -709,7 +709,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SJaiLexer * pJle
 	}
 }
 
-CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	if (pJlex->m_jtok == JTOK_DoubleReference)
 	{
@@ -792,7 +792,7 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 	return PStnodParsePostfixExpression(pParctx, pJlex);
 }
 
-CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnodCast = nullptr;
 	CSTDecl * pStdecl = nullptr;
@@ -841,7 +841,7 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 
 CSTNode * PStnodHandleExpressionRHS(
 	CParseContext * pParctx,
-	SJaiLexer * pJlex,
+	SLexer * pJlex,
 	const SLexerLocation & lexloc,
 	JTOK jtokExpression,
 	PARK parkExpression,
@@ -867,7 +867,7 @@ CSTNode * PStnodHandleExpressionRHS(
 	return pStnodExp;
 }
 
-CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseCastExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -893,7 +893,7 @@ CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SJaiLexer
 	}
 }
 
-CSTNode * PStnodParseAdditiveExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseAdditiveExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseMultiplicativeExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -918,7 +918,7 @@ CSTNode * PStnodParseAdditiveExpression(CParseContext * pParctx, SJaiLexer * pJl
 	}
 }
 
-CSTNode * PStnodParseShiftExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseShiftExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseAdditiveExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -943,7 +943,7 @@ CSTNode * PStnodParseShiftExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 	}
 }
 
-CSTNode * PStnodParseRelationalExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseRelationalExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseShiftExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -970,7 +970,7 @@ CSTNode * PStnodParseRelationalExpression(CParseContext * pParctx, SJaiLexer * p
 	}
 }
 
-CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseRelationalExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -995,7 +995,7 @@ CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SJaiLexer * pJl
 	}
 }
 
-CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	// BB - This is a little different than ISO C precedence rules, we're treating all bitwise operators the same
 	//  rather than inclusiveOr < exclusiveOr < bitwiseAnd
@@ -1024,7 +1024,7 @@ CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SJaiLexer *
 	}
 }
 
-CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseBitwiseAndOrExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -1049,7 +1049,7 @@ CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SJaiLexer *
 	}
 }
 
-CSTNode * PStnodParseAssignmentExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseAssignmentExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseLogicalAndOrExpression(pParctx, pJlex);
 	if (!pStnod)
@@ -1081,7 +1081,7 @@ CSTNode * PStnodParseAssignmentExpression(CParseContext * pParctx, SJaiLexer * p
 	}
 }
 
-CSTNode * PStnodParseExpression(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseAssignmentExpression(pParctx, pJlex);
 
@@ -1090,7 +1090,7 @@ CSTNode * PStnodParseExpression(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnod;
 }
 
-CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SLexer * pJlex)
 {
 	if (FConsumeToken(pJlex, JTOK('[')))
 	{
@@ -1118,7 +1118,7 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 	return nullptr;
 }
 
-CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pJlex)
 {
 	if (FConsumeToken(pJlex, JTOK('(')))
 	{
@@ -1174,7 +1174,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SJaiLexer *
 	return nullptr;
 }
 
-CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SLexer * pJlex)
 {
 	// handle the mis-lexing of '&&' as one token here
 	if (pJlex->m_jtok == JTOK_DoubleReference)
@@ -1195,7 +1195,7 @@ CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 	return nullptr;
 }
 
-CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnod = PStnodParseIdentifier(pParctx, pJlex);
 	if (pStnod)
@@ -1269,7 +1269,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SJaiLexer * pJlex)
 // parent decls cannot have a type.
 // child decls cannot have initializers - the initializer should come from the parent.
 
-void ValidateDeclaration(CParseContext * pParctx, SJaiLexer * pJlex, CSTNode * pStnodDecl)
+void ValidateDeclaration(CParseContext * pParctx, SLexer * pJlex, CSTNode * pStnodDecl)
 {
 	CSTDecl * pStdecl = pStnodDecl->m_pStdecl;
 	if (!EWC_FVERIFY(pStdecl, "bad declaration in ValidateDeclaration"))
@@ -1316,7 +1316,7 @@ void ValidateDeclaration(CParseContext * pParctx, SJaiLexer * pJlex, CSTNode * p
 
 CSTNode * PStnodParseParameter(
 	CParseContext * pParctx,
-	SJaiLexer * pJlex,
+	SLexer * pJlex,
 	CSymbolTable * pSymtab,
 	GRFPDECL grfpdecl)
 {
@@ -1336,7 +1336,7 @@ CSTNode * PStnodParseParameter(
 	CSTNode * pStnodInit = nullptr;
 	bool fAllowCompoundDecl = grfpdecl.FIsSet(FPDECL_AllowCompoundDecl);
 
-	SJaiLexer jlexPeek = *pJlex;
+	SLexer jlexPeek = *pJlex;
 	int cIdent = 0;
 	while (1)
 	{
@@ -1483,7 +1483,7 @@ CSTNode * PStnodParseParameter(
 	return pStnodReturn;
 }
 
-CSTNode * PStnodParseDecl(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseDecl(CParseContext * pParctx, SLexer * pJlex)
 {
 	// stand alone declaration statement
 
@@ -1496,7 +1496,7 @@ CSTNode * PStnodParseDecl(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnod;
 }
 
-CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTNode * pStnodList = nullptr;
 
@@ -1526,7 +1526,7 @@ CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SJaiLexer * pJlex)
 	return pStnodList;
 }
 
-CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pJlex)
 {
 	if (FConsumeToken(pJlex, JTOK_Arrow))
 	{
@@ -1550,7 +1550,7 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SJaiLexer * pJlex)
 	}
 }
 
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtabProc)
+CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pJlex, CSymbolTable * pSymtabProc)
 {
 	SLexerLocation lexloc(pJlex);
 	if (pSymtabProc)
@@ -1621,7 +1621,7 @@ CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation 
 	return pStnodConstant;
 }
 
-CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SLexer * pJlex)
 {
 	SLexerLocation lexloc(pJlex);
 	CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pJlex);
@@ -1676,7 +1676,7 @@ CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park)
 	return pStnod->m_arypStnodChild.A();
 }
 
-CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SLexer * pJlex)
 {
 	SLexerLocation lexloc(pJlex);
 	auto pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
@@ -1706,11 +1706,11 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SJaiLexer * pJlex
 	return pStnodList;
 }
 
-CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pJlex)
 {
 	if (pJlex->m_jtok == JTOK_Identifier)
 	{
-		SJaiLexer jlexPeek = *pJlex;
+		SLexer jlexPeek = *pJlex;
 		JtokNextToken(&jlexPeek);
 
 		if (jlexPeek.m_jtok == JTOK_ColonColon)
@@ -2209,7 +2209,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SJaiLexer * pJlex)
 	return nullptr;
 }
 
-CSTNode * PStnodParseExpressionStatement(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseExpressionStatement(CParseContext * pParctx, SLexer * pJlex)
 {
 	if (FConsumeToken(pJlex, JTOK(';')))
 	{
@@ -2232,7 +2232,7 @@ CSTNode * PStnodParseExpressionStatement(CParseContext * pParctx, SJaiLexer * pJ
 	return pStnod;
 }
 
-CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJlex, CSymbolTable * pSymtab)
+CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pJlex, CSymbolTable * pSymtab)
 {
 	CSTNode * pStnodList = nullptr;
 
@@ -2280,7 +2280,7 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SJaiLexer * pJle
 	return pStnodList;
 }
 
-CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SLexer * pJlex)
 {
 	RWORD rword = RwordLookup(pJlex);
 	switch(rword)
@@ -2318,7 +2318,7 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 	}
 }
 
-CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pJlex)
 {
 	RWORD rword = RwordLookup(pJlex);
 	if (rword == RWORD_If)
@@ -2377,7 +2377,7 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SJaiLexer * pJl
 	return nullptr;
 }
 
-CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pJlex)
 {
 	CSTIdentifier * pStidentLabel = nullptr;
 	RWORD rword = RwordLookup(pJlex);
@@ -2521,7 +2521,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SJaiLexer * pJl
 	return nullptr;
 }
 
-CSTNode * PStnodParseStatement(CParseContext * pParctx, SJaiLexer * pJlex)
+CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pJlex)
 {
 
 	CSTNode * pStnod = PStnodParseCompoundStatement(pParctx, pJlex, nullptr);
@@ -2556,7 +2556,7 @@ CSTNode * PStnodParseStatement(CParseContext * pParctx, SJaiLexer * pJlex)
 	return PStnodParseJumpStatement(pParctx, pJlex);
 }
 
-bool FParseImportDirectives(CWorkspace * pWork, SJaiLexer * pJlex)
+bool FParseImportDirectives(CWorkspace * pWork, SLexer * pJlex)
 {
 	if (pJlex->m_jtok == JTOK_ReservedWord)
 	{
@@ -2593,7 +2593,7 @@ bool FParseImportDirectives(CWorkspace * pWork, SJaiLexer * pJlex)
 	return false;
 }
 
-void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalEntries)
+void ParseGlobalScope(CWorkspace * pWork, SLexer * pJlex, bool fAllowIllegalEntries)
 {
 	CParseContext * pParctx = pWork->m_pParctx;
 
@@ -3039,7 +3039,7 @@ void CSymbolTable::AddManagedSymtab(CSymbolTable * pSymtab)
 	m_pSymtabNextManaged = pSymtab;
 }
 
-void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SJaiLexer * pJlex, STypeInfo * pTin)
+void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SLexer * pJlex, STypeInfo * pTin)
 {
 	// NOTE: This function is for built-in types without a lexical order, so we shouldn't be calling it on an ordered table
 	EWC_ASSERT(!m_grfsymtab.FIsSet(FSYMTAB_Ordered), "Cannot add built-in types to ordered symbol table.");
@@ -3536,7 +3536,7 @@ void AssertParseMatchTailRecurse(
 	pWork->m_pAlloc->SetAltrac(pAltrac);
 #endif
 
-	SJaiLexer jlex;
+	SLexer jlex;
 	BeginWorkspace(pWork);
 	BeginParse(pWork, &jlex, pCozIn);
 
@@ -3775,7 +3775,7 @@ void TestParse()
 				"#import \"basic\" ";
 
 		pCozOut = "";
-		const char * apChzExpectedImport[] = { "foo/blah/ack.jaid", "test\\wha\\huh.jaid", "basic.jaid",nullptr };
+		const char * apChzExpectedImport[] = { "foo/blah/ack.moe", "test\\wha\\huh.moe", "basic.moe",nullptr };
 		const char * apChzExpectedLibrary[] = { "foo/blah/ack", "test\\wha\\huh", nullptr };
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut, apChzExpectedImport, apChzExpectedLibrary);
 

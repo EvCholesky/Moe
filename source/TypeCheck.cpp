@@ -5098,7 +5098,7 @@ void AssertTestTypeCheck(
 	const char * pCozIn,
 	const char * pCozExpected)
 {
-	SJaiLexer jlex;
+	SLexer jlex;
 	BeginWorkspace(pWork);
 	BeginParse(pWork, &jlex, pCozIn);
 

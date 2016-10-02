@@ -873,7 +873,7 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 ,m_hashHvNUnique(pAlloc)
 { 
 	m_pLbuild = LLVMCreateBuilder();
-	m_pLmoduleCur = LLVMModuleCreateWithName("JaiModule");
+	m_pLmoduleCur = LLVMModuleCreateWithName("MoeModule");
 
 	if (!pChzFilename || *pChzFilename == '\0')
 	{
@@ -910,7 +910,7 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 							m_nRuntimeLanguage,
 							pCozFile,
 							pCozPath,
-							"Jailang compiler",
+							"Moe compiler",
 							false,
 							"",
 							0);
@@ -1170,13 +1170,13 @@ CIRInstruction * CIRBuilder::PInstCreateNCmp(
 	CIRValue * pValRhs,
 	const char * pChzName)
 {
-#define JAI_PRED(X) 
+#define MOE_PRED(X) 
 #define LLVM_PRED(X) X,
 	static const LLVMIntPredicate s_mpNcmpredLpredicate[] =
 	{
 		NCMPPRED_LIST
 	};
-#undef JAI_PRED
+#undef MOE_PRED
 #undef LLVM_PRED
 	EWC_CASSERT(EWC_DIM(s_mpNcmpredLpredicate) == NCMPPRED_Max, "missing elements in int predicate map");
 	auto lpredicate = s_mpNcmpredLpredicate[ncmppred];
@@ -1195,13 +1195,13 @@ CIRInstruction * CIRBuilder::PInstCreateGCmp(
 	CIRValue * pValRhs,
 	const char * pChzName)
 {
-#define JAI_PRED(X) 
+#define MOE_PRED(X) 
 #define LLVM_PRED(X) X,
 	static const LLVMRealPredicate s_mpGcmpredLpredicate[] =
 	{
 		GCMPPRED_LIST
 	};
-#undef JAI_PRED
+#undef MOE_PRED
 #undef LLVM_PRED
 	EWC_CASSERT(EWC_DIM(s_mpGcmpredLpredicate) == GCMPPRED_Max, "missing elements in int predicate map");
 	auto lpredicate = s_mpGcmpredLpredicate[gcmppred];
@@ -4505,7 +4505,7 @@ void ShutdownLLVM()
 
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn)
 {
-	SJaiLexer jlex;
+	SLexer jlex;
 
 	(void) pWork->PFileEnsure(pChzFilenameIn, CWorkspace::FILEK_Source);
 
@@ -4603,7 +4603,7 @@ void AssertTestCodeGen(
 {
 	const char * s_pChzUnitTestFilename = "unit.test";
 
-	SJaiLexer jlex;
+	SLexer jlex;
 	BeginWorkspace(pWork);
 	auto pFile = pWork->PFileEnsure(s_pChzUnitTestFilename, CWorkspace::FILEK_Source);
 	pFile->m_pChzFileBody = pChzIn;

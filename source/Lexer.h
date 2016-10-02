@@ -154,7 +154,7 @@ struct SLiteralType	// litty
 	bool	m_fIsSigned;
 };
 
-struct SJaiLexer // tag = jlex
+struct SLexer // tag = jlex
 {
    // lexer variables
    const char *		m_pChInput;
@@ -191,7 +191,7 @@ struct SLexerLocation // tag = lexloc
 					,m_dB(dB)
 					{ ; }
 
-	explicit		SLexerLocation(SJaiLexer * pJlex)
+	explicit		SLexerLocation(SLexer * pJlex)
 					:m_strFilename(pJlex->m_pCozFilename)
 					,m_dB((s32)(pJlex->m_pChBegin - pJlex->m_pChInput))
 						{ ; }
@@ -211,12 +211,12 @@ struct SLexerLocation // tag = lexloc
 	s32				m_dB;
 };
 
-void InitJaiLexer(SJaiLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage);
-bool FConsumeToken(SJaiLexer * pJlex, JTOK jtok);
-int JtokNextToken(SJaiLexer * pJlex);
-void SplitToken(SJaiLexer * pJlex, JTOK jtokSplit);
-RWORD RwordLookup(SJaiLexer * pJlex);
+void InitLexer(SLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage);
+bool FConsumeToken(SLexer * pJlex, JTOK jtok);
+int JtokNextToken(SLexer * pJlex);
+void SplitToken(SLexer * pJlex, JTOK jtokSplit);
+RWORD RwordLookup(SLexer * pJlex);
 
 const char * PCozFromJtok(JTOK jtok);
 const char * PCozFromRword(RWORD rword);
-const char * PCozCurrentToken(SJaiLexer * pJlex);
+const char * PCozCurrentToken(SLexer * pJlex);

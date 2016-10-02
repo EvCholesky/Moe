@@ -487,7 +487,7 @@ public:
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
 	STypeInfoPointer *		PTinptrAllocReference(STypeInfo * pTinPointedTo);
 
-	void					AddBuiltInType(SErrorManager * pErrman, SJaiLexer * pJlex, STypeInfo * pTin);
+	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pJlex, STypeInfo * pTin);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
 
@@ -537,5 +537,5 @@ CSymbolTable *	PSymtabPop(CParseContext * pParctx);
 CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
 
-void ParseGlobalScope(CWorkspace * pWork, SJaiLexer * pJlex, bool fAllowIllegalEntries = false);
+void ParseGlobalScope(CWorkspace * pWork, SLexer * pJlex, bool fAllowIllegalEntries = false);
 

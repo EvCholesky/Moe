@@ -274,7 +274,7 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork->m_pErrman);
 }
 
-void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pCozIn, const char * pCozFilename)
+void BeginParse(CWorkspace * pWork, SLexer * pJlex, const char * pCozIn, const char * pCozFilename)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 	CParseContext * pParctx = EWC_NEW(pAlloc, CParseContext) CParseContext(pAlloc, pWork);
@@ -282,7 +282,7 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pCozIn, cons
 
 	static const size_t cChStorage = 1024 * 8;
 	char * aChStorage = (char *)pAlloc->EWC_ALLOC(cChStorage, 4);
-	InitJaiLexer(pJlex, pCozIn, &pCozIn[CBCoz(pCozIn)-1], aChStorage, cChStorage);
+	InitLexer(pJlex, pCozIn, &pCozIn[CBCoz(pCozIn)-1], aChStorage, cChStorage);
 
 	if (pCozFilename)
 	{
@@ -293,7 +293,7 @@ void BeginParse(CWorkspace * pWork, SJaiLexer * pJlex, const char * pCozIn, cons
 	PushSymbolTable(pParctx, pWork->m_pSymtab, lexloc);
 }
 
-void EndParse(CWorkspace * pWork, SJaiLexer * pJlex)
+void EndParse(CWorkspace * pWork, SLexer * pJlex)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 	pAlloc->EWC_FREE(pJlex->m_aChScratch);

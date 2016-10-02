@@ -55,17 +55,17 @@ extern "C" void PrintString(unsigned char * pChz)
 	printf("%s\n", pChz);
 }
 
-extern "C" float cosf_JAI(float g)
+extern "C" float cosf_MOE(float g)
 {
 	return cosf(g);
 }
 
-extern "C" float sinf_JAI(float g)
+extern "C" float sinf_MOE(float g)
 {
 	return sinf(g);
 }
 
-extern "C" float sqrtf_JAI(float g)
+extern "C" float sqrtf_MOE(float g)
 {
 	return sqrtf(g);
 }
