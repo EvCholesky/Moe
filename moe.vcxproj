@@ -21,7 +21,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{55FC0C0F-FC9B-4BBA-902D-DDAC0463B14D}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>jailang</RootNamespace>
+    <RootNamespace>moe</RootNamespace>
     <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -211,9 +211,9 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
     <ClInclude Include="source\EwcHash.h" />
     <ClInclude Include="source\EwcString.h" />
     <ClInclude Include="source\EwcTypes.h" />
-    <ClInclude Include="source\JaiLex.h" />
-    <ClInclude Include="source\JaiParse.h" />
-    <ClInclude Include="source\JaiTypes.h" />
+    <ClInclude Include="source\Lexer.h" />
+    <ClInclude Include="source\Parser.h" />
+    <ClInclude Include="source\TypeInfo.h" />
     <ClInclude Include="source\stb_malloc.h" />
     <ClInclude Include="source\Util.h" />
     <ClInclude Include="source\WindowsStub.h" />
@@ -222,8 +222,8 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
   <ItemGroup>
     <ClCompile Include="source\CodeGen.cpp" />
     <ClCompile Include="source\EwcString.cpp" />
-    <ClCompile Include="source\JaiLex.cpp" />
-    <ClCompile Include="source\JaiParse.cpp" />
+    <ClCompile Include="source\Lexer.cpp" />
+    <ClCompile Include="source\Parser.cpp" />
     <ClCompile Include="source\Main.cpp" />
     <ClCompile Include="source\TypeCheck.cpp" />
     <ClCompile Include="source\Util.cpp" />

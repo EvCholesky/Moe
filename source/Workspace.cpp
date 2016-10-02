@@ -14,8 +14,8 @@
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
 #include "CodeGen.h"
-#include "JaiLex.h"
-#include "JaiParse.h"
+#include "Lexer.h"
+#include "Parser.h"
 #include "Workspace.h"
 #include <cstdarg>
 #include <stdio.h>
@@ -178,7 +178,7 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 	*piCol = iCol + 1;		// 1 relative
 }
 
-const char * CWorkspace::s_pCozSourceExtension = ".jaid";
+const char * CWorkspace::s_pCozSourceExtension = ".moe";
 
 CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 :m_pAlloc(pAlloc)

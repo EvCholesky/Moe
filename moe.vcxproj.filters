@@ -33,13 +33,13 @@
     <ClInclude Include="source\EwcTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source\JaiLex.h">
+    <ClInclude Include="source\Lexer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source\JaiParse.h">
+    <ClInclude Include="source\Parser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source\JaiTypes.h">
+    <ClInclude Include="source\TypeInfo.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="source\stb_malloc.h">
@@ -59,10 +59,10 @@
     <ClCompile Include="source\EwcString.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\JaiLex.cpp">
+    <ClCompile Include="source\Lexer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\JaiParse.cpp">
+    <ClCompile Include="source\Parser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\Main.cpp">

@@ -19,7 +19,7 @@
 #include "EwcHash.h"
 #include "EwcTypes.h"
 #include "EwcString.h"
-#include "JaiLex.h"
+#include "Lexer.h"
 
 
 

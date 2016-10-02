@@ -1,0 +1,112 @@
+
+NReadCodepoint :: (ppCoz: && u8, pFIsValid: & bool) -> u32
+{
+	pCoz: & u8 = @ppCoz;
+	ch := cast (u32)@pCoz;
+	ch1, ch2, ch3: u32;
+
+	if (0xf8 & ch) == 0xf0
+	{ 
+		@pFIsValid = ((pCoz[1] & 0xC0) == 0x80) & ((pCoz[2] & 0xC0) == 0x80) & ((pCoz[3] & 0xC0) == 0x80);
+		@ppCoz += 4; 
+		ch = (ch & 0x07);		ch1 = cast (u32)(pCoz[1]) & 0x3F;		ch2 = cast(u32)(pCoz[2]) & 0x3F;		ch3 = cast(u32)(pCoz[3]) & 0x3F;
+		return (ch << 18) | (ch1 << 12) | (ch2 << 6) | ch3;
+	}
+	else if (0xf0 & ch) == 0xe0
+	{ 
+		@pFIsValid = ((pCoz[1] & 0xC0) == 0x80) & ((pCoz[2] & 0xC0) == 0x80);
+		@ppCoz += 3; 
+		ch = (ch & 0x0F);		ch1 = cast(u32)(pCoz[1]) & 0x3F;			ch2 = cast(u32)(pCoz[2]) & 0x3F;
+		return (ch << 12) | (ch1 << 6) | ch2;
+	}
+	else if (0xE0 & ch) == 0xC0
+	{ 
+		@pFIsValid = (pCoz[1] & 0xC0) == 0x80;
+		@ppCoz += 2; 
+		ch = (ch & 0x1F);		ch1 = cast(u32)(pCoz[1]) & 0x3F;
+		return (ch << 6) | ch1;
+	}
+
+	@pFIsValid = (pCoz[0] & 0x80) == 0;
+	@ppCoz += 1;
+	return ch;
+}
+
+FTryConvertUtf8ToUcs4 :: (pCozIn: & u8, pWchzOut: & u32, pWchOutMax: & u32) -> bool
+{
+	// BB - not checking for nullptrs, or zero character destination string
+
+	fIsValid: bool;
+	pCoz := pCozIn;
+
+	while @pCoz != '\0' && pWchzOut != pWchOutMax
+	{
+		@pWchzOut++ = NReadCodepoint(&pCoz, &fIsValid);
+		if !fIsValid
+		{
+			return false;
+		}
+	}
+
+	if pWchzOut == pWchOutMax
+	{
+		@(pWchOutMax-1) = 0;
+		return false;
+	}
+
+	@pWchzOut = 0;
+	return true;
+}
+
+FTryConvertUcs4ToUtf8 ::(pWchzIn: & u32, pCozOut: & u8, pCozOutMax: & u8) -> bool
+{
+	// BB - not checking for nullptrs, or zero character destination string
+
+	//for (const u32 * pWchz = pWchzIn; *pWchz != 0; ++pWchz)
+	pWchz := pWchzIn;
+	while (@pWchz != 0)
+	{
+		wch := @pWchz;
+		++pWchz;
+
+		cBOutLeft : sSize = (pCozOutMax - pCozOut);
+
+		if wch < 0x80
+		{
+			if cBOutLeft < 1	{ break; }
+			@pCozOut++ = cast (u8) wch;
+		}
+		else if wch < 0x7FF
+		{
+			if cBOutLeft < 2	{ break; }
+			@pCozOut++ = cast (u8) ((wch >> 6) | 0xC0);
+			@pCozOut++ = cast (u8) (wch & 0x3F) | 0x80;
+		}
+		else if wch < 0xFFFF
+		{
+			if cBOutLeft < 3 	{ break; }
+			@pCozOut++ = cast (u8) (wch >> 12) | 0xE0;
+			@pCozOut++ = (cast (u8) (wch >> 6) & 0x3F) | 0x80;
+			@pCozOut++ = cast (u8) (wch & 0x3F) | 0x80;
+		}
+		else if wch < 0x10FFFF
+		{
+			if cBOutLeft < 4 	{break; }
+			@pCozOut++ = cast (u8) ((wch >> 18) | 0xF0); 
+			@pCozOut++ = ( cast (u8) (wch >> 12) & 0x3F) | 0x80;
+			@pCozOut++ = ( cast (u8) (wch >> 6) & 0x3F) | 0x80;
+			@pCozOut++ = cast (u8) (wch & 0x3F) | 0x80;
+		}
+		else
+			return false;
+	}
+
+	if (pCozOut == pCozOutMax)
+	{
+		@(pCozOutMax-1) = '\0';
+		return false;
+	}
+	@pCozOut = '\0';
+	return true;
+}
+

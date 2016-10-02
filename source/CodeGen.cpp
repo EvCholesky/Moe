@@ -15,8 +15,8 @@
 
 #include "CodeGen.h"
 #include "EwcTypes.h"
-#include "JaiParse.h"
-#include "JaiTypes.h"
+#include "Parser.h"
+#include "TypeInfo.h"
 #include "Util.h"
 #include "Workspace.h"
 

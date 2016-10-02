@@ -14,8 +14,8 @@
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
 #include "BigMath.h"
-#include "JaiParse.h"
-#include "JaiTypes.h"
+#include "Parser.h"
+#include "TypeInfo.h"
 #include "Util.h"
 #include "Workspace.h"
 #include <cstdarg>

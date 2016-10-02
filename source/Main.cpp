@@ -17,8 +17,8 @@
 #include "EwcTypes.h"
 
 #include "CodeGen.h"
-#include "JaiLex.h"
-#include "JaiParse.h"
+#include "Lexer.h"
+#include "Parser.h"
 #include "Util.h"
 #include "Workspace.h"
 
@@ -94,7 +94,7 @@ public:
 
 void PrintCommandLineOptions()
 {
-	printf("jailang [options] [filename]\n");
+	printf("moe [options] [filename]\n");
 	printf("  options:\n");
 	printf("	-help     : Print this message\n");
 	printf("	-nolink   : skip the linker step\n");
@@ -182,7 +182,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade64/bin/lld-link.exe";
 				pChzLinkerFull = (comline.FHasCommand("-mslink")) ? s_pChzCommandMs : s_pChzCommandLld; 
 
-				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/x64/%s\" ";
+				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/moe/x64/%s\" ";
 				static const char * s_apChzDefaultPaths[] =
 				{
 					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
@@ -197,7 +197,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade/bin/lld-link.exe";
 				pChzLinkerFull = (comline.FHasCommand("-mslink")) ? s_pChzCommandMs : s_pChzCommandLld; 
 
-				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/jailang/%s\" ";
+				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/moe/%s\" ";
 				static const char * s_apChzDefaultPaths[] =
 				{
 					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86",
