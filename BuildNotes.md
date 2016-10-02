@@ -15,7 +15,7 @@ build with releases from [link](http://llvm.org/releases/download.html)
 
 <h1>Getting clang, lld, and lldb to build for debug info.</h1>
 
-* Unzip llvm 3.8 tarball in ./src/ directory and unzip clang, lld and lldb into respective ./src/tool/ folders. 
+* Unzip llvm 3.8 tarball in ./src/ directory and unzip clang, lld and lldb into respective ./src/tools/ folders. 
 
 * Install python, gnuWin32, ninja and swig as described here: [link](http://lldb.llvm.org/build.html)
 
