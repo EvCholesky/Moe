@@ -248,7 +248,7 @@ static int JtokLexHereString(SLexer * pJlex, const char * pChz)
 	++pChz; // skip the newline
 	const char * pChzStart = pChz;
 
-	int cChDelim = pChzDelimEnd - pChzDelim;
+	ptrdiff_t cChDelim = pChzDelimEnd - pChzDelim;
 	int cChMatch = 0;
 	const char * pChzLine = pChz;
 	while (1)

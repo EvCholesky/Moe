@@ -2121,8 +2121,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pJlex)
 						}
 					}
 
-					int cTypememb = pTinstruct->m_aryTypemembField.C();
-					for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
+					size_t cTypememb = pTinstruct->m_aryTypemembField.C();
+					for (size_t iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 					{
 						auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 

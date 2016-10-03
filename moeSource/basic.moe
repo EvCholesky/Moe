@@ -52,13 +52,13 @@ sin64  :: (theta: f64) -> f64 #foreign sin;
 sqrt64 :: (theta: f64) -> f64 #foreign sqrt;
 
 DebugBreak :: () -> void #foreign;
-PVMalloc :: (cB : s64) -> & void #foreign;
+PVMalloc :: (cB : uSize) -> & void #foreign;
 FreeMalloc :: (pV: &void) #foreign;
 
 ProcAlloc :: typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void;
 
-memcpy :: (dest: &void, source: &void, count: s64) -> &void #foreign;
-memset :: (dest: &void, value: int, count: s64)    -> &void #foreign;
+memcpy :: (dest: &void, source: &void, count: uSize) -> &void #foreign;
+memset :: (dest: &void, value: int, count: uSize)    -> &void #foreign;
 
 PVAllocSimple :: inline (pFnAlloc : ProcAlloc, cB: uSize) -> & void
 {

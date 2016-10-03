@@ -66,7 +66,7 @@ public:
 				CAry(const CAry&) = delete;
 	CAry &		operator=(const CAry&) = delete;
 
-	void		SetArray(T * a, s32 c, s32 cMax)
+	void		SetArray(T * a, size_t c, size_t cMax)
 				{
 					EWC_ASSERT((m_a == nullptr) | (a == nullptr), "overwriting nonzero buffer, leaking memory");
 					m_a    = a;

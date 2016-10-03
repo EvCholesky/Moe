@@ -229,7 +229,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 												PLtypeFromPTin(pTinproc->m_arypTinReturns[0]) : 
 												LLVMVoidType();	
 
-			auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, apLtypeParam, cpLtypeParam, pTinproc->m_fHasVarArgs);
+			auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, apLtypeParam, (u32)cpLtypeParam, pTinproc->m_fHasVarArgs);
 
 			// NOTE: actually a pointer to a function (not the function type itself)
 			auto pLtypPtr = LLVMPointerType(pLtypeFunction, 0);
@@ -840,7 +840,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 									cBitSize,
 									cBitAlign,
 								    apLvalConstant, 
-									cTinecon,
+									(u32)cTinecon,
 									pTinenum->m_pTinLoose->m_pLvalDIType);
 		} break;
 	case TINK_Literal:
@@ -3218,7 +3218,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					if (rword == RWORD_Break)
 					{
-						for (int iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
+						for (size_t iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
 						{
 							auto pJumpt = &pBuild->m_aryJumptStack[iJumpt];
 							if (pJumpt->m_pBlockBreak && (pString == nullptr || pJumpt->m_strLabel == *pString))
@@ -3230,7 +3230,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					}
 					else //RWORD_Continue
 					{
-						for (int iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
+						for (size_t iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
 						{
 							auto pJumpt = &pBuild->m_aryJumptStack[iJumpt];
 							if (pJumpt->m_pBlockBreak && (pString == nullptr || pJumpt->m_strLabel == *pString))
@@ -3288,7 +3288,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 			for (size_t iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
-				CSTNode * pStnodArg = pStnod->PStnodChild(iStnodChild + 1);
+				CSTNode * pStnodArg = pStnod->PStnodChild((int)iStnodChild + 1);
 				STypeInfo * pTinParam = pStnodArg->m_pTin;
 				if (iStnodChild < pTinproc->m_arypTinParams.C())
 				{

@@ -403,14 +403,14 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 		auto pTinproc = PTinprocAlloc(pSymtab->m_pAlloc, arypTinParams.C(), arypTinReturns.C(), "");
 		pTinproc->m_fHasVarArgs = fHasVarArgs;
 
-		int cpTin = arypTinParams.C();
-		for (int ipTin = 0; ipTin < cpTin; ++ipTin)
+		size_t cpTin = arypTinParams.C();
+		for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
 		{
 			pTinproc->m_arypTinParams.Append(arypTinParams[ipTin]);
 		}
 
 		cpTin = arypTinReturns.C();
-		for (int ipTin = 0; ipTin < cpTin; ++ipTin)
+		for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
 		{
 			pTinproc->m_arypTinReturns.Append(arypTinReturns[ipTin]);
 		}
@@ -497,14 +497,14 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 	pSymtab->AddManagedTin(pTinproc);
 	pTinproc->m_fHasVarArgs = fHasVarArgs;
 
-	int cpTin = arypTinParams.C();
-	for (int ipTin = 0; ipTin < cpTin; ++ipTin)
+	size_t cpTin = arypTinParams.C();
+	for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
 	{
 		pTinproc->m_arypTinParams.Append(arypTinParams[ipTin]);
 	}
 
 	cpTin = arypTinReturns.C();
-	for (int ipTin = 0; ipTin < cpTin; ++ipTin)
+	for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
 	{
 		pTinproc->m_arypTinReturns.Append(arypTinReturns[ipTin]);
 	}
@@ -5125,8 +5125,8 @@ void AssertTestTypeCheck(
 #endif
 
 	char aChExpected[1024];
-	int cCh = CCh(pCozExpected);
-	for (int iCh = 0; iCh < cCh+1; ++iCh)
+	size_t cCh = CCh(pCozExpected);
+	for (size_t iCh = 0; iCh < cCh+1; ++iCh)
 	{
 		if (iCh < cCh - 1 && pCozExpected[iCh] == '#' && pCozExpected[iCh + 1] == '#')
 		{

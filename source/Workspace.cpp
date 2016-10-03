@@ -370,7 +370,7 @@ void EndWorkspace(CWorkspace * pWork)
 	size_t cbFreePost = pAlloc->CB();
 	if (pWork->m_cbFreePrev != cbFreePost)
 	{
-		printf("\nWARNING: failed to free all bytes during compilation. (%d -> %d)\n", pWork->m_cbFreePrev, cbFreePost);
+		printf("\nWARNING: failed to free all bytes during compilation. (%zd -> %zd)\n", pWork->m_cbFreePrev, cbFreePost);
 		printf("----------------------------------------------------------------------\n");
 		pAlloc->PrintAllocations();
 	}

@@ -101,7 +101,7 @@ void PrintCommandLineOptions()
 	printf("	-printIR  : Print llvm's intermediate representation\n");
 	printf("    -release  : Generate optimized code and link against optimized local libraries\n");
 	printf("    -test     : Run compiler unit tests\n");
-	printf("    -mslink   : Use microsoft linker (rather than lld) DWARF debug data will be stripped.\n");
+	printf("    -useLLD   : Use llvm linker (rather than linke.exe) use this to emit DWARF debug data.\n");
 }
 
 int main(int cpChzArg, const char * apChzArg[])
@@ -180,7 +180,7 @@ int main(int cpChzArg, const char * apChzArg[])
 			#if EWC_X64
 				static const char * s_pChzCommandMs = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
 				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade64/bin/lld-link.exe";
-				pChzLinkerFull = (comline.FHasCommand("-mslink")) ? s_pChzCommandMs : s_pChzCommandLld; 
+				pChzLinkerFull = (comline.FHasCommand("-useLLD")) ? s_pChzCommandLld : s_pChzCommandMs; 
 
 				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/moe/x64/%s\" ";
 				static const char * s_apChzDefaultPaths[] =
@@ -195,7 +195,7 @@ int main(int cpChzArg, const char * apChzArg[])
 			#else
 				static const char * s_pChzCommandMs = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
 				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade/bin/lld-link.exe";
-				pChzLinkerFull = (comline.FHasCommand("-mslink")) ? s_pChzCommandMs : s_pChzCommandLld; 
+				pChzLinkerFull = (comline.FHasCommand("-useLLD")) ? s_pChzCommandLld : s_pChzCommandMs; 
 
 				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/moe/%s\" ";
 				static const char * s_apChzDefaultPaths[] =

@@ -1458,12 +1458,12 @@ size_t	CBCopyCoz(const char * pCozSource, char * aCoDest, size_t cBDest)
 
 void FormatCoz(SStringBuffer * pStrbuf, const char * pCozFormat, ...)
 {
-	int cBMax = &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax] - pStrbuf->m_pCozAppend;
+	ptrdiff_t cBMax = &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax] - pStrbuf->m_pCozAppend;
 	if (cBMax > 1)
 	{
 		va_list ap;
 		va_start(ap, pCozFormat);
-		int cCh = vsnprintf_s(pStrbuf->m_pCozAppend, cBMax, _TRUNCATE, pCozFormat, ap);
+		ptrdiff_t cCh = vsnprintf_s(pStrbuf->m_pCozAppend, cBMax, _TRUNCATE, pCozFormat, ap);
 		va_end(ap);
 
 		if (cCh == -1)
