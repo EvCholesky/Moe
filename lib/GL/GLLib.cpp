@@ -277,7 +277,7 @@ extern "C" void ClearWindow(float uRed, float uGreen, float uBlue, float uAlpha)
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
-extern "C" void SwapBuffers_Moe(void * pVHwnd)
+extern "C" void SwapBuffers_MOE(void * pVHwnd)
 {
 	auto pWindow = (GLFWwindow *)pVHwnd;
 	glfwSwapBuffers(pWindow);

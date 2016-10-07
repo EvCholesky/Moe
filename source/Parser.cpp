@@ -336,8 +336,10 @@ void Expect(CParseContext * pParctx, SLexer * pJlex, JTOK jtokExpected, const ch
 		auto strUnexpected = StrUnexpectedToken(pJlex);
 		ParseError(pParctx, pJlex, "Expected '%s' before '%s' %s", PCozFromJtok(jtokExpected), strUnexpected.PCoz(), aB);
 	}
-
-	JtokNextToken(pJlex);
+	else
+	{
+		JtokNextToken(pJlex);
+	}
 }
 
 CSTNode * PStnodAllocateIdentifier(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)

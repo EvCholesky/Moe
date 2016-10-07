@@ -6,7 +6,7 @@ CCh :: (pChz: & u8) -> int
 }
 
 // simple hash function with meh avalanching, works for now. replace with MUM hash or xxHash
-HvHashFVN :: (pV: &void, cB: s32) -> u32
+HvHashFVN :: (pV: &void, cB: int) -> u32
 {
 	pB := cast (& u8) pV;
     hv: u32 = 2166136261;

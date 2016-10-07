@@ -448,7 +448,7 @@ PrintShaderInfoLog :: (object: gluint, pFnGetLog: (shader: gluint, bufSize: glsi
 	cCh: glint;
 	glGetShaderiv(object, GL_INFO_LOG_LENGTH, &cCh);
 
-	aCh := cast(&u8) PVMalloc(cCh);
+	aCh := cast(&u8) PVMalloc(cast (uSize)cCh);
 	pFnGetLog(object, cCh, null, aCh);
 	printf("log:\n%s", aCh);
 	FreeMalloc(aCh);

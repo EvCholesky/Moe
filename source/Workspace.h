@@ -71,6 +71,12 @@ enum OPTLEVEL
 	OPTLEVEL_Release,
 };
 
+enum TARGETOS
+{
+	TARGETOS_Nil = -1,
+	TARGETOS_Windows,
+};
+
 enum GLOBMOD
 {
 	GLOBMOD_UnitTest,	// Global statements are placed in an implicit method for unit testing convenience.
@@ -163,6 +169,8 @@ public:
 
 	SErrorManager *					m_pErrman;
 	size_t							m_cbFreePrev;
+
+	TARGETOS						m_targetos;
 	OPTLEVEL						m_optlevel;
 	GLOBMOD							m_globmod;
 };

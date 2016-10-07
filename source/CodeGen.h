@@ -24,6 +24,7 @@ struct LLVMOpaqueBuilder;
 struct LLVMOpaqueDIBuilder;
 struct LLVMOpaqueModule;
 struct LLVMOpaqueTargetData;
+struct LLVMOpaqueTargetMachine;
 struct LLVMOpaqueType;
 struct LLVMOpaqueValue;
 
@@ -329,7 +330,11 @@ struct SJumpTargets // tag = jumpt
 class CIRBuilder		// tag = build
 {
 public:
-						CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypValManaged, const char * pChzFilename);
+						CIRBuilder(
+							CWorkspace * pWork,
+							EWC::CDynAry<CIRValue *> *	parypValManaged,
+							const char * pChzFilename
+							);
 						~CIRBuilder();
 	
 	void				PrintDump();
@@ -367,6 +372,7 @@ public:
 	LLVMOpaqueModule *					m_pLmoduleCur;
 	LLVMOpaqueBuilder *					m_pLbuild;
 
+	LLVMOpaqueTargetMachine *			m_pLtmachine;
 	LLVMOpaqueTargetData *				m_pTargd;
 
 	// Debug info

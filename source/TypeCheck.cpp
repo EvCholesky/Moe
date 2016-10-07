@@ -4891,6 +4891,7 @@ void PerformTypeCheck(
 		pTcwork->m_arypTcframPending.Append(pTcfram);
 	}
 	
+	int cStoppingError = 0;
 	while (pTcwork->m_arypTcframPending.C())
 	{
 		STypeCheckFrame * pTcfram = pTcwork->m_arypTcframPending[0];
@@ -4912,6 +4913,7 @@ void PerformTypeCheck(
 			}
 
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);
+			++cStoppingError;
 		}
 		else if (tcret == TCRET_Complete)
 		{
@@ -4931,17 +4933,23 @@ void PerformTypeCheck(
 
 	CHash<const SSymbol *, SUnknownType>::CIterator iter(&pTcwork->m_hashPSymUntype);
 
-	const SSymbol ** ppSym;
-	while (SUnknownType * pUntype = iter.Next(&ppSym))
+	// NOTE: Don't report unresolved type errors if we stopped typechecking any entry points early, odds
+	//  are that our missing type is in there and it makes for very confusing error messages...
+	//  The *right* thing to do is have some kind of graph check to see if the type was actually skipped.
+	if (cStoppingError == 0)
 	{
-		EWC_ASSERT(pUntype->m_aryiTcframDependent.C() > 0, "unknown type not cleaned up (empty dependent array)");
-		for (size_t iTcfram = 0; iTcfram < pUntype->m_aryiTcframDependent.C(); ++iTcfram)
+		const SSymbol ** ppSym;
+		while (SUnknownType * pUntype = iter.Next(&ppSym))
 		{
-			// Note: we're assuming the top thing on the stack is the thing we're waiting for.
-			const STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
-			const STypeCheckStackEntry * pTcsent = tcfram.m_aryTcsent.PLast();
+			EWC_ASSERT(pUntype->m_aryiTcframDependent.C() > 0, "unknown type not cleaned up (empty dependent array)");
+			for (size_t iTcfram = 0; iTcfram < pUntype->m_aryiTcframDependent.C(); ++iTcfram)
+			{
+				// Note: we're assuming the top thing on the stack is the thing we're waiting for.
+				const STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
+				const STypeCheckStackEntry * pTcsent = tcfram.m_aryTcsent.PLast();
 
-			EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type '%s' reference found here", (*ppSym)->m_strName.PCoz());
+				EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type '%s' reference found here", (*ppSym)->m_strName.PCoz());
+			}
 		}
 	}
 

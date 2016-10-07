@@ -600,7 +600,15 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 	case TINK_Integer: 
 		{
 			auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTin);
-			unsigned nDwarf = (pTinint->m_fIsSigned) ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned;
+			unsigned nDwarf;
+			if (pTinint->m_fIsSigned)
+			{
+				nDwarf = (pTinint->m_cBit == 8) ? llvm::dwarf::DW_ATE_signed_char : llvm::dwarf::DW_ATE_signed;
+			}
+			else
+			{
+				nDwarf = (pTinint->m_cBit == 8) ? llvm::dwarf::DW_ATE_unsigned_char : llvm::dwarf::DW_ATE_unsigned;
+			}
 			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), pTinint->m_cBit, pTinint->m_cBit, nDwarf);
 		} break;
 	case TINK_Float:
@@ -612,7 +620,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 	case TINK_Bool:
 		{
 			unsigned nDwarf = llvm::dwarf::DW_ATE_boolean;
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), 1, 1, nDwarf);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), 8, 8, nDwarf);
 		} break;
     case TINK_Pointer:
 		{
@@ -667,7 +675,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			case ARYK_Fixed:
 				{
 					LLVMOpaqueValue * apLvalSubscript[1];
-					apLvalSubscript[0] = LLVMDIBuilderGetOrCreateRange(pDib, 0, pTinary->m_c-1);
+					apLvalSubscript[0] = LLVMDIBuilderGetOrCreateRange(pDib, 0, pTinary->m_c);
 					pTin->m_pLvalDIType = LLVMDIBuilderCreateArrayType(
 						pDib,
 						cBitSizeArray,
@@ -753,7 +761,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 									pDib, 
 									llvm::dwarf::DW_TAG_structure_type,
 									pLvalScope, 
-									strPunyName.PCoz(), 
+									pTinstruct->m_strName.PCoz(), 
 									pDif->m_pLvalFile,
 								    iLineBody, 
 									pBuild->m_nRuntimeLanguage,
@@ -770,29 +778,30 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			{
 				auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 
-				auto pLtypeElement = PLtypeFromPTin(pTypememb->m_pTin);
+				auto pTinMember = pTypememb->m_pTin;
+				CreateDebugInfo(pWork, pBuild, pStnodRef, pTinMember);
+
+				auto pLtypeElement = PLtypeFromPTin(pTinMember);
 				u64 cBitSizeMember, cBitAlignMember;
-				CalculateSizeAndAlign(pBuild, pLtypeStruct, &cBitSizeMember, &cBitAlignMember);
+				CalculateSizeAndAlign(pBuild, pLtypeElement, &cBitSizeMember, &cBitAlignMember);
 
 				s32 iLineMember, iColMember;
 				CalculateLinePosition(pWork, &pTypememb->m_pStnod->m_lexloc, &iLineMember, &iColMember);
 
-				u64 dBitMembOffset = LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeStruct, iTypememb);
-
-				auto strPunyNameMemb = StrPunyEncode(pTypememb->m_strName.PCoz());
+				u64 dBitMembOffset = 8 * LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeStruct, iTypememb);
 
 				unsigned nFlagsMember = 0;
 				apLvalMember[iTypememb] = LLVMDIBuilderCreateMemberType(
 											pDib,
 											pLvalDicomp,
-											strPunyNameMemb.PCoz(),
+											pTypememb->m_strName.PCoz(),
 											pDif->m_pLvalFile,
 											iLineMember,
 											cBitSizeMember,
 											cBitAlignMember,
 											dBitMembOffset,
 											nFlagsMember,
-											pLvalDicomp);
+											pTinMember->m_pLvalDIType);
 			}
 
 			LLVMDIBuilderReplaceCompositeElements(pDib, &pLvalDicomp, apLvalMember, cTypememb);
@@ -847,14 +856,43 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 	case TINK_Void:
 	case TINK_String:
 		break;
-	default: EWC_ASSERT(false, "unhandled type info kind in debug info");
+	default: break;
 	}
+	EWC_ASSERT(pTin->m_pLvalDIType != nullptr, "unhandled type info kind in debug info");
+}
+
+void TokenizeTripleString(char * pChzTripleCopy, char ** ppChzArch, char ** ppChzVendor, char ** ppChzOs, char **ppChzEnv)
+{
+	char * apCh[3];
+	for (char ** ppCh = apCh; ppCh != EWC_PMAC(apCh); ++ppCh)
+		*ppCh = nullptr;
+
+	int ipCh = 0;
+	for (char * pCh = pChzTripleCopy; *pCh != '\0'; ++pCh)
+	{
+		if (*pCh == '-')
+		{
+			*pCh++ = '\0';
+
+			if (*pCh != '\0')
+			{
+				apCh[ipCh++] = pCh;
+				if (ipCh >= EWC_DIM(apCh))
+					break;
+			}
+		}
+	}
+
+	if (ppChzArch)	*ppChzArch = pChzTripleCopy;
+	if (ppChzVendor)*ppChzVendor = apCh[0];
+	if (ppChzOs)	*ppChzOs = apCh[1];
+	if (ppChzEnv)	*ppChzEnv = apCh[2];
 }
 
 
 
 // Builder class Methods
-CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypValManaged, const char * pChzFilename)
+CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValManaged, const char * pChzFilename)
 :m_pBerrctx(nullptr)
 ,m_pLmoduleCur(nullptr)
 ,m_pLbuild(nullptr)
@@ -863,17 +901,16 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 ,m_pLvalCompileUnit(nullptr)
 ,m_pLvalScope(nullptr)
 ,m_pLvalFile(nullptr)
-,m_pAlloc(pAlloc)
+,m_pAlloc(pWork->m_pAlloc)
 ,m_inspt()
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
-,m_arypProcVerify(pAlloc, EWC::BK_CodeGen)
+,m_arypProcVerify(pWork->m_pAlloc, EWC::BK_CodeGen)
 ,m_parypValManaged(parypValManaged)
-,m_aryJumptStack(pAlloc, EWC::BK_CodeGen)
-,m_hashHvNUnique(pAlloc)
+,m_aryJumptStack(pWork->m_pAlloc, EWC::BK_CodeGen)
+,m_hashHvNUnique(pWork->m_pAlloc)
 { 
-	m_pLbuild = LLVMCreateBuilder();
-	m_pLmoduleCur = LLVMModuleCreateWithName("MoeModule");
+	CAlloc * pAlloc = pWork->m_pAlloc;
 
 	if (!pChzFilename || *pChzFilename == '\0')
 	{
@@ -889,18 +926,70 @@ CIRBuilder::CIRBuilder(EWC::CAlloc * pAlloc, EWC::CDynAry<CIRValue *> *	parypVal
 	const char * pCozFile;	
 	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile);
 
+
+
+	LLVMTarget * pLtarget = nullptr;
+	//const char * pChzTriple = "x86_64-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
+	//const char * pChzTriple = "i686-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
+	char * pChzTriple = LLVMGetDefaultTargetTriple();
+
+	{
+		size_t cBTriple = CBCoz(pChzTriple);
+		char * pChzTripleCopy = (char*)pAlloc->EWC_ALLOC_TYPE_ARRAY(char, cBTriple);
+		EWC::SStringBuffer strbuf(pChzTripleCopy, cBTriple);
+		AppendCoz(&strbuf, pChzTriple);
+
+		char * pChzOs;
+		TokenizeTripleString(pChzTripleCopy, nullptr, nullptr, &pChzOs, nullptr);
+		pWork->m_targetos = (FAreCozEqual(pChzOs, "windows")) ? TARGETOS_Windows : TARGETOS_Nil;
+		
+		pAlloc->EWC_DELETE(pChzTripleCopy);
+	}
+
+	char * pChzError = nullptr;
+	LLVMBool fFailed = LLVMGetTargetFromTriple(pChzTriple, &pLtarget, &pChzError);
+	if (fFailed)
+	{
+		EWC_ASSERT(false, "Error generating llvm target. (triple = %s)\n%s", pChzTriple, pChzError);
+		LLVMDisposeMessage(pChzError);
+		return;
+	}
+
+	LLVMCodeGenOptLevel loptlevel = LLVMCodeGenLevelDefault;
+	switch (pWork->m_optlevel)
+	{
+	default:				EWC_ASSERT(false, "unknown optimization level"); // fall through
+	case OPTLEVEL_Debug:	loptlevel = LLVMCodeGenLevelNone;			break; // -O0
+	case OPTLEVEL_Release:	loptlevel = LLVMCodeGenLevelAggressive;		break; // -O2
+	}
+
+	LLVMRelocMode lrelocmode = LLVMRelocDefault;
+	LLVMCodeModel lcodemodel = LLVMCodeModelJITDefault;
+
+	// NOTE: llvm-c doesn't expose functions to query these, but it seems to just return the empty string.
+	//  This may not work for all target backends.
+	const char * pChzCPU = "";
+	const char * pChzFeatures = "";
+
+	m_pLtmachine = LLVMCreateTargetMachine(pLtarget, pChzTriple, pChzCPU, pChzFeatures, loptlevel, lrelocmode, lcodemodel);
+
+	m_pLbuild = LLVMCreateBuilder();
+	m_pLmoduleCur = LLVMModuleCreateWithName("MoeModule");
 #if 0
 #if EWC_X64
 	const char * pChzDataLayout = "p:64:64";
 #else
-	const char * pChzDataLayout = "p:32:32";
+	const char * pChzDataLayout = "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32";
 #endif
 
 	 LLVMSetDataLayout(m_pLmoduleCur, pChzDataLayout);
 
 	m_pTargd = LLVMCreateTargetData(pChzDataLayout);
 #else
-	m_pTargd = LLVMCreateTargetData(LLVMGetDataLayout(m_pLmoduleCur));
+
+	m_pTargd = LLVMCreateTargetDataLayout(m_pLtmachine);
+	LLVMSetModuleDataLayout(m_pLmoduleCur, m_pTargd);
+	
 #endif
 
 	m_pDib = LLVMCreateDIBuilder(m_pLmoduleCur);
@@ -936,6 +1025,11 @@ CIRBuilder::~CIRBuilder()
 	{
 		LLVMDisposeTargetData(m_pTargd);
 		m_pTargd = nullptr;
+	}
+
+	if (m_pLtmachine)
+	{
+		LLVMDisposeTargetMachine(m_pLtmachine);
 	}
 
 	if (m_pDib)
@@ -2779,7 +2873,8 @@ CIRValue * PValGenerateDecl(
 	CreateDebugInfo(pWork, pBuild, pStnod, pStnod->m_pTin);
 
 	bool fIsGlobal = pBuild->m_pProcCur == nullptr;
-	auto strPunyName = StrPunyEncode(pStnod->m_pSym->m_strName.PCoz());
+	auto strName = pStnod->m_pSym->m_strName;
+	auto strPunyName = StrPunyEncode(strName.PCoz());
 	if (fIsGlobal)
 	{
 		auto pGlob = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
@@ -2788,7 +2883,7 @@ CIRValue * PValGenerateDecl(
 		auto pLvalDIVariable = LLVMDIBuilderCreateGlobalVariable(
 								pBuild->m_pDib,
 								pLvalScope, 
-								strPunyName.PCoz(),
+								strName.PCoz(),
 								strPunyName.PCoz(),
 								pDif->m_pLvalFile,
 								iLine,
@@ -2826,7 +2921,7 @@ CIRValue * PValGenerateDecl(
 								pDif->m_pLvalFile,
 								iLine,
 								pStnod->m_pTin->m_pLvalDIType,
-								true,
+								false,
 								0);
 
 		(void) LLVMDIBuilderInsertDeclare(
@@ -4314,7 +4409,10 @@ void TestUniqueNames(CAlloc * pAlloc)
 {
 	size_t cbFreePrev = pAlloc->CB();
 	{
-		CIRBuilder build(pAlloc, nullptr, "");
+		SErrorManager errman;
+		CWorkspace work(pAlloc, &errman);
+
+		CIRBuilder build(&work, nullptr, "");
 
 		const char * pChzIn;
 		char aCh[128];
@@ -4378,84 +4476,12 @@ size_t CChConstructFilename(const char * pChzFilenameIn, const char * pChzExtens
 	return pChzOut - pChzFilenameOut;
 }
 
-void TokenizeTripleString(char * pChzTripleCopy, char ** ppChzArch, char ** ppChzVendor, char ** ppChzOs, char **ppChzEnv)
+void CompileToObjectFile(CWorkspace * pWork, CIRBuilder * pBuild, const char * pChzFilenameIn)
 {
-	char * apCh[3];
-	for (char ** ppCh = apCh; ppCh != EWC_PMAC(apCh); ++ppCh)
-		*ppCh = nullptr;
-
-	int ipCh = 0;
-	for (char * pCh = pChzTripleCopy; *pCh != '\0'; ++pCh)
-	{
-		if (*pCh == '-')
-		{
-			*pCh++ = '\0';
-
-			if (*pCh != '\0')
-			{
-				apCh[ipCh++] = pCh;
-				if (ipCh >= EWC_DIM(apCh))
-					break;
-			}
-		}
-	}
-
-	if (ppChzArch)	*ppChzArch = pChzTripleCopy;
-	if (ppChzVendor)*ppChzVendor = apCh[0];
-	if (ppChzOs)	*ppChzOs = apCh[1];
-	if (ppChzEnv)	*ppChzEnv = apCh[2];
-}
-
-void CompileToObjectFile(CWorkspace * pWork, LLVMModuleRef pLmodule, const char * pChzFilenameIn)
-{
-	LLVMTarget * pLtarget = nullptr;
-	//const char * pChzTriple = "x86_64-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
-	//const char * pChzTriple = "i686-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
 	char * pChzTriple = LLVMGetDefaultTargetTriple();
 
-	bool fUsingWindows;
-	{
-		size_t cBTriple = CBCoz(pChzTriple);
-		char * pChzTripleCopy = (char*)pWork->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(char, cBTriple);
-		EWC::SStringBuffer strbuf(pChzTripleCopy, cBTriple);
-		AppendCoz(&strbuf, pChzTriple);
-
-		char * pChzOs;
-		TokenizeTripleString(pChzTripleCopy, nullptr, nullptr, &pChzOs, nullptr);
-		fUsingWindows = FAreCozEqual(pChzOs, "windows");
-		
-		pWork->m_pAlloc->EWC_DELETE(pChzTripleCopy);
-	}
-
-	char * pChzError = nullptr;
-	LLVMBool fFailed = LLVMGetTargetFromTriple(pChzTriple, &pLtarget, &pChzError);
-	if (fFailed)
-	{
-		EmitError(pWork, nullptr, "Error generating llvm target. (triple = %s)\n%s", pChzTriple, pChzError);
-		LLVMDisposeMessage(pChzError);
-		return;
-	}
-
-	LLVMCodeGenOptLevel loptlevel = LLVMCodeGenLevelDefault;
-	switch (pWork->m_optlevel)
-	{
-	default:				EWC_ASSERT(false, "unknown optimization level"); // fall through
-	case OPTLEVEL_Debug:	loptlevel = LLVMCodeGenLevelNone;			break; // -O0
-	case OPTLEVEL_Release:	loptlevel = LLVMCodeGenLevelAggressive;		break; // -O2
-	}
-
-	LLVMRelocMode lrelocmode = LLVMRelocDefault;
-	LLVMCodeModel lcodemodel = LLVMCodeModelJITDefault;
-
-	// NOTE: llvm-c doesn't expose functions to query these, but it seems to just return the empty string.
-	//  This may not work for all target backends.
-	const char * pChzCPU = "";
-	const char * pChzFeatures = "";
-
-	auto pLtmachine = LLVMCreateTargetMachine(pLtarget, pChzTriple, pChzCPU, pChzFeatures, loptlevel, lrelocmode, lcodemodel);
-
 	const char * pChzExtension;
-	if (fUsingWindows)
+	if (pWork->m_targetos == TARGETOS_Windows)
       pChzExtension = ".obj";
     else
       pChzExtension = ".o";
@@ -4464,9 +4490,9 @@ void CompileToObjectFile(CWorkspace * pWork, LLVMModuleRef pLmodule, const char 
 	size_t cCh = CChConstructFilename(pChzFilenameIn, pChzExtension, aChFilenameOut, EWC_DIM(aChFilenameOut));
 	pWork->SetObjectFilename(aChFilenameOut, cCh);
 
-	fFailed = LLVMTargetMachineEmitToFile(pLtmachine, pLmodule, aChFilenameOut, LLVMObjectFile, &pChzError);
+	char * pChzError = nullptr;
+	LLVMBool fFailed = LLVMTargetMachineEmitToFile(pBuild->m_pLtmachine, pBuild->m_pLmoduleCur, aChFilenameOut, LLVMObjectFile, &pChzError);
 
-	LLVMDisposeTargetMachine(pLtmachine);
 	if (fFailed)
 	{
 		EmitError(pWork, nullptr, "Error generating object file\n%s", pChzError);
@@ -4554,12 +4580,12 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 #else
 			printf("Code Generation (x86):\n");
 #endif
-			CIRBuilder build(pWork->m_pAlloc, &pWork->m_arypValManaged, pChzFilenameIn);
+			CIRBuilder build(pWork, &pWork->m_arypValManaged, pChzFilenameIn);
 			
 
 			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
-			CompileToObjectFile(pWork, build.m_pLmoduleCur, pChzFilenameIn);
+			CompileToObjectFile(pWork, &build, pChzFilenameIn);
 
 			if (grfcompile.FIsSet(FCOMPILE_PrintIR))
 			{
@@ -4620,7 +4646,7 @@ void AssertTestCodeGen(
 
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	{
-		CIRBuilder build(pWork->m_pAlloc, &pWork->m_arypValManaged, "");
+		CIRBuilder build(pWork, &pWork->m_arypValManaged, "");
 		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	}
 

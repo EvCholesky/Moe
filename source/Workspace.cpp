@@ -193,6 +193,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_pSymtab(nullptr)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
+,m_targetos(TARGETOS_Nil)
 ,m_optlevel(OPTLEVEL_Debug)
 ,m_globmod(GLOBMOD_Normal)
 {

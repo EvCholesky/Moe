@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-extern "C" void * VMalloc(size_t cB)
+extern "C" void * PVMalloc(size_t cB)
 {
 	return malloc((size_t)cB);
 }

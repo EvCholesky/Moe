@@ -29,7 +29,7 @@ struct SBigInt // tag = bint
 
 			s64 S64Coerce() const
 			{
-				EWC_ASSERT(m_nAbs < INT_MAX, "int too large to be signed value");
+				EWC_ASSERT(m_nAbs <= LLONG_MAX, "int too large to be signed value");
 				if (m_fIsNegative)
 					return -(s64)m_nAbs;
 				return (s64)m_nAbs;

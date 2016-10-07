@@ -106,7 +106,7 @@ PBReadEntireFile :: (pChzFilename: & u8, pCBWasRead: &s64) -> & u8
 
     cBFile : s64 = lgintSize.m_nQuadPart;
 
-    pBData : & u8 = cast (& u8) PVMalloc(cBFile);
+    pBData : & u8 = cast (& u8) PVMalloc(cast (uSize)cBFile);
     if !pBData
     {
         CloseFile(&file);
