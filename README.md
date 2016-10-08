@@ -1,6 +1,6 @@
 # Moe
 
-Moe is a custom imperative procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is *very* much still a work in progress and is not realy ready to be used by anyone else.
+Moe is a custom imperative procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is *very* much still a work in progress and is not really ready to be used by anyone else.
 
 It's current feature set is roughly comprable to C: enumerations, structures, pointers, procedures, conditions and loops are all there, but there are a few changes to make it nicer to use:
   - Top level symbol lookup is order independent 
@@ -38,18 +38,22 @@ Explicitly sized types
 ## Simple declarations
 
 ```
-num: s8     // signed 8 bit
-num: u8     // unsigned eight bit
+num: s8       // signed 8 bit
+num: u8       // unsigned eight bit
 
 num: int = 2  // also allows explicit init.
 
 // Type inferred declaration
 
-n := 22     // literals promote to default type 
+n := 22       // literals promote to default type 
 
 x, y, z: f32  // compound declaration
 
-n : s32     // declarations are zero initialized unless explicitly marked as uninitialized
+n : s32
+```
+
+Declarations are zero initialized unless explicitly marked as uninitialized
+```
 nUninit : s32 = ---
 ```
 
@@ -65,11 +69,17 @@ Literals and constants are unsized until assigned to an instance value. Variable
 
 ## Arrays
 
+```
+aN : [2] int;   // fixed size array
+aN : [] int;    // array reference (pointer + size)
+aN : [..] int;  // dynamic array (not yet implemented)
+
 aN := {:s16: 2, 3, 4}
+```
 
 
 
-// Pointers
+## Pointers
 
 You can find the address of an instance types with `&` and dereference a pointer with `@`
 ```
@@ -108,9 +118,9 @@ SFoo struct
 ## Procedures
 
 ```
-DoThing proc (nLhs: int, nRhs: int) -> int
+DoThing proc (a: int, b: int) -> int
 {
-  return nLhs + nRhs
+  return a + b
 }
 ```
 
@@ -140,8 +150,9 @@ printf (pChzFormat: & u8, ..) #foreign -> s32
 ```
 
 // TODO: structure literal syntax is just like a procedure call - with default values as specified in the definition
-
+```
 foo := SFoo(.m_n = 45)
+```
 
 
 ## Syntax Miscellanea
@@ -152,18 +163,18 @@ foo := SFoo(.m_n = 45)
 
 ## TODO
 
-[ ] Remove semicolon requirement
-[ ] Add required brackets for single line conditionals
-[ ] Add c-style for loop
-[ ] Switch :: definitions for more descriptive keywords struct, enum, proc & const
-[ ] Move inline to after the parameters like the other procedure qualifiers
-[ ] Error if return value is ignored 
+- [ ] Remove semicolon requirement
+- [ ] Add required brackets for single line conditionals
+- [ ] Add c-style for loop
+- [ ] Switch :: definitions for more descriptive keywords struct, enum, proc & const
+- [ ] Move inline to after the parameters like the other procedure qualifiers
+- [ ] Error if return value is ignored 
 
 longer term tasks
-[ ] run time type info
-[ ] 'Any' type-boxing
-[ ] array bounds checking
-[ ] named default arguments
-[ ] struct literal support
-[ ] support for inheritance, protocols
-[ ] first class bitfield type
+- [ ] run time type info
+- [ ] 'Any' type-boxing
+- [ ] array bounds checking
+- [ ] named default arguments
+- [ ] struct literal support
+- [ ] support for inheritance, protocols
+- [ ] first class bitfield type
