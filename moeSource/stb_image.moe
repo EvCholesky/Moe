@@ -1,4 +1,4 @@
 #foreign_library "stb"
 
 //unsigned char *stbi_load(char const *filename, int *x, int *y, int *comp, int req_comp)
-stbi_load :: (pChzFilename: &u8, pX: &s32, pY: &s32, pComp: &s32, req_comp: s32) -> & u8 #foreign;
+stbi_load :: (pChzFilename: &u8, pX: &s32, pY: &s32, pComp: &s32, req_comp: s32) -> & u8 #foreign

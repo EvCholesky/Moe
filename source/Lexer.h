@@ -154,6 +154,15 @@ struct SLiteralType	// litty
 	bool	m_fIsSigned;
 };
 
+enum FLEXER
+{
+	FLEXER_EndOfLine	= 0x1,
+
+	FLEXER_None			= 0x0,
+	FLEXER_All			= 0x1,
+};
+EWC_DEFINE_GRF(GRFLEXER, FLEXER, u8);
+
 struct SLexer // tag = jlex
 {
    // lexer variables
@@ -171,6 +180,7 @@ struct SLexer // tag = jlex
    // current token info
    u32				m_jtok;		// lexer->token is the token ID, which is unicode code point for a single-char token, 
 								// < 0 for an error, > 256 for multichar or eof
+   GRFLEXER			m_grflexer;
    RWORD			m_rword;
    F64				m_g;
    u64				m_n;

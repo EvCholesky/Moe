@@ -9,7 +9,7 @@ void main()
 	gl_TexCoord[0]  = gl_MultiTexCoord0;
 	minMaxUV		= gl_MultiTexCoord1;
 }
-END;
+END
 
 // ok, this is a mess... but good enough for now. It's doing both distance map AA and 4x supersampling to
 //  deal with tiny fonts. It currently hard codes the font size and AA distance in a really hacky way
@@ -47,4 +47,4 @@ void main()
 	alpha *= 0.25;
 	gl_FragColor = vec4(color.rgb, alpha);
 }
-END;
+END

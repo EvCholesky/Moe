@@ -1,101 +1,101 @@
 #import "Basic"
 
-g_Pi :: 3.1415926535897932;
+g_Pi :: 3.1415926535897932
 
 // limits
-F32_MAX :: 3.402823466e+38;
-F32_MIN :: 1.175494351e-38;
-F64_MAX :: 1.7976931348623158e+308;
-F64_MIN :: 2.2250738585072014e-308;
+F32_MAX :: 3.402823466e+38
+F32_MIN :: 1.175494351e-38
+F64_MAX :: 1.7976931348623158e+308
+F64_MIN :: 2.2250738585072014e-308
 
 
 SVector2 :: struct
 {
-	m_x: float;
-	m_y: float;
+	m_x: float
+	m_y: float
 }
 
 SVector3 :: struct
 {
-	m_x: float;
-	m_y: float;
-	m_z: float;
+	m_x: float
+	m_y: float
+	m_z: float
 }
 
 SVector4 :: struct
 {
-	m_x: float;
-	m_y: float;
-	m_z: float;
-	m_w: float;
+	m_x: float
+	m_y: float
+	m_z: float
+	m_w: float
 }
 
 Vec2Create :: (x: float, y: float) -> SVector2
 {
-	vec : SVector2;
-	vec.m_x = x;
-	vec.m_y = y;
-	return vec;
+	vec : SVector2
+	vec.m_x = x
+	vec.m_y = y
+	return vec
 }
 
 Vec3Create :: (x: float, y: float, z: float) -> SVector3
 {
-	vec : SVector3;
-	vec.m_x = x;
-	vec.m_y = y;
-	vec.m_z = z;
-	return vec;
+	vec : SVector3
+	vec.m_x = x
+	vec.m_y = y
+	vec.m_z = z
+	return vec
 }
 
 Vec4Create :: (x: float, y: float, z: float, w: float) -> SVector4
 {
-	vec : SVector4;
-	vec.m_x = x;
-	vec.m_y = y;
-	vec.m_z = z;
-	vec.m_w = w;
-	return vec;
+	vec : SVector4
+	vec.m_x = x
+	vec.m_y = y
+	vec.m_z = z
+	vec.m_w = w
+	return vec
 }
 
 VecRotate :: (gRadians: float, vec: SVector2) -> SVector2
 {
-	gSin := sin(gRadians);
-	gCos := cos(gRadians);
+	gSin := sin(gRadians)
+	gCos := cos(gRadians)
 
 	//[c -s][ x ]   [ cx - sy ]
 	//[s  c][ y ] = [ cy + sx ]
 
-	return Vec2Create(gCos * vec.m_x - gSin * vec.m_y, gCos * vec.m_y + gSin * vec.m_x);
+	return Vec2Create(gCos * vec.m_x - gSin * vec.m_y, gCos * vec.m_y + gSin * vec.m_x)
 }
 
 VecAdd :: inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
 {
-	return Vec2Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y);
+	return Vec2Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y)
 }
 
 VecSub :: inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
 {
-	return Vec2Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y);
+	return Vec2Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y)
 }
 
 VecMul :: inline (vec: SVector2, r: f32) -> SVector2
 {
-	return Vec2Create(vec.m_x * r, vec.m_y * r);
+	return Vec2Create(vec.m_x * r, vec.m_y * r)
 }
 
 VecAdd :: inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
 {
-	return Vec3Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y, vecLhs.m_z + vecRhs.m_z);
+	return Vec3Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y, vecLhs.m_z + vecRhs.m_z)
 }
 
 VecSub :: inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
 {
-	return Vec3Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y, vecLhs.m_z - vecRhs.m_z);
+	return Vec3Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y, vecLhs.m_z - vecRhs.m_z)
 }
 
 VecMul :: inline (vec: SVector3, r: f32) -> SVector3
 {
-	return Vec3Create(vec.m_x * r, vec.m_y * r, vec.m_z * r);
+	return Vec3Create(vec.m_x * r, vec.m_y * r, vec.m_z * r)
 }
 
 VecAdd :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
@@ -104,7 +104,7 @@ VecAdd :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 			vecLhs.m_x + vecRhs.m_x,
 			vecLhs.m_y + vecRhs.m_y,
 			vecLhs.m_z + vecRhs.m_z,
-			vecLhs.m_w + vecRhs.m_w);
+			vecLhs.m_w + vecRhs.m_w)
 }
 
 VecSub :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
@@ -113,38 +113,38 @@ VecSub :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 			vecLhs.m_x - vecRhs.m_x,
 			vecLhs.m_y - vecRhs.m_y,
 			vecLhs.m_z - vecRhs.m_z,
-			vecLhs.m_w - vecRhs.m_w);
+			vecLhs.m_w - vecRhs.m_w)
 }
 
 VecMul :: inline (vec: SVector4, r: f32) -> SVector4
 {
-	return Vec4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r);
+	return Vec4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r)
 }
 
-GMin :: inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) return gA; return gB; }
-GMax :: inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) return gA; return gB; }
-GClamp :: inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax); }
-GLerp :: inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp; }
+GMin :: inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) return gA; return gB }
+GMax :: inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) return gA; return gB }
+GClamp :: inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax) }
+GLerp :: inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp }
 
 SRandomGenJenkinsSmall :: struct // tag = rng
 {
-	m_nA, m_nB, m_nC, m_nD: u32;
+	m_nA, m_nB, m_nC, m_nD: u32
 }
 
-SRandomGen :: typedef SRandomGenJenkinsSmall;
+SRandomGen :: typedef SRandomGenJenkinsSmall
 
 SeedRandom :: (pRng: & SRandomGenJenkinsSmall, nSeed: u32)
 {
-	pRng.m_nA = 0xf1ea5eed;
-	pRng.m_nB = nSeed;
-	pRng.m_nC = nSeed;
-	pRng.m_nD = nSeed;
+	pRng.m_nA = 0xf1ea5eed
+	pRng.m_nB = nSeed
+	pRng.m_nC = nSeed
+	pRng.m_nD = nSeed
 
-	i := 0;
+	i := 0
 	while i < 20
 	{
-		NGenerateRand(pRng);
-		++i;
+		NGenerateRand(pRng)
+		++i
 	}
 }
 //#define EWC_RAND_SMALL_ROT(X, K)  (((X)<<(K))|((X)>>(32-(K))))
@@ -153,55 +153,55 @@ NGenerateRand :: (pRng : & SRandomGenJenkinsSmall) -> u32
 {
 	//U32 nE = m_nA - EWC_RAND_SMALL_ROT(m_nB, 27);	
 	//m_nA = m_nB ^ EWC_RAND_SMALL_ROT(m_nC, 17);
-	nE := pRng.m_nA - ((pRng.m_nB << 27) | (pRng.m_nB >> (32 - 27)));
-	pRng.m_nA = pRng.m_nB ^ ((pRng.m_nC << 17) | (pRng.m_nC >> (32 - 17)));
-	pRng.m_nB = pRng.m_nC + pRng.m_nD;
-	pRng.m_nC = pRng.m_nD + nE;
-	pRng.m_nD = nE + pRng.m_nA;
-	return pRng.m_nD;
+	nE := pRng.m_nA - ((pRng.m_nB << 27) | (pRng.m_nB >> (32 - 27)))
+	pRng.m_nA = pRng.m_nB ^ ((pRng.m_nC << 17) | (pRng.m_nC >> (32 - 17)))
+	pRng.m_nB = pRng.m_nC + pRng.m_nD
+	pRng.m_nC = pRng.m_nD + nE
+	pRng.m_nD = nE + pRng.m_nA
+	return pRng.m_nD
 }
 
 GRandom :: (pRng : & SRandomGenJenkinsSmall, gMin: f32, gMax: f32) -> f32
 {
-	d := gMax-gMin;
+	d := gMax-gMin
 	if (d <= 0.000001)
-		return gMin;
-	assert(d >= 0.0, "bad range in GRandom", #file, #line);
+		return gMin
+	assert(d >= 0.0, "bad range in GRandom", #file, #line)
 
-	return gMin + ( cast(f32) NGenerateRand(pRng) / cast (f32)0xFFFFFFFF) * d;
+	return gMin + ( cast(f32) NGenerateRand(pRng) / cast (f32)0xFFFFFFFF) * d
 }
 
 
 NRandom :: (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
 { 
-	d := cast(u32)(nMax-nMin);
+	d := cast(u32)(nMax-nMin)
 	if (d == 0)
-		return nMin;
-	assert(d > 0, "bad range in NRandom", #file, #line);
-	return nMin + cast(s32) (NGenerateRand(pRng) % d);
+		return nMin
+	assert(d > 0, "bad range in NRandom", #file, #line)
+	return nMin + cast(s32) (NGenerateRand(pRng) % d)
 }
 
 BuildRandomOrderedArray :: (pRng : & SRandomGenJenkinsSmall, aiN: [] s32)
 {
-	c := aiN.count;
+	c := aiN.count
 	if (c <= 0)
-		return;
+		return
 
 	// build a random ordered array containing all values [0..(c-1)] exactly once.
 	//  this is an implementation of the "inside-out" fisher-yates shuffle
 
-	aiN[0] = 0;
+	aiN[0] = 0
 	//for (int i = 1; i < c; ++i)
-	i : s32 = 1;
+	i : s32 = 1
 	while (i < c)	
 	{
-		iNRand := NRandom(pRng, 0, i+1);
-		printf("iNRand = %d\n", iNRand);
+		iNRand := NRandom(pRng, 0, i+1)
+		printf("iNRand = %d\n", iNRand)
 		if (iNRand != i)
 		{
-			aiN[i] = aiN[iNRand];
+			aiN[i] = aiN[iNRand]
 		}
-		aiN[iNRand] = i;
-		++i;
+		aiN[iNRand] = i
+		++i
 	}
 }

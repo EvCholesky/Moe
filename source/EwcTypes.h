@@ -666,6 +666,8 @@ struct NAME                                                                     
 	void		AddFlags(NAME flags)							{ m_raw = STORAGE(m_raw | flags.m_raw); }               \
 	void		Clear(STORAGE flags = FENUM##_All)				{ m_raw = m_raw & ~flags; }                             \
 	void		Clear(NAME flags)								{ m_raw = m_raw & ~flags.m_raw; }                       \
+	void		AssignFlags(STORAGE flags, bool fSet)			{ if (fSet) AddFlags(flags); else Clear(flags); }		\
+	void		AssignFlags(NAME flags, bool fSet)				{ if (fSet) AddFlags(flags); else Clear(flags); }		\
 	bool		FIsValid(STORAGE flags) const					{ return (flags & FENUM##_All) == flags; }              \
                                                                                                                         \
 	STORAGE m_raw;                                                                                                      \

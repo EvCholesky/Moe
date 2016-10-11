@@ -292,6 +292,14 @@ void ParseError(CParseContext * pParctx, SLexer * pJlex, const char * pChzFormat
 	EmitError(pParctx->m_pWork->m_pErrman, &lexloc, pChzFormat, ap);
 }
 
+void ParseWarning(CParseContext * pParctx, SLexer * pJlex, const char * pChzFormat, ...)
+{
+	SLexerLocation lexloc(pJlex);
+	va_list ap;
+	va_start(ap, pChzFormat);
+	EmitWarning(pParctx->m_pWork->m_pErrman, &lexloc, pChzFormat, ap);
+}
+
 EWC::CString StrUnexpectedToken(SLexer * pJlex)
 {
 	if (pJlex->m_jtok == JTOK_Identifier)
@@ -301,11 +309,11 @@ EWC::CString StrUnexpectedToken(SLexer * pJlex)
 	return CString(PCozCurrentToken(pJlex));
 }
 
-void SkipToToken(SLexer * pJlex, JTOK const * const aJtok, int cJtok)
+void SkipToToken(SLexer * pJlex, JTOK const * const aJtok, int cJtok, GRFLEXER grflexer)
 {
 	while (1)
 	{
-		bool fFound = false;
+		bool fFound = pJlex->m_grflexer.FIsSet(grflexer);
 		JTOK jtok = (JTOK)pJlex->m_jtok;
 		if (jtok == JTOK_Eof)
 			break;
@@ -339,6 +347,41 @@ void Expect(CParseContext * pParctx, SLexer * pJlex, JTOK jtokExpected, const ch
 	else
 	{
 		JtokNextToken(pJlex);
+	}
+}
+
+bool FIsEndOfStatement(SLexer * pJlex)
+{
+	return pJlex->m_jtok == JTOK(';') || pJlex->m_jtok == JTOK('}') || pJlex->m_jtok == JTOK_Eof || pJlex->m_grflexer.FIsSet(FLEXER_EndOfLine);
+}
+
+void ExpectEndOfStatement(CParseContext * pParctx, SLexer * pJlex, const char * pCozInfo = nullptr, ...)
+{
+	if (FIsEndOfStatement(pJlex))
+	{
+		if (pJlex->m_jtok == JTOK(';'))
+		{
+			JtokNextToken(pJlex);
+
+			if (pJlex->m_grflexer.FIsSet(FLEXER_EndOfLine))
+			{
+				auto strUnexpected = StrUnexpectedToken(pJlex);
+				ParseWarning(pParctx, pJlex, "Unnecessary c-style ';' found before '%s'", strUnexpected.PCoz());
+			}
+		}
+	}
+	else
+	{
+		char aB[1024] = {0};
+		if (pCozInfo)
+		{
+			va_list ap;
+			va_start(ap, pCozInfo);
+			vsprintf_s(aB, EWC_DIM(aB), pCozInfo, ap);
+		}
+
+		auto strUnexpected = StrUnexpectedToken(pJlex);
+		ParseError(pParctx, pJlex, "Expected end-of-line or ';' before '%s' %s", strUnexpected.PCoz(), aB);
 	}
 }
 
@@ -613,6 +656,9 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pJlex)
 
 	while (1)
 	{
+		if (FIsEndOfStatement(pJlex))
+			return pStnod;
+
 		switch(pJlex->m_jtok)
 		{
 		case JTOK('['):		// [ expression ]
@@ -1322,6 +1368,7 @@ CSTNode * PStnodParseParameter(
 	CSymbolTable * pSymtab,
 	GRFPDECL grfpdecl)
 {
+
 	SLexerLocation lexloc(pJlex);
 	if (pJlex->m_jtok == JTOK_PeriodPeriod && grfpdecl.FIsSet(FPDECL_AllowVariadic))
 	{
@@ -1494,7 +1541,7 @@ CSTNode * PStnodParseDecl(CParseContext * pParctx, SLexer * pJlex)
 	if (!pStnod)
 		return nullptr;
 
-	Expect(pParctx, pJlex, JTOK(';'));
+	ExpectEndOfStatement(pParctx, pJlex);
 	return pStnod;
 }
 
@@ -1787,7 +1834,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pJlex)
 								pStproc->m_fIsForeign = true;
 								pStproc->m_fUseUnmangledName = true;
 
-								if (pJlex->m_jtok == JTOK_Identifier)
+								if (!FIsEndOfStatement(pJlex) && pJlex->m_jtok == JTOK_Identifier)
 								{
 									auto pStnodAlias = PStnodParseIdentifier(pParctx, pJlex);
 									pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
@@ -1808,7 +1855,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pJlex)
 						}
 					}
 
-					Expect(pParctx, pJlex, JTOK(';'), "While parsing foreign directive");
+					ExpectEndOfStatement(pParctx, pJlex, "While parsing foreign directive");
 				}
 
 				if (pJlex->m_jtok == JTOK('{'))
@@ -2152,7 +2199,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pJlex)
 				JtokNextToken(pJlex);
 
 				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pJlex);
-				Expect(pParctx, pJlex, JTOK(';'));
+				ExpectEndOfStatement(pParctx, pJlex);
 				
 				CString strIdent = StrFromIdentifier(pStnodIdent);
 				if (!pStnodType)
@@ -2181,7 +2228,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pJlex)
 			// constant decl
 
 			auto pStnodInit = PStnodParseExpression(pParctx, pJlex);
-			Expect(pParctx, pJlex, JTOK(';'));
+			ExpectEndOfStatement(pParctx, pJlex);
 			
 			CString strIdent = StrFromIdentifier(pStnodIdent);
 			if (!pStnodInit)
@@ -2229,7 +2276,7 @@ CSTNode * PStnodParseExpressionStatement(CParseContext * pParctx, SLexer * pJlex
 	CSTNode * pStnod = PStnodParseExpression(pParctx, pJlex);
 	if (pStnod)
 	{
-		Expect(pParctx, pJlex, JTOK(';'));
+		ExpectEndOfStatement(pParctx, pJlex);
 	}
 	return pStnod;
 }
@@ -2299,7 +2346,7 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SLexer * pJlex)
 				JtokNextToken(pJlex);
 			}
 
-			Expect(pParctx, pJlex, JTOK(';'));
+			ExpectEndOfStatement(pParctx, pJlex);
 
 			return pStnod;
 		} break;
@@ -2308,11 +2355,14 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SLexer * pJlex)
 			CSTNode * pStnodReturn = PStnodParseReservedWord(pParctx, pJlex, rword);
 			if (EWC_FVERIFY(pStnodReturn, "error parsing return"))
 			{
-				CSTNode * pStnodExp = PStnodParseExpression(pParctx, pJlex);
-				pStnodReturn->IAppendChild(pStnodExp);
+				if (!FIsEndOfStatement(pJlex))
+				{
+					CSTNode * pStnodExp = PStnodParseExpression(pParctx, pJlex);
+					pStnodReturn->IAppendChild(pStnodExp);
+				}
 			}
 
-			Expect(pParctx, pJlex, JTOK(';'));
+			ExpectEndOfStatement(pParctx, pJlex);
 			return pStnodReturn;
 		} break;
 	default:
@@ -2339,7 +2389,7 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pJlex)
 
 			// move the lexer forward until it has some hope of generating decent errors
 			static const JTOK s_aJtok[] = {JTOK(';'), JTOK('{') };
-			SkipToToken(pJlex, s_aJtok, EWC_DIM(s_aJtok));
+			SkipToToken(pJlex, s_aJtok, EWC_DIM(s_aJtok), FLEXER_EndOfLine);
 			return pStnodIf;
 		}
 		if (pStnodStatement->m_grfstnod.FIsSet(FSTNOD_EntryPoint))

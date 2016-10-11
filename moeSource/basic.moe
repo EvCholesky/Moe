@@ -1,107 +1,107 @@
 #foreign_library "Basic"
 
-PrintFloat :: (g : float) #foreign;
-PrintInt :: (n : int) #foreign;
-PrintByte :: (n : s8) #foreign;
-PrintBool :: (f : bool) #foreign;
-PrintPointer :: (pB : & u8) #foreign;
-PrintString :: (pCh : & u8) #foreign;
-printf :: (pChz : &u8, ..) -> s32 #foreign;
+PrintFloat :: (g : float) #foreign
+PrintInt :: (n : int) #foreign
+PrintByte :: (n : s8) #foreign
+PrintBool :: (f : bool) #foreign
+PrintPointer :: (pB : & u8) #foreign
+PrintString :: (pCh : & u8) #foreign
+printf :: (pChz : &u8, ..) -> s32 #foreign
 
-strlen :: (pChz: &u8) -> int #foreign;
-tolower :: (ch: int) -> int #foreign;
+strlen :: (pChz: &u8) -> int #foreign
+tolower :: (ch: int) -> int #foreign
 
-HANDLE :: typedef int; 	// This actually needs to be pointer-sized, so s32 in 32-bit, 
+HANDLE :: typedef int 	// This actually needs to be pointer-sized, so s32 in 32-bit, 
 						//  but lots of people use integers too, arrrrgh!!
 
-INVALID_HANDLE :: -1;
+INVALID_HANDLE :: -1
 
-HWND :: typedef &void;
-HDC  :: typedef HANDLE;
+HWND :: typedef &void
+HDC  :: typedef HANDLE
 
 SStartupInfo :: struct 
 {
-    m_cb : s32;
-    m_lpReserved : & u8;
-    m_lpDesktop : & u8;
-    m_lpTitle : & u8;
-    m_dwX : s32;
-    m_dwY : s32;
-    m_dwXSize : s32;
-    m_dwYSize : s32;
-    m_dwXCountChars : s32;
-    m_dwYCountChars : s32;
-    m_dwFillAttribute: s32;
-    m_dwFlags : s32;
-    m_wShowWindow : s16;
-    m_cbReserved2 : s16;
-    m_lpReserved2 : & u8;
-    m_hStdInput : HANDLE;
-    m_hStdOutput : HANDLE;
-    m_hStdError : HANDLE;
+    m_cb : s32
+    m_lpReserved : & u8
+    m_lpDesktop : & u8
+    m_lpTitle : & u8
+    m_dwX : s32
+    m_dwY : s32
+    m_dwXSize : s32
+    m_dwYSize : s32
+    m_dwXCountChars : s32
+    m_dwYCountChars : s32
+    m_dwFillAttribute: s32
+    m_dwFlags : s32
+    m_wShowWindow : s16
+    m_cbReserved2 : s16
+    m_lpReserved2 : & u8
+    m_hStdInput : HANDLE
+    m_hStdOutput : HANDLE
+    m_hStdError : HANDLE
 }
 
 // (JBlow) For some reason in Windows sinf and cosf don't have linkage, probably because
 // they always get turned into intrinsics? So I made my own..
-cos  :: (theta: float) -> float #foreign cosf_MOE; 
-sin  :: (theta: float) -> float #foreign sinf_MOE;
-sqrt :: (theta: float) -> float #foreign sqrtf_MOE;
+cos  :: (theta: float) -> float #foreign cosf_MOE 
+sin  :: (theta: float) -> float #foreign sinf_MOE
+sqrt :: (theta: float) -> float #foreign sqrtf_MOE
 
-cos64  :: (theta: f64) -> f64 #foreign cos; 
-sin64  :: (theta: f64) -> f64 #foreign sin;
-sqrt64 :: (theta: f64) -> f64 #foreign sqrt;
+cos64  :: (theta: f64) -> f64 #foreign cos
+sin64  :: (theta: f64) -> f64 #foreign sin
+sqrt64 :: (theta: f64) -> f64 #foreign sqrt
 
-DebugBreak :: () -> void #foreign;
-PVMalloc :: (cB : uSize) -> & void #foreign;
-FreeMalloc :: (pV: &void) #foreign;
+DebugBreak :: () -> void #foreign
+PVMalloc :: (cB : uSize) -> & void #foreign
+FreeMalloc :: (pV: &void) #foreign
 
-ProcAlloc :: typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void;
+ProcAlloc :: typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
 
-memcpy :: (dest: &void, source: &void, count: uSize) -> &void #foreign;
-memset :: (dest: &void, value: int, count: uSize)    -> &void #foreign;
+memcpy :: (dest: &void, source: &void, count: uSize) -> &void #foreign
+memset :: (dest: &void, value: int, count: uSize)    -> &void #foreign
 
 PVAllocSimple :: inline (pFnAlloc : ProcAlloc, cB: uSize) -> & void
 {
     // This is just a simple wrapper for allocations that won't be necessary once default args are done.
 
-    return pFnAlloc(ALLOCK.Allocate, cB, 0, null, null, 0);
+    return pFnAlloc(ALLOCK.Allocate, cB, 0, null, null, 0)
 }
 
 PVAllocDefault :: (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
 {
     if allock == ALLOCK.Allocate
     {
-        return PVMalloc(cB);
+        return PVMalloc(cB)
     } 
     else if allock == ALLOCK.Resize
     {
         // For now, we dont even bother with realloc, just allocate, copy, free.
-        pVNew := PVMalloc(cB);
+        pVNew := PVMalloc(cB)
         if !pVNew
-            return null;
+            return null
 
         if pVPrev && (cBPrev > 0) 
         {
-            memcpy(pVNew, pVPrev, cBPrev);
-            FreeMalloc(pVPrev);
+            memcpy(pVNew, pVPrev, cBPrev)
+            FreeMalloc(pVPrev)
         }
 
-        return pVNew;
+        return pVNew
     }
     else if allock == ALLOCK.Free
     {
-        FreeMalloc(pVPrev);
+        FreeMalloc(pVPrev)
     }
     else if allock == ALLOCK.FreeAll 
     {
-        assert(false, "ALLOCK.FreeAll is not yet implemented", #file, #line);
+        assert(false, "ALLOCK.FreeAll is not yet implemented", #file, #line)
     }
     else 
     {
-        assert(false, "unhanadled ALLOCK ", #file, #line);
+        assert(false, "unhanadled ALLOCK ", #file, #line)
     }
 
-    return null;
+    return null
 }
 
 ALLOCK :: enum 
@@ -116,8 +116,8 @@ assert :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
 {
 	if (!fPredicate)	
 	{
-		printf("ASSERT FAILED: (%s, %d) %s\n", pChzFile, nLine, pChz); 
-		DebugBreak();
+		printf("ASSERT FAILED: (%s, %d) %s\n", pChzFile, nLine, pChz)
+		DebugBreak()
 	}
 }
 
@@ -125,10 +125,10 @@ fverify :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
 {
 	if (!fPredicate)	
 	{
-		printf("ASSERT FAILED: (%s, %d) %s\n", pChzFile, nLine, pChz); 
-		DebugBreak();
+		printf("ASSERT FAILED: (%s, %d) %s\n", pChzFile, nLine, pChz)
+		DebugBreak()
 	}
-	return fPredicate;
+	return fPredicate
 }
 
 // for loop Iterators
@@ -136,50 +136,50 @@ fverify :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
 // int range iterator
 SIntIterator :: struct
 {
-    m_i: int;
-    m_nMax: int; // one past the end
+    m_i: int
+    m_nMax: int // one past the end
 }
 
 iterMake :: (iBegin: int, nMax: int) -> SIntIterator
 {
-    iter : SIntIterator;
-    iter.m_i = iBegin;
-    iter.m_nMax = nMax;
-    return iter;
+    iter : SIntIterator
+    iter.m_i = iBegin
+    iter.m_nMax = nMax
+    return iter
 }
 
 iterIsDone :: (pIter: &SIntIterator) -> bool
 {
-    return pIter.m_i >= pIter.m_nMax;
+    return pIter.m_i >= pIter.m_nMax
 }
 
 iterNext :: (pIter: &SIntIterator)
 {
-    ++pIter.m_i;
+    ++pIter.m_i
 }
 
 // utf8 null terminated string iterator
 iterIsDone :: (ppCoz: &&u8) -> bool
 {
-    return @ppCoz == null || @@ppCoz == '\0';
+    return @ppCoz == null || @@ppCoz == '\0'
 }
 
 iterNext :: (ppCoz: &&u8)
 {
-    pCoz := @ppCoz; 
-    pCozEnd : &u8;
+    pCoz := @ppCoz
+    pCozEnd : &u8
 
-    if ((@pCoz & 0xF8) == 0xF0)         pCozEnd = pCoz + 4;
-    else if ((@pCoz & 0xF0) == 0xE0)    pCozEnd = pCoz + 3;
-    else if ((@pCoz & 0xE0) == 0xC0)    pCozEnd = pCoz + 2;
-    else                                pCozEnd = pCoz + 1;
+    if ((@pCoz & 0xF8) == 0xF0)         pCozEnd = pCoz + 4
+    else if ((@pCoz & 0xF0) == 0xE0)    pCozEnd = pCoz + 3
+    else if ((@pCoz & 0xE0) == 0xC0)    pCozEnd = pCoz + 2
+    else                                pCozEnd = pCoz + 1
 
-    ++pCoz;
+    ++pCoz
     while ((@pCoz & 0xC0) == 0x80) && (pCoz != pCozEnd)
     {
-        ++pCoz;
+        ++pCoz
     }
 
-    @ppCoz = pCoz;
+    @ppCoz = pCoz
 }
 

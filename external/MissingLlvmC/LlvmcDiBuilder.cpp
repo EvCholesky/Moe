@@ -538,14 +538,18 @@ LLVMValueRef LLVMDIBuilderInsertDeclare(
 LLVMValueRef LLVMDIBuilderCreateFunctionType(
 	LLVMDIBuilderRef pDib,
 	LLVMValueRef * ppLvalParameters,
-	unsigned cParameters)
+	unsigned cParameters,
+    uint64_t cBitPointerSize,
+    uint64_t cBitPointerAlign)
 {
 	auto pDibuild = unwrap(pDib);
 	ArrayRef<Metadata *> ary(PPMetadataUnwrap(ppLvalParameters, cParameters), cParameters);
 	DITypeRefArray diaryParameters = pDibuild->getOrCreateTypeArray(ary);
 
 
-	return wrap(unwrap(pDib)->createSubroutineType(diaryParameters));
+	LLVMValueRef pLvalDIType = wrap(unwrap(pDib)->createSubroutineType(diaryParameters));
+
+	return LLVMDIBuilderCreatePointerType(pDib, pLvalDIType, cBitPointerSize, cBitPointerAlign, "");
 }
 
 LLVMValueRef LLVMDIBuilderCreateFunction(
@@ -563,13 +567,15 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 	bool fIsOptimized,
     LLVMValueRef pLvalFunction,
 	LLVMValueRef pLvalTemplateParm,
-	LLVMValueRef pLvalDecl) 
+	LLVMValueRef pLvalDecl)
 {
 	StringRef strrName(pChzName);
 	StringRef strrMangled(pChzMangled, (pChzMangled) ? strlen(pChzMangled) : 0);
 	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
-	DISubroutineType * pDisubt = cast<DISubroutineType>(PMdnodeExtract(pLvalType));
+
+	DIDerivedType * pDideriveSub = cast<DIDerivedType>(PMdnodeExtract(pLvalType)); 
+	DISubroutineType * pDisubt = cast<DISubroutineType>(pDideriveSub->getBaseType());
 	Function * pFunc = unwrap<Function>(pLvalFunction);
 
 	//MDNode * pMdnodeTemplateParm = PMdnodeExtract(pLvalTemplateParm);
@@ -593,7 +599,7 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 											tupelaryTemplateParm,
 											pDisubDecl);
 
-	pFunc->setMetadata(LLVMContext::MD_dbg, pDisub); // this is the same as pFunc->setSubprogram(pDisub); but that's only in 3.8
+	pFunc->setSubprogram(pDisub);
 	return wrap(pDisub);
 }
 

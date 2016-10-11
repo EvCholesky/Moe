@@ -1,6 +1,7 @@
 #foreign_library "kernel32"
+#import "Basic"
 
-kCBFilePathMax :: 1024;
+kCBFilePathMax :: 1024
 
 FFILEACCESS :: enum s32
 {
@@ -29,10 +30,10 @@ FFILESHARE :: enum s32
 
 SLargeInteger :: struct  // tag = lgint
 {
-    m_nQuadPart: s64;
+    m_nQuadPart: s64
 }
 
-Bool32 :: typedef s32;
+Bool32 :: typedef s32
 
 CreateFileA :: (
 	pChzFilename: &u8,
@@ -41,23 +42,23 @@ CreateFileA :: (
 	pVSecurity: & void,
 	ffilecreate: FFILECREATE,
 	ffileattrib: s32,
-	hndTemplate: HANDLE) -> HANDLE #foreign #stdcall;
+	hndTemplate: HANDLE) -> HANDLE #foreign #stdcall
 
-CloseHandle  :: (handle: HANDLE) -> s32 #foreign #stdcall;
+CloseHandle  :: (handle: HANDLE) -> s32 #foreign #stdcall
 
-GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall;
+GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall
 
-ReadFile :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign #stdcall;
+ReadFile :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign #stdcall
 
 SFile :: struct // tag = file
 {
-    m_hnd: HANDLE;
+    m_hnd: HANDLE
 };
 
 
 FileOpen :: (pChzFilename: & u8, fIsWriteMode: bool) -> SFile 
 {
-    file: SFile;
+    file: SFile
     if fIsWriteMode 
     {
         file.m_hnd = CreateFileA(
@@ -67,7 +68,7 @@ FileOpen :: (pChzFilename: & u8, fIsWriteMode: bool) -> SFile
         	null,	// pvSecurity
             FFILECREATE.CreateAlways,
             0, 		// ffileattrib
-            0);		// hndTemplate
+            0)		// hndTemplate
     }
     else 
     {
@@ -78,79 +79,81 @@ FileOpen :: (pChzFilename: & u8, fIsWriteMode: bool) -> SFile
         	null,	// pvSecurity
             FFILECREATE.OpenExisting,
             0, 		// ffileattrib
-            0);		// hndTemplate
+            0)		// hndTemplate
     }
 
-    return file;
+    return file
 }
 
 CloseFile :: (pFile: &SFile)
 {
-    CloseHandle(pFile.m_hnd);
+    CloseHandle(pFile.m_hnd)
 }
 
 PBReadEntireFile :: (pChzFilename: & u8, pCBWasRead: &s64) -> & u8
 {
-    @pCBWasRead = 0;
-    file := FileOpen(pChzFilename, false);
+    @pCBWasRead = 0
+    file := FileOpen(pChzFilename, false)
     if file.m_hnd == INVALID_HANDLE
-        return null;
+    {
+        return null
+    }
 
-    lgintSize: SLargeInteger;
-    fSuccess := GetFileSizeEx(file.m_hnd, &lgintSize);
+    lgintSize: SLargeInteger
+    fSuccess := GetFileSizeEx(file.m_hnd, &lgintSize)
     if !fSuccess
     {
-        CloseFile(&file);
-        return null;
+        CloseFile(&file)
+        return null
     }
 
-    cBFile : s64 = lgintSize.m_nQuadPart;
+    cBFile : s64 = lgintSize.m_nQuadPart
 
-    pBData : & u8 = cast (& u8) PVMalloc(cast (uSize)cBFile);
+    pBData : & u8 = cast (& u8) PVMalloc(cast (uSize)cBFile)
     if !pBData
     {
-        CloseFile(&file);
-        return null;
+        CloseFile(&file)
+        return null
     }
     
-    @pCBWasRead = CBReadFile(file, pBData, cBFile);
+    @pCBWasRead = CBReadFile(file, pBData, cBFile)
     if (@pCBWasRead < cBFile)
     {
-        FreeMalloc(pBData);
-        CloseFile(&file);
-        return null;
+        FreeMalloc(pBData)
+        CloseFile(&file)
+        return null
     }
 
-    CloseFile(&file);
-    @pCBWasRead = cBFile;
-    return pBData;
+    CloseFile(&file)
+    @pCBWasRead = cBFile
+    return pBData
 }
 
 CBReadFile :: (file: SFile, pB: & u8, cBLength: s64) -> s64
 {
-    cBSingleRead: s32; // need to split up the read to handle > 32bit read sizes
-    cBWasRead: s64;
-    fSuccess: bool;
+    cBSingleRead: s32 // need to split up the read to handle > 32bit read sizes
+    cBWasRead: s64
+    fSuccess: bool
     while cBWasRead < cBLength 
     {
-        cBRemaining := cBLength - cBWasRead;
-        cBToRead : s32;
+        cBRemaining := cBLength - cBWasRead
+        cBToRead : s32
         if cBRemaining <= 0x7fffffff 
         {
-            cBToRead = cast(s32) cBRemaining;
+            cBToRead = cast(s32) cBRemaining
         }
         else 
         {
-            cBToRead = 0x7fffffff;
+            cBToRead = 0x7fffffff
         }
 
-        fSuccess = ReadFile(file.m_hnd, pB + cBWasRead, cBToRead, &cBSingleRead, null);
-        cBWasRead += cBSingleRead;
+        fSuccess = ReadFile(file.m_hnd, pB + cBWasRead, cBToRead, &cBSingleRead, null)
+        cBWasRead += cBSingleRead
         if !fSuccess || cBSingleRead <= 0 
         { 
-            return cBWasRead;
+            return cBWasRead
         }
     }
 
-    return cBWasRead;
+    return cBWasRead
 }

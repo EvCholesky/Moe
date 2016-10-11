@@ -1,41 +1,43 @@
 # Moe
 
-Moe is a custom imperative procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is *very* much still a work in progress and is not really ready to be used by anyone else.
+Moe is a custom imperative procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is *very* much still a work in progress and is not ready to be used by anyone else.
 
 It's current feature set is roughly comprable to C: enumerations, structures, pointers, procedures, conditions and loops are all there, but there are a few changes to make it nicer to use:
-  - Top level symbol lookup is order independent 
-  - Type inference is supported.
-  - Procedure overloading is supported.
-  - Instances are initialized unless explicitly marked as uninitialized.
-  - Break and continue support breaking to a labeled outer loop
+  - top level symbol lookup is order independent.
+  - variable declarations support type inference.
+  - procedure overloading is supported.
+  - instances are initialized unless explicitly marked as uninitialized.
+  - break and continue support breaking to a labeled outer loop.
 
-There are quite a few upcoming features that are missing from C
-  - Run time type reflection
-  - Operator overloading (with in/out reference arguments)
-  - Optional array bounds checking
-  - Generics (templates)
-  - Compile time code execution
+There are quite a few upcoming features that are missing from C:
+  - run time type reflection
+  - operator overloading (with in/out reference arguments)
+  - optional array bounds checking
+  - generics (templates)
+  - compile time code execution
 
-Dependencies:
-  - LLVM 3.9
+To build the compiler and debug compiled source you will need to get the following dependencies:
+  - The base compiler requires LLVM 3.9
+  - Debugging with lldb requires Python 3.5, gnuWin32, swig and ninja 
+  - Debugging with Visual Studio has been tested with MSVC 2016 
 
-# Syntax:
-* this section describes the intended syntax once the current set of changes is complete *
+# Syntax
+#### this section describes the intended syntax once the current set of changes is complete
 
 ## Types And Declarations:
 
 Moe supports the standard set of built in basic types.
 
-Machine word sized types
-  - `int`, `float`, `bool`
+Machine word sized types:
+  - basic types: `int`, `float`, `bool`
   - pointer sized values: `sSize`, `uSize`
 
-Explicitly sized types
+Explicitly sized types:
   - signed integers: `s8`, `s16`, `s32`, `s64`
   - unsigned integers: `u8`, `u16`, `u32`, `u64`
   - floating point numbers: `f32`, `f64`
 
-## Simple declarations
+## Simple Declarations
 
 ```
 num: s8       // signed 8 bit
@@ -52,13 +54,13 @@ x, y, z: f32  // compound declaration
 n : s32
 ```
 
-Declarations are zero initialized unless explicitly marked as uninitialized
+Declarations are zero initialized unless explicitly marked as uninitialized.
 ```
-nUninit : s32 = ---
+nUninitialized : s32 = ---
 ```
 
 
-Constants are defined with a name followed by the `const` keyword and the constant value.
+Constants are defined with a name, followed by the `const` keyword and the constant value.
 ```
 kPi const = 3.14159 
 ```
@@ -81,18 +83,18 @@ aN := {:s16: 2, 3, 4}
 
 ## Pointers
 
-You can find the address of an instance types with `&` and dereference a pointer with `@`
+You can find the address of a variable with `&`, and dereference a pointer with `@`.
 ```
 pN = &n
 n = @pN
 ```
 
-Pointers are declared with the 'address-of' operator
+Pointers are declared with the 'address-of' operator:
 ```
 pN = & int
 ```
 
-Pointers also support the array operator and pointer arithmetic;
+Pointers also support the array operator and pointer arithmetic:
 ```
 n3 = pN[3]    // NOTE: no bounds checking here!
 pN3 = pN + 3  // offsets by 3 * the size of the type being pointed to, ala C.
@@ -124,9 +126,9 @@ DoThing proc (a: int, b: int) -> int
 }
 ```
 
-Procedure qualifiers
-  - `inline`, `noinline`: Forces the function to inline (or not). Not treated as a suggestion as in C.
-  - `#foreign`: Used to declare a foreign function that should be found by the linker. (Will prevent name mangling so no overloading)
+Procedure Qualifiers
+  - `inline`, `noinline`: forces the function to be inlined (or not). Not treated as a suggestion as in C.
+  - `#foreign`: Used to declare a foreign function that should be found by the linker. (This will prevent name mangling so it won't work with overloaded procedures)
   - `#stdcall`: Used to specify the stdcall calling convention.
 
 Procedures will support default parameters and named arguments:
@@ -149,28 +151,30 @@ Support for variadic arguments is currently limited to foreign functions (*Cough
 printf (pChzFormat: & u8, ..) #foreign -> s32
 ```
 
-// TODO: structure literal syntax is just like a procedure call - with default values as specified in the definition
+Coming soon: Structure literals with syntax like a procedure call. (including support for default values.)
+To Do: structure literal syntax is just like a procedure call - with default values as specified in the definition
 ```
 foo := SFoo(.m_n = 45)
 ```
 
 
 ## Syntax Miscellanea
-  - semicolons are optional (only needed to separate multiple statements on one line.
-  - conditional predicates are not enclosed in parenthesis, but all child blocks must be enclosed in curly braces (even single lines)
+  - semicolons are optional (needed only to separate multiple statements on one line.
+  - conditional predicates are not enclosed in parentheses, but all child blocks must be enclosed in curly braces, even single lines.
 
 
 
-## TODO
+## To Do
 
-- [ ] Remove semicolon requirement
-- [ ] Add required brackets for single line conditionals
-- [ ] Add c-style for loop
-- [ ] Switch :: definitions for more descriptive keywords struct, enum, proc & const
-- [ ] Move inline to after the parameters like the other procedure qualifiers
-- [ ] Error if return value is ignored 
+short term tasks:
+- [x] remove semicolon requirement
+- [ ] add required brackets for single line conditionals
+- [ ] add c-style for loop
+- [ ] switch :: definitions for more descriptive keywords struct, enum, proc & const
+- [ ] move inline to after the parameters like the other procedure qualifiers
+- [ ] error if return value is ignored 
 
-longer term tasks
+longer term tasks:
 - [ ] run time type info
 - [ ] 'Any' type-boxing
 - [ ] array bounds checking

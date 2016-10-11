@@ -129,6 +129,8 @@ int main(int cpChzArg, const char * apChzArg[])
 	static const int s_cBHeap = 1000 * 1024;
 	u8 * aB = nullptr;
 
+	InitLLVM();
+
 	if (comline.m_pChzFilename)
 	{
 		u8 aBString[1024 * 100];
@@ -145,8 +147,6 @@ int main(int cpChzArg, const char * apChzArg[])
 		{
 			work.m_optlevel = OPTLEVEL_Release;
 		}
-
-		InitLLVM();
 
 		BeginWorkspace(&work);
 

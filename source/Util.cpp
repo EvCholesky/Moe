@@ -331,7 +331,7 @@ PUNYRET PunyretDecode(const char * pCozInput, char * pCozOut, size_t cBOutMax)
 	ptrdiff_t cWrap = s_cWrapInitial; // aka 'n'
 	u32 iPrev;
 	u32 iN = 0;
-	ptrdiff_t nBias = s_nBiasInitial;
+	size_t nBias = s_nBiasInitial;
 	u32 nWeight;
 	u32 nK;
 	u32 t;
@@ -371,7 +371,7 @@ PUNYRET PunyretDecode(const char * pCozInput, char * pCozOut, size_t cBOutMax)
 
 	    // iN was supposed to wrap around from out+1 to 0, incrementing n each time, so we'll fix that now:
 
-		ptrdiff_t dWrap = iN / (cNOut + 1);
+		size_t dWrap = iN / (cNOut + 1);
 	    if (dWrap > s_nU32Max  - cWrap) 
 			return PUNYRET_Overflow;
 	    cWrap += dWrap;

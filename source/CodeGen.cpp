@@ -569,6 +569,8 @@ static inline LLVMOpaqueValue * PLvalCreateDebugFunction(
 	auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PCoz());
 	LLVMOpaqueValue * pLvalScope = PLvalFromDIFile(pBuild, pDif);
 
+	u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
+	u64 cBitAlign = cBitSize;
 	return LLVMDIBuilderCreateFunction(
 			pBuild->m_pDib,
 			pLvalScope,
@@ -656,8 +658,9 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 				apLvalParam[ipTin] = pTin->m_pLvalDIType;
 			}
 
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateFunctionType(pDib, apLvalParam, cpTinParam);
-
+			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
+			u64 cBitAlign = cBitSize;
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateFunctionType(pDib, apLvalParam, cpTinParam, cBitSize, cBitAlign);
 		} break;
 	case TINK_Array:
 		{
@@ -773,6 +776,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			int cTypememb = (int)pTinstruct->m_aryTypemembField.C();
 			auto apLvalMember = (LLVMOpaqueValue **)(alloca(sizeof(LLVMOpaqueValue *) * cTypememb));
 			LLVMValueRef * ppLvalMember = apLvalMember;
+			pTin->m_pLvalDIType = pLvalDicomp;
 
 			for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 			{
@@ -805,7 +809,6 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			}
 
 			LLVMDIBuilderReplaceCompositeElements(pDib, &pLvalDicomp, apLvalMember, cTypememb);
-			pTin->m_pLvalDIType = pLvalDicomp;
 
 		} break;
 	case TINK_Enum:
@@ -4013,7 +4016,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 		u64 cBitAlign = cBitSize;
 		apLvalParam[0] = LLVMDIBuilderCreatePointerType(pBuild->m_pDib, pTinstruct->m_pLvalDIType, cBitSize, cBitAlign, "");
 
-		auto pLvalDIType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, apLvalParam, cpTinParam);
+		auto pLvalDIType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, apLvalParam, cpTinParam, cBitSize, cBitAlign);
 
 		pProc->m_pLvalDIFunction = PLvalCreateDebugFunction(
 										pWork,
@@ -4149,7 +4152,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 
 	char aCh[256];
-	const char * pChzName = PChzVerifyAscii(pTinproc->m_strName.PCoz());
+	const char * pChzMangled = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());
 
 	EWC_ASSERT(pTinproc, "Exected procedure type");
 
@@ -4158,21 +4161,21 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		if (pStnodAlias)
 		{
 			CString strProcAlias = StrFromIdentifier(pStnodAlias);
-			pChzName = PChzVerifyAscii(strProcAlias.PCoz());	// BB - should this be punnycoded? needs to match C
+			pChzMangled = PChzVerifyAscii(strProcAlias.PCoz());	// BB - should this be punnycoded? needs to match C
 		}
 	}
 
-	if (!pChzName)
+	if (!pChzMangled)
 	{
 		pBuild->GenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
-		pChzName = aCh;
+		pChzMangled = aCh;
 	}
 
 	CAlloc * pAlloc = pBuild->m_pAlloc;
 	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 
 	auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, arypLtype.A(), (u32)arypLtype.C(), fHasVarArgs);
-	pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, pChzName, pLtypeFunction);
+	pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, pChzMangled, pLtypeFunction);
 	pProc->m_pLval = pProc->m_pLvalFunction; // why is this redundant?
 
 	if (pTinproc->m_callconv != CALLCONV_Nil)
@@ -4189,7 +4192,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	if (!pStproc->m_fIsForeign)
 	{
-		pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzName);
+		pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzMangled);
 
 		if (EWC_FVERIFY(pTinproc))
 		{
@@ -4201,7 +4204,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 			pProc->m_pLvalDIFunction = PLvalCreateDebugFunction(
 											pWork,
 											pBuild,
-											pChzName,
+											pTinproc->m_strName.PCoz(),
 											PChzVerifyAscii(pTinproc->m_strMangled.PCoz()),
 											pStnod,
 											pStnodBody,
@@ -4348,7 +4351,9 @@ void CodeGenEntryPoint(
 			s32 iLineBody, iColBody;
 			CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLineBody, &iColBody);
 
-			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0);
+			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
+			u64 cBitAlign = cBitSize;
+			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0, cBitSize, cBitAlign);
 
 			pProc->m_pLvalDIFunction = PLvalCreateDebugFunction(
 										pWork,

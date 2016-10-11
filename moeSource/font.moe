@@ -10,28 +10,28 @@
 
 SDrawContext :: struct // tag=drac
 {
-	m_pShman: & SShaderManager;
-	m_pFontman: & SFontManager;
-	m_pDras: & SDrawState;
-	m_pDrasstk: & SDrawStateStack;
+	m_pShman: & SShaderManager
+	m_pFontman: & SFontManager
+	m_pDras: & SDrawState
+	m_pDrasstk: & SDrawStateStack
 };
 
-g_drac : SDrawContext;
-g_drasstk: SDrawStateStack;
-g_fontman: SFontManager;
-g_shman: SShaderManager;
+g_drac : SDrawContext
+g_drasstk: SDrawStateStack
+g_fontman: SFontManager
+g_shman: SShaderManager
 
 
 PushDras :: (pDrac: & SDrawContext)	
 {
-	PushDras(pDrac.m_pDrasstk);
-	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk);
+	PushDras(pDrac.m_pDrasstk)
+	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk)
 }
 
 PopDras :: (pDrac: & SDrawContext)	
 {
-	PopDras(pDrac.m_pDrasstk);
-	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk);
+	PopDras(pDrac.m_pDrasstk)
+	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk)
 }
 
 
@@ -49,53 +49,55 @@ ALIGNK :: enum
 
 SFontData :: struct // tag = fontd
 {
-	m_colMain: SColor;
-	m_colShadow: SColor;
-	m_gCharSize: f32 	= 48;
-	m_uOpacit: f32 		= 1;
-	m_fontk: FONTK;
-	m_alignkX: ALIGNK 	= ALIGNK.Left;
-	m_alignkY: ALIGNK 	= ALIGNK.Bottom;
-	m_fUseFixedWidth: bool;
-	m_fUseWordWrap: bool;
+	m_colMain: SColor
+	m_colShadow: SColor
+	m_gCharSize: f32 	= 48
+	m_uOpacit: f32 		= 1
+	m_fontk: FONTK
+	m_alignkX: ALIGNK 	= ALIGNK.Left
+	m_alignkY: ALIGNK 	= ALIGNK.Bottom
+	m_fUseFixedWidth: bool
+	m_fUseWordWrap: bool
 
-	m_posCursor: SVector2;
-	m_alignkX: ALIGNK;
-	m_alignkY: ALIGNK;
+	m_posCursor: SVector2
+	m_alignkX: ALIGNK
+	m_alignkY: ALIGNK
 }
 
 SDrawState :: struct // tag = dras
 {
-	m_fontd : SFontData;
+	m_fontd : SFontData
 }
 
 SDrawStateStack :: struct	// tag = drasstk
 {
-	m_aDras : [10] SDrawState;
-	m_iDrasTop : s16;
+	m_aDras : [10] SDrawState
+	m_iDrasTop : s16
 };
 
 
 PushDras :: (pDrasstk: & SDrawStateStack)
 {
 	if !fverify(pDrasstk.m_iDrasTop + 1 < pDrasstk.m_aDras.count, "DrawStateStack Overflow", #file, #line)
-		return;
+		return
 
-	pDrasstk.m_aDras[pDrasstk.m_iDrasTop + 1] = pDrasstk.m_aDras[pDrasstk.m_iDrasTop];
-	++pDrasstk.m_iDrasTop;
+	pDrasstk.m_aDras[pDrasstk.m_iDrasTop + 1] = pDrasstk.m_aDras[pDrasstk.m_iDrasTop]
+	++pDrasstk.m_iDrasTop
 }
 
 PopDras :: (pDrasstk: & SDrawStateStack)
 {
 	if !fverify(pDrasstk.m_iDrasTop > 0, "DrawStateStack Underflow", #file, #line)
-		return;
+	{
+		return
+	}
 
-	--pDrasstk.m_iDrasTop;
+	--pDrasstk.m_iDrasTop
 }
 
 PDrasTop :: (pDrasstk: & SDrawStateStack) -> & SDrawState
 {
-	return &pDrasstk.m_aDras[pDrasstk.m_iDrasTop];
+	return &pDrasstk.m_aDras[pDrasstk.m_iDrasTop]
 }
 
 /*
@@ -138,98 +140,98 @@ DRASK :: enum // draw state kind
 
 SDrawState :: struct
 {					
-	m_aRect: [DRASK.RectMax - DRASK.RectMin] CRect;
-	m_aVec: [DRASK.VecMax - DRASK.VecMin] CVec2;
-	m_aCol: [DRASK.ColMax - DRASK.ColMin] CColor;
-	m_aG: [DRASK.GMax - DRASK.GMin] f32;
-	m_aN: [DRASK.NMax - DRASK.NMin] s16;
-	m_aF: [DRASK.FMax - DRASK.FMin] bool;
+	m_aRect: [DRASK.RectMax - DRASK.RectMin] CRect
+	m_aVec: [DRASK.VecMax - DRASK.VecMin] CVec2
+	m_aCol: [DRASK.ColMax - DRASK.ColMin] CColor
+	m_aG: [DRASK.GMax - DRASK.GMin] f32
+	m_aN: [DRASK.NMax - DRASK.NMin] s16
+	m_aF: [DRASK.FMax - DRASK.FMin] bool
 };
 
 InitDrask :: (pDrask :: & SDrawState)
 {
-	SetRect(DRASK.RectScissor, CRect(0,0,0,0));
+	SetRect(DRASK.RectScissor, CRect(0,0,0,0))
 
-	SetVec(DRASK.PosSortOriginWs, CVec2(KZERO));
-	SetVec(DRASK.VecScale, CVec2(1.0f, 1.0f));
-	SetVec(DRASK.PosCursor, CVec2(KZERO));
+	SetVec(DRASK.PosSortOriginWs, CVec2(KZERO))
+	SetVec(DRASK.VecScale, CVec2(1.0f, 1.0f))
+	SetVec(DRASK.PosCursor, CVec2(KZERO))
 
-	SetCol(DRASK.ColFontMain, CColor(kWhite));
-	SetCol(DRASK.ColFontShadow, CColor(kBlack));
+	SetCol(DRASK.ColFontMain, CColor(kWhite))
+	SetCol(DRASK.ColFontShadow, CColor(kBlack))
 
-	SetG(DRASK.GCharSize, 24.0f);
-	SetG(DRASK.ROpacity, 1.0f);
+	SetG(DRASK.GCharSize, 24.0f)
+	SetG(DRASK.ROpacity, 1.0f)
 
-	SetN(DRASK.IFont, 0);
-	SetN(DRASK.NAlignkX, ALIGNK_Center);
-	SetN(DRASK.NAlignkY, ALIGNK_Center);
+	SetN(DRASK.IFont, 0)
+	SetN(DRASK.NAlignkX, ALIGNK_Center)
+	SetN(DRASK.NAlignkY, ALIGNK_Center)
 
-	SetF(DRASK.FFixedWidthFont, false);
-	SetF(DRASK.FWordWrap, false);
-	SetF(DRASK.FUseScissor, false);
-	SetF(DRASK.FDrawSolid, true);
+	SetF(DRASK.FFixedWidthFont, false)
+	SetF(DRASK.FWordWrap, false)
+	SetF(DRASK.FUseScissor, false)
+	SetF(DRASK.FDrawSolid, true)
 }
 
 SetF :: (pDras: & SDrawState, drask: DRASK, f: bool)
 { 
-	assert((drask>=DRASK.FMin)&(drask<DRASK.FMax), "bad drask(F)");
-	pDras.m_aF[drask-DRASK.FMin] = f; 
+	assert((drask>=DRASK.FMin)&(drask<DRASK.FMax), "bad drask(F)")
+	pDras.m_aF[drask-DRASK.FMin] = f
 }
 
 SetN :: (pDras: & SDrawState, drask: DRASK, n s16)
 { 
-	assert((drask>=DRASK.NMin)&(drask<DRASK.NMax), "bad drask(N)");
-	pDras.m_aN[drask-DRASK.NMin] = n;
+	assert((drask>=DRASK.NMin)&(drask<DRASK.NMax), "bad drask(N)")
+	pDras.m_aN[drask-DRASK.NMin] = n
 }
 
 SetG :: (pDras: & SDrawState, drask: DRASK, g: f32)
 { 
-	assert((drask>=DRASK.GMin)&(drask<DRASK.GMax), "bad drask(G)");
-	pDras.m_aG[drask-DRASK.GMin] = g;
+	assert((drask>=DRASK.GMin)&(drask<DRASK.GMax), "bad drask(G)")
+	pDras.m_aG[drask-DRASK.GMin] = g
 }
 
 SetCol :: (drask: DRASK, CColor col)
 { 
-	EWC_ASSERT((drask>=DRASK.ColMin)&(drask<DRASK.ColMax), "bad drask(Col)");
-	pDras.m_aCol[drask-DRASK.ColMin] = col;
+	EWC_ASSERT((drask>=DRASK.ColMin)&(drask<DRASK.ColMax), "bad drask(Col)")
+	pDras.m_aCol[drask-DRASK.ColMin] = col
 }
 
 SetVec :: (drask: DRASK, CVec2Arg vec)
 { 
-	EWC_ASSERT((drask>=DRASK.VecMin)&(drask<DRASK.VecMax), "bad drask(Vec)");
-	pDras.m_aVec[drask-DRASK.VecMin] = vec;
+	EWC_ASSERT((drask>=DRASK.VecMin)&(drask<DRASK.VecMax), "bad drask(Vec)")
+	pDras.m_aVec[drask-DRASK.VecMin] = vec
 }
 
 SetRect :: (drask: DRASK, CRectArg rect)
 { 
-	EWC_ASSERT((drask>=DRASK.RectMin)&(drask<DRASK.RectMax), "bad drask(Rect)");
-	pDras.m_aRect[drask-DRASK.RectMin] = rect;
+	EWC_ASSERT((drask>=DRASK.RectMin)&(drask<DRASK.RectMax), "bad drask(Rect)")
+	pDras.m_aRect[drask-DRASK.RectMin] = rect
 }
 
 bool	FGet(DRASK drask) const
 			{
-				EWC_ASSERT((drask>=DRASK.FMin)&(drask<DRASK.FMax), "bad drask(F)");
-				return m_aF[drask-DRASK.FMin];
+				EWC_ASSERT((drask>=DRASK.FMin)&(drask<DRASK.FMax), "bad drask(F)")
+				return m_aF[drask-DRASK.FMin]
 			}
 I16		NGet(DRASK drask) const
 			{
-				EWC_ASSERT((drask>=DRASK.NMin)&(drask<DRASK.NMax), "bad drask(N)");
-				return m_aN[drask-DRASK.NMin];
+				EWC_ASSERT((drask>=DRASK.NMin)&(drask<DRASK.NMax), "bad drask(N)")
+				return m_aN[drask-DRASK.NMin]
 			}
 F32		GGet(DRASK drask) const
 			{
-				EWC_ASSERT((drask>=DRASK.GMin)&(drask<DRASK.GMax), "bad drask(G)");
-				return m_aG[drask-DRASK.GMin];
+				EWC_ASSERT((drask>=DRASK.GMin)&(drask<DRASK.GMax), "bad drask(G)")
+				return m_aG[drask-DRASK.GMin]
 			}
 CColor	ColGet(DRASK drask) const
 			{
-				EWC_ASSERT((drask>=DRASK.ColMin)&(drask<DRASK.ColMax), "bad drask(Col)");
-				return m_aCol[drask-DRASK.ColMin];
+				EWC_ASSERT((drask>=DRASK.ColMin)&(drask<DRASK.ColMax), "bad drask(Col)")
+				return m_aCol[drask-DRASK.ColMin]
 			}
 CVec2	VecGet(DRASK drask) const
 			{
-				EWC_ASSERT((drask>=DRASK.VecMin)&(drask<DRASK.VecMax), "bad drask(Vec)");
-				return m_aVec[drask-DRASK.VecMin];
+				EWC_ASSERT((drask>=DRASK.VecMin)&(drask<DRASK.VecMax), "bad drask(Vec)")
+				return m_aVec[drask-DRASK.VecMin]
 			}
 CRect	RectGet(DRASK drask) const
 			{
@@ -252,79 +254,79 @@ void	PostDraw() const;
 
 
 
-DrawInt :: typedef s32; // tag=dri
-DrawEnum :: typedef u32; // tag=dru
+DrawInt :: typedef s32 // tag=dri
+DrawEnum :: typedef u32 // tag=dru
 SHHAND :: enum  s16
 {
 	// just has nil
-};
+}
  
 STextureMip :: struct // tag=texmip
 {
-	m_dX: DrawInt;
-	m_dY: DrawInt;
-	m_cB: u32; // data size
-	m_aB: & u8; // actual texel data
-};
+	m_dX: DrawInt
+	m_dY: DrawInt
+	m_cB: u32 		// data size
+	m_aB: & u8 		// actual texel data
+}
 
 STexture :: struct // tag=tex
 {
-	m_shashFilename: SStringHash;	// filename hash, for texture reuse
-	m_cTexmip: u8;
-	m_iTex: s16;					// index into our global texture array
-	m_driId: gluint;				// GL id for this texture
-	m_driComponents: DrawInt;		// number of components or GL-specific format	(GL_RGBA)
-	m_druFormat: DrawEnum;			// format of color such as indexed or RGBA		(GL_RGBA)
-	m_druType: DrawEnum;			// data type for each component					(GL_UNSIGNED_BYTE)
-	m_druTarget: DrawEnum;			// gl target type (ie. GL_TEXTURE_2D)
+	m_shashFilename: SStringHash	// filename hash, for texture reuse
+	m_cTexmip: u8
+	m_iTex: s16						// index into our global texture array
+	m_driId: gluint					// GL id for this texture
+	m_driComponents: DrawInt		// number of components or GL-specific format	(GL_RGBA)
+	m_druFormat: DrawEnum			// format of color such as indexed or RGBA		(GL_RGBA)
+	m_druType: DrawEnum				// data type for each component					(GL_UNSIGNED_BYTE)
+	m_druTarget: DrawEnum			// gl target type (ie. GL_TEXTURE_2D)
 
-	m_aTexmip: [1] STextureMip;
-};
+	m_aTexmip: [1] STextureMip
+}
 
-g_cTex : s32;
-g_aTex : [50] STexture;
+g_cTex : s32
+g_aTex : [50] STexture
 
 DXFromTex :: (pTex: & STexture) -> DrawInt
 { 
-	return pTex.m_aTexmip[0].m_dX;
+	return pTex.m_aTexmip[0].m_dX
 }
 
 DYFromTex :: (pTex: & STexture)->DrawInt
 {
-	return pTex.m_aTexmip[0].m_dY;
+	return pTex.m_aTexmip[0].m_dY
 }
 
 SQuadSortKey :: struct // tag=qskey
 {
-	m_iTexture : s16;
+	m_iTexture : s16
 
-	m_x: s16;
-	m_z: s16;
-	m_yNeg: s16;
-	m_nLayer: s16;
+	m_x: s16
+	m_z: s16
+	m_yNeg: s16
+	m_nLayer: s16
 
-	m_cQvert: s16;
-	m_iQvert: s32;
-	}
+	m_cQvert: s16
+	m_iQvert: s32
+}
 
 SQuadVertex :: struct // tag=qvert
 {
-	m_x, m_y, m_z: f32;
-	m_u, m_v: f32;
-	m_r, m_g, m_b, m_a: f32;
+	m_x, m_y, m_z: f32
+	m_u, m_v: f32
+	m_r, m_g, m_b, m_a: f32
 }
 
-g_cQskeyMax :: 16 * 1024;
-g_cQvertMax :: g_cQskeyMax * 4;
-g_aQskey : & SQuadSortKey;
-g_aQvert : & SQuadVertex;
-g_aQvertSorted : & SQuadVertex;
+g_cQskeyMax :: 16 * 1024
+g_cQvertMax :: g_cQskeyMax * 4
+g_aQskey : & SQuadSortKey
+g_aQvert : & SQuadVertex
+g_aQvertSorted : & SQuadVertex
 	
 FONTK :: enum
 {
 	Regular,
 	Bold,
-};
+}
 		
 FONTSHK :: enum
 {
@@ -333,72 +335,72 @@ FONTSHK :: enum
 
 SFontGlyph :: struct // tag=glyph
 {
-	m_wch: u16;				// UCS2 Codepoint for this glyph
-	m_dXPixels: f32;
-	m_dYPixels: f32;
-	m_xOffset: f32;				// offset from the glyph origin to the top-left of the bitmap
-	m_yOffset: f32;
-	m_dXKerningDefault: f32;	// offset between letters
-	m_iDxKerningMin: u16;		// index into the kerning table 0xFFFF if none
-	m_iDxKerningMax: u16;		// index into the kerning table 0xFFFF if none
-	m_uMin: f32;
-	m_uMax: f32;
-	m_vMin: f32;
-	m_vMax: f32;
+	m_wch: u16					// UCS2 Codepoint for this glyph
+	m_dXPixels: f32
+	m_dYPixels: f32
+	m_xOffset: f32				// offset from the glyph origin to the top-left of the bitmap
+	m_yOffset: f32
+	m_dXKerningDefault: f32		// offset between letters
+	m_iDxKerningMin: u16		// index into the kerning table 0xFFFF if none
+	m_iDxKerningMax: u16		// index into the kerning table 0xFFFF if none
+	m_uMin: f32
+	m_uMax: f32
+	m_vMin: f32
+	m_vMax: f32
 }
 
 SFontGlyphFile :: struct //tag=glyphf
 {
-	m_cGlyph: s16;
-	m_iBaWchKerning: s32; 			// byte offset from the start of this structure to n^2 list of kerning glyph pairs (UCS2)
-	m_iBaDxKerning: s32;			// byte offset from the start of this structure to the kerning values (U8)
+	m_cGlyph: s16
+	m_iBaWchKerning: s32 			// byte offset from the start of this structure to n^2 list of kerning glyph pairs (UCS2)
+	m_iBaDxKerning: s32				// byte offset from the start of this structure to the kerning values (U8)
 
-	m_dYAscent: f32;				// y offset from the baseline to the height of tallest character
-	m_dYDescent: f32;				// y offset from the baseline to the bottom of the lowest descender
-	m_dYLineGap: f32;				// lineGap is the spacing between one row's descent and the next row's ascent...
+	m_dYAscent: f32					// y offset from the baseline to the height of tallest character
+	m_dYDescent: f32				// y offset from the baseline to the bottom of the lowest descender
+	m_dYLineGap: f32				// lineGap is the spacing between one row's descent and the next row's ascent...
 									// you should advance the vertical position by "ascent - descent + lineGap"
 
-	//m_aGlyph: [1] SFontGlyph;		// sorted by UCS2 glyph (for binary search)
-	m_aGlyph_CArray: SFontGlyph;
+	//m_aGlyph: [1] SFontGlyph		// sorted by UCS2 glyph (for binary search)
+	m_aGlyph_CArray: SFontGlyph
 }
 
 SFont :: struct // tag=font
 {
-	m_pTex: & STexture;
-	m_pGlyphf: & SFontGlyphFile;
-	m_aWchKerning: & u32;
-	m_aDxKerning: & f32;
+	m_pTex: & STexture
+	m_pGlyphf: & SFontGlyphFile
+	m_aWchKerning: & u32
+	m_aDxKerning: & f32
 }
 
 SFontManager :: struct // tag=fontman
 {
-	m_aFont: [FONTK.max] SFont;
-	m_aShhand: [FONTSHK.max] SHHAND;
-	m_mpFontshkIParamTex: [FONTSHK.max] int;
+	m_aFont: [FONTK.max] SFont
+	m_aShhand: [FONTSHK.max] SHHAND
+	m_mpFontshkIParamTex: [FONTSHK.max] int
 }
 
 SFontVertex :: struct // tag=fvert
 {
-	m_x, m_y: f32;
-	m_u, m_v: f32;
-	m_r, m_g, m_b, m_a: f32;
-	m_uMin, m_vMin, m_uMax, m_vMax: f32; // glyph bounds for clamping texture filtering
+	m_x, m_y: f32
+	m_u, m_v: f32
+	m_r, m_g, m_b, m_a: f32
+	m_uMin, m_vMin, m_uMax, m_vMax: f32 // glyph bounds for clamping texture filtering
 }
 
-kChMaxDrawText :: 1024;
+kChMaxDrawText :: 1024
 
 SFontVertexBuffer :: struct // tag=fvbuf
 {
-	m_aFvert: [1024] SFontVertex;
-	m_cFvert: int;
+	m_aFvert: [1024] SFontVertex
+	m_cFvert: int
 }
-g_Fvbuf: SFontVertexBuffer;
+g_Fvbuf: SFontVertexBuffer
 
 SShader :: struct// tag=shad
 {
-	m_driProgram: gluint;
-	m_driVertexShader: gluint;
-	m_driFragmentShader: gluint;
+	m_driProgram: gluint
+	m_driVertexShader: gluint
+	m_driFragmentShader: gluint
 }
 
 CORESHK :: enum // core shader kind
@@ -408,288 +410,298 @@ CORESHK :: enum // core shader kind
 
 SShaderManager  :: struct // tag=shman
 {
-	m_aShad: [16] SShader;
-	m_mpCoreshkShhand : [CORESHK.max] SHHAND;
+	m_aShad: [16] SShader
+	m_mpCoreshkShhand : [CORESHK.max] SHHAND
 }
 
 PShmanStaticInit :: () -> & SShaderManager
 {
 	if !FTryInitGLExtensions()
 	{
-		printf ("Error loading GL Extensions.");
-		return null;
+		printf ("Error loading GL Extensions.")
+		return null
 	}
 
 	g_shman.m_mpCoreshkShhand[CORESHK.Sprite] = ShhandLoad(
 													&g_shman,
 													"BasicSpriteShader",
 													g_spriteMainVertex,
-													g_spriteMainFragment);
-	return &g_shman;
+													g_spriteMainFragment)
+	return &g_shman
 }
 
 ShhandFindUnused :: inline (pShman: &SShaderManager) -> SHHAND
 {
-	iShad: SHHAND;
-	pShadEnd := &pShman.m_aShad[pShman.m_aShad.count];
-	pShadIt: &SShader = pShman.m_aShad; 
+	iShad: SHHAND
+	pShadEnd := &pShman.m_aShad[pShman.m_aShad.count]
+	pShadIt: &SShader = pShman.m_aShad
 	while pShadIt != pShadEnd
 	{
 		if pShadIt.m_driProgram == 0
-			return iShad;
-		++pShadIt;
-		++iShad;
+		{
+			return iShad
+		}
+		++pShadIt
+		++iShad
 	}
-	return SHHAND.nil;
+	return SHHAND.nil
 }
 
 PrintShaderInfoLog :: (object: gluint, pFnGetLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall)
 {
-	cCh: glint;
-	glGetShaderiv(object, GL_INFO_LOG_LENGTH, &cCh);
+	cCh: glint
+	glGetShaderiv(object, GL_INFO_LOG_LENGTH, &cCh)
 
-	aCh := cast(&u8) PVMalloc(cast (uSize)cCh);
-	pFnGetLog(object, cCh, null, aCh);
-	printf("log:\n%s", aCh);
-	FreeMalloc(aCh);
+	aCh := cast(&u8) PVMalloc(cast (uSize)cCh)
+	pFnGetLog(object, cCh, null, aCh)
+	printf("log:\n%s", aCh)
+	FreeMalloc(aCh)
 }
 
 ShhandLoad :: (pShman: &SShaderManager, pChzMaterialName: &u8, pChzVertexSource: &u8, pChzFragmentSource: &u8) -> SHHAND
 {
-	shhand := ShhandFindUnused(pShman);
+	shhand := ShhandFindUnused(pShman)
 	if(shhand == SHHAND.nil)
-		return SHHAND.nil;
+	{
+		return SHHAND.nil
+	}
 
-	pShad := &pShman.m_aShad[shhand];    
+	pShad := &pShman.m_aShad[shhand]
 	
-	glSuccess: glint;
-	pShad.m_driProgram			= glCreateProgram();
-	pShad.m_driVertexShader		= glCreateShader(GL_VERTEX_SHADER_ARB);
-	pShad.m_driFragmentShader	= glCreateShader(GL_FRAGMENT_SHADER_ARB);
+	glSuccess: glint
+	pShad.m_driProgram			= glCreateProgram()
+	pShad.m_driVertexShader		= glCreateShader(GL_VERTEX_SHADER_ARB)
+	pShad.m_driFragmentShader	= glCreateShader(GL_FRAGMENT_SHADER_ARB)
 
-	glShaderSource(pShad.m_driVertexShader, 1, &pChzVertexSource, null);
-	glShaderSource(pShad.m_driFragmentShader, 1, &pChzFragmentSource, null);
+	glShaderSource(pShad.m_driVertexShader, 1, &pChzVertexSource, null)
+	glShaderSource(pShad.m_driFragmentShader, 1, &pChzFragmentSource, null)
 
-	glCompileShader(pShad.m_driVertexShader);
+	glCompileShader(pShad.m_driVertexShader)
 	// if(checkForErrors("glCompileShaderARB(sd.vertexShader)", sd.m_vertexShader))
-	// 	return SHHAND_Nil;
+	// 	return SHHAND_Nil
 
-	glGetShaderiv(pShad.m_driVertexShader, GL_COMPILE_STATUS, &glSuccess);
+	glGetShaderiv(pShad.m_driVertexShader, GL_COMPILE_STATUS, &glSuccess)
 	if (!glSuccess)
 	{
-		printf("Failed to compile vertex shader %s:\n", pChzMaterialName);
-		PrintShaderInfoLog(pShad.m_driVertexShader, glGetShaderInfoLog);
-		glDeleteShader(pShad.m_driVertexShader);
-		return SHHAND.nil;
+		printf("Failed to compile vertex shader %s:\n", pChzMaterialName)
+		PrintShaderInfoLog(pShad.m_driVertexShader, glGetShaderInfoLog)
+		glDeleteShader(pShad.m_driVertexShader)
+		return SHHAND.nil
 	}
 
-	glCompileShader(pShad.m_driFragmentShader);
+	glCompileShader(pShad.m_driFragmentShader)
 	// if(checkForErrors("glCompileShaderARB(pShad.fragmentShader)", pShad.m_driFragmentShader))
-	// 	return SHHAND_Nil;
+	// 	return SHHAND_Nil
 
-	glGetShaderiv(pShad.m_driFragmentShader, GL_COMPILE_STATUS, &glSuccess);
+	glGetShaderiv(pShad.m_driFragmentShader, GL_COMPILE_STATUS, &glSuccess)
 	if (!glSuccess)
 	{
-		printf("Failed to compile fragment shader %s:\n", pChzMaterialName);
-		printf("Source:\n%s\n\n", pChzFragmentSource);
+		printf("Failed to compile fragment shader %s:\n", pChzMaterialName)
+		printf("Source:\n%s\n\n", pChzFragmentSource)
 
-		PrintShaderInfoLog(pShad.m_driFragmentShader, glGetShaderInfoLog);
-		glDeleteShader(pShad.m_driVertexShader);
-		glDeleteShader(pShad.m_driFragmentShader);
-		return SHHAND.nil;
+		PrintShaderInfoLog(pShad.m_driFragmentShader, glGetShaderInfoLog)
+		glDeleteShader(pShad.m_driVertexShader)
+		glDeleteShader(pShad.m_driFragmentShader)
+		return SHHAND.nil
 	}
 
-	glAttachShader(pShad.m_driProgram, pShad.m_driVertexShader);
-	glAttachShader(pShad.m_driProgram, pShad.m_driFragmentShader);
+	glAttachShader(pShad.m_driProgram, pShad.m_driVertexShader)
+	glAttachShader(pShad.m_driProgram, pShad.m_driFragmentShader)
 
-	glLinkProgram(pShad.m_driProgram);
-	glGetProgramiv(pShad.m_driProgram, GL_LINK_STATUS, &glSuccess);
+	glLinkProgram(pShad.m_driProgram)
+	glGetProgramiv(pShad.m_driProgram, GL_LINK_STATUS, &glSuccess)
 	if (!glSuccess)
 	{
-		printf("Failed to link shader program: %s\n", pChzMaterialName);
-		PrintShaderInfoLog(pShad.m_driProgram, glGetProgramInfoLog);
-		glDeleteProgram(pShad.m_driProgram);
-		return SHHAND.nil;
+		printf("Failed to link shader program: %s\n", pChzMaterialName)
+		PrintShaderInfoLog(pShad.m_driProgram, glGetProgramInfoLog)
+		glDeleteProgram(pShad.m_driProgram)
+		return SHHAND.nil
 	}
 	// if(checkForErrors("glLinkProgram(mat.program)", sd.m_program))
 	// 	return SHHAND_Nil;
 
-	return shhand;
+	return shhand
 }
 
 BeginShader :: (pShman: & SShaderManager, shhand: SHHAND)
 {
-	pShad := &pShman.m_aShad[shhand];
-	glUseProgram(pShad.m_driProgram);
+	pShad := &pShman.m_aShad[shhand]
+	glUseProgram(pShad.m_driProgram)
 	//checkForErrors("glCompileShaderARB(sd.vertexShader)", &sd.m_program);
 }
 
 EndShader :: ()
 {
-	glUseProgram(0);
+	glUseProgram(0)
 }
 
 IParamFind :: (pShman: & SShaderManager, shhand: SHHAND, pChzName: & u8) -> s32
 {
-	assert(shhand != SHHAND.nil, "Bad shader handle", #file, #line);
-	return glGetUniformLocation(pShman.m_aShad[shhand].m_driProgram, cast (& s8)pChzName);
+	assert(shhand != SHHAND.nil, "Bad shader handle", #file, #line)
+	return glGetUniformLocation(pShman.m_aShad[shhand].m_driProgram, cast (& s8)pChzName)
 }
 
 SetShaderParam :: (iParam: s32, x: f32, y: f32, z: f32, w: f32)
 {
-	assert(iParam >= 0, "invalid slot in SetShaderParam", #file, #line);
-	glUniform4f(iParam, x, y, z, w);
+	assert(iParam >= 0, "invalid slot in SetShaderParam", #file, #line)
+	glUniform4f(iParam, x, y, z, w)
 }
 
 /*
 SetShaderParam :: (iParam:s s32, CMat44 & mat)
 {
-	assert(iParam >= 0, "invalid slot in SetShaderParam", #file, #line);
-	glUniformMatrix4fvARB(iParam, 1, false, mat.AG());
+	assert(iParam >= 0, "invalid slot in SetShaderParam", #file, #line)
+	glUniformMatrix4fvARB(iParam, 1, false, mat.AG())
 }*/
 
 SetShaderParam:: (iParam: s32, pTex: & STexture, iTextureUnit: s32)
 {
-	assert(pTex, "Null texture in SetShaderParam", #file, #line);
+	assert(pTex, "Null texture in SetShaderParam", #file, #line)
 	if(pTex == null)
-		return;
+		return
 
-	glEnable(pTex.m_druTarget);
+	glEnable(pTex.m_druTarget)
 
-	assert(iParam >= 0, "invalid slot in ShaderGLSL::setParam", #file, #line);
-	glActiveTexture(GL_TEXTURE0 + cast (glenum) iTextureUnit);
-	glBindTexture(GL_TEXTURE_2D, pTex.m_driId);
+	assert(iParam >= 0, "invalid slot in ShaderGLSL::setParam", #file, #line)
+	glActiveTexture(GL_TEXTURE0 + cast (glenum) iTextureUnit)
+	glBindTexture(GL_TEXTURE_2D, pTex.m_driId)
 
-	glUniform1i(iParam, iTextureUnit);
+	glUniform1i(iParam, iTextureUnit)
 
 }
 
 
 PDracStaticInit :: (procAlloc: ProcAlloc) -> & SDrawContext
 {
-	g_aQskey = cast (& SQuadSortKey)PVAllocSimple(procAlloc, sizeof(SQuadSortKey) * g_cQskeyMax);
-	g_aQvert 		= cast (& SQuadVertex)PVAllocSimple(procAlloc, sizeof(SQuadVertex) * g_cQvertMax);
-	g_aQvertSorted 	= cast (& SQuadVertex)PVAllocSimple(procAlloc, sizeof(SQuadVertex) * g_cQvertMax);
+	g_aQskey = cast (& SQuadSortKey)PVAllocSimple(procAlloc, sizeof(SQuadSortKey) * g_cQskeyMax)
+	g_aQvert 		= cast (& SQuadVertex)PVAllocSimple(procAlloc, sizeof(SQuadVertex) * g_cQvertMax)
+	g_aQvertSorted 	= cast (& SQuadVertex)PVAllocSimple(procAlloc, sizeof(SQuadVertex) * g_cQvertMax)
 
-	g_drac.m_pShman   = PShmanStaticInit();
-	g_drac.m_pFontman = PFontmanStaticInit(procAlloc, g_drac.m_pShman);
+	g_drac.m_pShman   = PShmanStaticInit()
+	g_drac.m_pFontman = PFontmanStaticInit(procAlloc, g_drac.m_pShman)
 
 	if g_drac.m_pShman == null || g_drac.m_pFontman == null
-		{ return null; }
+	{ 
+		return null
+	}
 
-	g_drac.m_pDrasstk = &g_drasstk;
-	g_drac.m_pDras 	  = PDrasTop(&g_drasstk);
-	g_drac.m_pDras.m_fontd.m_colMain = ColCreate(255,255,255,255);
+	g_drac.m_pDrasstk = &g_drasstk
+	g_drac.m_pDras 	  = PDrasTop(&g_drasstk)
+	g_drac.m_pDras.m_fontd.m_colMain = ColCreate(255,255,255,255)
 
-	return &g_drac;
+	return &g_drac
 }
 
 
 PFontmanStaticInit :: (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SFontManager
 {
 	if !FTryLoadFont(&g_fontman, FONTK.Regular, "Assets/Fonts/Calibri", procAlloc)
-		{ return null; }
+	{ 
+		return null
+	}
 
-	g_fontman.m_aShhand[FONTSHK.Basic] = ShhandLoad(pShman, "BasicFontShader", g_fontMainVertex, g_fontMainFragment);
-	g_fontman.m_mpFontshkIParamTex[FONTSHK.Basic] = IParamFind(pShman, g_fontman.m_aShhand[FONTSHK.Basic], "s_glyphTexture");
-	return &g_fontman;
+	g_fontman.m_aShhand[FONTSHK.Basic] = ShhandLoad(pShman, "BasicFontShader", g_fontMainVertex, g_fontMainFragment)
+	g_fontman.m_mpFontshkIParamTex[FONTSHK.Basic] = IParamFind(pShman, g_fontman.m_aShhand[FONTSHK.Basic], "s_glyphTexture")
+	return &g_fontman
 }
 
 ConcatPChz :: 	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
 {
-	iCh: s32;
-	cChEnd := aCh.count -1; // leave room for terminator, BB doesn't support zero size array
+	iCh: s32
+	cChEnd := aCh.count -1 // leave room for terminator, BB doesn't support zero size array
 
 	while ((@pChzA != '\0') && (iCh < cChEnd))
 	{
-		aCh[iCh] = @pChzA;
-		++pChzA;
-		++iCh;
+		aCh[iCh] = @pChzA
+		++pChzA
+		++iCh
 	}
 
 	while ((@pChzB != '\0') && (iCh < cChEnd))
 	{
-		aCh[iCh] = @pChzB;
-		++pChzB;
-		++iCh;
+		aCh[iCh] = @pChzB
+		++pChzB
+		++iCh
 	}
 
-	aCh[iCh] = '\0';
+	aCh[iCh] = '\0'
 }
 
 PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
 {
     // TODO - should replace this with a hash
-    shashFilename:= ShashCreate(pChzFilename, 0);
+    shashFilename:= ShashCreate(pChzFilename, 0)
 
-    iTex: s16;
+    iTex: s16
     //for (int iTex = 0, cTex = g_aTex.C(); iTex < cTex; ++iTex)
     while (iTex < g_cTex)
     {
-        pTex := &g_aTex[iTex];
+        pTex := &g_aTex[iTex]
         if (FAreEqual(pTex.m_shashFilename, shashFilename))
-            return pTex;
-        ++iTex;
+            return pTex
+        ++iTex
     }
 
     if !fverify(iTex == cast(s32) cast(s16)iTex, "iTex overflow", #file, #line) ||
         !fverify(g_cTex < g_aTex.count, "s_aryTex overflow", #file, #line)
-        return null;
+        return null
 
-    //STexture * pTex = (STexture*)s_aryTex.AppendNew();
-    pTex := &g_aTex[g_cTex];
-    ++g_cTex;
-    pTex.m_cTexmip = 1;
-    pTex.m_shashFilename = shashFilename;
+    //STexture * pTex = (STexture*)s_aryTex.AppendNew()
+    pTex := &g_aTex[g_cTex]
+    ++g_cTex
+    pTex.m_cTexmip = 1
+    pTex.m_shashFilename = shashFilename
 
-    dX, dY: s32;
-    cComponents: s32;
-    pB : &u8 = stbi_load(pChzFilename, &dX, &dY, &cComponents, 4);
+    dX, dY: s32
+    cComponents: s32
+    pB : &u8 = stbi_load(pChzFilename, &dX, &dY, &cComponents, 4)
     if (pB == null)
-        return null;
+    {
+        return null
+    }
     
     // we'll flip most of our images so the UV origin is in the lower left
 
     if (fFlipVertical)
     {
-        bTemp: u32;
-        cLine := dY / 2;
+        bTemp: u32
+        cLine := dY / 2
         //for (int iLine = 0, cLine = dY>>1; iLine < cLine; ++iLine)
-        iLine: s32;
+        iLine: s32
         while (iLine < cLine)
         {
-            pB1 := &(cast(&u32)pB)[iLine * dX];
-            pB2 := &(cast(&u32)pB)[(dY - 1 - iLine) * dX];
+            pB1 := &(cast(&u32)pB)[iLine * dX]
+            pB2 := &(cast(&u32)pB)[(dY - 1 - iLine) * dX]
             //for (U32 * pB1End = &pB1[dX]; pB1 != pB1End; ++pB1, ++pB2)
-            pB1End := &pB1[dX];
+            pB1End := &pB1[dX]
             while (pB1 != pB1End)
             {
-                bTemp = @pB1;
-                @pB1 = @pB2;
-                @pB2 = bTemp;
-                ++pB1;
-                ++pB2;
+                bTemp = @pB1
+                @pB1 = @pB2
+                @pB2 = bTemp
+                ++pB1
+                ++pB2
             }
-            ++iLine;
+            ++iLine
         }
     }
 
-    pTex.m_iTex = iTex;
-    pTex.m_aTexmip[0].m_aB = pB;
-    pTex.m_aTexmip[0].m_dX = dX;
-    pTex.m_aTexmip[0].m_dY = dY;
-    pTex.m_driComponents   = GL_RGBA; //numComponents;
-    pTex.m_druFormat       = GL_RGBA; //GL_TEXTURE_2D;
-    pTex.m_druType         = GL_UNSIGNED_BYTE;
-    pTex.m_druTarget       = GL_TEXTURE_2D;
+    pTex.m_iTex = iTex
+    pTex.m_aTexmip[0].m_aB = pB
+    pTex.m_aTexmip[0].m_dX = dX
+    pTex.m_aTexmip[0].m_dY = dY
+    pTex.m_driComponents   = GL_RGBA //numComponents
+    pTex.m_druFormat       = GL_RGBA //GL_TEXTURE_2D
+    pTex.m_druType         = GL_UNSIGNED_BYTE
+    pTex.m_druTarget       = GL_TEXTURE_2D
 
-    glGenTextures(1, cast(&gluint)&pTex.m_driId);
-    glBindTexture(GL_TEXTURE_2D, pTex.m_driId);
- 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, pTex.m_cTexmip - 1);
+    glGenTextures(1, cast(&gluint)&pTex.m_driId)
+    glBindTexture(GL_TEXTURE_2D, pTex.m_driId)
+ 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, pTex.m_cTexmip - 1)
 
-    iTexmip: u32;
-    texmipEnd := &pTex.m_aTexmip[pTex.m_cTexmip];
-    texmipIt : &STextureMip = pTex.m_aTexmip;
+    iTexmip: u32
+    texmipEnd := &pTex.m_aTexmip[pTex.m_cTexmip]
+    texmipIt : &STextureMip = pTex.m_aTexmip
     //for(TextureMip * texmipIt = pTex.m_aTexmip; texmipIt != texmipEnd; ++texmipIt, ++iTexmip)
     while (texmipIt != texmipEnd)
     {
@@ -702,109 +714,109 @@ PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
             0,
             pTex.m_druFormat,
             pTex.m_druType,
-            texmipIt.m_aB);
-        ++texmipIt;
-        ++iTexmip;
+            texmipIt.m_aB)
+        ++texmipIt
+        ++iTexmip
     }
 
-    return pTex;
+    return pTex
 }
 
 FTryLoadFont :: (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & u8, procAlloc: ProcAlloc) -> bool
 {
-	aCh: [1024] u8;
+	aCh: [1024] u8
 
 	// BB - need to change to ConcatPCoz
-	ConcatPChz(pCozFilename, ".png", aCh);
-	pFontman.m_aFont[fontk].m_pTex = PTexLoad(aCh, false);
+	ConcatPChz(pCozFilename, ".png", aCh)
+	pFontman.m_aFont[fontk].m_pTex = PTexLoad(aCh, false)
 
 	if !pFontman.m_aFont[fontk].m_pTex
 	{
-		printf("Failed to load font texture %s\n", aCh);
-		return false;
+		printf("Failed to load font texture %s\n", aCh)
+		return false
 	}
 
 	// BB - need to change to ConcatPCoz
-	ConcatPChz(pCozFilename, ".font", aCh);
+	ConcatPChz(pCozFilename, ".font", aCh)
 
-	cBRead: s64;
-	pB := PBReadEntireFile(aCh, &cBRead);
+	cBRead: s64
+	pB := PBReadEntireFile(aCh, &cBRead)
 	if (!pB)
 	{
-		printf("Failed to load glyph file %s\n", aCh);
-		return false;
+		printf("Failed to load glyph file %s\n", aCh)
+		return false
 	}
 	else
 	{
-		pFont: & SFont = &pFontman.m_aFont[fontk];
+		pFont: & SFont = &pFontman.m_aFont[fontk]
 
-		pGlyphf := cast (&SFontGlyphFile)pB;
-		pFont.m_pGlyphf = pGlyphf;
-		pFont.m_aWchKerning = cast(&u32)(pB + pGlyphf.m_iBaWchKerning);
+		pGlyphf := cast (&SFontGlyphFile)pB
+		pFont.m_pGlyphf = pGlyphf
+		pFont.m_aWchKerning = cast(&u32)(pB + pGlyphf.m_iBaWchKerning)
 
-		aGlyph := &pGlyphf.m_aGlyph_CArray;
-		assert(cast(&void)pFont.m_aWchKerning == cast(&void)&aGlyph[pGlyphf.m_cGlyph], "bad offsets", #file, #line);
+		aGlyph := &pGlyphf.m_aGlyph_CArray
+		assert(cast(&void)pFont.m_aWchKerning == cast(&void)&aGlyph[pGlyphf.m_cGlyph], "bad offsets", #file, #line)
 
-		pFont.m_aDxKerning = cast(&f32)(pB + pGlyphf.m_iBaDxKerning);
+		pFont.m_aDxKerning = cast(&f32)(pB + pGlyphf.m_iBaDxKerning)
 	}
 
-	return true;
+	return true
 }
 
 DrawTexturedQuad :: (pTex: & STexture, dX: float, dY: float)
 {
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, pTex.m_driId);
+    glEnable(GL_TEXTURE_2D)
+    glBindTexture(GL_TEXTURE_2D, pTex.m_driId)
 
-	glBegin(GL_QUADS);
-	glTexCoord2f(0.0, 0.0);
-	glColor3f(1, 1, 1);
-	glVertex3f(0.0, 0.0, 0.0);
+	glBegin(GL_QUADS)
+	glTexCoord2f(0.0, 0.0)
+	glColor3f(1, 1, 1)
+	glVertex3f(0.0, 0.0, 0.0)
 
-	glTexCoord2f(1.0, 0.0);
-	glColor3f(1, 1, 1);
-	glVertex3f(dX, 0.0, 0.0);
+	glTexCoord2f(1.0, 0.0)
+	glColor3f(1, 1, 1)
+	glVertex3f(dX, 0.0, 0.0)
 
-	glTexCoord2f(1.0, 1.0);
-	glColor3f(1, 1, 1);
-	glVertex3f(dX, dY, 0.0);
+	glTexCoord2f(1.0, 1.0)
+	glColor3f(1, 1, 1)
+	glVertex3f(dX, dY, 0.0)
 
-	glTexCoord2f(0.0, 1.0);
-	glColor3f(1, 1, 1);
-	glVertex3f(0.0, dY, 0.0);
-	glEnd();
-	glDisable(GL_TEXTURE_2D);
+	glTexCoord2f(0.0, 1.0)
+	glColor3f(1, 1, 1)
+	glVertex3f(0.0, dY, 0.0)
+	glEnd()
+	glDisable(GL_TEXTURE_2D)
 }
 
 PGlyphFind :: (pGlyphf: & SFontGlyphFile, wch: u32) -> & SFontGlyph
 {
 	// binary search through the glyphs to find our data
 
-	iLb: int = 0;
-	iUb: int = pGlyphf.m_cGlyph;
+	iLb: int = 0
+	iUb: int = pGlyphf.m_cGlyph
 
-	//pGlyph: & SFontGlyph = pGlyphf.m_aGlyph;
-	pGlyph := &pGlyphf.m_aGlyph_CArray;
+	//pGlyph: & SFontGlyph = pGlyphf.m_aGlyph
+	pGlyph := &pGlyphf.m_aGlyph_CArray
 	while iLb <= iUb
 	{
-		iMid := (iLb + iUb) >> 1;
-		chMid := pGlyph[iMid].m_wch;
+		iMid := (iLb + iUb) >> 1
+		chMid := pGlyph[iMid].m_wch
 		if chMid == wch
 		{
-			return &pGlyph[iMid];
+			return &pGlyph[iMid]
 		}
 
 		if wch < chMid
 		{
-			iUb = iMid - 1;
+			iUb = iMid - 1
 		}
 		else
 		{
-			iLb = iMid + 1;
+			iLb = iMid + 1
 		}
 	}
 
-	return null;
+	return null
 }
 
 DXFindKerning :: (pFont: & SFont, iDxMin: int, iDxMax: int, wchOther: u32) -> f32
@@ -814,10 +826,10 @@ DXFindKerning :: (pFont: & SFont, iDxMin: int, iDxMax: int, wchOther: u32) -> f3
 	{
 		if pFont.m_aWchKerning[iterDx.m_i] == wchOther
 		{
-			return pFont.m_aDxKerning[iterDx.m_i];
+			return pFont.m_aDxKerning[iterDx.m_i]
 		}
 	}
-	return 0;
+	return 0
 }
 
 FillOutVert :: inline (
@@ -827,105 +839,107 @@ FillOutVert :: inline (
 					pGlyph: & SFontGlyph, 
 					pFvbuf: & SFontVertexBuffer)
 {
-	pFvert: & SFontVertex = &pFvbuf.m_aFvert[pFvbuf.m_cFvert];
-	++pFvbuf.m_cFvert;
+	pFvert: & SFontVertex = &pFvbuf.m_aFvert[pFvbuf.m_cFvert]
+	++pFvbuf.m_cFvert
 
-	pFvert.m_x = x;
-	pFvert.m_y = y;
+	pFvert.m_x = x
+	pFvert.m_y = y
 
-	pFvert.m_u = u;
-	pFvert.m_v = v;
+	pFvert.m_u = u
+	pFvert.m_v = v
 
-	pFvert.m_r = r;
-	pFvert.m_g = g;
-	pFvert.m_b = b;
-	pFvert.m_a = a;
+	pFvert.m_r = r
+	pFvert.m_g = g
+	pFvert.m_b = b
+	pFvert.m_a = a
 
-	pFvert.m_uMin = pGlyph.m_uMin;
-	pFvert.m_vMin = pGlyph.m_vMin;
-	pFvert.m_uMax = pGlyph.m_uMax;
-	pFvert.m_vMax = pGlyph.m_vMax;
+	pFvert.m_uMin = pGlyph.m_uMin
+	pFvert.m_vMin = pGlyph.m_vMin
+	pFvert.m_uMax = pGlyph.m_uMax
+	pFvert.m_vMax = pGlyph.m_vMax
 }
 
 CreateVerts :: (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFontVertexBuffer,  posCursorArg: SVector2, pWchz: & u32)
 {
-	posCursor := posCursorArg;
-	colvec := ColvecFromCol(pDras.m_fontd.m_colMain);
-	r := colvec.m_x;
-	g := colvec.m_y;
-	b := colvec.m_z;
-	a := colvec.m_w;
+	posCursor := posCursorArg
+	colvec := ColvecFromCol(pDras.m_fontd.m_colMain)
+	r := colvec.m_x
+	g := colvec.m_y
+	b := colvec.m_z
+	a := colvec.m_w
 
-	fontk := pDras.m_fontd.m_fontk;
-	pGlyphf := pFontman.m_aFont[fontk].m_pGlyphf;
+	fontk := pDras.m_fontd.m_fontk
+	pGlyphf := pFontman.m_aFont[fontk].m_pGlyphf
 
-	gCharSize: f32 = pDras.m_fontd.m_gCharSize;
-	pFvert: & SFontVertex;
+	gCharSize: f32 = pDras.m_fontd.m_gCharSize
+	pFvert: & SFontVertex
 
 	//for (const WChar * pWchzIt = pWchz; *pWchzIt != 0; ++pWchzIt)
 	//for pWchzIt := pWchz until null; ++pWchzIt
-	pWchzIt := pWchz;
+	pWchzIt := pWchz
 	while @pWchzIt != 0
 	{
-		pGlyph := PGlyphFind(pGlyphf, @pWchzIt);
+		pGlyph := PGlyphFind(pGlyphf, @pWchzIt)
 		if pGlyph == null
 		{
 			// missing character...
-			++pWchzIt;
-			continue;
+			++pWchzIt
+			continue
 		}
 
-		left: f32		= posCursor.m_x + pGlyph.m_xOffset * gCharSize;
-		top: f32		= posCursor.m_y + pGlyph.m_yOffset * gCharSize;
-		right: f32		= left + pGlyph.m_dXPixels * gCharSize;
-		bottom: f32		= top + pGlyph.m_dYPixels * gCharSize;
+		left: f32		= posCursor.m_x + pGlyph.m_xOffset * gCharSize
+		top: f32		= posCursor.m_y + pGlyph.m_yOffset * gCharSize
+		right: f32		= left + pGlyph.m_dXPixels * gCharSize
+		bottom: f32		= top + pGlyph.m_dYPixels * gCharSize
 
 		if (pFvbuf.m_cFvert + 4 >= pFvbuf.m_aFvert.count)
-			break;
+		{
+			break
+		}
 
 		FillOutVert(left, top,
 					pGlyph.m_uMin, pGlyph.m_vMax,
 					r, g, b, a,
-					pGlyph, pFvbuf);
+					pGlyph, pFvbuf)
 
 		FillOutVert(right, top,
 					pGlyph.m_uMax, pGlyph.m_vMax,
 					r, g, b, a,
-					pGlyph, pFvbuf);
+					pGlyph, pFvbuf)
 
 		FillOutVert(right, bottom,
 					pGlyph.m_uMax, pGlyph.m_vMin,
 					r, g, b, a,
-					pGlyph, pFvbuf);
+					pGlyph, pFvbuf)
 
 		FillOutVert(left, bottom,
 					pGlyph.m_uMin, pGlyph.m_vMin,
 					r, g, b, a,
-					pGlyph, pFvbuf);
+					pGlyph, pFvbuf)
 
-		kerningAdvance: f32;
+		kerningAdvance: f32
 
-		++pWchzIt;
+		++pWchzIt
 		if(@pWchzIt != 0)
 		{
 			kerningAdvance = DXFindKerning(
 								&pFontman.m_aFont[fontk],
 								pGlyph.m_iDxKerningMin,
 								pGlyph.m_iDxKerningMax,
-								@pWchzIt);
+								@pWchzIt)
 		}
 		
-		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * gCharSize;
+		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * gCharSize
 	}
 
-	pDras.m_fontd.m_posCursor = posCursor;
+	pDras.m_fontd.m_posCursor = posCursor
 }
 
 FlushVerts :: (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 {
 	// push orthographic projection
-	glPushMatrix();
-	glLoadIdentity();
+	glPushMatrix()
+	glLoadIdentity()
 
 	// set translate/scale
 	// Point2 translation  = s_activePrimState->getPoint(PrimState::kTranslation);.
@@ -936,105 +950,107 @@ FlushVerts :: (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 	// set scissor rect
 
 	// set up shader
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	assert((pDrac.m_pShman != null) & (pDrac.m_pFontman != null), "NULL GContext in flushVerts", #file, #line);
+	glEnable(GL_BLEND)
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+	assert((pDrac.m_pShman != null) & (pDrac.m_pFontman != null), "NULL GContext in flushVerts", #file, #line)
 
-	pFontman := pDrac.m_pFontman;
-	fontk := pDrac.m_pDras.m_fontd.m_fontk;
-	iShhand	:= FONTSHK.Basic;
-	BeginShader(pDrac.m_pShman, pFontman.m_aShhand[iShhand]);
+	pFontman := pDrac.m_pFontman
+	fontk := pDrac.m_pDras.m_fontd.m_fontk
+	iShhand	:= FONTSHK.Basic
+	BeginShader(pDrac.m_pShman, pFontman.m_aShhand[iShhand])
 
-	//g_fontman.m_mpFontshkIParamTex[FONTSHK.Basic] = IParamFind(pShman, g_fofntman.m_aShhand[FONTSHK.Basic], "s_glyphTexture");
+	//g_fontman.m_mpFontshkIParamTex[FONTSHK.Basic] = IParamFind(pShman, g_fofntman.m_aShhand[FONTSHK.Basic], "s_glyphTexture")
 
-	aFvert: [] SFontVertex = pFvbuf.m_aFvert;
-	pTex := pFontman.m_aFont[fontk].m_pTex;
-	SetShaderParam(pFontman.m_mpFontshkIParamTex[iShhand], pTex, 0);
+	aFvert: [] SFontVertex = pFvbuf.m_aFvert
+	pTex := pFontman.m_aFont[fontk].m_pTex
+	SetShaderParam(pFontman.m_mpFontshkIParamTex[iShhand], pTex, 0)
 
-	glVertexPointer(3, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_x);
-	glEnableClientState(GL_VERTEX_ARRAY);	
+	glVertexPointer(3, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_x)
+	glEnableClientState(GL_VERTEX_ARRAY)
 			
-	glColorPointer(4, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_r);		
-	glEnableClientState(GL_COLOR_ARRAY);
+	glColorPointer(4, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_r)
+	glEnableClientState(GL_COLOR_ARRAY)
 
-	glClientActiveTexture(GL_TEXTURE0);
-	glTexCoordPointer(2, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_u);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);		
+	glClientActiveTexture(GL_TEXTURE0)
+	glTexCoordPointer(2, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_u)
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
-	glClientActiveTexture(GL_TEXTURE1);
-	glTexCoordPointer(4, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_uMin);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);		
+	glClientActiveTexture(GL_TEXTURE1)
+	glTexCoordPointer(4, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_uMin)
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
-	glDrawArrays(GL_QUADS, 0, cast (s32) pFvbuf.m_cFvert);
+	glDrawArrays(GL_QUADS, 0, cast (s32) pFvbuf.m_cFvert)
 
 	if (pTex)
-		glDisable(pTex.m_druTarget);
+	{
+		glDisable(pTex.m_druTarget)
+	}
 
-	glDisableClientState(GL_VERTEX_ARRAY);	
-	glDisableClientState(GL_COLOR_ARRAY);	
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);	
+	glDisableClientState(GL_VERTEX_ARRAY)
+	glDisableClientState(GL_COLOR_ARRAY)	
+	glDisableClientState(GL_TEXTURE_COORD_ARRAY)
 
-	EndShader();
+	EndShader()
 
-	glPopMatrix();
-	pFvbuf.m_cFvert = 0;
+	glPopMatrix()
+	pFvbuf.m_cFvert = 0
 }	
 
 DXDYExtentsFromAWch :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
 {
-	pDras := pDrac.m_pDras;
-	fontk := pDras.m_fontd.m_fontk;
-	pFontman := pDrac.m_pFontman;
-	pGlyphf := pFontman.m_aFont[fontk].m_pGlyphf;
+	pDras := pDrac.m_pDras
+	fontk := pDras.m_fontd.m_fontk
+	pFontman := pDrac.m_pFontman
+	pGlyphf := pFontman.m_aFont[fontk].m_pGlyphf
 
-	posCursor: SVector2;
-	yMin: f32 = F32_MAX;
-	yMax: f32 = 0; 
-	rXY := pDras.m_fontd.m_gCharSize;
+	posCursor: SVector2
+	yMin: f32 = F32_MAX
+	yMax: f32 = 0
+	rXY := pDras.m_fontd.m_gCharSize
 
 	//for(const WChar * pWchzIt = pWchz; *pWchzIt != 0; ++pWchzIt)
 
-	pWchzIt := pWchz;
+	pWchzIt := pWchz
 	while (@pWchzIt != 0)
 	{
-		pGlyph := PGlyphFind(pGlyphf, @pWchzIt);
+		pGlyph := PGlyphFind(pGlyphf, @pWchzIt)
 
-		xRight := posCursor.m_x;
+		xRight := posCursor.m_x
 		if (pGlyph)
 		{
-			yBottom: f32 	= posCursor.m_y + pGlyph.m_yOffset * rXY;
-			yTop: f32 		= yBottom + pGlyph.m_dYPixels * rXY;
+			yBottom: f32 	= posCursor.m_y + pGlyph.m_yOffset * rXY
+			yTop: f32 		= yBottom + pGlyph.m_dYPixels * rXY
 
-			yMin = GMin(yMin, yBottom);
-			yMax = GMax(yMax, yTop);
+			yMin = GMin(yMin, yBottom)
+			yMax = GMax(yMax, yTop)
 
-			xLeft: f32 = posCursor.m_x + pGlyph.m_xOffset * rXY;
-			xRight = xLeft + pGlyph.m_dXPixels * rXY;
+			xLeft: f32 = posCursor.m_x + pGlyph.m_xOffset * rXY
+			xRight = xLeft + pGlyph.m_dXPixels * rXY
 		}
 
-		kerningAdvance: f32 = 0;
-		++pWchzIt;
+		kerningAdvance: f32 = 0
+		++pWchzIt
 		if(@pWchzIt == 0)
 		{
-			return Vec2Create(xRight, yMax - yMin);
+			return Vec2Create(xRight, yMax - yMin)
 		}
 
 		if(!pGlyph)
 		{
 			// missing character...
-			continue;
+			continue
 		}
 		kerningAdvance = DXFindKerning(
 							&pFontman.m_aFont[fontk], 
 							pGlyph.m_iDxKerningMin, 
 							pGlyph.m_iDxKerningMax, 
-							@pWchzIt);
+							@pWchzIt)
 
-		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * rXY;
+		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * rXY
 	}
 
-	vecZero: SVector2;
-	return vecZero;
+	vecZero: SVector2
+	return vecZero
 }
 
 /*
@@ -1063,61 +1079,61 @@ CVec2 DXDYCalculateExtents(SDrawContext * pDrac, const char * pWchzFormat, ...)
 
 DXDYCalculateExtents :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
 {
-	return DXDYExtentsFromAWch(pDrac, pWchz);
+	return DXDYExtentsFromAWch(pDrac, pWchz)
 }
 
 DXDYCalculateExtents :: (pDrac: & SDrawContext, pCoz: & u8) -> SVector2
 {
-	aWch: [kChMaxDrawText] u32;
+	aWch: [kChMaxDrawText] u32
 
 	if !FTryConvertUtf8ToUcs4(pCoz, aWch, &aWch[aWch.count])
 	{
-		return Vec2Create(0,0);
+		return Vec2Create(0,0)
 	}
-	//ConvertChToWch(aCh, EWC_DIM(aWch), aWch);
+	//ConvertChToWch(aCh, EWC_DIM(aWch), aWch)
 
-	return DXDYExtentsFromAWch(pDrac, aWch);
+	return DXDYExtentsFromAWch(pDrac, aWch)
 }
 
 DrawTextRaw :: (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 {
 	// draw characters to the right. pos is the left side baseline
 
-	CreateVerts(pDrac.m_pFontman, pDrac.m_pDras, &g_Fvbuf, pos, pWchz);
-	FlushVerts(pDrac, &g_Fvbuf);
+	CreateVerts(pDrac.m_pFontman, pDrac.m_pDras, &g_Fvbuf, pos, pWchz)
+	FlushVerts(pDrac, &g_Fvbuf)
 }
 
 DrawTextAligned :: inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 {
-	pDras := pDrac.m_pDras;
+	pDras := pDrac.m_pDras
 
 	// BB - could mix extents calculation with vertex creation
 
-	vecDxDy: SVector2;
-	alignkX := pDras.m_fontd.m_alignkX;
-	alignkY := pDras.m_fontd.m_alignkY;
+	vecDxDy: SVector2
+	alignkX := pDras.m_fontd.m_alignkX
+	alignkY := pDras.m_fontd.m_alignkY
 	if alignkX != ALIGNK.Left || alignkY != ALIGNK.Bottom
 	{
 		// Don't need to calculate extents if we're x=ALIGNK_Left, y=ALIGNK_Bottom
-		vecDxDy = DXDYExtentsFromAWch(pDrac, pWchz);
+		vecDxDy = DXDYExtentsFromAWch(pDrac, pWchz)
 	}
 
-	x, y: f32;
+	x, y: f32
 
 	/*switch (alignkX)
 	{
-		case ALIGNK.Left:	x = pos.X();						break;
-		case ALIGNK.Center:	x = pos.X() - vecDxDy.X() * 0.5f;	break;
-		case ALIGNK.Right:	x = pos.X() - vecDxDy.X();			break;
-		default: EWC_ASSERT(false, "unknown ALIGNK");
+		case ALIGNK.Left:	x = pos.X();						break
+		case ALIGNK.Center:	x = pos.X() - vecDxDy.X() * 0.5f;	break
+		case ALIGNK.Right:	x = pos.X() - vecDxDy.X();			break
+		default: EWC_ASSERT(false, "unknown ALIGNK")
 	}
 
 	switch (alignkY)
 	{
-		case ALIGNK.Top:	y = pos.Y() - vecDxDy.Y();			break;
-		case ALIGNK.Center:	y = pos.Y() - vecDxDy.Y() * 0.5f;	break;
-		case ALIGNK.Bottom:	y = pos.Y() ;						break;
-		default: EWC_ASSERT(false, "unknown ALIGNK");
+		case ALIGNK.Top:	y = pos.Y() - vecDxDy.Y();			break
+		case ALIGNK.Center:	y = pos.Y() - vecDxDy.Y() * 0.5f;	break
+		case ALIGNK.Bottom:	y = pos.Y() ;						break
+		default: EWC_ASSERT(false, "unknown ALIGNK")
 	}*/
 
 	if alignkX == ALIGNK.Left			{ x = pos.m_x; }
@@ -1132,41 +1148,43 @@ DrawTextAligned :: inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 
 	// draw characters to the right. pos is the left side baseline
 
-	posCursor := Vec2Create(x, y);
-	DrawTextRaw(pDrac, posCursor, pWchz);
+	posCursor := Vec2Create(x, y)
+	DrawTextRaw(pDrac, posCursor, pWchz)
 }
 
 DrawText :: (pDrac: & SDrawContext, pos: SVector2, pCoz: & u8)
 {
-	aWch: [kChMaxDrawText] u32;
+	aWch: [kChMaxDrawText] u32
 	if FTryConvertUtf8ToUcs4(pCoz, aWch, &aWch[aWch.count])
 	{
-		DrawTextAligned(pDrac, pos, aWch);
+		DrawTextAligned(pDrac, pos, aWch)
 	}
 }
 
 SetupOrthoViewport :: (xMin: f64, yMin: f64, xMax: f64, yMax: f64)
 {
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(xMin, xMax, yMin, yMax, 1, -1);
-	glMatrixMode(GL_MODELVIEW);
+	glMatrixMode(GL_PROJECTION)
+	glLoadIdentity()
+	glOrtho(xMin, xMax, yMin, yMax, 1, -1)
+	glMatrixMode(GL_MODELVIEW)
 }
 
 /* Camera2d
 void ActivateForDraw(SDrawContext * pDrac)
 {
-	const CViewport * pViewp = CViewport::PViewp(m_iViewp);
-	EWC_ASSERT(pViewp, "called ActivateForDraw on camera with no view");
+	const CViewport * pViewp = CViewport::PViewp(m_iViewp)
+	EWC_ASSERT(pViewp, "called ActivateForDraw on camera with no view")
 	if (!pViewp)
-		return;
+	{
+		return
+	}
 
-	CVec2 vecDxDy = pViewp->m_rectBounds.VecDXDY() * m_rScale * 0.5f;
-	CVec2 posMin = m_posCenter - vecDxDy;
-	CVec2 posMax = m_posCenter + vecDxDy;
-	CRect rectViewport(posMin, posMax);
-	SetupOrthoViewport(rectViewport);
+	CVec2 vecDxDy = pViewp->m_rectBounds.VecDXDY() * m_rScale * 0.5f
+	CVec2 posMin = m_posCenter - vecDxDy
+	CVec2 posMax = m_posCenter + vecDxDy
+	CRect rectViewport(posMin, posMax)
+	SetupOrthoViewport(rectViewport)
 
-	//CDrawState * pDras = pDrac->m_pDras;
-	//pDras->SetVec(DRASK_PosSortOriginWs, m_posFocus);
+	//CDrawState * pDras = pDrac->m_pDras
+	//pDras->SetVec(DRASK_PosSortOriginWs, m_posFocus)
 }*/

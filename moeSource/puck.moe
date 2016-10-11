@@ -3,82 +3,84 @@
 #import "GL"
 #import "Math"
 
-g_dXWindow :: 1280;
-g_dYWindow :: 720;
+g_dXWindow :: 1280
+g_dYWindow :: 720
 
 FHandleEvents :: () -> bool
 {
-	a : int = 1;	
-	b : int = 1;	
+	a : int = 1	
+	b : int = 1	
 
-	event : SEvent;
+	event : SEvent
 	while FGetNextEvent(&event)
 	{
-		printf("Event: keycode=%d, edges = %d\n", event.m_keycode, event.m_edges);
+		printf("Event: keycode=%d, edges = %d\n", event.m_keycode, event.m_edges)
 		if event.m_keycode == KEYCODE.Escape && event.m_edges == EDGES.Press
 		{
-			return false;
+			return false
 		}
 	}
 
-	return true;
+	return true
 }
 
 DrawTestTriangle :: (gRadians:float)
 {
-	dRad :: g_Pi * 2.0 / 3.0;
-	vecCenter := Vec2Create(g_dXWindow / 2.0, g_dYWindow / 2.0);
-	vecRadius := Vec2Create(300, 0);
-	vecA := VecRotate(gRadians, vecRadius);
-	vecB := VecRotate(gRadians + dRad, vecRadius);
-	vecC := VecRotate(gRadians + (2.0 * dRad), vecRadius);
-	z := 0.0;
+	dRad :: g_Pi * 2.0 / 3.0
+	vecCenter := Vec2Create(g_dXWindow / 2.0, g_dYWindow / 2.0)
+	vecRadius := Vec2Create(300, 0)
+	vecA := VecRotate(gRadians, vecRadius)
+	vecB := VecRotate(gRadians + dRad, vecRadius)
+	vecC := VecRotate(gRadians + (2.0 * dRad), vecRadius)
+	z := 0.0
 
-	vecA = VecAdd(vecA, vecCenter);
-	vecB = VecAdd(vecB, vecCenter);
-	vecC = VecAdd(vecC, vecCenter);
+	vecA = VecAdd(vecA, vecCenter)
+	vecB = VecAdd(vecB, vecCenter)
+	vecC = VecAdd(vecC, vecCenter)
 
-    glBegin(GL_TRIANGLES);
-    glColor3f(1, 0, 0);
-    glVertex3f(vecA.m_x, vecA.m_y, z);
-    glColor3f(0, 1, 0);
-    glVertex3f(vecB.m_x, vecB.m_y, z);
-    glColor3f(0, 0, 1);
-    glVertex3f(vecC.m_x, vecC.m_y, z);
-    glEnd();
+    glBegin(GL_TRIANGLES)
+    glColor3f(1, 0, 0)
+    glVertex3f(vecA.m_x, vecA.m_y, z)
+    glColor3f(0, 1, 0)
+    glVertex3f(vecB.m_x, vecB.m_y, z)
+    glColor3f(0, 0, 1)
+    glVertex3f(vecC.m_x, vecC.m_y, z)
+    glEnd()
 }
 
 main :: () -> int
 {
-	pWindow : HWND;
-	CreateWindow(g_dXWindow, g_dYWindow, "Puck", &pWindow);
+	pWindow : HWND
+	CreateWindow(g_dXWindow, g_dYWindow, "Puck", &pWindow)
 
-	pDrac := PDracStaticInit(PVAllocDefault);
+	pDrac := PDracStaticInit(PVAllocDefault)
 	if !pDrac
-		return 0;
+	{
+		return 0
+	}
 
-	SetupOrthoViewport(0, 0, g_dXWindow, g_dYWindow);
+	SetupOrthoViewport(0, 0, g_dXWindow, g_dYWindow)
 
-    dRadSpin :: 0.001;
-    gRadSpin: float;
+    dRadSpin :: 0.001
+    gRadSpin: float
 
-	fShouldClose := false;
+	fShouldClose := false
 	while fShouldClose == false
 	{
-		fShouldClose |= !FHandleEvents();
+		fShouldClose |= !FHandleEvents()
 
-		ClearWindow(0, 0.5, 1, 1);
+		ClearWindow(0, 0.5, 1, 1)
 
-		gRadSpin += dRadSpin;
-		DrawTestTriangle(gRadSpin);
+		gRadSpin += dRadSpin
+		DrawTestTriangle(gRadSpin)
 
-		DrawText(pDrac, Vec2Create(100, 100), "TheQuickBrownFoxJumpsOverTheLazyDog");
+		DrawText(pDrac, Vec2Create(100, 100), "TheQuickBrownFoxJumpsOverTheLazyDog")
 		//DrawTexturedQuad(pDrac.m_pFontman.m_aFont[0].m_pTex, 400, 400);
 
-        SwapBuffers(pWindow);
+        SwapBuffers(pWindow)
 
         // sleep_milliseconds(5);
-        UpdateWindowEvents();
+        UpdateWindowEvents()
 	}
-	return 1;
+	return 1
 }

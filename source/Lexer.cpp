@@ -323,11 +323,14 @@ int JtokNextToken(SLexer * pJlex)
 {
 	const char * pChz = pJlex->m_pChParse;
 
+
+	bool fContainsNewline = false;
 	// skip whitespace and comments
 	for (;;) 
 	{
 		while (pChz != pJlex->m_pChEof && FIsWhitespace(*pChz))
 		{
+			fContainsNewline |= (*pChz == '\n');
 			++pChz;
 		}
 
@@ -335,7 +338,10 @@ int JtokNextToken(SLexer * pJlex)
 		if (pChz != pJlex->m_pChEof && ((pChz[0] == '/') & (pChz[1] == '/')))
 		{
 			while (pChz != pJlex->m_pChEof && ((*pChz != '\r') & (*pChz != '\n')))
+			{
+				fContainsNewline |= (*pChz == '\n');
 				++pChz;
+			}
 		    continue;
 		}
 
@@ -345,7 +351,10 @@ int JtokNextToken(SLexer * pJlex)
 			const char * pChStart = pChz;
 		    pChz += 2;
 		    while (pChz != pJlex->m_pChEof && ((pChz[0] != '*') | (pChz[1] != '/')))
-		       ++pChz;
+			{
+				fContainsNewline |= (*pChz == '\n');
+				++pChz;
+			}
 		    if (pChz == pJlex->m_pChEof)
 		       return JtokSetTokinf(pJlex, JTOK_ParseError, pChStart, pChz-1);
 		    pChz += 2;
@@ -353,6 +362,7 @@ int JtokNextToken(SLexer * pJlex)
 		}
 		break;
 	}
+	pJlex->m_grflexer.AssignFlags(FLEXER_EndOfLine, fContainsNewline);
 
 	if (pChz == pJlex->m_pChEof)
 	{

@@ -207,7 +207,9 @@ LLVMValueRef LLVMDIBuilderInsertDeclare(
 LLVMValueRef LLVMDIBuilderCreateFunctionType(
 				LLVMDIBuilderRef pDib,
 				LLVMValueRef * ppLvalParameters,
-				unsigned cParameters);
+				unsigned cParameters,
+			    uint64_t cBitPointerSize,
+			    uint64_t cBitPointerAlign);
 
 LLVMValueRef LLVMDIBuilderCreateFunction(
 			    LLVMDIBuilderRef pDib,

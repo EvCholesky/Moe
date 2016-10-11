@@ -2,56 +2,56 @@
 
 CCh :: (pChz: & u8) -> int
 {
-	return strlen(pChz);
+	return strlen(pChz)
 }
 
 // simple hash function with meh avalanching, works for now. replace with MUM hash or xxHash
 HvHashFVN :: (pV: &void, cB: int) -> u32
 {
-	pB := cast (& u8) pV;
-    hv: u32 = 2166136261;
+	pB := cast (& u8) pV
+    hv: u32 = 2166136261
 
     for iterB := iterMake(0, cB)
     {
-        hv = (hv * 16777619) ^ pB[iterB.m_i];
+        hv = (hv * 16777619) ^ pB[iterB.m_i]
     }
 
-    return hv;
+    return hv
 }
 
 HvHashFVNLower :: (pV: & void, cB: int) -> u32
 {
-	pB := cast (& u8) pV;
-    hv: u32 = 2166136261;
+	pB := cast (& u8) pV
+    hv: u32 = 2166136261
 
     for iterB := iterMake(0, cB)
     {
-        hv = (hv * 16777619) ^ cast (u8) tolower(pB[iterB.m_i]);
+        hv = (hv * 16777619) ^ cast (u8) tolower(pB[iterB.m_i])
     }
 
-    return hv;
+    return hv
 }
 
 SStringHash :: struct	// tag = shash
 {
-	m_hv: u32;
-	m_pChzUnsafe: &u8;	// debug only string pointer
+	m_hv: u32
+	m_pChzUnsafe: &u8	// debug only string pointer
 }
 
 ShashCreate :: (pChz: &u8, cCh: int) -> SStringHash
 {
 	if (cCh <= 0)
 	{
-		cCh = CCh(pChz);	
+		cCh = CCh(pChz)
 	}
-	shash: SStringHash = ---;
-	shash.m_hv = HvHashFVN(pChz, cCh);
-	shash.m_pChzUnsafe = pChz;
+	shash: SStringHash = ---
+	shash.m_hv = HvHashFVN(pChz, cCh)
+	shash.m_pChzUnsafe = pChz
 
-	return shash;
+	return shash
 }
 
 FAreEqual :: (shashLhs: SStringHash, shashRhs: SStringHash) -> bool
 {
-	return shashLhs.m_hv == shashRhs.m_hv;	
+	return shashLhs.m_hv == shashRhs.m_hv
 }
