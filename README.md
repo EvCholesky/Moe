@@ -20,6 +20,7 @@ To build the compiler and debug compiled source you will need to get the followi
   - The base compiler requires LLVM 3.9
   - Debugging with lldb requires Python 3.5, gnuWin32, swig and ninja 
   - Debugging with Visual Studio has been tested with MSVC 2016 
+  - puck.moe has a dependency on GLFW 3.1.2
 
 # Syntax
 #### this section describes the intended syntax once the current set of changes is complete

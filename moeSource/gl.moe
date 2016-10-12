@@ -1,7 +1,7 @@
 #foreign_library "GL"
 #foreign_library "opengl32"
 #foreign_library "legacy_stdio_definitions"
-#foreign_library "..\external\glfw\lib\win32\glfw3"
+#foreign_library "glfw3"
 #foreign_library "user32"
 #foreign_library "gdi32"
 #foreign_library "shell32"

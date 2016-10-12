@@ -188,6 +188,7 @@ int main(int cpChzArg, const char * apChzArg[])
 					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
 					"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
 					"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
+					"c:/code/moe/external/glfw/lib/x64"
 				};
 
 				static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo /NODEFAULTLIB:MSVCRT.lib /NODEFAULTLIB:LIBCMTD.lib";
@@ -203,6 +204,7 @@ int main(int cpChzArg, const char * apChzArg[])
 					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86",
 					"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib",
 					"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x86",
+					"c:/code/moe/external/glfw/lib/win32"
 				};
 				static const char * s_pChzOptions = "/subsystem:console /nologo /NODEFAULTLIB:MSVCRT.lib ";
 			#endif
