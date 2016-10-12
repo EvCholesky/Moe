@@ -327,7 +327,7 @@ public:
 	CSTNode *			PStnodChildSafe(int iStnod)
 							{ return ((iStnod >= 0) & (iStnod < (int)m_arypStnodChild.C())) ? m_arypStnodChild[iStnod] : nullptr; }
 
-	JTOK					m_jtok;
+	TOK					m_tok;
 	PARK					m_park;
 	STREES					m_strees;
 	GRFSTNOD				m_grfstnod;
@@ -487,7 +487,7 @@ public:
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
 	STypeInfoPointer *		PTinptrAllocReference(STypeInfo * pTinPointedTo);
 
-	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pJlex, STypeInfo * pTin);
+	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
 
@@ -537,5 +537,5 @@ CSymbolTable *	PSymtabPop(CParseContext * pParctx);
 CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
 
-void ParseGlobalScope(CWorkspace * pWork, SLexer * pJlex, bool fAllowIllegalEntries = false);
+void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntries = false);
 

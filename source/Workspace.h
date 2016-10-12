@@ -176,8 +176,8 @@ public:
 };
 
 void BeginWorkspace(CWorkspace * pWork);
-void BeginParse(CWorkspace * pWork, SLexer * pJlex, const char * pCozIn, const char * pCozFilename = nullptr);
-void EndParse(CWorkspace * pWork, SLexer * pJlex);
+void BeginParse(CWorkspace * pWork, SLexer * pLex, const char * pCozIn, const char * pCozFilename = nullptr);
+void EndParse(CWorkspace * pWork, SLexer * pLex);
 void EndWorkspace(CWorkspace * pWork);
 
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint);

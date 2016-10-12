@@ -18,49 +18,49 @@
 #include "EwcTypes.h"
 #include "EwcString.h"
 
-enum JTOK
+enum TOK
 {
 	// don't define single char tokens (they are just ascii codepoints)
-	JTOK_Eof = 256,
-	JTOK_ParseError,
-	JTOK_Literal,
-	JTOK_Identifier,
-	JTOK_ReservedWord,
-	JTOK_EqualEqual,
-	JTOK_NotEqual,
-	JTOK_LessEqual,
-	JTOK_GreaterEqual,
-	JTOK_AndAnd,
-	JTOK_OrOr,
-	JTOK_AndEqual,
-	JTOK_OrEqual,
-	JTOK_XorEqual,
-	JTOK_TildeEqual,
-	JTOK_ShiftLeft,
-	JTOK_ShiftRight,
-	JTOK_PlusPlus,
-	JTOK_MinusMinus,
-	JTOK_TripleMinus,
-	JTOK_PlusEqual,
-	JTOK_MinusEqual,
-	JTOK_MulEqual,
-	JTOK_DivEqual,
-	JTOK_ModEqual,
-	JTOK_Arrow,
-	JTOK_ColonColon,
-	JTOK_ColonEqual,
-	JTOK_PeriodPeriod,
+	TOK_Eof = 256,
+	TOK_ParseError,
+	TOK_Literal,
+	TOK_Identifier,
+	TOK_ReservedWord,
+	TOK_EqualEqual,
+	TOK_NotEqual,
+	TOK_LessEqual,
+	TOK_GreaterEqual,
+	TOK_AndAnd,
+	TOK_OrOr,
+	TOK_AndEqual,
+	TOK_OrEqual,
+	TOK_XorEqual,
+	TOK_TildeEqual,
+	TOK_ShiftLeft,
+	TOK_ShiftRight,
+	TOK_PlusPlus,
+	TOK_MinusMinus,
+	TOK_TripleMinus,
+	TOK_PlusEqual,
+	TOK_MinusEqual,
+	TOK_MulEqual,
+	TOK_DivEqual,
+	TOK_ModEqual,
+	TOK_Arrow,
+	TOK_ColonColon,
+	TOK_ColonEqual,
+	TOK_PeriodPeriod,
 
-	JTOK_Max,
-	JTOK_Min = 0,
-	JTOK_Nil = -1,
+	TOK_Max,
+	TOK_Min = 0,
+	TOK_Nil = -1,
 
 	// token alias (for easy rebinding)
-	JTOK_Reference = '&',
-	JTOK_DoubleReference = JTOK_AndAnd,
-	JTOK_Dereference = '@',
+	TOK_Reference = '&',
+	TOK_DoubleReference = TOK_AndAnd,
+	TOK_Dereference = '@',
 
-	JTOK_SimpleMax = JTOK_Eof,
+	TOK_SimpleMax = TOK_Eof,
 };
 
 #define RESERVED_WORD_LIST \
@@ -163,7 +163,7 @@ enum FLEXER
 };
 EWC_DEFINE_GRF(GRFLEXER, FLEXER, u8);
 
-struct SLexer // tag = jlex
+struct SLexer // tag = lex
 {
    // lexer variables
    const char *		m_pChInput;
@@ -178,7 +178,7 @@ struct SLexer // tag = jlex
    const char *		m_pChEnd;
 
    // current token info
-   u32				m_jtok;		// lexer->token is the token ID, which is unicode code point for a single-char token, 
+   u32				m_tok;		// lexer->token is the token ID, which is unicode code point for a single-char token, 
 								// < 0 for an error, > 256 for multichar or eof
    GRFLEXER			m_grflexer;
    RWORD			m_rword;
@@ -201,9 +201,9 @@ struct SLexerLocation // tag = lexloc
 					,m_dB(dB)
 					{ ; }
 
-	explicit		SLexerLocation(SLexer * pJlex)
-					:m_strFilename(pJlex->m_pCozFilename)
-					,m_dB((s32)(pJlex->m_pChBegin - pJlex->m_pChInput))
+	explicit		SLexerLocation(SLexer * pLex)
+					:m_strFilename(pLex->m_pCozFilename)
+					,m_dB((s32)(pLex->m_pChBegin - pLex->m_pChInput))
 						{ ; }
 
 	bool			operator<=(const SLexerLocation & lexlocRhs) const
@@ -221,12 +221,12 @@ struct SLexerLocation // tag = lexloc
 	s32				m_dB;
 };
 
-void InitLexer(SLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage);
-bool FConsumeToken(SLexer * pJlex, JTOK jtok);
-int JtokNextToken(SLexer * pJlex);
-void SplitToken(SLexer * pJlex, JTOK jtokSplit);
-RWORD RwordLookup(SLexer * pJlex);
+void InitLexer(SLexer * pLex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage);
+bool FConsumeToken(SLexer * pLex, TOK tok);
+int TokNext(SLexer * pLex);
+void SplitToken(SLexer * pLex, TOK tokSplit);
+RWORD RwordLookup(SLexer * pLex);
 
-const char * PCozFromJtok(JTOK jtok);
+const char * PCozFromTok(TOK tok);
 const char * PCozFromRword(RWORD rword);
-const char * PCozCurrentToken(SLexer * pJlex);
+const char * PCozCurrentToken(SLexer * pLex);

@@ -113,7 +113,7 @@ struct STypeCheckWorkspace // tag = tcwork
 };
 
 
-extern bool FDoesOperatorExist(JTOK jtok, const SOpTypes * pOptype);
+extern bool FDoesOperatorExist(TOK tok, const SOpTypes * pOptype);
 bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst);
 void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
 STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit);
@@ -528,7 +528,7 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCozFormat, ...)
 {
 	// BB - need to do file/line lookup from pStnod
-	//printf("%s(%d) Error:", pJlex->m_pChzFilename, NLine(pJlex));
+	//printf("%s(%d) Error:", pLex->m_pChzFilename, NLine(pLex));
 	
 	const SLexerLocation & lexloc = pStnod->m_lexloc;
 
@@ -792,17 +792,17 @@ inline bool FComputeUnaryOpOnLiteral(
 
 	int n = +(-3);
 
-	JTOK jtokOperator = pStnodOperator->m_jtok;
+	TOK tokOperator = pStnodOperator->m_tok;
 	bool fIsBoolOp = FDoesOperatorReturnBool(pStnodOperator->m_park);
 
 	if (littyOperand.m_litk == LITK_Float)
 	{
 		bool f;
 		F64 g = GLiteralCast(pStvalOperand);
-		switch (jtokOperator)
+		switch (tokOperator)
 		{
-		case JTOK('-'):         g = -g; break;
-		case JTOK('!'):         f = !g; break;
+		case TOK('-'):         g = -g; break;
+		case TOK('!'):         f = !g; break;
 		default: return false;
 		}
 
@@ -836,13 +836,13 @@ inline bool FComputeUnaryOpOnLiteral(
 		SBigInt bintOperand(BintFromStval(pStvalOperand));
 
 		bool f;
-		switch (jtokOperator)
+		switch (tokOperator)
 		{
-		case JTOK('-'):         bintOperand.m_fIsNegative = !bintOperand.m_fIsNegative; break;
+		case TOK('-'):         bintOperand.m_fIsNegative = !bintOperand.m_fIsNegative; break;
 		// BB - We're not really handling unsized literals correctly here - we'll just promote to a 64 bit type
-		case JTOK('~'):       bintOperand = BintBitwiseNot(bintOperand); break;
+		case TOK('~'):       bintOperand = BintBitwiseNot(bintOperand); break;
 
-		case JTOK('!'):         f = bintOperand.m_nAbs == 0; break;
+		case TOK('!'):         f = bintOperand.m_nAbs == 0; break;
 		default: return false;
 		}
 
@@ -913,7 +913,7 @@ inline bool FComputeBinaryOpOnLiterals(
 	if ((fLhsIsNumber == false) | (fRhsIsNumber == false))
 		return false;
 
-	JTOK jtokOperator = pStnodOperator->m_jtok;
+	TOK tokOperator = pStnodOperator->m_tok;
 	bool fIsBoolOp = FDoesOperatorReturnBool(pStnodOperator->m_park);
 
 	// NOTE: the *RIGHT* thing to do here is to use arbitrary precision floats, otherwise we'll lose some
@@ -926,18 +926,18 @@ inline bool FComputeBinaryOpOnLiterals(
 		bool f;
 		F64 gLhs = GLiteralCast(pStvalLhs);
 		F64 gRhs = GLiteralCast(pStvalRhs);
-		switch (jtokOperator)
+		switch (tokOperator)
 		{
-		case JTOK('+'):         g = gLhs + gRhs; break;
-		case JTOK('-'):         g = gLhs - gRhs; break;
-		case JTOK('*'):         g = gLhs * gRhs; break;
-		case JTOK('/'):         g = gLhs / gRhs; break;
-		case JTOK('>'):         f = gLhs > gRhs; break;
-		case JTOK('<'):         f = gLhs < gRhs; break;
-		case JTOK_EqualEqual:   f = gLhs == gRhs; break;
-		case JTOK_NotEqual:     f = gLhs != gRhs; break;
-		case JTOK_LessEqual:    f = gLhs <= gRhs; break;
-		case JTOK_GreaterEqual:	f = gLhs >= gRhs; break;
+		case TOK('+'):         g = gLhs + gRhs; break;
+		case TOK('-'):         g = gLhs - gRhs; break;
+		case TOK('*'):         g = gLhs * gRhs; break;
+		case TOK('/'):         g = gLhs / gRhs; break;
+		case TOK('>'):         f = gLhs > gRhs; break;
+		case TOK('<'):         f = gLhs < gRhs; break;
+		case TOK_EqualEqual:   f = gLhs == gRhs; break;
+		case TOK_NotEqual:     f = gLhs != gRhs; break;
+		case TOK_LessEqual:    f = gLhs <= gRhs; break;
+		case TOK_GreaterEqual:	f = gLhs >= gRhs; break;
 		default: return false;
 		}
 
@@ -974,24 +974,24 @@ inline bool FComputeBinaryOpOnLiterals(
 
 		SBigInt bintOut;
 		bool f;
-		switch (jtokOperator)
+		switch (tokOperator)
 		{
-		case JTOK('+'):         bintOut = BintAdd(bintLhs, bintRhs); break;
-		case JTOK('-'):         bintOut = BintSub(bintLhs, bintRhs); break;
-		case JTOK('*'):         bintOut = BintMul(bintLhs, bintRhs); break;
-		case JTOK('/'):         bintOut = BintDiv(bintLhs, bintRhs); break;
-		case JTOK('%'):         bintOut = BintRemainder(bintLhs, bintRhs); break;
-		case JTOK('|'):         bintOut = BintBitwiseOr(bintLhs, bintRhs); break;
-		case JTOK('&'):         bintOut = BintBitwiseAnd(bintLhs, bintRhs); break;
-		case JTOK('^'):         bintOut = BintBitwiseXor(bintLhs, bintRhs); break;
-		case JTOK_ShiftRight:	bintOut = BintShiftRight(bintLhs, bintRhs); break;
-		case JTOK_ShiftLeft:	bintOut = BintShiftLeft(bintLhs, bintRhs); break;
-		case JTOK('>'):         f = bintLhs > bintRhs; break;
-		case JTOK('<'):         f = bintLhs < bintRhs; break;
-		case JTOK_EqualEqual:   f = bintLhs == bintRhs; break;
-		case JTOK_NotEqual:     f = bintLhs != bintRhs; break;
-		case JTOK_LessEqual:    f = bintLhs <= bintRhs; break;
-		case JTOK_GreaterEqual:	f = bintLhs >= bintRhs; break;
+		case TOK('+'):         bintOut = BintAdd(bintLhs, bintRhs); break;
+		case TOK('-'):         bintOut = BintSub(bintLhs, bintRhs); break;
+		case TOK('*'):         bintOut = BintMul(bintLhs, bintRhs); break;
+		case TOK('/'):         bintOut = BintDiv(bintLhs, bintRhs); break;
+		case TOK('%'):         bintOut = BintRemainder(bintLhs, bintRhs); break;
+		case TOK('|'):         bintOut = BintBitwiseOr(bintLhs, bintRhs); break;
+		case TOK('&'):         bintOut = BintBitwiseAnd(bintLhs, bintRhs); break;
+		case TOK('^'):         bintOut = BintBitwiseXor(bintLhs, bintRhs); break;
+		case TOK_ShiftRight:	bintOut = BintShiftRight(bintLhs, bintRhs); break;
+		case TOK_ShiftLeft:	bintOut = BintShiftLeft(bintLhs, bintRhs); break;
+		case TOK('>'):         f = bintLhs > bintRhs; break;
+		case TOK('<'):         f = bintLhs < bintRhs; break;
+		case TOK_EqualEqual:   f = bintLhs == bintRhs; break;
+		case TOK_NotEqual:     f = bintLhs != bintRhs; break;
+		case TOK_LessEqual:    f = bintLhs <= bintRhs; break;
+		case TOK_GreaterEqual:	f = bintLhs >= bintRhs; break;
 		default: return false;
 		}
 
@@ -1614,7 +1614,7 @@ inline STypeInfo * PTinResult(PARK park, CSymbolTable * pSymtab, STypeInfo * pTi
 SOpTypes OptypeFromPark(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
-	JTOK jtok,
+	TOK tok,
 	PARK parkOperator,
 	STypeInfo * pTinLhs,
 	STypeInfo * pTinRhs)
@@ -1660,7 +1660,7 @@ SOpTypes OptypeFromPark(
 
 			if (parkOperator == PARK_AssignmentOp)
 			{
-				if (jtok == JTOK('='))
+				if (tok == TOK('='))
 				{
 					if (pTinLhs->m_tink == TINK_Array)
 						return SOpTypes();
@@ -1681,7 +1681,7 @@ SOpTypes OptypeFromPark(
 
 			if (parkOperator == PARK_AdditiveOp)
 			{
-				if (jtok == JTOK('-') && fAreRefTypesSame)
+				if (tok == TOK('-') && fAreRefTypesSame)
 				{
 					return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin("sSize"));
 				}
@@ -1704,7 +1704,7 @@ SOpTypes OptypeFromPark(
 		}
 		
 		PARK parkOperatorAdj = parkOperator;
-		if (parkOperator == PARK_AssignmentOp && ((jtok == JTOK_PlusEqual) | (jtok == JTOK_MinusEqual)))
+		if (parkOperator == PARK_AssignmentOp && ((tok == TOK_PlusEqual) | (tok == TOK_MinusEqual)))
 		{
 			parkOperatorAdj = PARK_AdditiveOp;
 		}
@@ -2122,7 +2122,7 @@ STypeInfo * PTinFromTypeSpecification(
 				}
 				else
 				{
-					pTinary->m_aryk = (pStnodIt->m_jtok == JTOK_PeriodPeriod) ? ARYK_Dynamic : ARYK_Reference;
+					pTinary->m_aryk = (pStnodIt->m_tok == TOK_PeriodPeriod) ? ARYK_Dynamic : ARYK_Reference;
 				}
 
 				if (pTinary->m_aryk == ARYK_Dynamic)
@@ -3967,15 +3967,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 														pTinLhs);
 
 						CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-						SOpTypes optype = OptypeFromPark(pTcwork, pSymtab, pStnod->m_jtok, pStnod->m_park, pTinLhs, pTinRhsPromoted);
+						SOpTypes optype = OptypeFromPark(pTcwork, pSymtab, pStnod->m_tok, pStnod->m_park, pTinLhs, pTinRhsPromoted);
 
-						if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_jtok, &optype))
+						if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_tok, &optype))
 						{
 							CString strLhs = StrFromTypeInfo(pTinLhs);
 							CString strRhs = StrFromTypeInfo(pTinRhsPromoted);
 							EmitError( pTcwork, pStnod,
 								"operator '%s' is not defined for %s and %s",
-								PCozFromJtok(pStnod->m_jtok),
+								PCozFromTok(pStnod->m_tok),
 								strLhs.PCoz(),
 								strRhs.PCoz());
 							return TCRET_StoppingError;
@@ -4514,7 +4514,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											pTcwork, 
 											pStnod, 
 											"invalid operation %s for %s literal and %s literal", 
-											PCozFromJtok(pStnod->m_jtok),
+											PCozFromTok(pStnod->m_tok),
 											PChzFromLitk(((STypeInfoLiteral *)pTinLhs)->m_litty.m_litk),
 											PChzFromLitk(((STypeInfoLiteral *)pTinRhs)->m_litty.m_litk));
 										return TCRET_StoppingError;
@@ -4527,9 +4527,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								STypeInfo * pTinUpcastLhs = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodLhs, pTinRhs);
 								STypeInfo * pTinUpcastRhs = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodRhs, pTinLhs);
 
-								SOpTypes optype = OptypeFromPark(pTcwork, pSymtab, pStnod->m_jtok, park, pTinUpcastLhs, pTinUpcastRhs);
+								SOpTypes optype = OptypeFromPark(pTcwork, pSymtab, pStnod->m_tok, park, pTinUpcastLhs, pTinUpcastRhs);
 
-								if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_jtok, &optype))
+								if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_tok, &optype))
 								{
 									CString strLhs = StrFromTypeInfo(pTinLhs);
 									CString strRhs = StrFromTypeInfo(pTinRhs);
@@ -4537,7 +4537,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										pTcwork,
 										pStnod,
 										"%s operator not defined for %s and %s",
-										PCozFromJtok(pStnod->m_jtok),
+										PCozFromTok(pStnod->m_tok),
 										strLhs.PCoz(),
 										strRhs.PCoz());
 									return TCRET_StoppingError;
@@ -4609,7 +4609,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											pTcwork, 
 											pStnod, 
 											"invalid unary operand %s for %s literal", 
-											PCozFromJtok(pStnod->m_jtok),
+											PCozFromTok(pStnod->m_tok),
 											PChzFromLitk(((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk));
 										return TCRET_StoppingError;
 									}
@@ -4618,10 +4618,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							else
 							{
 
-								JTOK jtok = pStnod->m_jtok;
-								switch (jtok)
+								TOK tok = pStnod->m_tok;
+								switch (tok)
 								{
-								case JTOK_Dereference:
+								case TOK_Dereference:
 									{
 										if (pTinOperand->m_tink != TINK_Pointer)
 										{
@@ -4635,7 +4635,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											pStnod->m_pTin = pTinptr->m_pTinPointedTo;
 										}
 									}break;
-								case JTOK_Reference:
+								case TOK_Reference:
 									{
 										// NOTE: TINK cannot be a literal - handled above...
 										// NOTE: Can take a reference if we have a symbol that is not an enum or procedure
@@ -4682,7 +4682,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										pStnod->m_pTin = pSymtab->PTinptrAllocReference(pTinOperand);
 									}break;
 
-								case JTOK('!'):
+								case TOK('!'):
 									{
 										STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinBuiltin("bool");
 										if (!EWC_FVERIFY(pTinBool, "missing bool type"))
@@ -4697,11 +4697,11 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										pStnod->m_pOptype->m_pTinResult = pTinBool;
 									}break;
 
-								case JTOK('~'):
-								case JTOK_PlusPlus:
-								case JTOK_MinusMinus:
-								case JTOK('+'):
-								case JTOK('-'):
+								case TOK('~'):
+								case TOK_PlusPlus:
+								case TOK_MinusMinus:
+								case TOK('+'):
+								case TOK('-'):
 									{
 										TINK tinkOperand = pTinOperand->m_tink;
 										bool fIsInteger = tinkOperand == TINK_Integer;
@@ -4715,11 +4715,11 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											fIsEnum |= litk == LITK_Enum;
 										}
 
-										bool fIsValidPtrOp = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) &
+										bool fIsValidPtrOp = ((tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) &
 											(tinkOperand == TINK_Pointer);
-										bool fIsValidFloatOp = ((jtok == JTOK('+')) | (jtok == JTOK('-')) | (jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & 
+										bool fIsValidFloatOp = ((tok == TOK('+')) | (tok == TOK('-')) | (tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) & 
 																fIsFloat;
-										bool fIsValidEnumOp = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) & fIsEnum;
+										bool fIsValidEnumOp = ((tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) & fIsEnum;
 										bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp | fIsValidEnumOp;
 
 										// BB - we should be checking for negating a signed literal here, but we can't really
@@ -4734,7 +4734,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										}
 										else
 										{
-											if (jtok == JTOK('-') && tinkOperand == TINK_Integer)
+											if (tok == TOK('-') && tinkOperand == TINK_Integer)
 											{
 												STypeInfoInteger * pTinint = (STypeInfoInteger *)pTinOperand;
 												if (!pTinint->m_fIsSigned)
@@ -5106,17 +5106,17 @@ void AssertTestTypeCheck(
 	const char * pCozIn,
 	const char * pCozExpected)
 {
-	SLexer jlex;
+	SLexer lex;
 	BeginWorkspace(pWork);
-	BeginParse(pWork, &jlex, pCozIn);
+	BeginParse(pWork, &lex, pCozIn);
 
 	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
 	pWork->m_pErrman->Clear();
 
-	ParseGlobalScope(pWork, &jlex, true);
+	ParseGlobalScope(pWork, &lex, true);
 	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
-	EndParse(pWork, &jlex);
+	EndParse(pWork, &lex);
 
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 

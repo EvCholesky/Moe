@@ -2437,15 +2437,15 @@ void GeneratePredicate(
 		auto pStnodChildLhs = pStnodPred->PStnodChild(0);
 		auto pStnodChildRhs = pStnodPred->PStnodChild(1);
 
-		switch (pStnodOp->m_jtok)
+		switch (pStnodOp->m_tok)
 		{
-			case JTOK_AndAnd:
+			case TOK_AndAnd:
 				{
 					GeneratePredicate(pWork, pBuild, pStnodChildLhs, pBlockRhs, pBlockPost, pTinBool);
 					pBuild->ActivateBlock(pBlockRhs);
 					GeneratePredicate(pWork, pBuild, pStnodChildRhs, pBlockTrue, pBlockPost, pTinBool);
 				} break;
-			case JTOK_OrOr:
+			case TOK_OrOr:
 				{
 					GeneratePredicate(pWork, pBuild, pStnodChildLhs, pBlockTrue, pBlockRhs, pTinBool);
 					pBuild->ActivateBlock(pBlockRhs);
@@ -2536,7 +2536,7 @@ void CreateOpinfo(GCMPPRED gcmppred, const char * pChzName, SOperatorInfo * pOpi
 	pOpinfo->m_pChzName = pChzName;
 }
 
-static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorInfo * pOpinfo)
+static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInfo * pOpinfo)
 {
 	STypeInfo * apTin[2] = {pOptype->m_pTinLhs, pOptype->m_pTinRhs};
 	bool aFIsSigned[2];
@@ -2582,7 +2582,7 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 		if (tinkMin == TINK_Pointer && tinkMax == TINK_Array)
 		{
 			// BB- check that it's a pointer to the array type.
-			switch(jtok)
+			switch(tok)
 			{
 			case '=':
 				{
@@ -2597,7 +2597,7 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 		}
 		else if (tinkMin == TINK_Integer && tinkMax == TINK_Array)
 		{
-			switch(jtok)
+			switch(tok)
 			{
 			case '+':				
 				{
@@ -2612,7 +2612,7 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 		}
 		else if (tinkMin == TINK_Integer && tinkMax == TINK_Pointer)
 		{
-			switch(jtok)
+			switch(tok)
 			{
 			case '+':				
 				{
@@ -2623,11 +2623,11 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
 					pOpinfo->m_fNegateFirst = true;
 				} break;
-			case JTOK_PlusEqual:
+			case TOK_PlusEqual:
 				{
 					CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo);
 				} break;
-			case JTOK_MinusEqual:
+			case TOK_MinusEqual:
 				{
 					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
 					pOpinfo->m_fNegateFirst = true;
@@ -2645,48 +2645,48 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 	switch (tink)
 	{
 	case TINK_Bool:
-		switch (jtok)
+		switch (tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-			case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
-			case JTOK_AndEqual:
+			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case TOK_AndEqual:
 			case '&':				CreateOpinfo(IROP_And, "nAndTmp", pOpinfo); break;
-			case JTOK_OrEqual:
+			case TOK_OrEqual:
 			case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
-			case JTOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
-			case JTOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
+			case TOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
+			case TOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 		} break;
 	case TINK_Integer:
-		switch (jtok)
+		switch (tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-			case JTOK_PlusEqual:
+			case TOK_PlusEqual:
 			case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
-			case JTOK_MinusEqual:
+			case TOK_MinusEqual:
 			case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
-			case JTOK_MulEqual:
+			case TOK_MulEqual:
 			case '*': 				CreateOpinfo(IROP_NMul, "nMulTmp", pOpinfo); break;
-			case JTOK_DivEqual:
+			case TOK_DivEqual:
 			case '/':				CreateOpinfo((fIsSigned) ? IROP_SDiv : IROP_UDiv, "nDivTmp", pOpinfo); break;
-			case JTOK_ModEqual:
+			case TOK_ModEqual:
 			case '%':				CreateOpinfo((fIsSigned) ? IROP_SRem : IROP_URem, "nRemTmp", pOpinfo); break;
-			case JTOK_AndEqual:
+			case TOK_AndEqual:
 			case '&':				CreateOpinfo(IROP_And, "rAndTmp", pOpinfo); break;
-			case JTOK_OrEqual:
+			case TOK_OrEqual:
 			case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
-			case JTOK_XorEqual:
+			case TOK_XorEqual:
 			case '^':				CreateOpinfo(IROP_Xor, "nXorTmp", pOpinfo); break;
-			case JTOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
+			case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 									CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
-			case JTOK_ShiftLeft:	CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
-			case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-			case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
-			case JTOK_LessEqual:
+			case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case TOK_LessEqual:
 				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSLE, "CmpSLE", pOpinfo);
 				else			CreateOpinfo(NCMPPRED_NCmpULE, "NCmpULE", pOpinfo);
 				break;
-			case JTOK_GreaterEqual:
+			case TOK_GreaterEqual:
 				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSGE, "NCmpSGE", pOpinfo);
 				else			CreateOpinfo(NCMPPRED_NCmpUGE, "NCmpUGE", pOpinfo);
 				break;
@@ -2700,38 +2700,38 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 				break;
 		} break;
 	case TINK_Float:
-		switch (jtok)
+		switch (tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-			case JTOK_PlusEqual:
+			case TOK_PlusEqual:
 			case '+': 				CreateOpinfo(IROP_GAdd, "gAddTmp", pOpinfo); break;
-			case JTOK_MinusEqual:
+			case TOK_MinusEqual:
 			case '-': 				CreateOpinfo(IROP_GSub, "SubTmp", pOpinfo); break;
-			case JTOK_MulEqual:
+			case TOK_MulEqual:
 			case '*': 				CreateOpinfo(IROP_GMul, "gMulTmp", pOpinfo); break;
-			case JTOK_DivEqual:
+			case TOK_DivEqual:
 			case '/': 				CreateOpinfo(IROP_GDiv, "gDivTmp", pOpinfo); break;
-			case JTOK_ModEqual:
+			case TOK_ModEqual:
 			case '%': 				CreateOpinfo(IROP_GRem, "gRemTmp", pOpinfo); break;
-			case JTOK_EqualEqual:	CreateOpinfo(GCMPPRED_GCmpOEQ, "NCmpOEQ", pOpinfo); break;
-			case JTOK_NotEqual:		CreateOpinfo(GCMPPRED_GCmpONE, "NCmpONE", pOpinfo); break;
-			case JTOK_LessEqual:	CreateOpinfo(GCMPPRED_GCmpOLE, "NCmpOLE", pOpinfo); break;
-			case JTOK_GreaterEqual:	CreateOpinfo(GCMPPRED_GCmpOGE, "NCmpOGE", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(GCMPPRED_GCmpOEQ, "NCmpOEQ", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(GCMPPRED_GCmpONE, "NCmpONE", pOpinfo); break;
+			case TOK_LessEqual:		CreateOpinfo(GCMPPRED_GCmpOLE, "NCmpOLE", pOpinfo); break;
+			case TOK_GreaterEqual:	CreateOpinfo(GCMPPRED_GCmpOGE, "NCmpOGE", pOpinfo); break;
 			case '<': 				CreateOpinfo(GCMPPRED_GCmpOLT, "NCmpOLT", pOpinfo); break;
 			case '>': 				CreateOpinfo(GCMPPRED_GCmpOGT, "NCmpOGT", pOpinfo); break;
 		} break;
 	case TINK_Procedure:
 		{
-			switch (jtok)
+			switch (tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 			}
 		} break;
 	case TINK_Struct:
 		{
-			switch (jtok)
+			switch (tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 			}
@@ -2739,17 +2739,17 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 	case TINK_Pointer:
 	case TINK_Array:
 		{
-			switch (jtok)
+			switch (tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 				case '-': 			
 					{
 						CreateOpinfo(IROP_PtrDiff, "ptrDif", pOpinfo);
 					} break;
-				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
-/*				case JTOK_PlusEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case JTOK_MinusEqual:	CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+/*				case TOK_PlusEqual:		CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case TOK_MinusEqual:	CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 				case '+=':				CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
 				case '-=': 				
 					{
@@ -2764,11 +2764,11 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 			// BB - why is the RHS still a literal here?
 			//EWC_ASSERT(FTypesAreSame(pTinLhs, pTinRhs), "enum comparison type mismatch");
 
-			switch (jtok)
+			switch (tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case JTOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case JTOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 				case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
 				case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
 			}
@@ -2778,23 +2778,23 @@ static void GenerateOperatorInfo(JTOK jtok, const SOpTypes * pOptype, SOperatorI
 	}
 }
 
-bool FDoesOperatorExist(JTOK jtok, const SOpTypes * pOptype)
+bool FDoesOperatorExist(TOK tok, const SOpTypes * pOptype)
 {
 	SOperatorInfo opinfo;
-	GenerateOperatorInfo(jtok, pOptype, &opinfo);
+	GenerateOperatorInfo(tok, pOptype, &opinfo);
 
 	return opinfo.m_irop != IROP_Nil;
 }
 
 static inline CIRInstruction * PInstGenerateOperator(
 	CIRBuilder * pBuild,
-	JTOK jtok,
+	TOK tok,
 	const SOpTypes * pOptype,
 	CIRValue * pValLhs,
 	CIRValue * pValRhs)
 {
 	SOperatorInfo opinfo;
-	GenerateOperatorInfo(jtok, pOptype, &opinfo);
+	GenerateOperatorInfo(tok, pOptype, &opinfo);
 	if (!EWC_FVERIFY(opinfo.m_irop != IROP_Store, "bad optype"))
 	{
 		// IROP_Store is just used to signal that a store operation exists, but codegen should call CreateStore rather
@@ -2848,7 +2848,7 @@ static inline CIRInstruction * PInstGenerateOperator(
 	}
 
 	// Note: This should be caught by the type checker! This function should match FDoesOperatorExist
-	EWC_ASSERT(pInstOp, "unexpected op in PInstGenerateOperator '%'", PCozFromJtok(jtok));
+	EWC_ASSERT(pInstOp, "unexpected op in PInstGenerateOperator '%'", PCozFromTok(tok));
 	return pInstOp;
 }
 
@@ -3639,7 +3639,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Reference);
-			if (pStnod->m_jtok == JTOK('='))
+			if (pStnod->m_tok == TOK('='))
 			{
 				auto pInstOp = PInstGenerateAssignment(pWork, pBuild, pStnodLhs->m_pTin, pValLhs, pStnodRhs);
 				return pInstOp;
@@ -3654,7 +3654,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			EWC_ASSERT(pValRhsCast, "bad cast");
 
 			SOpTypes optype(pStnodLhs->m_pTin, pStnodRhs->m_pTin, pStnod->m_pTin);
-			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_jtok, &optype, pValLhsLoad, pValRhsCast);
+			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_tok, &optype, pValLhsLoad, pValRhsCast);
 			return pBuild->PInstCreateStore(pValLhs, pInstOp);
 		}
 	case PARK_AdditiveOp:
@@ -3686,7 +3686,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					pValPtr = pValRhs;
 					pValIndex = pValLhs;
 				}
-				if (pStnod->m_jtok == JTOK('-'))
+				if (pStnod->m_tok == TOK('-'))
 				{
 					pValIndex = pBuild->PInstCreate(IROP_NNeg, pValIndex, "NNeg");
 				}
@@ -3730,9 +3730,9 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return nullptr;
 			}
 
-			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_jtok, pOptype, pValLhsCast, pValRhsCast);
+			auto pInstOp = PInstGenerateOperator(pBuild, pStnod->m_tok, pOptype, pValLhsCast, pValRhsCast);
 
-			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PCozFromJtok(pStnod->m_jtok));
+			EWC_ASSERT(pInstOp, "%s operator unsupported in codegen", PCozFromTok(pStnod->m_tok));
 			return pInstOp;
 		}
 	case PARK_PostfixUnaryOp:
@@ -3740,13 +3740,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		{
 			CSTNode * pStnodOperand = pStnod->PStnodChild(0);
 
-			if (pStnod->m_jtok == JTOK_Reference)
+			if (pStnod->m_tok == TOK_Reference)
 			{
 				return PValGenerate(pWork, pBuild, pStnodOperand, VALGENK_Reference);
 			}
 
-			JTOK jtok = pStnod->m_jtok;
-			VALGENK valgenkUnary = ((jtok == JTOK_PlusPlus) | (jtok == JTOK_MinusMinus)) ? VALGENK_Reference : VALGENK_Instance;
+			TOK tok = pStnod->m_tok;
+			VALGENK valgenkUnary = ((tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) ? VALGENK_Reference : VALGENK_Instance;
 			CIRValue * pValOperand = PValGenerate(pWork, pBuild, pStnodOperand, valgenkUnary);
 			if (!EWC_FVERIFY(pValOperand != nullptr, "null operand"))
 				return nullptr;
@@ -3794,7 +3794,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				fIsSigned = ((STypeInfoInteger *)pTinOutput)->m_fIsSigned;
 			}
 
-			switch (pStnod->m_jtok)
+			switch (pStnod->m_tok)
 			{
 			case '!':				
 				{
@@ -3821,7 +3821,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					default: EWC_ASSERT(false, "unexpected type '%s' for negate operator", PChzFromTink(tink));
 					}
 				} break;
-			case JTOK_Dereference:
+			case TOK_Dereference:
 				{
 					if (valgenk != VALGENK_Reference)
 					{
@@ -3832,8 +3832,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						pValOp = pValOperand;
 					}
 				} break;
-			case JTOK_PlusPlus:
-			case JTOK_MinusMinus:
+			case TOK_PlusPlus:
+			case TOK_MinusMinus:
 				{
 					if (!EWC_FVERIFY((pTinOutput == pTinOperand), "increment type mismatch (?)"))
 						return nullptr;
@@ -3848,7 +3848,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 							pBuild->AddManagedVal(pConst);
 							pConst->m_pLval = PLvalConstantFloat(((STypeInfoFloat *)pTinOperand)->m_cBit, 1.0);
 
-							if (pStnod->m_jtok == JTOK_PlusPlus)
+							if (pStnod->m_tok == TOK_PlusPlus)
 								pInstAdd = pBuild->PInstCreate(IROP_GAdd, pInstLoad, pConst, "gInc");
 							else
 								pInstAdd = pBuild->PInstCreate(IROP_GSub, pInstLoad, pConst, "gDec");
@@ -3862,14 +3862,14 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 							pBuild->AddManagedVal(pConst);
 							pConst->m_pLval = PLvalConstantInt(pTinint->m_cBit, fIsSigned, 1);
 
-							if (pStnod->m_jtok == JTOK_PlusPlus)
+							if (pStnod->m_tok == TOK_PlusPlus)
 								pInstAdd = pBuild->PInstCreate(IROP_NAdd, pInstLoad, pConst, "gInc");
 							else
 								pInstAdd = pBuild->PInstCreate(IROP_NSub, pInstLoad, pConst, "gDec");
 						} break;
 					case TINK_Pointer:
 						{
-							int nDelta = (pStnod->m_jtok == JTOK_PlusPlus) ? 1 : -1;
+							int nDelta = (pStnod->m_tok == TOK_PlusPlus) ? 1 : -1;
 							LLVMOpaqueValue * pLvalIndex = PLvalConstantInt(64, fIsSigned, nDelta);
 
 							auto pValLoad = pBuild->PInstCreate(IROP_Load, pValOperand, "incLoad");
@@ -3887,7 +3887,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			EWC_ASSERT(
 				pValOp != nullptr,
 				"bad operand '%s' for type '%s'",
-				PCozFromJtok(pStnod->m_jtok),
+				PCozFromTok(pStnod->m_tok),
 				PChzFromTink(tink));
 
 			EmitLocation(pWork, pBuild, pStnod->m_lexloc);
@@ -4536,7 +4536,7 @@ void ShutdownLLVM()
 
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn)
 {
-	SLexer jlex;
+	SLexer lex;
 
 	(void) pWork->PFileEnsure(pChzFilenameIn, CWorkspace::FILEK_Source);
 
@@ -4562,13 +4562,13 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		}
 
 		printf("Parsing %s\n", pFile->m_strFilename.PCoz());
-		BeginParse(pWork, &jlex, (char *)pCozFileBody);
-		jlex.m_pCozFilename = pFile->m_strFilename.PCoz();
+		BeginParse(pWork, &lex, (char *)pCozFileBody);
+		lex.m_pCozFilename = pFile->m_strFilename.PCoz();
 
-		ParseGlobalScope(pWork, &jlex, true);
+		ParseGlobalScope(pWork, &lex, true);
 		EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
-		EndParse(pWork, &jlex);
+		EndParse(pWork, &lex);
 
 	}
 
@@ -4634,20 +4634,20 @@ void AssertTestCodeGen(
 {
 	const char * s_pChzUnitTestFilename = "unit.test";
 
-	SLexer jlex;
+	SLexer lex;
 	BeginWorkspace(pWork);
 	auto pFile = pWork->PFileEnsure(s_pChzUnitTestFilename, CWorkspace::FILEK_Source);
 	pFile->m_pChzFileBody = pChzIn;
 
-	BeginParse(pWork, &jlex, pChzIn, s_pChzUnitTestFilename);
+	BeginParse(pWork, &lex, pChzIn, s_pChzUnitTestFilename);
 
 	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
 	pWork->m_pErrman->Clear();
 
-	ParseGlobalScope(pWork, &jlex, true);
+	ParseGlobalScope(pWork, &lex, true);
 	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
-	EndParse(pWork, &jlex);
+	EndParse(pWork, &lex);
 
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	{

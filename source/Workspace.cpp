@@ -275,7 +275,7 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork->m_pErrman);
 }
 
-void BeginParse(CWorkspace * pWork, SLexer * pJlex, const char * pCozIn, const char * pCozFilename)
+void BeginParse(CWorkspace * pWork, SLexer * pLex, const char * pCozIn, const char * pCozFilename)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 	CParseContext * pParctx = EWC_NEW(pAlloc, CParseContext) CParseContext(pAlloc, pWork);
@@ -283,21 +283,21 @@ void BeginParse(CWorkspace * pWork, SLexer * pJlex, const char * pCozIn, const c
 
 	static const size_t cChStorage = 1024 * 8;
 	char * aChStorage = (char *)pAlloc->EWC_ALLOC(cChStorage, 4);
-	InitLexer(pJlex, pCozIn, &pCozIn[CBCoz(pCozIn)-1], aChStorage, cChStorage);
+	InitLexer(pLex, pCozIn, &pCozIn[CBCoz(pCozIn)-1], aChStorage, cChStorage);
 
 	if (pCozFilename)
 	{
-		pJlex->m_pCozFilename = pCozFilename;
+		pLex->m_pCozFilename = pCozFilename;
 	}
 
-	SLexerLocation lexloc(pJlex);
+	SLexerLocation lexloc(pLex);
 	PushSymbolTable(pParctx, pWork->m_pSymtab, lexloc);
 }
 
-void EndParse(CWorkspace * pWork, SLexer * pJlex)
+void EndParse(CWorkspace * pWork, SLexer * pLex)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
-	pAlloc->EWC_FREE(pJlex->m_aChScratch);
+	pAlloc->EWC_FREE(pLex->m_aChScratch);
 
 	CSymbolTable * pSymtabPop = PSymtabPop(pWork->m_pParctx);
 	EWC_ASSERT(pSymtabPop == pWork->m_pSymtab, "symbol table push/pop mismatch");

@@ -19,14 +19,14 @@
 
 
 
-static int JtokSetTokinf(SLexer * pJlex, JTOK jtok, const char * pChStart, const char * pChEnd)
+static int TokSetTokinf(SLexer * pLex, TOK tok, const char * pChStart, const char * pChEnd)
 {
-	pJlex->m_jtok = jtok;
-	pJlex->m_pChBegin = pChStart;
-	pJlex->m_pChEnd = pChEnd;
-	pJlex->m_pChParse = pChEnd + 1;
+	pLex->m_tok = tok;
+	pLex->m_pChBegin = pChStart;
+	pLex->m_pChEnd = pChEnd;
+	pLex->m_pChParse = pChEnd + 1;
 
-	pJlex->m_litk = LITK_Nil;
+	pLex->m_litk = LITK_Nil;
 	return 1;
 }
 
@@ -97,13 +97,13 @@ static inline char NToLower(char c)
 }
 
 // copy suffixes at the end of a number into the working string
-static int JtokParseSuffixes(SLexer * pJlex, JTOK jtok, LITK litk, const char * pChzStart, const char * pChzCur)
+static int TokParseSuffixes(SLexer * pLex, TOK tok, LITK litk, const char * pChzStart, const char * pChzCur)
 {
-	pJlex->m_str = EWC::CString();
+	pLex->m_str = EWC::CString();
 
-	int jtokReturn = JtokSetTokinf(pJlex, jtok, pChzStart, pChzCur-1);
-	pJlex->m_litk = litk;
-	return jtokReturn;
+	int tokReturn = TokSetTokinf(pLex, tok, pChzStart, pChzCur-1);
+	pLex->m_litk = litk;
+	return tokReturn;
 }
 
 static F64 GParse(const char * pChzIn, char const ** pChzOut)
@@ -152,7 +152,7 @@ static F64 GParse(const char * pChzIn, char const ** pChzOut)
 	return gReturn;
 }
 
-static int JtokParseChar(const char * pChzIn, char const ** pChzOut)
+static int TokParseChar(const char * pChzIn, char const ** pChzOut)
 {
 	if (*pChzIn == '\\') 
 	{
@@ -176,50 +176,50 @@ static int JtokParseChar(const char * pChzIn, char const ** pChzOut)
 	return (unsigned char) *pChzIn;
 }
 
-static int JtokParseString(SLexer * pJlex, const char * pChz)
+static int TokParseString(SLexer * pLex, const char * pChz)
 {
 	const char * pChzStart = pChz;
 	char chDelim = *pChz++; // grab the " or ' for later matching
-	char * pChOut = pJlex->m_aChScratch;
-	char * pChOutEnd = pJlex->m_aChScratch + pJlex->m_cChScratch;
+	char * pChOut = pLex->m_aChScratch;
+	char * pChOutEnd = pLex->m_aChScratch + pLex->m_cChScratch;
 	while (*pChz != chDelim) 
 	{
-		int jtok;
+		int tok;
 		if (*pChz == '\\') 
 		{
 			const char * pChzNext;
-			jtok = JtokParseChar(pChz, &pChzNext);
-			if (jtok < 0)
+			tok = TokParseChar(pChz, &pChzNext);
+			if (tok < 0)
 			{
-				return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart, pChzNext);
+				return TokSetTokinf(pLex, TOK_ParseError, pChzStart, pChzNext);
 			}
 			pChz = pChzNext;
 		} 
 		else 
 		{
 			// @OPTIMIZE: could speed this up by looping-while-not-backslash
-			jtok = (unsigned char) *pChz++;
+			tok = (unsigned char) *pChz++;
 		}
 		if (pChOut+1 > pChOutEnd)
 		{
-			return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart, pChz);
+			return TokSetTokinf(pLex, TOK_ParseError, pChzStart, pChz);
 		}
 
 	      // @TODO expand unicode escapes to UTF8
-		*pChOut++ = (char) jtok;
+		*pChOut++ = (char) tok;
 	}
 
 	*pChOut = 0;
-	pJlex->m_str = EWC::CString(pJlex->m_aChScratch, pChOut - pJlex->m_aChScratch);
+	pLex->m_str = EWC::CString(pLex->m_aChScratch, pChOut - pLex->m_aChScratch);
 
-	int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz);
-	pJlex->m_litk = LITK_String;
-	return jtok;
+	int tok = TokSetTokinf(pLex, TOK_Literal, pChzStart, pChz);
+	pLex->m_litk = LITK_String;
+	return tok;
 }
 
-static int JtokLexHereString(SLexer * pJlex, const char * pChz)
+static int TokLexHereString(SLexer * pLex, const char * pChz)
 {
-	while (pChz != pJlex->m_pChEof && FIsWhitespace(*pChz))
+	while (pChz != pLex->m_pChEof && FIsWhitespace(*pChz))
 	{
 		++pChz;
 	}
@@ -230,8 +230,8 @@ static int JtokLexHereString(SLexer * pJlex, const char * pChz)
 
 	while (!FIsWhitespace(*pChzDelimEnd))
 	{
-		if (pChzDelimEnd == pJlex->m_pChEof)
-			return JTOK_ParseError;
+		if (pChzDelimEnd == pLex->m_pChEof)
+			return TOK_ParseError;
 
 		++pChzDelimEnd;
 	}
@@ -240,8 +240,8 @@ static int JtokLexHereString(SLexer * pJlex, const char * pChz)
 	pChz = pChzDelimEnd;
 	while (*pChz != '\n')
 	{
-		if (pChz == pJlex->m_pChEof || !FIsWhitespace(*pChz))
-			return JTOK_ParseError;
+		if (pChz == pLex->m_pChEof || !FIsWhitespace(*pChz))
+			return TOK_ParseError;
 		++pChz;
 	}
 
@@ -253,8 +253,8 @@ static int JtokLexHereString(SLexer * pJlex, const char * pChz)
 	const char * pChzLine = pChz;
 	while (1)
 	{
-		if (pChz == pJlex->m_pChEof)
-			return JTOK_ParseError;
+		if (pChz == pLex->m_pChEof)
+			return TOK_ParseError;
 
 		if (pChzLine)
 		{
@@ -280,64 +280,64 @@ static int JtokLexHereString(SLexer * pJlex, const char * pChz)
 
 	// we've found a match!
 
-	pJlex->m_str = EWC::CString(pChzStart, pChzLine - pChzStart);
+	pLex->m_str = EWC::CString(pChzStart, pChzLine - pChzStart);
 
-	int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz);
-	pJlex->m_litk = LITK_String;
-	return jtok;
+	int tok = TokSetTokinf(pLex, TOK_Literal, pChzStart, pChz);
+	pLex->m_litk = LITK_String;
+	return tok;
 }
 
 // method used to split compound tokens (ie '&&' split into two '&' '&' tokens)
-void SplitToken(SLexer * pJlex, JTOK jtokSplit)
+void SplitToken(SLexer * pLex, TOK tokSplit)
 {
-	pJlex->m_jtok = jtokSplit;
+	pLex->m_tok = tokSplit;
 
-	const char * pChzJtok = PCozFromJtok(jtokSplit);
-	const char * pChIt = pJlex->m_pChBegin;
-	const char * pChEnd = pJlex->m_pChEnd;
+	const char * pChzTok = PCozFromTok(tokSplit);
+	const char * pChIt = pLex->m_pChBegin;
+	const char * pChEnd = pLex->m_pChEnd;
 	while (pChIt != pChEnd)
 	{
-		EWC_ASSERT(*pChIt == *pChzJtok, "Split token mismatch");
+		EWC_ASSERT(*pChIt == *pChzTok, "Split token mismatch");
 		if (*pChIt == '\0')
 			break;
 
 		++pChIt;
-		++pChzJtok;
+		++pChzTok;
 	}
 
-	pJlex->m_pChEnd = pChIt - 1;
-	pJlex->m_pChParse = pChIt;
+	pLex->m_pChEnd = pChIt - 1;
+	pLex->m_pChParse = pChIt;
 }
 
-bool FConsumeToken(SLexer * pJlex, JTOK jtok)
+bool FConsumeToken(SLexer * pLex, TOK tok)
 {
-	if (pJlex->m_jtok == jtok)
+	if (pLex->m_tok == tok)
 	{
-		JtokNextToken(pJlex);
+		TokNext(pLex);
 		return true;
 	}
 	return false;
 }
 
-int JtokNextToken(SLexer * pJlex)
+int TokNext(SLexer * pLex)
 {
-	const char * pChz = pJlex->m_pChParse;
+	const char * pChz = pLex->m_pChParse;
 
 
 	bool fContainsNewline = false;
 	// skip whitespace and comments
 	for (;;) 
 	{
-		while (pChz != pJlex->m_pChEof && FIsWhitespace(*pChz))
+		while (pChz != pLex->m_pChEof && FIsWhitespace(*pChz))
 		{
 			fContainsNewline |= (*pChz == '\n');
 			++pChz;
 		}
 
 		// C++ comments, aka. double slash comments
-		if (pChz != pJlex->m_pChEof && ((pChz[0] == '/') & (pChz[1] == '/')))
+		if (pChz != pLex->m_pChEof && ((pChz[0] == '/') & (pChz[1] == '/')))
 		{
-			while (pChz != pJlex->m_pChEof && ((*pChz != '\r') & (*pChz != '\n')))
+			while (pChz != pLex->m_pChEof && ((*pChz != '\r') & (*pChz != '\n')))
 			{
 				fContainsNewline |= (*pChz == '\n');
 				++pChz;
@@ -346,27 +346,27 @@ int JtokNextToken(SLexer * pJlex)
 		}
 
 		// C comments /* like this */
-		if (pChz != pJlex->m_pChEof && ((pChz[0] == '/') & (pChz[1] == '*')))
+		if (pChz != pLex->m_pChEof && ((pChz[0] == '/') & (pChz[1] == '*')))
 		{
 			const char * pChStart = pChz;
 		    pChz += 2;
-		    while (pChz != pJlex->m_pChEof && ((pChz[0] != '*') | (pChz[1] != '/')))
+		    while (pChz != pLex->m_pChEof && ((pChz[0] != '*') | (pChz[1] != '/')))
 			{
 				fContainsNewline |= (*pChz == '\n');
 				++pChz;
 			}
-		    if (pChz == pJlex->m_pChEof)
-		       return JtokSetTokinf(pJlex, JTOK_ParseError, pChStart, pChz-1);
+		    if (pChz == pLex->m_pChEof)
+		       return TokSetTokinf(pLex, TOK_ParseError, pChStart, pChz-1);
 		    pChz += 2;
 		    continue;
 		}
 		break;
 	}
-	pJlex->m_grflexer.AssignFlags(FLEXER_EndOfLine, fContainsNewline);
+	pLex->m_grflexer.AssignFlags(FLEXER_EndOfLine, fContainsNewline);
 
-	if (pChz == pJlex->m_pChEof)
+	if (pChz == pLex->m_pChEof)
 	{
-	   pJlex->m_jtok = JTOK_Eof;
+	   pLex->m_tok = TOK_Eof;
 	   return 0;
 	}
 
@@ -380,11 +380,11 @@ int JtokNextToken(SLexer * pJlex)
 				| (u8(*pChz) >= 128))   // >= 128 is UTF8 char
 			{
 				size_t iCh = 0;
-				char * pChzScratch = pJlex->m_aChScratch;
+				char * pChzScratch = pLex->m_aChScratch;
 				do 
 				{
-					if (iCh+1 >= pJlex->m_cChScratch)
-						return JtokSetTokinf(pJlex, JTOK_ParseError, pChz, pChz+iCh);
+					if (iCh+1 >= pLex->m_cChScratch)
+						return TokSetTokinf(pLex, TOK_ParseError, pChz, pChz+iCh);
 
 					pChzScratch[iCh] = pChz[iCh];
 					++iCh;
@@ -394,171 +394,171 @@ int JtokNextToken(SLexer * pJlex)
 						| (pChz[iCh] == '_')
 						| (u8(pChz[iCh]) >= 128));
 				pChzScratch[iCh] = '\0';
-				pJlex->m_str = EWC::CString(pChzScratch);
+				pLex->m_str = EWC::CString(pChzScratch);
 
 				u32 Hv = EWC::HvFromPCoz(pChz, iCh);
 				RWORD rword = RwordFromHv(Hv);
-				pJlex->m_rword = rword;
+				pLex->m_rword = rword;
 
 				if (rword != RWORD_Nil)
 				{
 					if (rword == RWORD_StringDirective)
 					{
-						return JtokLexHereString(pJlex, pChz+iCh);
+						return TokLexHereString(pLex, pChz+iCh);
 					}
-					return JtokSetTokinf(pJlex, JTOK_ReservedWord, pChz, pChz+iCh-1);
+					return TokSetTokinf(pLex, TOK_ReservedWord, pChz, pChz+iCh-1);
 				}
 
-				return JtokSetTokinf(pJlex, JTOK_Identifier, pChz, pChz+iCh-1);
+				return TokSetTokinf(pLex, TOK_Identifier, pChz, pChz+iCh-1);
 			}
 
 		single_char:         
 			// not an identifier, return the character as itself
-			return JtokSetTokinf(pJlex, JTOK(*pChz), pChz, pChz);
+			return TokSetTokinf(pLex, TOK(*pChz), pChz, pChz);
 
 		case '+':
-		if (pChz+1 != pJlex->m_pChEof) 
+		if (pChz+1 != pLex->m_pChEof) 
 		{
 			if (pChz[1] == '+') 
-				return JtokSetTokinf(pJlex, JTOK_PlusPlus, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_PlusPlus, pChz, pChz+1);
 		    if (pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_PlusEqual, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_PlusEqual, pChz, pChz+1);
 		} goto single_char;
 
 		case '-':
-		if (pChz+1 != pJlex->m_pChEof) 
+		if (pChz+1 != pLex->m_pChEof) 
 		{
 			if (pChz[1] == '-') 
 			{
-				if ((pChz+2 != pJlex->m_pChEof) && pChz[2] == '-')
-					return JtokSetTokinf(pJlex, JTOK_TripleMinus, pChz, pChz+2);
-				return JtokSetTokinf(pJlex, JTOK_MinusMinus, pChz, pChz+1);
+				if ((pChz+2 != pLex->m_pChEof) && pChz[2] == '-')
+					return TokSetTokinf(pLex, TOK_TripleMinus, pChz, pChz+2);
+				return TokSetTokinf(pLex, TOK_MinusMinus, pChz, pChz+1);
 			}
 			if (pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_MinusEqual, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_MinusEqual, pChz, pChz+1);
 			if (pChz[1] == '>') 
-				return JtokSetTokinf(pJlex, JTOK_Arrow, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_Arrow, pChz, pChz+1);
 		} goto single_char;
 
 		case '&':
-		 if (pChz+1 != pJlex->m_pChEof) 
+		 if (pChz+1 != pLex->m_pChEof) 
 		 {
 		    if (pChz[1] == '&') 
-				return JtokSetTokinf(pJlex, JTOK_AndAnd, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_AndAnd, pChz, pChz+1);
 		    if (pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_AndEqual, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_AndEqual, pChz, pChz+1);
 		 } goto single_char;
 
 		case '|':
-		if (pChz+1 != pJlex->m_pChEof) 
+		if (pChz+1 != pLex->m_pChEof) 
 		{
 		    if (pChz[1] == '|') 
-				return JtokSetTokinf(pJlex, JTOK_OrOr, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_OrOr, pChz, pChz+1);
 		    if (pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_OrEqual, pChz, pChz+1);
+				return TokSetTokinf(pLex, TOK_OrEqual, pChz, pChz+1);
 		} goto single_char;
 
 		case '=':
-		    if (pChz+1 != pJlex->m_pChEof && pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_EqualEqual, pChz, pChz+1);
+		    if (pChz+1 != pLex->m_pChEof && pChz[1] == '=') 
+				return TokSetTokinf(pLex, TOK_EqualEqual, pChz, pChz+1);
 			goto single_char;
 
 		case '!':
-			if (pChz+1 != pJlex->m_pChEof && pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_NotEqual, pChz, pChz+1);
+			if (pChz+1 != pLex->m_pChEof && pChz[1] == '=') 
+				return TokSetTokinf(pLex, TOK_NotEqual, pChz, pChz+1);
 			goto single_char;
 
 		case '^':
-			if (pChz+1 != pJlex->m_pChEof && pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_XorEqual, pChz,pChz+1);
+			if (pChz+1 != pLex->m_pChEof && pChz[1] == '=') 
+				return TokSetTokinf(pLex, TOK_XorEqual, pChz,pChz+1);
 			goto single_char;
 
 		case ':':
-			if (pChz+1 != pJlex->m_pChEof)
+			if (pChz+1 != pLex->m_pChEof)
 				{
 					if (pChz[1] == ':') 
-						return JtokSetTokinf(pJlex, JTOK_ColonColon, pChz,pChz+1);
+						return TokSetTokinf(pLex, TOK_ColonColon, pChz,pChz+1);
 					if (pChz[1] == '=') 
-						return JtokSetTokinf(pJlex, JTOK_ColonEqual, pChz,pChz+1);
+						return TokSetTokinf(pLex, TOK_ColonEqual, pChz,pChz+1);
 				}
 			goto single_char;
 
 		case '.':
-			if (pChz+1 != pJlex->m_pChEof && pChz[1] == '.') 
-				return JtokSetTokinf(pJlex, JTOK_PeriodPeriod, pChz,pChz+1);
+			if (pChz+1 != pLex->m_pChEof && pChz[1] == '.') 
+				return TokSetTokinf(pLex, TOK_PeriodPeriod, pChz,pChz+1);
 			goto single_char;
 
 		case '~':
-			if (pChz+1 != pJlex->m_pChEof && pChz[1] == '=') 
-				return JtokSetTokinf(pJlex, JTOK_TildeEqual, pChz,pChz+1);
+			if (pChz+1 != pLex->m_pChEof && pChz[1] == '=') 
+				return TokSetTokinf(pLex, TOK_TildeEqual, pChz,pChz+1);
 			goto single_char;
 			
 		case '%':
-			if (pChz+1 != pJlex->m_pChEof && pChz[1] == '=')
-				return JtokSetTokinf(pJlex, JTOK_ModEqual, pChz, pChz+1);
+			if (pChz+1 != pLex->m_pChEof && pChz[1] == '=')
+				return TokSetTokinf(pLex, TOK_ModEqual, pChz, pChz+1);
 			goto single_char;
 
 		case '*':
-			if (pChz+1 != pJlex->m_pChEof && pChz[1] == '=')
-				return JtokSetTokinf(pJlex, JTOK_MulEqual, pChz, pChz+1);
+			if (pChz+1 != pLex->m_pChEof && pChz[1] == '=')
+				return TokSetTokinf(pLex, TOK_MulEqual, pChz, pChz+1);
 			goto single_char;
 
 		case '/':
-			if (pChz+1 != pJlex->m_pChEof && pChz[1] == '=')
-				return JtokSetTokinf(pJlex, JTOK_DivEqual, pChz, pChz+1);
+			if (pChz+1 != pLex->m_pChEof && pChz[1] == '=')
+				return TokSetTokinf(pLex, TOK_DivEqual, pChz, pChz+1);
 			goto single_char;
 			
 		case '<':
-			if (pChz+1 != pJlex->m_pChEof) 
+			if (pChz+1 != pLex->m_pChEof) 
 			{
 			    if (pChz[1] == '=') 
-					return JtokSetTokinf(pJlex, JTOK_LessEqual, pChz, pChz+1);
+					return TokSetTokinf(pLex, TOK_LessEqual, pChz, pChz+1);
 			    if (pChz[1] == '<') 
-                   return JtokSetTokinf(pJlex, JTOK_ShiftLeft, pChz, pChz+1);
+                   return TokSetTokinf(pLex, TOK_ShiftLeft, pChz, pChz+1);
 			} goto single_char;
 
 		case '>':
-			if (pChz+1 != pJlex->m_pChEof) 
+			if (pChz+1 != pLex->m_pChEof) 
 			{
 			    if (pChz[1] == '=') 
-					return JtokSetTokinf(pJlex, JTOK_GreaterEqual, pChz, pChz+1);
+					return TokSetTokinf(pLex, TOK_GreaterEqual, pChz, pChz+1);
 			    if (pChz[1] == '>') 
-					return JtokSetTokinf(pJlex, JTOK_ShiftRight, pChz, pChz+1);
+					return TokSetTokinf(pLex, TOK_ShiftRight, pChz, pChz+1);
 			 }
 			 goto single_char;
 
 		case '"':
-			return JtokParseString(pJlex, pChz);
+			return TokParseString(pLex, pChz);
 
 		case '\'':
-		//STB_C_LEX_C_SQ_STRINGS(return stb__clex_parse_string(pJlex, pChz, CLEX_sqstring);)
+		//STB_C_LEX_C_SQ_STRINGS(return stb__clex_parse_string(pLex, pChz, CLEX_sqstring);)
 		// single quote chars
 		{
 		    const char * pChzStart = pChz;
-		    pJlex->m_n = JtokParseChar(pChz+1, &pChz);
+		    pLex->m_n = TokParseChar(pChz+1, &pChz);
 
-		    if (pJlex->m_n < 0)
-		       return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart,pChzStart);
-		    if (pChz == pJlex->m_pChEof || *pChz != '\'')
-		       return JtokSetTokinf(pJlex, JTOK_ParseError, pChzStart, pChz);
-			int jtok = JtokSetTokinf(pJlex, JTOK_Literal, pChzStart, pChz);
-			pJlex->m_litk = LITK_Char;
-			return jtok;
+		    if (pLex->m_n < 0)
+		       return TokSetTokinf(pLex, TOK_ParseError, pChzStart,pChzStart);
+		    if (pChz == pLex->m_pChEof || *pChz != '\'')
+		       return TokSetTokinf(pLex, TOK_ParseError, pChzStart, pChz);
+			int tok = TokSetTokinf(pLex, TOK_Literal, pChzStart, pChz);
+			pLex->m_litk = LITK_Char;
+			return tok;
 		}
 		goto single_char;
 		
 		case '0':
 			// hex ints
-		    if (pChz+1 != pJlex->m_pChEof) 
+		    if (pChz+1 != pLex->m_pChEof) 
 			{
 				if (pChz[1] == 'x' || pChz[1] == 'X') 
 				{
 					const char * pChzNext = pChz+2;
 					#ifdef STB__CLEX_use_stdlib
-					pJlex->m_n = strtol((char *) pChz, (char **) pChzNext, 16);
+					pLex->m_n = strtol((char *) pChz, (char **) pChzNext, 16);
 					#else
 					u64 n = 0;
-					while (pChzNext != pJlex->m_pChEof) 
+					while (pChzNext != pLex->m_pChEof) 
 					{
 						if		((*pChzNext >= '0') & (*pChzNext <= '9'))	n = n*16 + (*pChzNext - '0');
 						else if ((*pChzNext >= 'a') & (*pChzNext <= 'f'))	n = n*16 + (*pChzNext - 'a') + 10;
@@ -567,11 +567,11 @@ int JtokNextToken(SLexer * pJlex)
 						    break;
 						++pChzNext;
 					}
-					pJlex->m_n = n;
+					pLex->m_n = n;
 					#endif
 					if (pChzNext == pChz+2)
-						return JtokSetTokinf(pJlex, JTOK_ParseError, pChz-2, pChz-1);
-					return JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Integer, pChz, pChzNext);
+						return TokSetTokinf(pLex, TOK_ParseError, pChz-2, pChz-1);
+					return TokParseSuffixes(pLex, TOK_Literal, LITK_Integer, pChz, pChzNext);
 				}
 			}
 
@@ -580,20 +580,20 @@ int JtokNextToken(SLexer * pJlex)
 
 		{	// floats
 		    const char * pChzNext = pChz;
-			while (pChzNext != pJlex->m_pChEof && ((*pChzNext >= '0') & (*pChzNext <= '9')))
+			while (pChzNext != pLex->m_pChEof && ((*pChzNext >= '0') & (*pChzNext <= '9')))
 		       ++pChzNext;
-		    if (pChzNext != pJlex->m_pChEof) 
+		    if (pChzNext != pLex->m_pChEof) 
 			{
 				if ((*pChzNext == '.') | (*pChzNext == 'e') | (*pChzNext == 'E'))
 				{
 					#ifdef STB__CLEX_use_stdlib
-					pJlex->m_g = strtod((char *) pChz, (char**) &pChzNext);
+					pLex->m_g = strtod((char *) pChz, (char**) &pChzNext);
 					#else
-					pJlex->m_g = GParse(pChz, &pChzNext);
+					pLex->m_g = GParse(pChz, &pChzNext);
 					#endif
 
-					int jtok = JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Float, pChz, pChzNext);
-					return jtok;
+					int tok = TokParseSuffixes(pLex, TOK_Literal, LITK_Float, pChz, pChzNext);
+					return tok;
 				}
 			}
 		}
@@ -601,10 +601,10 @@ int JtokNextToken(SLexer * pJlex)
 		{	// decimal ints
 		    const char * pChzNext = pChz;
 		    #ifdef STB__CLEX_use_stdlib
-		    pJlex->m_n = strtol((char *) pChz, (char **) &pChzNext, 10);
+		    pLex->m_n = strtol((char *) pChz, (char **) &pChzNext, 10);
 		    #else
 		    u64 n = 0;
-			while (pChzNext != pJlex->m_pChEof) 
+			while (pChzNext != pLex->m_pChEof) 
 			{
 				if ((*pChzNext >= '0') & (*pChzNext <= '9'))
 					n = n*10 + (*pChzNext - '0');
@@ -612,55 +612,55 @@ int JtokNextToken(SLexer * pJlex)
 					break;
 				++pChzNext;
 		    }
-		    pJlex->m_n = n;
+		    pLex->m_n = n;
 		    #endif
 
-		    return JtokParseSuffixes(pJlex, JTOK_Literal, LITK_Integer, pChz, pChzNext);
+		    return TokParseSuffixes(pLex, TOK_Literal, LITK_Integer, pChz, pChzNext);
 		 }
 		 goto single_char;
 	}
 }
 
-void InitLexer(SLexer * pJlex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage)
+void InitLexer(SLexer * pLex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage)
 {
-	pJlex->m_pChInput = pCoInput;
-	pJlex->m_pChParse = pCoInput;
-	pJlex->m_pChEof =  pCoInputEnd;
-	pJlex->m_aChScratch = aChStorage;
-	pJlex->m_cChScratch = cChStorage;
+	pLex->m_pChInput = pCoInput;
+	pLex->m_pChParse = pCoInput;
+	pLex->m_pChEof =  pCoInputEnd;
+	pLex->m_aChScratch = aChStorage;
+	pLex->m_cChScratch = cChStorage;
 
-	pJlex->m_pCozFilename = "unknown filename";
-	pJlex->m_pChBegin = nullptr;
-	pJlex->m_pChEnd = nullptr;
-	pJlex->m_n = 0;
-	pJlex->m_g = 0;
-	pJlex->m_litk = LITK_Nil;
-	pJlex->m_rword = RWORD_Nil;
+	pLex->m_pCozFilename = "unknown filename";
+	pLex->m_pChBegin = nullptr;
+	pLex->m_pChEnd = nullptr;
+	pLex->m_n = 0;
+	pLex->m_g = 0;
+	pLex->m_litk = LITK_Nil;
+	pLex->m_rword = RWORD_Nil;
 }
 
-RWORD RwordLookup(SLexer * pJlex)
+RWORD RwordLookup(SLexer * pLex)
 {
-	if (pJlex->m_jtok != JTOK_ReservedWord)
+	if (pLex->m_tok != TOK_ReservedWord)
 		return RWORD_Nil;
-	return pJlex->m_rword;
+	return pLex->m_rword;
 }
 
-const char * PCozFromJtok(JTOK jtok)
+const char * PCozFromTok(TOK tok)
 {
-	if (!EWC_FVERIFY((jtok >= JTOK_Nil) & (jtok < JTOK_Max), "bad token value"))
+	if (!EWC_FVERIFY((tok >= TOK_Nil) & (tok < TOK_Max), "bad token value"))
 		return "(err)";
 
-	if (jtok <= JTOK_Nil)
+	if (tok <= TOK_Nil)
 		return "(nil)";
-	if (jtok < JTOK_SimpleMax)
+	if (tok < TOK_SimpleMax)
 	{
-		static char s_aB[JTOK_SimpleMax * 2];
-		s_aB[jtok] = (char)jtok;
-		s_aB[jtok + 1] = '\0';
-		return &s_aB[jtok];
+		static char s_aB[TOK_SimpleMax * 2];
+		s_aB[tok] = (char)tok;
+		s_aB[tok + 1] = '\0';
+		return &s_aB[tok];
 	}
 
-	static const char * s_mpJtokPCoz[] = 
+	static const char * s_mpTokPCoz[] = 
 	{
 		"(Eof)",
 		"(ParseError)",
@@ -692,80 +692,80 @@ const char * PCozFromJtok(JTOK jtok)
 		":=",
 		"..",
 	};
-	EWC_CASSERT(EWC_DIM(s_mpJtokPCoz) == JTOK_Max - JTOK_SimpleMax, "missing token string");
-	return s_mpJtokPCoz[jtok - JTOK_SimpleMax];
+	EWC_CASSERT(EWC_DIM(s_mpTokPCoz) == TOK_Max - TOK_SimpleMax, "missing token string");
+	return s_mpTokPCoz[tok - TOK_SimpleMax];
 }
 
-const char * PCozCurrentToken(SLexer * pJlex)
+const char * PCozCurrentToken(SLexer * pLex)
 {
-	JTOK jtok = (JTOK)pJlex->m_jtok;
-	if (jtok == JTOK_ReservedWord)
-		return PCozFromRword(pJlex->m_rword);
+	TOK tok = (TOK)pLex->m_tok;
+	if (tok == TOK_ReservedWord)
+		return PCozFromRword(pLex->m_rword);
 
-	return PCozFromJtok(jtok);
+	return PCozFromTok(tok);
 }
 
-#define JLEX_TEST
-#ifdef JLEX_TEST
+#define LEXER_TEST
+#ifdef LEXER_TEST
 void AssertMatches(
 	const char * pCozInput, 
-	const JTOK * aJtok, 
+	const TOK * aTok, 
 	const int * aN = nullptr, 
 	const F64 * aG = nullptr,
 	const char * apCoz[] = nullptr,
 	const RWORD * aRword = nullptr,
 	const LITK * aLitk = nullptr)
 {
-	SLexer jlex;
+	SLexer lex;
 	char aChStorage[1024 * 8];
-	InitLexer(&jlex, pCozInput, &pCozInput[EWC::CBCoz(pCozInput)-1], aChStorage, EWC_DIM(aChStorage));
+	InitLexer(&lex, pCozInput, &pCozInput[EWC::CBCoz(pCozInput)-1], aChStorage, EWC_DIM(aChStorage));
 	
-	int iJtok = 0;
-	const JTOK * pJtok = aJtok;
-	while (JtokNextToken(&jlex)) 
+	int iTok = 0;
+	const TOK * pTok = aTok;
+	while (TokNext(&lex)) 
 	{
-		if (pJtok && *pJtok == JTOK_Nil)
-			pJtok = nullptr;
-		EWC_ASSERT(!pJtok || jlex.m_jtok == *pJtok, "lexed token doesn't match expected");
-		++pJtok;
+		if (pTok && *pTok == TOK_Nil)
+			pTok = nullptr;
+		EWC_ASSERT(!pTok || lex.m_tok == *pTok, "lexed token doesn't match expected");
+		++pTok;
 
-		if (apCoz && apCoz[iJtok] == nullptr)
+		if (apCoz && apCoz[iTok] == nullptr)
 			apCoz = nullptr;
 
-		bool fIsStringLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_String;
-		if (apCoz && (jlex.m_jtok == JTOK_Identifier || fIsStringLiteral))
+		bool fIsStringLiteral = lex.m_tok == TOK_Literal && lex.m_litk == LITK_String;
+		if (apCoz && (lex.m_tok == TOK_Identifier || fIsStringLiteral))
 		{
 			EWC_ASSERT(
-				EWC::CBCoz(apCoz[iJtok]) == jlex.m_str.CB(), 
+				EWC::CBCoz(apCoz[iTok]) == lex.m_str.CB(), 
 				"lexed string length doesn't match expected value");
 			EWC_ASSERT(
-				EWC::FAreCozEqual(apCoz[iJtok], jlex.m_str.PCoz(), jlex.m_str.CCodepoint()), 
+				EWC::FAreCozEqual(apCoz[iTok], lex.m_str.PCoz(), lex.m_str.CCodepoint()), 
 				"lexed string doesn't match expected value");
 		}
 
-		bool fIsIntLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_Integer;
+		bool fIsIntLiteral = lex.m_tok == TOK_Literal && lex.m_litk == LITK_Integer;
 		if (aN && fIsIntLiteral)
 		{
-			EWC_ASSERT(jlex.m_n == aN[iJtok], "integer literal value doesn't match expected"); 
+			EWC_ASSERT(lex.m_n == aN[iTok], "integer literal value doesn't match expected"); 
 		}
 
-		bool fIsFloatLiteral = jlex.m_jtok == JTOK_Literal && jlex.m_litk == LITK_Float;
+		bool fIsFloatLiteral = lex.m_tok == TOK_Literal && lex.m_litk == LITK_Float;
 		if (aG && fIsFloatLiteral)
 		{
-			EWC_ASSERT(jlex.m_g == aG[iJtok], "float literal value doesn't match expected"); 
+			EWC_ASSERT(lex.m_g == aG[iTok], "float literal value doesn't match expected"); 
 		}
 
 		if (aLitk)
 		{
-			EWC_ASSERT(aLitk[iJtok] == jlex.m_litk, "Literal type mismatch");
+			EWC_ASSERT(aLitk[iTok] == lex.m_litk, "Literal type mismatch");
 		}
 
-		if (aRword && jlex.m_jtok == JTOK_ReservedWord)
+		if (aRword && lex.m_tok == TOK_ReservedWord)
 		{
-			EWC_ASSERT(jlex.m_rword == aRword[iJtok], "reserved word doesn't match expected"); 
+			EWC_ASSERT(lex.m_rword == aRword[iTok], "reserved word doesn't match expected"); 
 		}
 
-		++iJtok;
+		++iTok;
 	}
 }
 
@@ -777,60 +777,60 @@ void TestLexing()
 	StaticInitStrings(&allocString);
 
 	const char * s_pChz = u8"😁+✂";
-	const JTOK s_aJtokEmoji[] = {	
-										JTOK_Identifier, JTOK('+'),
-										JTOK_Identifier, JTOK(';'),
-										JTOK_Nil};
+	const TOK s_aTokEmoji[] = {	
+										TOK_Identifier, TOK('+'),
+										TOK_Identifier, TOK(';'),
+										TOK_Nil};
 
-	AssertMatches(s_pChz, s_aJtokEmoji);
+	AssertMatches(s_pChz, s_aTokEmoji);
 
 	const char * s_pChzLitString = " 'f'; \"foo\"; ";
-	const JTOK s_aJtokLitString[] = {	
-										JTOK_Literal, JTOK(';'),
-										JTOK_Literal, JTOK(';'),
-										JTOK_Nil};
-	AssertMatches(s_pChzLitString, s_aJtokLitString);
+	const TOK s_aTokLitString[] = {	
+										TOK_Literal, TOK(';'),
+										TOK_Literal, TOK(';'),
+										TOK_Nil};
+	AssertMatches(s_pChzLitString, s_aTokLitString);
 
 	const char * s_pChzComparisons = "< > <= >= != ==";
-	const JTOK s_aJtokComparisons[] = {	JTOK('<'), JTOK('>'), 
-										JTOK_LessEqual, JTOK_GreaterEqual, 
-										JTOK_NotEqual, JTOK_EqualEqual, 
-										JTOK_Nil};
-	AssertMatches(s_pChzComparisons, s_aJtokComparisons);
+	const TOK s_aTokCompfarisons[] = {	TOK('<'), TOK('>'), 
+										TOK_LessEqual, TOK_GreaterEqual, 
+										TOK_NotEqual, TOK_EqualEqual, 
+										TOK_Nil};
+	AssertMatches(s_pChzComparisons, s_aTokCompfarisons);
 
 	const char * s_pChzBitwise = "& && &= | || |= ^ ^= ~ ~=";
-	const JTOK s_aJtokBitwise[] = {	JTOK('&'), JTOK_AndAnd, JTOK_AndEqual, 
-									JTOK('|'), JTOK_OrOr, JTOK_OrEqual, 
-									JTOK('^'), JTOK_XorEqual, 
-									JTOK('~'), JTOK_TildeEqual, 
-									JTOK_Nil};
-	AssertMatches(s_pChzBitwise, s_aJtokBitwise);
+	const TOK s_aTokBitwise[] = {	TOK('&'), TOK_AndAnd, TOK_AndEqual, 
+									TOK('|'), TOK_OrOr, TOK_OrEqual, 
+									TOK('^'), TOK_XorEqual, 
+									TOK('~'), TOK_TildeEqual, 
+									TOK_Nil};
+	AssertMatches(s_pChzBitwise, s_aTokBitwise);
 
 	const char * s_pChzOperator = "+ += - -= * *= / /= % %= << >>";
-	const JTOK s_aJtokOperator[] = {	JTOK('+'), JTOK_PlusEqual, JTOK('-'), JTOK_MinusEqual, 
-										JTOK('*'), JTOK_MulEqual, JTOK('/'), JTOK_DivEqual,
-										JTOK('%'), JTOK_ModEqual,
-										JTOK_ShiftLeft, JTOK_ShiftRight,
-										JTOK_Nil };
-	AssertMatches(s_pChzOperator, s_aJtokOperator);
+	const TOK s_aTofkOperator[] = {	TOK('+'), TOK_PlusEqual, TOK('-'), TOK_MinusEqual, 
+										TOK('*'), TOK_MulEqual, TOK('/'), TOK_DivEqual,
+										TOK('%'), TOK_ModEqual,
+										TOK_ShiftLeft, TOK_ShiftRight,
+										TOK_Nil };
+	AssertMatches(s_pChzOperator, s_aTofkOperator);
 
 	const char * s_pChzMisc = "foo:=bar->guh.wut;";
-	const JTOK s_aJtokMisc[] = {JTOK_Identifier, JTOK_ColonEqual, 
-								JTOK_Identifier, JTOK_Arrow,
-								JTOK_Identifier, JTOK('.'),
-								JTOK_Identifier, JTOK(';'),
-								JTOK_Nil };
+	const TOK s_aTokMisc[] = {TOK_Identifier, TOK_ColonEqual, 
+								TOK_Identifier, TOK_Arrow,
+								TOK_Identifier, TOK('.'),
+								TOK_Identifier, TOK(';'),
+								TOK_Nil };
 	const char * s_apChzMiscStrings[] = {"foo", "", "bar", "", "guh", "", "wut", "", nullptr};
-	AssertMatches(s_pChzMisc, s_aJtokMisc, nullptr, nullptr, s_apChzMiscStrings);
+	AssertMatches(s_pChzMisc, s_aTokMisc, nullptr, nullptr, s_apChzMiscStrings);
 
 	const char * s_pChzNum = "2.456,5,7.3,-1,0xFFFF, 12.34e12 12.34e-12";
-	const JTOK s_aJtokNum[] = {JTOK_Literal, JTOK(','), 
-								JTOK_Literal, JTOK(','), 
-								JTOK_Literal, JTOK(','), 
-								JTOK('-'), JTOK_Literal, JTOK(','),
-								JTOK_Literal, JTOK(','),
-								JTOK_Literal, JTOK_Literal,
-								JTOK_Nil };
+	const TOK s_aTokNum[] = {TOK_Literal, TOK(','), 
+								TOK_Literal, TOK(','), 
+								TOK_Literal, TOK(','), 
+								TOK('-'), TOK_Literal, TOK(','),
+								TOK_Literal, TOK(','),
+								TOK_Literal, TOK_Literal,
+								TOK_Nil };
 	const LITK s_aLitk[] = {	LITK_Float, LITK_Nil,
 								LITK_Integer, LITK_Nil,
 										LITK_Float, LITK_Nil,
@@ -842,38 +842,38 @@ void TestLexing()
 										
 	const int s_aNNum[] = {0,	  0, 5, 0, 0,   0, 0, 1, 0, 65535, 0, 0,        0};	// negative integer literal comes through as two tokens
 	const F64 s_aGNum[] = {2.456, 0, 0, 0, 7.3, 0, 0, 1, 0, 0,     0, 12.34e12, 12.34e-12};
-	static_assert(EWC_DIM(s_aJtokNum)-1 == EWC_DIM(s_aNNum), "s_aNNum size mismatch");
-	static_assert(EWC_DIM(s_aJtokNum)-1 == EWC_DIM(s_aGNum), "s_aGNum size mismatch");
+	static_assert(EWC_DIM(s_aTokNum)-1 == EWC_DIM(s_aNNum), "s_aNNum size mismatch");
+	static_assert(EWC_DIM(s_aTokNum)-1 == EWC_DIM(s_aGNum), "s_aGNum size mismatch");
 
-	AssertMatches(s_pChzNum, s_aJtokNum, s_aNNum, s_aGNum, nullptr, nullptr, s_aLitk);
+	AssertMatches(s_pChzNum, s_aTokNum, s_aNNum, s_aGNum, nullptr, nullptr, s_aLitk);
 
 	const char * s_pChzRword = "for:=new.if\nelse while SOA";
-	const JTOK s_aJtokRword[] = {JTOK_ReservedWord, JTOK_ColonEqual, 
-								JTOK_ReservedWord, JTOK('.'),
-								JTOK_ReservedWord, JTOK_ReservedWord,
-								JTOK_ReservedWord, JTOK_ReservedWord,
-								JTOK_Nil };
+	const TOK s_aTokRword[] = {TOK_ReservedWord, TOK_ColonEqual, 
+								TOK_ReservedWord, TOK('.'),
+								TOK_ReservedWord, TOK_ReservedWord,
+								TOK_ReservedWord, TOK_ReservedWord,
+								TOK_Nil };
 	const RWORD s_apRword[] = {	RWORD_For, RWORD_Nil,
 								RWORD_New, RWORD_Nil,	
 								RWORD_If, RWORD_Else,
 								RWORD_While, RWORD_Soa};
 
-	AssertMatches(s_pChzRword, s_aJtokRword, nullptr, nullptr, nullptr, s_apRword);
+	AssertMatches(s_pChzRword, s_aTokRword, nullptr, nullptr, nullptr, s_apRword);
 
 	const char * s_pChzTriple = ". .. ... - -- --- : ::";
-	const JTOK s_aJtokTriple[] = {JTOK('.'), JTOK_PeriodPeriod, 
-								JTOK_PeriodPeriod, JTOK('.'),
-								JTOK('-'), JTOK_MinusMinus,
-								JTOK_TripleMinus, 
-								JTOK(':'), JTOK_ColonColon,
-								JTOK_Nil };
+	const TOK s_aTokTriple[] = {TOK('.'), TOK_PeriodPeriod, 
+								TOK_PeriodPeriod, TOK('.'),
+								TOK('-'), TOK_MinusMinus,
+								TOK_TripleMinus, 
+								TOK(':'), TOK_ColonColon,
+								TOK_Nil };
 
-	AssertMatches(s_pChzTriple, s_aJtokTriple);
+	AssertMatches(s_pChzTriple, s_aTokTriple);
 
 	StaticShutdownStrings(&allocString);
 }
-#else // JLEX_TEST
+#else // LEXER_TEST
 void TestLexing()
 {
 }
-#endif // JLEX_TEST
+#endif // LEXER_TEST
