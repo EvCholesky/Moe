@@ -1,12 +1,12 @@
 #import "Basic"
 
-CCh :: (pChz: & u8) -> int
+CCh proc (pChz: & u8) -> int
 {
 	return strlen(pChz)
 }
 
 // simple hash function with meh avalanching, works for now. replace with MUM hash or xxHash
-HvHashFVN :: (pV: &void, cB: int) -> u32
+HvHashFVN proc (pV: &void, cB: int) -> u32
 {
 	pB := cast (& u8) pV
     hv: u32 = 2166136261
@@ -19,7 +19,7 @@ HvHashFVN :: (pV: &void, cB: int) -> u32
     return hv
 }
 
-HvHashFVNLower :: (pV: & void, cB: int) -> u32
+HvHashFVNLower proc (pV: & void, cB: int) -> u32
 {
 	pB := cast (& u8) pV
     hv: u32 = 2166136261
@@ -32,13 +32,13 @@ HvHashFVNLower :: (pV: & void, cB: int) -> u32
     return hv
 }
 
-SStringHash :: struct	// tag = shash
+SStringHash struct	// tag = shash
 {
 	m_hv: u32
 	m_pChzUnsafe: &u8	// debug only string pointer
 }
 
-ShashCreate :: (pChz: &u8, cCh: int) -> SStringHash
+ShashCreate proc (pChz: &u8, cCh: int) -> SStringHash
 {
 	if (cCh <= 0)
 	{
@@ -51,7 +51,7 @@ ShashCreate :: (pChz: &u8, cCh: int) -> SStringHash
 	return shash
 }
 
-FAreEqual :: (shashLhs: SStringHash, shashRhs: SStringHash) -> bool
+FAreEqual proc (shashLhs: SStringHash, shashRhs: SStringHash) -> bool
 {
 	return shashLhs.m_hv == shashRhs.m_hv
 }

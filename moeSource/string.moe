@@ -1,5 +1,5 @@
 
-NReadCodepoint :: (ppCoz: && u8, pFIsValid: & bool) -> u32
+NReadCodepoint proc (ppCoz: && u8, pFIsValid: & bool) -> u32
 {
 	pCoz: & u8 = @ppCoz
 	ch := cast (u32)@pCoz
@@ -32,7 +32,7 @@ NReadCodepoint :: (ppCoz: && u8, pFIsValid: & bool) -> u32
 	return ch
 }
 
-FTryConvertUtf8ToUcs4 :: (pCozIn: & u8, pWchzOut: & u32, pWchOutMax: & u32) -> bool
+FTryConvertUtf8ToUcs4 proc (pCozIn: & u8, pWchzOut: & u32, pWchOutMax: & u32) -> bool
 {
 	// BB - not checking for nullptrs, or zero character destination string
 
@@ -58,7 +58,7 @@ FTryConvertUtf8ToUcs4 :: (pCozIn: & u8, pWchzOut: & u32, pWchOutMax: & u32) -> b
 	return true
 }
 
-FTryConvertUcs4ToUtf8 ::(pWchzIn: & u32, pCozOut: & u8, pCozOutMax: & u8) -> bool
+FTryConvertUcs4ToUtf8 proc (pWchzIn: & u32, pCozOut: & u8, pCozOutMax: & u8) -> bool
 {
 	// BB - not checking for nullptrs, or zero character destination string
 

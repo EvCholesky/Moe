@@ -1,23 +1,23 @@
 ﻿#import "Basic"
 	
-エヌマ :: enum
+エヌマ enum
 {
 	フー,
 	バル,
 	アク,	
 }
 
-fÜnction :: ()
+fÜnction proc ()
 {
 	printf("called fÜnction\n")
 }
 
-fÜnction :: (n: s32)
+fÜnction proc (n: s32)
 {
 	printf("called overloaded fÜnction\n")
 }
 
-main :: () -> int
+main proc () -> int
 {
 	😁 := 5
 	✂ := 2

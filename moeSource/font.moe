@@ -8,7 +8,7 @@
 #import "fontShaders"
 #import "spriteShaders"
 
-SDrawContext :: struct // tag=drac
+SDrawContext struct // tag=drac
 {
 	m_pShman: & SShaderManager
 	m_pFontman: & SFontManager
@@ -22,13 +22,13 @@ g_fontman: SFontManager
 g_shman: SShaderManager
 
 
-PushDras :: (pDrac: & SDrawContext)	
+PushDras proc (pDrac: & SDrawContext)	
 {
 	PushDras(pDrac.m_pDrasstk)
 	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk)
 }
 
-PopDras :: (pDrac: & SDrawContext)	
+PopDras proc (pDrac: & SDrawContext)	
 {
 	PopDras(pDrac.m_pDrasstk)
 	pDrac.m_pDras = PDrasTop(pDrac.m_pDrasstk)
@@ -36,7 +36,7 @@ PopDras :: (pDrac: & SDrawContext)
 
 
 
-ALIGNK :: enum
+ALIGNK enum
 {
 	Center,
 	SideMin,
@@ -47,7 +47,7 @@ ALIGNK :: enum
 	Top:		SideMax,
 }
 
-SFontData :: struct // tag = fontd
+SFontData struct // tag = fontd
 {
 	m_colMain: SColor
 	m_colShadow: SColor
@@ -64,19 +64,19 @@ SFontData :: struct // tag = fontd
 	m_alignkY: ALIGNK
 }
 
-SDrawState :: struct // tag = dras
+SDrawState struct // tag = dras
 {
 	m_fontd : SFontData
 }
 
-SDrawStateStack :: struct	// tag = drasstk
+SDrawStateStack struct	// tag = drasstk
 {
 	m_aDras : [10] SDrawState
 	m_iDrasTop : s16
 };
 
 
-PushDras :: (pDrasstk: & SDrawStateStack)
+PushDras proc (pDrasstk: & SDrawStateStack)
 {
 	if !fverify(pDrasstk.m_iDrasTop + 1 < pDrasstk.m_aDras.count, "DrawStateStack Overflow", #file, #line)
 	{
@@ -87,7 +87,7 @@ PushDras :: (pDrasstk: & SDrawStateStack)
 	++pDrasstk.m_iDrasTop
 }
 
-PopDras :: (pDrasstk: & SDrawStateStack)
+PopDras proc (pDrasstk: & SDrawStateStack)
 {
 	if !fverify(pDrasstk.m_iDrasTop > 0, "DrawStateStack Underflow", #file, #line)
 	{
@@ -97,13 +97,13 @@ PopDras :: (pDrasstk: & SDrawStateStack)
 	--pDrasstk.m_iDrasTop
 }
 
-PDrasTop :: (pDrasstk: & SDrawStateStack) -> & SDrawState
+PDrasTop proc (pDrasstk: & SDrawStateStack) -> & SDrawState
 {
 	return &pDrasstk.m_aDras[pDrasstk.m_iDrasTop]
 }
 
 /*
-DRASK :: enum // draw state kind
+DRASK enum // draw state kind
 {
 	RectMin,
 		RectScissor		= RectMin,
@@ -140,7 +140,7 @@ DRASK :: enum // draw state kind
 	FMax,
 };
 
-SDrawState :: struct
+SDrawState struct
 {					
 	m_aRect: [DRASK.RectMax - DRASK.RectMin] CRect
 	m_aVec: [DRASK.VecMax - DRASK.VecMin] CVec2
@@ -150,7 +150,7 @@ SDrawState :: struct
 	m_aF: [DRASK.FMax - DRASK.FMin] bool
 };
 
-InitDrask :: (pDrask :: & SDrawState)
+InitDrask proc (pDrask: & SDrawState)
 {
 	SetRect(DRASK.RectScissor, CRect(0,0,0,0))
 
@@ -174,37 +174,37 @@ InitDrask :: (pDrask :: & SDrawState)
 	SetF(DRASK.FDrawSolid, true)
 }
 
-SetF :: (pDras: & SDrawState, drask: DRASK, f: bool)
+SetF proc (pDras: & SDrawState, drask: DRASK, f: bool)
 { 
 	assert((drask>=DRASK.FMin)&(drask<DRASK.FMax), "bad drask(F)")
 	pDras.m_aF[drask-DRASK.FMin] = f
 }
 
-SetN :: (pDras: & SDrawState, drask: DRASK, n s16)
+SetN proc (pDras: & SDrawState, drask: DRASK, n s16)
 { 
 	assert((drask>=DRASK.NMin)&(drask<DRASK.NMax), "bad drask(N)")
 	pDras.m_aN[drask-DRASK.NMin] = n
 }
 
-SetG :: (pDras: & SDrawState, drask: DRASK, g: f32)
+SetG proc (pDras: & SDrawState, drask: DRASK, g: f32)
 { 
 	assert((drask>=DRASK.GMin)&(drask<DRASK.GMax), "bad drask(G)")
 	pDras.m_aG[drask-DRASK.GMin] = g
 }
 
-SetCol :: (drask: DRASK, CColor col)
+SetCol proc (drask: DRASK, CColor col)
 { 
 	EWC_ASSERT((drask>=DRASK.ColMin)&(drask<DRASK.ColMax), "bad drask(Col)")
 	pDras.m_aCol[drask-DRASK.ColMin] = col
 }
 
-SetVec :: (drask: DRASK, CVec2Arg vec)
+SetVec proc (drask: DRASK, CVec2Arg vec)
 { 
 	EWC_ASSERT((drask>=DRASK.VecMin)&(drask<DRASK.VecMax), "bad drask(Vec)")
 	pDras.m_aVec[drask-DRASK.VecMin] = vec
 }
 
-SetRect :: (drask: DRASK, CRectArg rect)
+SetRect proc (drask: DRASK, CRectArg rect)
 { 
 	EWC_ASSERT((drask>=DRASK.RectMin)&(drask<DRASK.RectMax), "bad drask(Rect)")
 	pDras.m_aRect[drask-DRASK.RectMin] = rect
@@ -256,14 +256,14 @@ void	PostDraw() const;
 
 
 
-DrawInt :: typedef s32 // tag=dri
-DrawEnum :: typedef u32 // tag=dru
-SHHAND :: enum  s16
+DrawInt typedef s32 // tag=dri
+DrawEnum typedef u32 // tag=dru
+SHHAND enum s16
 {
 	// just has nil
 }
  
-STextureMip :: struct // tag=texmip
+STextureMip struct // tag=texmip
 {
 	m_dX: DrawInt
 	m_dY: DrawInt
@@ -271,7 +271,7 @@ STextureMip :: struct // tag=texmip
 	m_aB: & u8 		// actual texel data
 }
 
-STexture :: struct // tag=tex
+STexture struct // tag=tex
 {
 	m_shashFilename: SStringHash	// filename hash, for texture reuse
 	m_cTexmip: u8
@@ -288,17 +288,17 @@ STexture :: struct // tag=tex
 g_cTex : s32
 g_aTex : [50] STexture
 
-DXFromTex :: (pTex: & STexture) -> DrawInt
+DXFromTex proc (pTex: & STexture) -> DrawInt
 { 
 	return pTex.m_aTexmip[0].m_dX
 }
 
-DYFromTex :: (pTex: & STexture)->DrawInt
+DYFromTex proc (pTex: & STexture)->DrawInt
 {
 	return pTex.m_aTexmip[0].m_dY
 }
 
-SQuadSortKey :: struct // tag=qskey
+SQuadSortKey struct // tag=qskey
 {
 	m_iTexture : s16
 
@@ -311,7 +311,7 @@ SQuadSortKey :: struct // tag=qskey
 	m_iQvert: s32
 }
 
-SQuadVertex :: struct // tag=qvert
+SQuadVertex struct // tag=qvert
 {
 	m_x, m_y, m_z: f32
 	m_u, m_v: f32
@@ -324,18 +324,18 @@ g_aQskey : & SQuadSortKey
 g_aQvert : & SQuadVertex
 g_aQvertSorted : & SQuadVertex
 	
-FONTK :: enum
+FONTK enum
 {
 	Regular,
 	Bold,
 }
 		
-FONTSHK :: enum
+FONTSHK enum
 {
 	Basic,
 }
 
-SFontGlyph :: struct // tag=glyph
+SFontGlyph struct // tag=glyph
 {
 	m_wch: u16					// UCS2 Codepoint for this glyph
 	m_dXPixels: f32
@@ -351,7 +351,7 @@ SFontGlyph :: struct // tag=glyph
 	m_vMax: f32
 }
 
-SFontGlyphFile :: struct //tag=glyphf
+SFontGlyphFile struct //tag=glyphf
 {
 	m_cGlyph: s16
 	m_iBaWchKerning: s32 			// byte offset from the start of this structure to n^2 list of kerning glyph pairs (UCS2)
@@ -366,7 +366,7 @@ SFontGlyphFile :: struct //tag=glyphf
 	m_aGlyph_CArray: SFontGlyph
 }
 
-SFont :: struct // tag=font
+SFont struct // tag=font
 {
 	m_pTex: & STexture
 	m_pGlyphf: & SFontGlyphFile
@@ -374,14 +374,14 @@ SFont :: struct // tag=font
 	m_aDxKerning: & f32
 }
 
-SFontManager :: struct // tag=fontman
+SFontManager struct // tag=fontman
 {
 	m_aFont: [FONTK.max] SFont
 	m_aShhand: [FONTSHK.max] SHHAND
 	m_mpFontshkIParamTex: [FONTSHK.max] int
 }
 
-SFontVertex :: struct // tag=fvert
+SFontVertex struct // tag=fvert
 {
 	m_x, m_y: f32
 	m_u, m_v: f32
@@ -391,32 +391,32 @@ SFontVertex :: struct // tag=fvert
 
 kChMaxDrawText :: 1024
 
-SFontVertexBuffer :: struct // tag=fvbuf
+SFontVertexBuffer struct // tag=fvbuf
 {
 	m_aFvert: [1024] SFontVertex
 	m_cFvert: int
 }
 g_Fvbuf: SFontVertexBuffer
 
-SShader :: struct// tag=shad
+SShader struct// tag=shad
 {
 	m_driProgram: gluint
 	m_driVertexShader: gluint
 	m_driFragmentShader: gluint
 }
 
-CORESHK :: enum // core shader kind
+CORESHK enum // core shader kind
 {
 	Sprite,
 }
 
-SShaderManager  :: struct // tag=shman
+SShaderManager  struct // tag=shman
 {
 	m_aShad: [16] SShader
 	m_mpCoreshkShhand : [CORESHK.max] SHHAND
 }
 
-PShmanStaticInit :: () -> & SShaderManager
+PShmanStaticInit proc () -> & SShaderManager
 {
 	if !FTryInitGLExtensions()
 	{
@@ -432,7 +432,7 @@ PShmanStaticInit :: () -> & SShaderManager
 	return &g_shman
 }
 
-ShhandFindUnused :: inline (pShman: &SShaderManager) -> SHHAND
+ShhandFindUnused proc inline (pShman: &SShaderManager) -> SHHAND
 {
 	iShad: SHHAND
 	pShadEnd := &pShman.m_aShad[pShman.m_aShad.count]
@@ -449,7 +449,7 @@ ShhandFindUnused :: inline (pShman: &SShaderManager) -> SHHAND
 	return SHHAND.nil
 }
 
-PrintShaderInfoLog :: (object: gluint, pFnGetLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall)
+PrintShaderInfoLog proc (object: gluint, pFnGetLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall)
 {
 	cCh: glint
 	glGetShaderiv(object, GL_INFO_LOG_LENGTH, &cCh)
@@ -460,7 +460,7 @@ PrintShaderInfoLog :: (object: gluint, pFnGetLog: (shader: gluint, bufSize: glsi
 	FreeMalloc(aCh)
 }
 
-ShhandLoad :: (pShman: &SShaderManager, pChzMaterialName: &u8, pChzVertexSource: &u8, pChzFragmentSource: &u8) -> SHHAND
+ShhandLoad proc (pShman: &SShaderManager, pChzMaterialName: &u8, pChzVertexSource: &u8, pChzFragmentSource: &u8) -> SHHAND
 {
 	shhand := ShhandFindUnused(pShman)
 	if(shhand == SHHAND.nil)
@@ -525,38 +525,38 @@ ShhandLoad :: (pShman: &SShaderManager, pChzMaterialName: &u8, pChzVertexSource:
 	return shhand
 }
 
-BeginShader :: (pShman: & SShaderManager, shhand: SHHAND)
+BeginShader proc (pShman: & SShaderManager, shhand: SHHAND)
 {
 	pShad := &pShman.m_aShad[shhand]
 	glUseProgram(pShad.m_driProgram)
 	//checkForErrors("glCompileShaderARB(sd.vertexShader)", &sd.m_program);
 }
 
-EndShader :: ()
+EndShader proc ()
 {
 	glUseProgram(0)
 }
 
-IParamFind :: (pShman: & SShaderManager, shhand: SHHAND, pChzName: & u8) -> s32
+IParamFind proc (pShman: & SShaderManager, shhand: SHHAND, pChzName: & u8) -> s32
 {
 	assert(shhand != SHHAND.nil, "Bad shader handle", #file, #line)
 	return glGetUniformLocation(pShman.m_aShad[shhand].m_driProgram, cast (& s8)pChzName)
 }
 
-SetShaderParam :: (iParam: s32, x: f32, y: f32, z: f32, w: f32)
+SetShaderParam proc (iParam: s32, x: f32, y: f32, z: f32, w: f32)
 {
 	assert(iParam >= 0, "invalid slot in SetShaderParam", #file, #line)
 	glUniform4f(iParam, x, y, z, w)
 }
 
 /*
-SetShaderParam :: (iParam:s s32, CMat44 & mat)
+SetShaderParam proc (iParam:s s32, CMat44 & mat)
 {
 	assert(iParam >= 0, "invalid slot in SetShaderParam", #file, #line)
 	glUniformMatrix4fvARB(iParam, 1, false, mat.AG())
 }*/
 
-SetShaderParam:: (iParam: s32, pTex: & STexture, iTextureUnit: s32)
+SetShaderParam proc (iParam: s32, pTex: & STexture, iTextureUnit: s32)
 {
 	assert(pTex, "Null texture in SetShaderParam", #file, #line)
 	if(pTex == null)
@@ -566,7 +566,7 @@ SetShaderParam:: (iParam: s32, pTex: & STexture, iTextureUnit: s32)
 
 	glEnable(pTex.m_druTarget)
 
-	assert(iParam >= 0, "invalid slot in ShaderGLSL::setParam", #file, #line)
+	assert(iParam >= 0, "invalid slot in SetShaderParam()", #file, #line)
 	glActiveTexture(GL_TEXTURE0 + cast (glenum) iTextureUnit)
 	glBindTexture(GL_TEXTURE_2D, pTex.m_driId)
 
@@ -575,7 +575,7 @@ SetShaderParam:: (iParam: s32, pTex: & STexture, iTextureUnit: s32)
 }
 
 
-PDracStaticInit :: (procAlloc: ProcAlloc) -> & SDrawContext
+PDracStaticInit proc (procAlloc: ProcAlloc) -> & SDrawContext
 {
 	g_aQskey = cast (& SQuadSortKey)PVAllocSimple(procAlloc, sizeof(SQuadSortKey) * g_cQskeyMax)
 	g_aQvert 		= cast (& SQuadVertex)PVAllocSimple(procAlloc, sizeof(SQuadVertex) * g_cQvertMax)
@@ -597,7 +597,7 @@ PDracStaticInit :: (procAlloc: ProcAlloc) -> & SDrawContext
 }
 
 
-PFontmanStaticInit :: (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SFontManager
+PFontmanStaticInit proc (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SFontManager
 {
 	if !FTryLoadFont(&g_fontman, FONTK.Regular, "Assets/Fonts/Calibri", procAlloc)
 	{ 
@@ -609,7 +609,7 @@ PFontmanStaticInit :: (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SFon
 	return &g_fontman
 }
 
-ConcatPChz :: 	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
+ConcatPChz proc	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
 {
 	iCh: s32
 	cChEnd := aCh.count -1 // leave room for terminator, BB doesn't support zero size array
@@ -631,7 +631,7 @@ ConcatPChz :: 	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
 	aCh[iCh] = '\0'
 }
 
-PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
+PTexLoad proc (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
 {
     // TODO - should replace this with a hash
     shashFilename:= ShashCreate(pChzFilename, 0)
@@ -730,7 +730,7 @@ PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
     return pTex
 }
 
-FTryLoadFont :: (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & u8, procAlloc: ProcAlloc) -> bool
+FTryLoadFont proc (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & u8, procAlloc: ProcAlloc) -> bool
 {
 	aCh: [1024] u8
 
@@ -771,7 +771,7 @@ FTryLoadFont :: (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & u8, pro
 	return true
 }
 
-DrawTexturedQuad :: (pTex: & STexture, dX: float, dY: float)
+DrawTexturedQuad proc (pTex: & STexture, dX: float, dY: float)
 {
     glEnable(GL_TEXTURE_2D)
     glBindTexture(GL_TEXTURE_2D, pTex.m_driId)
@@ -796,7 +796,7 @@ DrawTexturedQuad :: (pTex: & STexture, dX: float, dY: float)
 	glDisable(GL_TEXTURE_2D)
 }
 
-PGlyphFind :: (pGlyphf: & SFontGlyphFile, wch: u32) -> & SFontGlyph
+PGlyphFind proc (pGlyphf: & SFontGlyphFile, wch: u32) -> & SFontGlyph
 {
 	// binary search through the glyphs to find our data
 
@@ -827,7 +827,7 @@ PGlyphFind :: (pGlyphf: & SFontGlyphFile, wch: u32) -> & SFontGlyph
 	return null
 }
 
-DXFindKerning :: (pFont: & SFont, iDxMin: int, iDxMax: int, wchOther: u32) -> f32
+DXFindKerning proc (pFont: & SFont, iDxMin: int, iDxMax: int, wchOther: u32) -> f32
 {
 	//for(int iDx=iDxMin; iDx<iDxMax; ++iDx)
 	for iterDx := iterMake(iDxMin, iDxMax)
@@ -840,7 +840,7 @@ DXFindKerning :: (pFont: & SFont, iDxMin: int, iDxMax: int, wchOther: u32) -> f3
 	return 0
 }
 
-FillOutVert :: inline (
+FillOutVert proc inline (
 					x: float, y: float, 
 					u: float, v: float, 
 					r: float, g: float, b: float, a: float, 
@@ -867,7 +867,7 @@ FillOutVert :: inline (
 	pFvert.m_vMax = pGlyph.m_vMax
 }
 
-CreateVerts :: (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFontVertexBuffer,  posCursorArg: SVector2, pWchz: & u32)
+CreateVerts proc (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFontVertexBuffer,  posCursorArg: SVector2, pWchz: & u32)
 {
 	posCursor := posCursorArg
 	colvec := ColvecFromCol(pDras.m_fontd.m_colMain)
@@ -943,7 +943,7 @@ CreateVerts :: (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFontVe
 	pDras.m_fontd.m_posCursor = posCursor
 }
 
-FlushVerts :: (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
+FlushVerts proc (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 {
 	// push orthographic projection
 	glPushMatrix()
@@ -1004,7 +1004,7 @@ FlushVerts :: (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 	pFvbuf.m_cFvert = 0
 }	
 
-DXDYExtentsFromAWch :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
+DXDYExtentsFromAWch proc (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
 {
 	pDras := pDrac.m_pDras
 	fontk := pDras.m_fontd.m_fontk
@@ -1085,12 +1085,12 @@ CVec2 DXDYCalculateExtents(SDrawContext * pDrac, const char * pWchzFormat, ...)
 	return DXDYExtentsFromAWch(pDrac, aWch);
 }*/
 
-DXDYCalculateExtents :: (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
+DXDYCalculateExtents proc (pDrac: & SDrawContext, pWchz: & u32) -> SVector2
 {
 	return DXDYExtentsFromAWch(pDrac, pWchz)
 }
 
-DXDYCalculateExtents :: (pDrac: & SDrawContext, pCoz: & u8) -> SVector2
+DXDYCalculateExtents proc (pDrac: & SDrawContext, pCoz: & u8) -> SVector2
 {
 	aWch: [kChMaxDrawText] u32
 
@@ -1103,7 +1103,7 @@ DXDYCalculateExtents :: (pDrac: & SDrawContext, pCoz: & u8) -> SVector2
 	return DXDYExtentsFromAWch(pDrac, aWch)
 }
 
-DrawTextRaw :: (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
+DrawTextRaw proc (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 {
 	// draw characters to the right. pos is the left side baseline
 
@@ -1111,7 +1111,7 @@ DrawTextRaw :: (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 	FlushVerts(pDrac, &g_Fvbuf)
 }
 
-DrawTextAligned :: inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
+DrawTextAligned proc inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 {
 	pDras := pDrac.m_pDras
 
@@ -1160,7 +1160,7 @@ DrawTextAligned :: inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 	DrawTextRaw(pDrac, posCursor, pWchz)
 }
 
-DrawText :: (pDrac: & SDrawContext, pos: SVector2, pCoz: & u8)
+DrawText proc (pDrac: & SDrawContext, pos: SVector2, pCoz: & u8)
 {
 	aWch: [kChMaxDrawText] u32
 	if FTryConvertUtf8ToUcs4(pCoz, aWch, &aWch[aWch.count])
@@ -1169,7 +1169,7 @@ DrawText :: (pDrac: & SDrawContext, pos: SVector2, pCoz: & u8)
 	}
 }
 
-SetupOrthoViewport :: (xMin: f64, yMin: f64, xMax: f64, yMax: f64)
+SetupOrthoViewport proc (xMin: f64, yMin: f64, xMax: f64, yMax: f64)
 {
 	glMatrixMode(GL_PROJECTION)
 	glLoadIdentity()

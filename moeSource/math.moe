@@ -9,20 +9,20 @@ F64_MAX :: 1.7976931348623158e+308
 F64_MIN :: 2.2250738585072014e-308
 
 
-SVector2 :: struct
+SVector2 struct
 {
 	m_x: float
 	m_y: float
 }
 
-SVector3 :: struct
+SVector3 struct
 {
 	m_x: float
 	m_y: float
 	m_z: float
 }
 
-SVector4 :: struct
+SVector4 struct
 {
 	m_x: float
 	m_y: float
@@ -30,7 +30,7 @@ SVector4 :: struct
 	m_w: float
 }
 
-Vec2Create :: (x: float, y: float) -> SVector2
+Vec2Create proc (x: float, y: float) -> SVector2
 {
 	vec : SVector2
 	vec.m_x = x
@@ -38,7 +38,7 @@ Vec2Create :: (x: float, y: float) -> SVector2
 	return vec
 }
 
-Vec3Create :: (x: float, y: float, z: float) -> SVector3
+Vec3Create proc (x: float, y: float, z: float) -> SVector3
 {
 	vec : SVector3
 	vec.m_x = x
@@ -47,7 +47,7 @@ Vec3Create :: (x: float, y: float, z: float) -> SVector3
 	return vec
 }
 
-Vec4Create :: (x: float, y: float, z: float, w: float) -> SVector4
+Vec4Create proc (x: float, y: float, z: float, w: float) -> SVector4
 {
 	vec : SVector4
 	vec.m_x = x
@@ -57,7 +57,7 @@ Vec4Create :: (x: float, y: float, z: float, w: float) -> SVector4
 	return vec
 }
 
-VecRotate :: (gRadians: float, vec: SVector2) -> SVector2
+VecRotate proc (gRadians: float, vec: SVector2) -> SVector2
 {
 	gSin := sin(gRadians)
 	gCos := cos(gRadians)
@@ -68,37 +68,37 @@ VecRotate :: (gRadians: float, vec: SVector2) -> SVector2
 	return Vec2Create(gCos * vec.m_x - gSin * vec.m_y, gCos * vec.m_y + gSin * vec.m_x)
 }
 
-VecAdd :: inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
+VecAdd proc inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
 {
 	return Vec2Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y)
 }
 
-VecSub :: inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
+VecSub proc inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
 {
 	return Vec2Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y)
 }
 
-VecMul :: inline (vec: SVector2, r: f32) -> SVector2
+VecMul proc inline (vec: SVector2, r: f32) -> SVector2
 {
 	return Vec2Create(vec.m_x * r, vec.m_y * r)
 }
 
-VecAdd :: inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
+VecAdd proc inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
 {
 	return Vec3Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y, vecLhs.m_z + vecRhs.m_z)
 }
 
-VecSub :: inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
+VecSub proc inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
 {
 	return Vec3Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y, vecLhs.m_z - vecRhs.m_z)
 }
 
-VecMul :: inline (vec: SVector3, r: f32) -> SVector3
+VecMul proc inline (vec: SVector3, r: f32) -> SVector3
 {
 	return Vec3Create(vec.m_x * r, vec.m_y * r, vec.m_z * r)
 }
 
-VecAdd :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
+VecAdd proc inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 {
 	return Vec4Create(
 			vecLhs.m_x + vecRhs.m_x,
@@ -107,7 +107,7 @@ VecAdd :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 			vecLhs.m_w + vecRhs.m_w)
 }
 
-VecSub :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
+VecSub proc inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 {
 	return Vec4Create(
 			vecLhs.m_x - vecRhs.m_x,
@@ -116,24 +116,24 @@ VecSub :: inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 			vecLhs.m_w - vecRhs.m_w)
 }
 
-VecMul :: inline (vec: SVector4, r: f32) -> SVector4
+VecMul proc inline (vec: SVector4, r: f32) -> SVector4
 {
 	return Vec4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r)
 }
 
-GMin :: inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) { return gA } return gB }
-GMax :: inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) { return gA } return gB }
-GClamp :: inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax) }
-GLerp :: inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp }
+GMin proc inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) { return gA } return gB }
+GMax proc inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) { return gA } return gB }
+GClamp proc inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax) }
+GLerp proc inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp }
 
-SRandomGenJenkinsSmall :: struct // tag = rng
+SRandomGenJenkinsSmall struct // tag = rng
 {
 	m_nA, m_nB, m_nC, m_nD: u32
 }
 
-SRandomGen :: typedef SRandomGenJenkinsSmall
+SRandomGen typedef SRandomGenJenkinsSmall
 
-SeedRandom :: (pRng: & SRandomGenJenkinsSmall, nSeed: u32)
+SeedRandom proc (pRng: & SRandomGenJenkinsSmall, nSeed: u32)
 {
 	pRng.m_nA = 0xf1ea5eed
 	pRng.m_nB = nSeed
@@ -149,7 +149,7 @@ SeedRandom :: (pRng: & SRandomGenJenkinsSmall, nSeed: u32)
 }
 //#define EWC_RAND_SMALL_ROT(X, K)  (((X)<<(K))|((X)>>(32-(K))))
 	
-NGenerateRand :: (pRng : & SRandomGenJenkinsSmall) -> u32
+NGenerateRand proc (pRng : & SRandomGenJenkinsSmall) -> u32
 {
 	//U32 nE = m_nA - EWC_RAND_SMALL_ROT(m_nB, 27);	
 	//m_nA = m_nB ^ EWC_RAND_SMALL_ROT(m_nC, 17);
@@ -161,7 +161,7 @@ NGenerateRand :: (pRng : & SRandomGenJenkinsSmall) -> u32
 	return pRng.m_nD
 }
 
-GRandom :: (pRng : & SRandomGenJenkinsSmall, gMin: f32, gMax: f32) -> f32
+GRandom proc (pRng : & SRandomGenJenkinsSmall, gMin: f32, gMax: f32) -> f32
 {
 	d := gMax-gMin
 	if (d <= 0.000001)
@@ -175,7 +175,7 @@ GRandom :: (pRng : & SRandomGenJenkinsSmall, gMin: f32, gMax: f32) -> f32
 }
 
 
-NRandom :: (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
+NRandom proc (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
 { 
 	d := cast(u32)(nMax-nMin)
 	if (d == 0)
@@ -187,7 +187,7 @@ NRandom :: (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
 	return nMin + cast(s32) (NGenerateRand(pRng) % d)
 }
 
-BuildRandomOrderedArray :: (pRng : & SRandomGenJenkinsSmall, aiN: [] s32)
+BuildRandomOrderedArray proc (pRng : & SRandomGenJenkinsSmall, aiN: [] s32)
 {
 	c := aiN.count
 	if (c <= 0)

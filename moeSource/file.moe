@@ -3,7 +3,7 @@
 
 kCBFilePathMax :: 1024
 
-FFILEACCESS :: enum s32
+FFILEACCESS enum s32
 {
 	GenericRead:		0x80000000,
 	GenericWrite:		0x40000000,
@@ -11,7 +11,7 @@ FFILEACCESS :: enum s32
 	GenericAll:			0x10000000
 }
 	
-FFILECREATE :: enum s32
+FFILECREATE enum s32
 {
 	CreateNew: 			1,
 	CreateAlways: 		2,
@@ -20,7 +20,7 @@ FFILECREATE :: enum s32
 	TruncateExisting: 	5
 }
 
-FFILESHARE :: enum s32
+FFILESHARE enum s32
 {
 	None:	0x0,
 	Read:	0x1,
@@ -28,14 +28,14 @@ FFILESHARE :: enum s32
 	Delete:	0x4
 }
 
-SLargeInteger :: struct  // tag = lgint
+SLargeInteger struct  // tag = lgint
 {
     m_nQuadPart: s64
 }
 
-Bool32 :: typedef s32
+Bool32 typedef s32
 
-CreateFileA :: (
+CreateFileA proc (
 	pChzFilename: &u8,
 	ffileaccess: FFILEACCESS,
 	ffileshare: FFILESHARE,
@@ -44,19 +44,19 @@ CreateFileA :: (
 	ffileattrib: s32,
 	hndTemplate: HANDLE) -> HANDLE #foreign #stdcall
 
-CloseHandle  :: (handle: HANDLE) -> s32 #foreign #stdcall
+CloseHandle proc (handle: HANDLE) -> s32 #foreign #stdcall
 
-GetFileSizeEx :: (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall
+GetFileSizeEx proc (hndFile: HANDLE, pLgint: & SLargeInteger) -> Bool32 #foreign #stdcall
 
-ReadFile :: (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign #stdcall
+ReadFile proc (hndFile: HANDLE, pVBuffer: & void, cBRead: s32, pCBWasRead: & s32, pVOverlapped: &void) -> Bool32 #foreign #stdcall
 
-SFile :: struct // tag = file
+SFile struct // tag = file
 {
     m_hnd: HANDLE
 };
 
 
-FileOpen :: (pChzFilename: & u8, fIsWriteMode: bool) -> SFile 
+FileOpen proc (pChzFilename: & u8, fIsWriteMode: bool) -> SFile 
 {
     file: SFile
     if fIsWriteMode 
@@ -85,12 +85,12 @@ FileOpen :: (pChzFilename: & u8, fIsWriteMode: bool) -> SFile
     return file
 }
 
-CloseFile :: (pFile: &SFile)
+CloseFile proc (pFile: &SFile)
 {
     CloseHandle(pFile.m_hnd)
 }
 
-PBReadEntireFile :: (pChzFilename: & u8, pCBWasRead: &s64) -> & u8
+PBReadEntireFile proc (pChzFilename: & u8, pCBWasRead: &s64) -> & u8
 {
     @pCBWasRead = 0
     file := FileOpen(pChzFilename, false)
@@ -129,7 +129,7 @@ PBReadEntireFile :: (pChzFilename: & u8, pCBWasRead: &s64) -> & u8
     return pBData
 }
 
-CBReadFile :: (file: SFile, pB: & u8, cBLength: s64) -> s64
+CBReadFile proc (file: SFile, pB: & u8, cBLength: s64) -> s64
 {
     cBSingleRead: s32 // need to split up the read to handle > 32bit read sizes
     cBWasRead: s64

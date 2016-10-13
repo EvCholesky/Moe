@@ -1,7 +1,7 @@
 #import "Basic"
 
 
-TestOperators :: ()
+TestOperators proc ()
 {
 	printf("\nOperators:\n")
 
@@ -22,7 +22,7 @@ TestOperators :: ()
 	printf("64>>2=%d, 64<<2=%d\n", n64>>2, n64<<2)
 }
 
-TestPointers :: ()
+TestPointers proc ()
 {
 	printf("\nPointers:\n")
 
@@ -48,7 +48,7 @@ TestPointers :: ()
 	pChz := "test string"
 	printf("test string = %s\n", pChz)
 
-	PointStruct :: struct
+	PointStruct struct
 	{
 		m_n : s32
 	}
@@ -73,9 +73,9 @@ TestPointers :: ()
 	printf("%p == %p\n", pN, pV)
 }
 
-TestNestedMethod :: (n : s32)
+TestNestedMethod proc (n : s32)
 {
-	NestedMethod :: (n : s32) -> f32
+	NestedMethod proc (n : s32) -> f32
 	{
 		printf("nested method = %d\n", n)
 		return 2.2
@@ -93,13 +93,13 @@ TestNestedMethod :: (n : s32)
 	printf("return = %f\n", g)
 }
 
-FPrint :: (pChz : & u8, fArg : bool) -> bool
+FPrint proc (pChz : & u8, fArg : bool) -> bool
 {
 	printf(pChz)
 	return fArg
 }
 
-TestIfElse :: ()
+TestIfElse proc ()
 {
 	printf("\nIf/Else:\n")
 
@@ -141,17 +141,17 @@ TestIfElse :: ()
 	printf("short-circuit %d(0), %d(1)\n",fT1 && fT2 && fF1, fF1 || fT1)
 }
 
-TestInitializers :: ()
+TestInitializers proc ()
 {
 	printf("\nInitializers:\n")
 
 	cNest :: 3
-	SNestedConst :: struct // tag=nest
+	SNestedConst struct // tag=nest
 	{
 		m_n : s8 = 123
 	}
 
-	SInitConst :: struct // tag=init
+	SInitConst struct // tag=init
 	{
 		m_n : s8 = 7
 		m_g := 2.2
@@ -159,13 +159,13 @@ TestInitializers :: ()
 		m_pInit : & SInitConst
 	}
 
-	SNested :: struct // tag=nest
+	SNested struct // tag=nest
 	{
 		m_n : s8 = 123
 		m_uninit : s8 = ---
 	}
 
-	SInit :: struct // tag=init
+	SInit struct // tag=init
 	{
 		m_n : s8 = 7
 		m_g := 2.2
@@ -194,17 +194,17 @@ TestInitializers :: ()
 	}
 }
 
-TestStructures :: ()
+TestStructures proc ()
 {
 	printf("\nStructures:\n")
 
-	SChild :: struct
+	SChild struct
 	{
 		m_n : s32
 		m_pChildSelf : & SChild
 	}
 
-	SRoot :: struct
+	SRoot struct
 	{
 		m_child : SChild
 		m_pRootSelf : & SRoot
@@ -219,11 +219,11 @@ TestStructures :: ()
 	printf("%d = %d\n", root.m_child.m_n, root.m_pRootSelf.m_pRootSelf.m_child.m_pChildSelf.m_pChildSelf.m_n)
 
 
-	SOuter :: struct
+	SOuter struct
 	{
 	 	m_n : s8
 
-	 	SNested :: struct
+	 	SNested struct
 	 	{
 	 		NestedCount :: 3
 	 		m_nNested := 17
@@ -240,7 +240,7 @@ TestStructures :: ()
 		++iNest
 	}
 
-	SShallowCopy :: struct
+	SShallowCopy struct
 	{
 		m_f : bool
 		m_n : int
@@ -274,11 +274,11 @@ TestStructures :: ()
 
 }
 
-TestRecursion :: ()
+TestRecursion proc ()
 {
 	printf("\nRecursion:\n")
 
-	NFactorial :: (n : int) -> int
+	NFactorial proc (n : int) -> int
 	{
 		if n > 1
 		{
@@ -289,7 +289,7 @@ TestRecursion :: ()
 
 	printf("4! = %d (24)\n", NFactorial(4))
 
-	MethodA :: (n : int)
+	MethodA proc (n : int)
 	{
 		if (n > 0)	
 		{
@@ -297,7 +297,7 @@ TestRecursion :: ()
 		}
 	}
 
-	MethodB :: (n : int)
+	MethodB proc (n : int)
 	{
 		printf("MethodB = %d\n", n)
 		MethodA(n)
@@ -306,7 +306,7 @@ TestRecursion :: ()
 	MethodA(5)
 }
 
-TestTypedefs :: ()
+TestTypedefs proc ()
 {
 	printf("\nTypedefs:\n")
 
@@ -321,7 +321,7 @@ TestTypedefs :: ()
 	}
 }
 
-PrintStringArray :: (pChzLabel : & u8, aPchz : [] & u8)
+PrintStringArray proc (pChzLabel : & u8, aPchz : [] & u8)
 {
 	printf("%s[%d] = {", pChzLabel, aPchz.count)
 	n : int
@@ -337,7 +337,7 @@ PrintStringArray :: (pChzLabel : & u8, aPchz : [] & u8)
 	printf("}\n")
 }
 
-PrintIntArray :: (pChzLabel : & u8, aN : [] int)
+PrintIntArray proc (pChzLabel : & u8, aN : [] int)
 {
 	printf("%s[%d] = {", pChzLabel, aN.count)
 	n : int
@@ -353,11 +353,11 @@ PrintIntArray :: (pChzLabel : & u8, aN : [] int)
 	printf("}\n")
 }
 
-TestEnums :: ()
+TestEnums proc ()
 {
 	printf("\nEnumerations:\n")
 
-	ENUMK :: enum int
+	ENUMK enum int
 	{
 		Ack : 0,
 		Bah : Ack+1,
@@ -397,7 +397,7 @@ TestEnums :: ()
 	PrintIntArray("ENUMK.values", ENUMK.values)
 }
 
-TestArrays :: () 
+TestArrays proc () 
 {
 	printf("\nArrays:\n")
 
@@ -434,11 +434,11 @@ TestArrays :: ()
 
 	PrintIntArray("AnArgs", {3,4,4567, 2})
 }
-TestCasting :: () 
+TestCasting proc () 
 {
 	printf("\nExplicit Casts:\n")
 
-	SFoo :: struct
+	SFoo struct
 	{
 		m_a : int
 		m_b : int
@@ -470,7 +470,7 @@ TestCasting :: ()
 	printf("acast (278.0f, 12) %f %d\n", gAcast, nAcast)
 }
 
-TestOverloading :: ()
+TestOverloading proc ()
 {
 	printf("\nOverloading:\n")
 
@@ -482,27 +482,27 @@ TestOverloading :: ()
 	OverloadedPrint("test")
 }
 
-OverloadedPrint :: (n: int)
+OverloadedPrint proc (n: int)
 {
 	printf("Overloaded integer %d\n", n)
 }
 
-OverloadedPrint :: (n: s16)
+OverloadedPrint proc (n: s16)
 {
 	printf("Overloaded s16 %d\n", n)
 }
 
-OverloadedPrint :: (pChz: & u8)
+OverloadedPrint proc (pChz: & u8)
 {
 	printf("Overloaded & char %s\n", pChz)
 }
 
-OverloadedPrint :: (g: float)
+OverloadedPrint proc (g: float)
 {
 	printf("Overloaded float %f\n", g)
 }
 
-TestGlobals :: ()
+TestGlobals proc ()
 {
 	printf("\nGlobal initialization:\n")
 	printf("g_n: %d (15)\n",g_n)
@@ -517,7 +517,7 @@ TestGlobals :: ()
 g_n : s32 =15
 g_aN := {:s32: 2, 4, 5} // array globals
 
-SGlobal :: struct
+SGlobal struct
 {
 	m_n : s32 = 2
 	m_nUninit : s32 = ---
@@ -528,31 +528,31 @@ g_glob : SGlobal // struct globals
 
 g_aGlob : [4] SGlobal // array of struct globals
 
-CallByReference :: (pChz: & u8)
+CallByReference proc (pChz: & u8)
 {
 	pFnSelfTest := CallByReference // test pointer to self procedure
 
 	printf("(ProcRef) %s\n", pChz)
 }
 
-CallByReferenceMultiple :: (pChzA: & u8, pChzB: & u8)
+CallByReferenceMultiple proc (pChzA: & u8, pChzB: & u8)
 {
 	printf("(ProcRef) %s .. %s\n", pChzA, pChzB)
 }
 
-PassedMethod :: (pFn: (pChz: & u8)->void, pChz: & u8)
+PassedMethod proc (pFn: (pChz: & u8)->void, pChz: & u8)
 {
 	pFn(pChz)
 }
 
-SProcRefStruct :: struct
+SProcRefStruct struct
 {
 	m_pFn: (pChz: & u8)->void
 }
 
-TestFunc :: typedef (pChz: & u8)
+TestFunc typedef (pChz: & u8)
 
-TestProcedureRef :: () -> int 
+TestProcedureRef proc () -> int 
 {
 	printf("\nProcedureRef:\n")
 
@@ -604,7 +604,7 @@ even though it's several lines
 and "contains quotes"
 END
 
-TestHereStrings :: ()
+TestHereStrings proc ()
 {
 	printf("\nHere Strings:\n")
 
@@ -618,7 +618,7 @@ HERE
 	printf("\n%s\n", pChzTest)
 }
 
-TestForLoop :: ()
+TestForLoop proc ()
 {
 	printf("\nFor Loops:\n")
 
@@ -660,7 +660,7 @@ TestForLoop :: ()
 	printf("'\n")
 }
 
-TestBreakContinue :: ()
+TestBreakContinue proc ()
 {
 	printf("\nBreak & Continue:\n")
 
@@ -713,7 +713,7 @@ TestBreakContinue :: ()
 	}
 }
 
-main :: () -> int 
+main proc () -> int 
 {
 
 	TestOperators()
@@ -737,16 +737,14 @@ main :: () -> int
 	return 1
 }
 
-SLater :: struct
+SLater struct
 {
 	ConstFour :: 4
 
-	IntAlias :: typedef s32
-	QuadArray :: typedef [ConstFour] IntAlias
+	IntAlias typedef s32
+	QuadArray typedef [ConstFour] IntAlias
 
-	// ArrayFail :: typedef [Four] IntAlias; // test this!
-
-	MEMB ::	 enum
+	MEMB enum
 	{
 		One : 1,
 		Two,

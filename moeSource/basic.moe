@@ -1,25 +1,25 @@
 #foreign_library "Basic"
 
-PrintFloat :: (g : float) #foreign
-PrintInt :: (n : int) #foreign
-PrintByte :: (n : s8) #foreign
-PrintBool :: (f : bool) #foreign
-PrintPointer :: (pB : & u8) #foreign
-PrintString :: (pCh : & u8) #foreign
-printf :: (pChz : &u8, ..) -> s32 #foreign
+PrintFloat proc (g : float) #foreign
+PrintInt proc (n : int) #foreign
+PrintByte proc (n : s8) #foreign
+PrintBool proc (f : bool) #foreign
+PrintPointer proc (pB : & u8) #foreign
+PrintString proc (pCh : & u8) #foreign
+printf proc (pChz : &u8, ..) -> s32 #foreign
 
-strlen :: (pChz: &u8) -> int #foreign
-tolower :: (ch: int) -> int #foreign
+strlen proc (pChz: &u8) -> int #foreign
+tolower proc (ch: int) -> int #foreign
 
-HANDLE :: typedef int 	// This actually needs to be pointer-sized, so s32 in 32-bit, 
+HANDLE typedef int 	// This actually needs to be pointer-sized, so s32 in 32-bit, 
 						//  but lots of people use integers too, arrrrgh!!
 
 INVALID_HANDLE :: -1
 
-HWND :: typedef &void
-HDC  :: typedef HANDLE
+HWND typedef &void
+HDC  typedef HANDLE
 
-SStartupInfo :: struct 
+SStartupInfo struct 
 {
     m_cb : s32
     m_lpReserved : & u8
@@ -43,31 +43,31 @@ SStartupInfo :: struct
 
 // (JBlow) For some reason in Windows sinf and cosf don't have linkage, probably because
 // they always get turned into intrinsics? So I made my own..
-cos  :: (theta: float) -> float #foreign cosf_MOE 
-sin  :: (theta: float) -> float #foreign sinf_MOE
-sqrt :: (theta: float) -> float #foreign sqrtf_MOE
+cos  proc (theta: float) -> float #foreign cosf_MOE 
+sin  proc (theta: float) -> float #foreign sinf_MOE
+sqrt proc (theta: float) -> float #foreign sqrtf_MOE
 
-cos64  :: (theta: f64) -> f64 #foreign cos
-sin64  :: (theta: f64) -> f64 #foreign sin
-sqrt64 :: (theta: f64) -> f64 #foreign sqrt
+cos64  proc (theta: f64) -> f64 #foreign cos
+sin64  proc (theta: f64) -> f64 #foreign sin
+sqrt64 proc (theta: f64) -> f64 #foreign sqrt
 
-DebugBreak :: () -> void #foreign
-PVMalloc :: (cB : uSize) -> & void #foreign
-FreeMalloc :: (pV: &void) #foreign
+DebugBreak proc () -> void #foreign
+PVMalloc proc (cB : uSize) -> & void #foreign
+FreeMalloc proc (pV: &void) #foreign
 
-ProcAlloc :: typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
+ProcAlloc typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
 
-memcpy :: (dest: &void, source: &void, count: uSize) -> &void #foreign
-memset :: (dest: &void, value: int, count: uSize)    -> &void #foreign
+memcpy proc (dest: &void, source: &void, count: uSize) -> &void #foreign
+memset proc (dest: &void, value: int, count: uSize)    -> &void #foreign
 
-PVAllocSimple :: inline (pFnAlloc : ProcAlloc, cB: uSize) -> & void
+PVAllocSimple proc inline (pFnAlloc : ProcAlloc, cB: uSize) -> & void
 {
     // This is just a simple wrapper for allocations that won't be necessary once default args are done.
 
     return pFnAlloc(ALLOCK.Allocate, cB, 0, null, null, 0)
 }
 
-PVAllocDefault :: (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
+PVAllocDefault proc (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
 {
     if allock == ALLOCK.Allocate
     {
@@ -106,7 +106,7 @@ PVAllocDefault :: (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVA
     return null
 }
 
-ALLOCK :: enum 
+ALLOCK enum 
 {
     Allocate,
     Resize,
@@ -114,7 +114,7 @@ ALLOCK :: enum
     FreeAll
 }
 
-assert :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
+assert proc (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
 {
 	if (!fPredicate)	
 	{
@@ -123,7 +123,7 @@ assert :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
 	}
 }
 
-fverify :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
+fverify proc (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
 {
 	if (!fPredicate)	
 	{
@@ -136,13 +136,13 @@ fverify :: (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
 // for loop Iterators
 
 // int range iterator
-SIntIterator :: struct
+SIntIterator struct
 {
     m_i: int
     m_nMax: int // one past the end
 }
 
-iterMake :: (iBegin: int, nMax: int) -> SIntIterator
+iterMake proc (iBegin: int, nMax: int) -> SIntIterator
 {
     iter : SIntIterator
     iter.m_i = iBegin
@@ -150,23 +150,23 @@ iterMake :: (iBegin: int, nMax: int) -> SIntIterator
     return iter
 }
 
-iterIsDone :: (pIter: &SIntIterator) -> bool
+iterIsDone proc (pIter: &SIntIterator) -> bool
 {
     return pIter.m_i >= pIter.m_nMax
 }
 
-iterNext :: (pIter: &SIntIterator)
+iterNext proc (pIter: &SIntIterator)
 {
     ++pIter.m_i
 }
 
 // utf8 null terminated string iterator
-iterIsDone :: (ppCoz: &&u8) -> bool
+iterIsDone proc (ppCoz: &&u8) -> bool
 {
     return @ppCoz == null || @@ppCoz == '\0'
 }
 
-iterNext :: (ppCoz: &&u8)
+iterNext proc (ppCoz: &&u8)
 {
     pCoz := @ppCoz
     pCozEnd : &u8

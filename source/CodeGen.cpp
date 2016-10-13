@@ -4688,7 +4688,7 @@ void TestCodeGen()
 	//pChzIn = " g := 2.2; pG := &g; "; // not handling this properly as globals
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "fooFunc :: (n: s32) -> s64 { return 2 }     func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
+	pChzIn = "fooFunc proc (n: s32) -> s64 { return 2 }     func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "{ pFunc: (n: s32)->s64;   pFunc(33) }";
@@ -4706,16 +4706,16 @@ void TestCodeGen()
 	pChzIn = "{ aN : [2] int; aNUnsized : [] int = aN }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } n := ENUMK.Ick }";
+	pChzIn = "{ ENUMK enum s32 { Ick : 1, Foo, Bah : 3 } n := ENUMK.Ick }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "{ SomeConst :: 0xFF; n:=SomeConst }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "SFoo :: struct { m_n : s32 } { foo : SFoo; pFoo := &foo; pFoo.m_n = 2 } ";
+	pChzIn = "SFoo struct { m_n : s32 } { foo : SFoo; pFoo := &foo; pFoo.m_n = 2 } ";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "SFoo :: struct { m_n : s32; m_g := 1.2 } foo : SFoo";
+	pChzIn = "SFoo struct { m_n : s32; m_g := 1.2 } foo : SFoo";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ aN : [4] s32;  pN : & s32; fTest := aN.data == pN }";
@@ -4736,7 +4736,7 @@ void TestCodeGen()
 	pChzIn =	"{ i:=0; while i < 5 { i = i + 1 } }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "printf :: (pCh : & u8, ..) -> s32 #foreign";
+	pChzIn = "printf proc (pCh : & u8, ..) -> s32 #foreign";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ pChz := \"testString\" }";
@@ -4747,26 +4747,26 @@ void TestCodeGen()
 
 	pChzIn =	"{ n : int = 32; pN : & int; pN = &n; n2 := @pN; @pN = 6}";
 	AssertTestCodeGen(&work, pChzIn);
-	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; else nRet =1; return nRet }";
-	//pChzIn =	"Foo :: (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet }";
-	pChzIn =	"Foo :: (n : s64) -> int { nRet : int = 5; if (n == 4) { nRet = 4 } else if (n == 3) { nRet =3 } else { nRet = 2 } return nRet }";
+	//pChzIn =	"Foo proc (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; else nRet =1; return nRet }";
+	//pChzIn =	"Foo proc (n : s64) -> int { nRet : s64 = 5; if (n) nRet = 4; return nRet }";
+	pChzIn =	"Foo proc (n : s64) -> int { nRet : int = 5; if (n == 4) { nRet = 4 } else if (n == 3) { nRet =3 } else { nRet = 2 } return nRet }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn =	"{ i:=5 + 2 * 3 }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"AddNums :: (nA : int, nB : int) -> int { return nA + nB }";
+	pChzIn =	"AddNums proc (nA : int, nB : int) -> int { return nA + nB }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn =	"AddLocal :: (nA : int) -> int { nFoo : int; nFoo = 2; return nA + nFoo }";
+	pChzIn =	"AddLocal proc (nA : int) -> int { nFoo : int; nFoo = 2; return nA + nFoo }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "Foo :: (nA : s8, nB : s8) -> bool { return (nA < nB) == (nB >= nA) }";
+	pChzIn = "Foo proc (nA : s8, nB : s8) -> bool { return (nA < nB) == (nB >= nA) }";
 	AssertTestCodeGen(&work, pChzIn);
 
-	//pChzIn =	"GetTwo :: ()-> int { return 2; } AddTwo :: (nA : int) -> int { return nA + GetTwo() }";
-	//pChzIn =	"AddTwo :: (nA : int) -> int { return nA + GetTwo(); } GetTwo :: ()-> int { return 2 }";
-	pChzIn =	"Foo :: () -> int { return Bah() } Bah :: ()-> int { return Foo() }";
+	//pChzIn =	"GetTwo proc ()-> int { return 2; } AddTwo proc (nA : int) -> int { return nA + GetTwo() }";
+	//pChzIn =	"AddTwo proc (nA : int) -> int { return nA + GetTwo(); } GetTwo proc ()-> int { return 2 }";
+	pChzIn =	"Foo proc () -> int { return Bah() } Bah proc ()-> int { return Foo() }";
 	AssertTestCodeGen(&work, pChzIn);
 
 	StaticShutdownStrings(&allocString);

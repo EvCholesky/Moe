@@ -61,12 +61,14 @@ nUninitialized : s32 = ---
 ```
 
 
-Constants are defined with a name, followed by the `const` keyword and the constant value.
+Constants are defined with a name, followed by the `::` operator and the constant value.
 ```
-kPi const = 3.14159 
+kPi :: 3.14159         
+kAnswer :: s32 = 42   // constants can be explicitly typed
 ```
 
-Literals and constants are unsized until assigned to an instance value. Variables that are type inferred from an untyped value will use the fitting default type (ie `n := 2` is an `int`).
+Literals and most constants are unsized until assigned to an instance value. Variables that are type inferred from an untyped value will use the fitting default type (ie `n := 2` is an `int`).
+
 
 
 
@@ -79,6 +81,9 @@ aN : [..] int;  // dynamic array (not yet implemented)
 
 aN := {:s16: 2, 3, 4}
 ```
+
+Each array type also has a member `count` to query the number of elements it contains.
+`numElements := aN.count`
 
 
 
@@ -114,6 +119,15 @@ SFoo struct
   m_n := 22
   kVal const = 33   // member constants *should* work
 }
+```
+
+
+
+## Typesdef
+Types can be aliased with the typedef keyword:
+```
+NewName typedef s32
+IntPointer typedef & s32;
 ```
 
 
@@ -159,6 +173,45 @@ foo := SFoo(.m_n = 45)
 ```
 
 
+
+## Enumerations
+Enumerations
+```
+SOMEENUM enum
+{
+    Ack : 0,
+    Bah : Ack+1,
+    Ugh,  
+}
+```
+
+Enumeration values are referred to with the enum name as a namespace:
+``` 
+s := SOMEENUM.Bah
+```
+
+Enumerations also define several implicit constants:
+  * `min` the value of the lowest defined constant.
+  * `last` the value of the highest defined constant.
+  * `max` one past the last value.
+  * `nil` a sentinel to signal an invalid value.
+
+An enumerations loose type is the type used to store it in memory. The loose type can be used directly (i.e. `n: SOMEENUM.loose`) and the loose type can be specified explicitly in the enum definition:
+```
+SOMEENUM enum s16
+{
+```
+
+Each enum type also defines static arrays containing the names and values of each enum constant.
+```
+for i:=0; i<SOMEENUM.names.count; ++i
+{
+  print("%s == %d", SOMEENUM.names[i], SOMEENUM.values[i]) 
+}
+```
+
+
+
 ## Syntax Miscellanea
   - semicolons are optional (needed only to separate multiple statements on one line.
   - conditional predicates are not enclosed in parentheses, but all child blocks must be enclosed in curly braces, even single lines.
@@ -170,7 +223,7 @@ foo := SFoo(.m_n = 45)
 short term tasks:
 - [x] remove semicolon requirement
 - [x] add required brackets for single line conditionals
-- [ ] switch :: definitions for more descriptive keywords struct, enum, proc & const
+- [x] switch :: definitions for more descriptive keywords struct, enum, proc & const
 - [ ] add c-style for loop
 - [ ] move inline to after the parameters like the other procedure qualifiers
 - [ ] error if return value is ignored 

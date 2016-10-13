@@ -5184,9 +5184,9 @@ void TestTypeCheck()
 	pCozOut = "(&s16 $pN (&s16 s16)) (sSize $cB (sSize &s16 &s16)) (= &s16 (&s16 &s16 Literal:Int8)) (= &s16 Literal:Int64)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "iterMake :: (n: u8) -> u8 { return n } "
-			 "iterIsDone :: (pN: & u8) -> bool { return false } "
-			 "iterNext :: (pN: & u8) { } "
+	pCozIn = "iterMake proc (n: u8) -> u8 { return n } "
+			 "iterIsDone proc (pN: & u8) -> bool { return false } "
+			 "iterNext proc (pN: & u8) { } "
 			"it: u8; for it = iterMake(2) { }";
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
 				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
@@ -5194,9 +5194,9 @@ void TestTypeCheck()
 				"(u8 $it u8) (??? u8 (u8 iterMake(u8)->u8 Literal:Int8) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "iterMake :: (n: u8) -> u8 { return n } "
-			 "iterIsDone :: (pN: & u8) -> bool { return false } "
-			 "iterNext :: (pN: & u8) { } "
+	pCozIn = "iterMake proc (n: u8) -> u8 { return n } "
+			 "iterIsDone proc (pN: & u8) -> bool { return false } "
+			 "iterNext proc (pN: & u8) { } "
 			"for it := iterMake(2) { }";
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
 				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
@@ -5204,7 +5204,7 @@ void TestTypeCheck()
 				"(??? (u8 $it (u8 iterMake(u8)->u8 Literal:Int8)) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "SFunc :: () { { n:=5; n=2 } }";
+	pCozIn = "SFunc proc () { { n:=5; n=2 } }";
 	pCozOut = "(SFunc()->void $SFunc void ({} ({} (int $n Literal:Int##) (= int Literal:Int##)) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
@@ -5212,7 +5212,7 @@ void TestTypeCheck()
 	pCozOut = "({} (s32 $n s32 Literal:Int32))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ ch:= 'a' }";
+	pCozIn = "{ ch := 'a' }";
 	pCozOut = "({} (char $ch Literal:Int32))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
@@ -5224,7 +5224,7 @@ void TestTypeCheck()
 	pCozOut = "({} (??? (int $n1 int) (int $n2 int) (float $g float)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= " SelfRef :: () { pfunc := SelfRef }";
+	pCozIn		= " SelfRef proc () { pfunc := SelfRef }";
 	pCozOut		= "(SelfRef()->void $SelfRef void ({} (SelfRef()->void $pfunc SelfRef()->void) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
@@ -5232,13 +5232,13 @@ void TestTypeCheck()
 	pCozOut		= "({} (&(s32)->s32 $ppfunc (&(s32)->s32 ((s32)->s32 (Params (s32 $n s32)) s32))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= " { n:int=2; Foo :: ()->int { n2:=n; g:=Bar(); return 1}    Bar :: ()->float { n:=Foo(); return 1} }";
+	pCozIn		= " { n:int=2; Foo proc ()->int { n2:=n; g:=Bar(); return 1}    Bar proc ()->float { n:=Foo(); return 1} }";
 	pCozOut		=	"(Foo()->int $Foo int ({} (int $n2 int) (float $g (float Bar()->float)) (int Literal:Int##)))"
 					" (Bar()->float $Bar float ({} (int $n (int Foo()->int)) (float Literal:Float32)))"
 					" ({} (int $n int Literal:Int##))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "fooFunc :: (n: s32) -> s64 { return 2 }     func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
+	pCozIn = "fooFunc proc (n: s32) -> s64 { return 2 }     func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
 	pCozOut = "(fooFunc(s32)->s64 $fooFunc (Params (s32 $n s32)) s64 ({} (s64 Literal:Int64))) "
 			  "((s32)->s64 $func ((s32)->s64 (Params (s32 $n s32)) s64) fooFunc(s32)->s64)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
@@ -5275,14 +5275,14 @@ void TestTypeCheck()
 	pCozOut = "({} ([2]int $aN ([2]int Literal:Int## int)) ([]int $aNUnsized ([]int int) [2]int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah}";
+	pCozIn = "{ ENUMK enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah}";
 	pCozOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
 		"(Literal:Array $names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array $values (Literal:Array Literal:Int32 Literal:Int32 Literal:Int32)) "
 		"(Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
 		"(ENUMK_enum $enumk (Literal:Int32 ENUMK_enum $Bah)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick }";
+	pCozIn = "{ EEK enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick }";
 	pCozOut = "({} (EEK_enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
 		"(Literal:Array $names (Literal:Array Literal:String)) (Literal:Array $values (Literal:Array Literal:Int16)) (Literal:Enum $Ick Literal:Int))) "
 		"(EEK_enum $eek (EEK_enum EEK_enum EEK_enum) (Literal:Int16 EEK_enum $Ick)) "
@@ -5297,21 +5297,21 @@ void TestTypeCheck()
 	pCozOut = "(Literal:Int $SomeConst Literal:Int) (s16 $n s16 Literal:Int16) (int $n2 Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pUgh : & SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo } SFoo :: struct { m_n : s8 }";
+	pCozIn = "pUgh : & SUgh; pUgh.m_foo.m_n = 1; SUgh struct { m_foo : SFoo } SFoo struct { m_n : s8 }";
 	pCozOut = "(&SUgh_struct $pUgh (&SUgh_struct SUgh_struct)) (= (s8 (SFoo_struct &SUgh_struct $m_foo) $m_n) Literal:Int8) "
 		"(SUgh_struct $SUgh ({} (SFoo_struct $m_foo SFoo_struct))) "
 		"(SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pFoo : & SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8 }";
+	pCozIn = "pFoo : & SFoo; pFoo.m_n = 1; SFoo struct { m_n : s8 }";
 	pCozOut = "(&SFoo_struct $pFoo (&SFoo_struct SFoo_struct)) (= (s8 &SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "foo : SFoo; foo.m_n = 1; SFoo :: struct { m_n : s8 }";
+	pCozIn = "foo : SFoo; foo.m_n = 1; SFoo struct { m_n : s8 }";
 	pCozOut = "(SFoo_struct $foo SFoo_struct) (= (s8 SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "SFoo :: struct { m_n : s32; m_g := 1.2 } foo : SFoo";
+	pCozIn = "SFoo struct { m_n : s32; m_g := 1.2 } foo : SFoo";
 	pCozOut = "(SFoo_struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo_struct $foo SFoo_struct)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
@@ -5335,11 +5335,11 @@ void TestTypeCheck()
 	pCozOut ="({} (Nop) (s32 $n s32 (---)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "printf :: (pCh : & u8, ..) -> s32 #foreign";
+	pCozIn = "printf proc (pCh : & u8, ..) -> s32 #foreign";
 	pCozOut ="(printf(&u8, ..)->s32 $printf (Params (&u8 $pCh (&u8 u8)) (..)) s32)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000)";
+	pCozIn = "Vararg proc (..) #foreign; Vararg(2.2, 8,2000)";
 	pCozOut ="(Vararg(..)->void $Vararg (Params (..)) void) (void Vararg(..)->void Literal:Float64 Literal:Int## Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
@@ -5360,7 +5360,7 @@ void TestTypeCheck()
 	pCozOut ="(int $a (Literal:Int## Literal:Int Literal:Int)) (int $n (Literal:Int## Literal:Int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n }"; 
+	pCozIn		= "foo proc (n : bool) #foreign; n:s16; ack proc ( n : s32) { test := n; n : s64; test2 := n }"; 
 	pCozOut		= "(foo(bool)->void $foo (Params (bool $n bool)) void) (s16 $n s16) "
 					"(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (s32 $test s32) (s64 $n s64) (s64 $test2 s64) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
@@ -5386,7 +5386,7 @@ void TestTypeCheck()
 	pCozOut = "({} (bool $i Literal:Bool8) (bool $foo bool) (bool $g bool)) (bool $g_g bool Literal:Bool8)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g }";
+	pCozIn		= "ParamFunc proc (nA : s32, g : float) { foo := nA; bah := g }";
 	pCozOut		= "(ParamFunc(s32, float)->void $ParamFunc (Params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
@@ -5438,16 +5438,16 @@ void TestTypeCheck()
 	pCozOut = "({} (s64 $n s64) (bool s64 ({} (= s64 Literal:Int64)) (??? ({} (= s64 Literal:Int64)))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "AddNums :: (a : int, b := 1)->int { return a + b} n := AddNums(2,3)";
+	pCozIn		= "AddNums proc (a : int, b := 1)->int { return a + b} n := AddNums(2,3)";
 	pCozOut		= "(AddNums(int, int)->int $AddNums (Params (int $a int) (int $b Literal:Int##)) int ({} (int (int int int))))"
 					" (int $n (int AddNums(int, int)->int Literal:Int## Literal:Int##))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "NoReturn :: (a : int) { n := a} NoReturn(2)";
+	pCozIn		= "NoReturn proc (a : int) { n := a} NoReturn(2)";
 	pCozOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "NoReturn :: (a : int) { n := a; return } NoReturn(2)";
+	pCozIn		= "NoReturn proc (a : int) { n := a; return } NoReturn(2)";
 	pCozOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
@@ -5455,12 +5455,12 @@ void TestTypeCheck()
 	pCozOut		= "({} (int $ovr Literal:Int##) ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float)) (int $n int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
-	pCozIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr } n:=ovr }"; 
+	pCozIn		= " { ovr:=2; Foo proc () { nNest:= ovr; ovr:float=2.2; g:=ovr } n:=ovr }"; 
 	pCozOut		=	"(Foo()->void $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
 					" ({} (int $ovr Literal:Int##) (int $n int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "ack :: ( n : s32) { if (n < 2) {foo(true) }}  foo :: (n : bool) #foreign"; 
+	pCozIn		= "ack proc ( n : s32) { if (n < 2) {foo(true) }}  foo proc (n : bool) #foreign"; 
 	pCozOut		= "(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) ({} (void foo(bool)->void Literal:Bool8))) (void))) "
 					"(foo(bool)->void $foo (Params (bool $n bool)) void)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);

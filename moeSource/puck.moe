@@ -6,7 +6,7 @@
 g_dXWindow :: 1280
 g_dYWindow :: 720
 
-FHandleEvents :: () -> bool
+FHandleEvents proc () -> bool
 {
 	a : int = 1	
 	b : int = 1	
@@ -24,7 +24,7 @@ FHandleEvents :: () -> bool
 	return true
 }
 
-DrawTestTriangle :: (gRadians:float)
+DrawTestTriangle proc (gRadians:float)
 {
 	dRad :: g_Pi * 2.0 / 3.0
 	vecCenter := Vec2Create(g_dXWindow / 2.0, g_dYWindow / 2.0)
@@ -48,7 +48,7 @@ DrawTestTriangle :: (gRadians:float)
     glEnd()
 }
 
-main :: () -> int
+main proc () -> int
 {
 	pWindow : HWND
 	CreateWindow(g_dXWindow, g_dYWindow, "Puck", &pWindow)

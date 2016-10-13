@@ -73,7 +73,9 @@ enum TOK
 		RW(For) STR(for), \
 		RW(While) STR(while), \
 		RW(Enum) STR(enum), \
+		RW(Proc) STR(proc), \
 		RW(Struct) STR(struct), \
+		RW(Const) STR(const), \
 		RW(Typedef) STR(typedef), \
 		RW(Soa) STR(SOA), \
 		RW(Inline) STR(inline), \

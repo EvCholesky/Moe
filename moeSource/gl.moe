@@ -7,7 +7,7 @@
 #foreign_library "shell32"
 #import "Basic"
 
-SRect :: struct 
+SRect struct 
 {
     m_left : s32
     m_top : s32
@@ -15,11 +15,11 @@ SRect :: struct
     m_bottom : s32
 }
 
-CreateWindow :: (dX : s64, dY : s64, pChzName : & u8, ppVHwnd : && void) -> bool #foreign
-ClearWindow :: (uRed : float, uGreen : float, uBlue : float, uAlpha : float) -> void #foreign
-UpdateWindowEvents :: () -> void #foreign
-SwapBuffers :: (pVHwnd : & void) -> void #foreign SwapBuffers_MOE
-FGetNextEvent :: (pEvent: & SEvent) -> bool #foreign
+CreateWindow proc (dX : s64, dY : s64, pChzName : & u8, ppVHwnd : && void) -> bool #foreign
+ClearWindow proc (uRed : float, uGreen : float, uBlue : float, uAlpha : float) -> void #foreign
+UpdateWindowEvents proc () -> void #foreign
+SwapBuffers proc (pVHwnd : & void) -> void #foreign SwapBuffers_MOE
+FGetNextEvent proc (pEvent: & SEvent) -> bool #foreign
 
 GL_POINTS ::                0x0000
 GL_LINES ::                 0x0001
@@ -121,50 +121,50 @@ GL_ONE_MINUS_DST_COLOR ::   0x0307
 GL_SRC_ALPHA_SATURATE ::    0x0308
 
 
-glsizei :: typedef s32
-glint :: typedef s32
-gluint :: typedef u32
-glenum :: typedef u32
-glchar :: typedef u8
-glboolean :: typedef u8
-glfloat :: typedef f32
-glbitfield :: typedef u32
+glsizei typedef s32
+glint typedef s32
+gluint typedef u32
+glenum typedef u32
+glchar typedef u8
+glboolean typedef u8
+glfloat typedef f32
+glbitfield typedef u32
 
-glBegin :: (mode: s32) #foreign #stdcall
-glEnd :: () #foreign #stdcall
-glColor3f       :: (r: glfloat, g: glfloat, b: glfloat) -> void #foreign #stdcall
-glColor4f       :: (r: glfloat, g: glfloat, b: glfloat, a: glfloat) -> void #foreign #stdcall
-glVertex2f   :: (x: glfloat, y: glfloat) #foreign #stdcall
-glVertex3f   :: (x: glfloat, y: glfloat, z: glfloat) #foreign #stdcall
-glTexCoord2f :: (s: glfloat, t: glfloat) #foreign #stdcall
-glTexCoord3f :: (s: glfloat, t: glfloat, r: glfloat) #foreign #stdcall
-glTexCoord4f :: (s: glfloat, t: glfloat, r: glfloat, q: glfloat) #foreign #stdcall
+glBegin proc (mode: s32) #foreign #stdcall
+glEnd proc () #foreign #stdcall
+glColor3f proc  (r: glfloat, g: glfloat, b: glfloat) -> void #foreign #stdcall
+glColor4f proc  (r: glfloat, g: glfloat, b: glfloat, a: glfloat) -> void #foreign #stdcall
+glVertex2f proc (x: glfloat, y: glfloat) #foreign #stdcall
+glVertex3f proc (x: glfloat, y: glfloat, z: glfloat) #foreign #stdcall
+glTexCoord2f proc (s: glfloat, t: glfloat) #foreign #stdcall
+glTexCoord3f proc (s: glfloat, t: glfloat, r: glfloat) #foreign #stdcall
+glTexCoord4f proc (s: glfloat, t: glfloat, r: glfloat, q: glfloat) #foreign #stdcall
 
-glLoadIdentity :: () -> void #foreign #stdcall
-glOrtho :: (xLeft: f64, xRight: f64, yBottom: f64, yTop: f64, zNear: f64, zFar: f64) -> void #foreign #stdcall
-glGenTextures :: (n: glsizei, textures: & gluint) #foreign #stdcall
-glBindTexture :: (target: glenum, texture: gluint) #foreign #stdcall
-glTexParameteri :: (target: glenum, pname: glenum, param: glint) #foreign #stdcall
-glTexImage2D :: (target: glenum, level: glint, internalformat: glint, width: glsizei, height: glsizei, border: glint, format: glenum, type: glenum, pixels: &void) #foreign #stdcall
-glBlendFunc :: (sfactor: glenum, dfactor: glenum) #foreign #stdcall
+glLoadIdentity proc () -> void #foreign #stdcall
+glOrtho proc (xLeft: f64, xRight: f64, yBottom: f64, yTop: f64, zNear: f64, zFar: f64) -> void #foreign #stdcall
+glGenTextures proc (n: glsizei, textures: & gluint) #foreign #stdcall
+glBindTexture proc (target: glenum, texture: gluint) #foreign #stdcall
+glTexParameteri proc (target: glenum, pname: glenum, param: glint) #foreign #stdcall
+glTexImage2D proc (target: glenum, level: glint, internalformat: glint, width: glsizei, height: glsizei, border: glint, format: glenum, type: glenum, pixels: &void) #foreign #stdcall
+glBlendFunc proc (sfactor: glenum, dfactor: glenum) #foreign #stdcall
 
-glEnable :: (cap: glenum) #foreign #stdcall
-glEnableClientState :: (array: glenum) #foreign #stdcall
-glDisable :: (cap: glenum) #foreign #stdcall
-glDisableClientState :: (array: glenum) #foreign #stdcall
-glMatrixMode :: (mode: glenum) #foreign #stdcall
+glEnable proc (cap: glenum) #foreign #stdcall
+glEnableClientState proc (array: glenum) #foreign #stdcall
+glDisable proc (cap: glenum) #foreign #stdcall
+glDisableClientState proc (array: glenum) #foreign #stdcall
+glMatrixMode proc (mode: glenum) #foreign #stdcall
 
-glPopAttrib :: () #foreign #stdcall
-glPopClientAttrib :: () #foreign #stdcall
-glPopMatrix :: () #foreign #stdcall
-glPushAttrib :: (mask: glbitfield) #foreign #stdcall
-glPushClientAttrib :: (mask: glbitfield) #foreign #stdcall
-glPushMatrix :: () #foreign #stdcall
-glVertexPointer :: (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall
-glColorPointer :: (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall
-glTexCoordPointer :: (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall
+glPopAttrib proc () #foreign #stdcall
+glPopClientAttrib proc () #foreign #stdcall
+glPopMatrix proc () #foreign #stdcall
+glPushAttrib proc (mask: glbitfield) #foreign #stdcall
+glPushClientAttrib proc (mask: glbitfield) #foreign #stdcall
+glPushMatrix proc () #foreign #stdcall
+glVertexPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall
+glColorPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall
+glTexCoordPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall
 
-glDrawArrays :: (mode: glenum, first: glint, count: glsizei) #foreign #stdcall
+glDrawArrays proc (mode: glenum, first: glint, count: glsizei) #foreign #stdcall
 
 
 
@@ -198,7 +198,7 @@ glClientActiveTexture: (texture: glenum) #stdcall
 
 
 
-EVENTK :: enum s32 
+EVENTK enum s32 
 {  // If we set this to u8, our packing will stop matching C's.
     Keyboard,
     TextInput,
@@ -206,7 +206,7 @@ EVENTK :: enum s32
     Quit,
 }
 
-KEYCODE :: enum u32 
+KEYCODE enum u32 
 {
     Unknown: 0,
     ArrowLeft : 1,
@@ -238,7 +238,7 @@ KEYCODE :: enum u32
     F16: 26,
 }
 
-EDGES :: enum u32
+EDGES enum u32
 {
 	Off,
 	Release,
@@ -246,7 +246,7 @@ EDGES :: enum u32
 	Press	
 }
 
-SEvent :: struct 
+SEvent struct 
 {
     m_eventk : EVENTK = EVENTK.nil
 
@@ -256,10 +256,10 @@ SEvent :: struct
     m_nTextInput : u32
 }
 
-GlfwProc :: typedef ()->void
-PFnGlProcLookup :: (pChzName: &u8) -> GlfwProc #foreign
+GlfwProc typedef ()->void
+PFnGlProcLookup proc (pChzName: &u8) -> GlfwProc #foreign
 
-FTryInitExtension :: (pChzName: &u8, pfSuccess: &bool) -> GlfwProc 
+FTryInitExtension proc (pChzName: &u8, pfSuccess: &bool) -> GlfwProc 
 {
    pFn := PFnGlProcLookup(pChzName)
    if pFn == null
@@ -270,7 +270,7 @@ FTryInitExtension :: (pChzName: &u8, pfSuccess: &bool) -> GlfwProc
    return pFn
 }
 
-FTryInitGLExtensions :: () -> bool
+FTryInitGLExtensions proc () -> bool
 {
     // Hopefully this gets less gross when we have reflection
 

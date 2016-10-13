@@ -1763,7 +1763,21 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 		SLexer lexPeek = *pLex;
 		TokNext(&lexPeek);
 
-		if (lexPeek.m_tok == TOK_ColonColon)
+		RWORD rword = RwordLookup(&lexPeek);
+
+		bool fIsConstantDecl = lexPeek.m_tok == TOK_ColonColon;
+		bool fIsDefinition = fIsConstantDecl;
+		switch (rword)
+		{
+		case RWORD_Proc:
+		case RWORD_Struct:
+		case RWORD_Enum:
+		case RWORD_Typedef:
+			fIsDefinition = true;
+			break;
+		}
+
+		if (fIsDefinition)
 		{
 			SLexerLocation lexloc(pLex);
 			CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
@@ -1771,32 +1785,19 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			*pLex = lexPeek;
 			TokNext(pLex);
 			
-			bool fIsProcedure = false;
-			INLINEK inlinek = INLINEK_Nil;
-			if (FConsumeToken(pLex, TOK('(')))
+			// function definition
+			if (rword == RWORD_Proc)
 			{
-				fIsProcedure = true;
-			}
-			else if (pLex->m_tok == TOK_ReservedWord )
-			{
-				// Note: It seems wrong for inline to go before the parenthesis, but that's how jBlow did it and it's 
-				// not worth the deviation.
-
-				auto rword = RwordLookup(pLex);
-				if ((rword == RWORD_Inline) | (rword == RWORD_NoInline))
+				INLINEK inlinek = INLINEK_Nil;
+				RWORD rword = RwordLookup(pLex);
+				if (rword == RWORD_Inline || rword == RWORD_NoInline)
 				{
-					fIsProcedure = true;
 					inlinek = (rword == RWORD_Inline) ? INLINEK_AlwaysInline : INLINEK_NoInline;
 					TokNext(pLex);
-
-					Expect(pParctx, pLex, TOK('('));
 				}
-			}
 
+				Expect(pParctx, pLex, TOK('('));
 
-			// function definition
-			if (fIsProcedure)
-			{
 				CSTNode * pStnodProc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodProc->m_park = PARK_ProcedureDefinition;
 				pStnodProc->m_grfstnod.AddFlags(FSTNOD_EntryPoint);
@@ -1978,12 +1979,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				return pStnodProc;
 			}
-
-			RWORD rword = RwordLookup(pLex);
-			if (rword == RWORD_Enum)
+			else if (rword == RWORD_Enum)
 			{
 				SLexerLocation lexloc(pLex);
-				TokNext(pLex);
 				CSTNode * pStnodEnum = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodEnum->m_park = PARK_EnumDefinition;
 
@@ -2071,7 +2069,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			}
 			else if (rword == RWORD_Struct)
 			{
-				TokNext(pLex);
 				Expect(pParctx, pLex, TOK('{'));
 
 				CSTNode * pStnodStruct = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
@@ -2197,8 +2194,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			}
 			else if (rword == RWORD_Typedef)
 			{
-				TokNext(pLex);
-
 				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
 				ExpectEndOfStatement(pParctx, pLex);
 				
@@ -2225,36 +2220,38 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				return pStnodTypedef;
 			}
-
-			// constant decl
-
-			auto pStnodInit = PStnodParseExpression(pParctx, pLex);
-			ExpectEndOfStatement(pParctx, pLex);
-			
-			CString strIdent = StrFromIdentifier(pStnodIdent);
-			if (!pStnodInit)
+			else if (fIsConstantDecl)
 			{
-				ParseError(pParctx, pLex, "missing constant value for %s", strIdent.PCoz());
+				// constant decl
 
-				pParctx->m_pAlloc->EWC_DELETE(pStnodIdent);
-				return nullptr;
+				auto pStnodInit = PStnodParseExpression(pParctx, pLex);
+				ExpectEndOfStatement(pParctx, pLex);
+				
+				CString strIdent = StrFromIdentifier(pStnodIdent);
+				if (!pStnodInit)
+				{
+					ParseError(pParctx, pLex, "missing constant value for %s", strIdent.PCoz());
+
+					pParctx->m_pAlloc->EWC_DELETE(pStnodIdent);
+					return nullptr;
+				}
+
+				CSTNode * pStnodConst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodConst->m_park = PARK_ConstantDecl;
+
+				auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
+				pStnodConst->m_pStdecl = pStdecl;
+
+				pStdecl->m_iStnodIdentifier = pStnodConst->IAppendChild(pStnodIdent);
+				pStdecl->m_iStnodInit = pStnodConst->IAppendChild(pStnodInit);
+
+				CSymbolTable * pSymtab = pParctx->m_pSymtab;
+				auto pErrman = pParctx->m_pWork->m_pErrman;
+				pStnodIdent->m_pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst);
+
+				return pStnodConst;
 			}
-
-			CSTNode * pStnodConst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-			pStnodConst->m_park = PARK_ConstantDecl;
-
-			auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-			pStnodConst->m_pStdecl = pStdecl;
-
-			pStdecl->m_iStnodIdentifier = pStnodConst->IAppendChild(pStnodIdent);
-			pStdecl->m_iStnodInit = pStnodConst->IAppendChild(pStnodInit);
-
-			CSymbolTable * pSymtab = pParctx->m_pSymtab;
-			auto pErrman = pParctx->m_pWork->m_pErrman;
-			pStnodIdent->m_pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst);
-
-			return pStnodConst;
-		}
+		} // rword definitions
 	}
 	return nullptr;
 }
@@ -3716,16 +3713,16 @@ void TestParse()
 		pCozOut = "(decl $aN (arrayLit $int ({} 2 4 5)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo }";
+		pCozIn = "{ ENUMK enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo }";
 		pCozOut = "({} (enum $ENUMK $int ({} (enumConst $nil) (enumConst $min) (enumConst $last) (enumConst $max) (arrayLit $names) (arrayLit $values) (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
 			" (decl $enumk (member $ENUMK $Foo)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "SOut :: struct { SIn :: struct { ConstTwo :: 2 }} n := SOut.SIn.ConstTwo ";
+		pCozIn = "SOut struct { SIn struct { ConstTwo :: 2 }} n := SOut.SIn.ConstTwo ";
 		pCozOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $SIn) $ConstTwo))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "PtrType :: typedef & s16; ArrayType :: typedef [2] s8 ";
+		pCozIn = "PtrType typedef & s16; ArrayType typedef [2] s8 ";
 		pCozOut = "(typedef $PtrType (ptr $s16)) (typedef $ArrayType ([] 2 $s8))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
@@ -3737,7 +3734,7 @@ void TestParse()
 		pCozOut = "(const $SomeConst $s16 255)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "SFoo :: struct { m_n := 2 } foo : SFoo; foo.m_n = 1 ";
+		pCozIn = "SFoo struct { m_n := 2 } foo : SFoo; foo.m_n = 1 ";
 		pCozOut = "(struct $SFoo ({} (decl $m_n 2))) (decl $foo $SFoo) (= (member $foo $m_n) 1)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
@@ -3802,20 +3799,20 @@ void TestParse()
 		pCozOut = "({} (break) (continue) (return (= $foo \"test\")))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "VarArgs :: (a : int, ..) #foreign";
+		pCozIn = "VarArgs proc (a : int, ..) #foreign";
 		pCozOut = "(func $VarArgs (params (decl $a $int) (..)) $void)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b } bah := 3 }";
+		pCozIn = "{ AddNums proc (a : int, b := 1) -> int { return a + b } bah := 3 }";
 		pCozOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
 			" ({} (decl $bah 3))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "AddLocal :: (nA : int) -> int { nLocal := 2; return nA + nLocal }";
+		pCozIn = "AddLocal proc (nA : int) -> int { nLocal := 2; return nA + nLocal }";
 		pCozOut = "(func $AddLocal (params (decl $nA $int)) $int ({} (decl $nLocal 2) (return (+ $nA $nLocal))))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b }	AddNums(2, 3) }";
+		pCozIn = "{ AddNums proc (a : int, b := 1) -> int { return a + b }	AddNums(2, 3) }";
 		pCozOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
 			" ({} (procCall $AddNums 2 3))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
@@ -3824,11 +3821,11 @@ void TestParse()
 		pCozOut = "({} (procCall $FooFunc) (decl $n (procCall $BarFunc (+ $x $ack))))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ NopFunc :: () { guh := 2 } wha : & int }";
+		pCozIn = "{ NopFunc proc () { guh := 2 } wha : & int }";
 		pCozOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "STest :: struct { m_a := 2; m_b : int } boo : int = 3";
+		pCozIn = "STest struct { m_a := 2; m_b : int } boo : int = 3";
 		pCozOut = "(struct $STest ({} (decl $m_a 2) (decl $m_b $int))) (decl $boo $int 3)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
@@ -3836,7 +3833,7 @@ void TestParse()
 		pCozOut = "(decl $pChz $foo) (decl $guh $gur 5) (decl $bah $s32 $woo)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "ForeignFunc :: () -> int #foreign";
+		pCozIn = "ForeignFunc proc () -> int #foreign";
 		pCozOut = "(func $ForeignFunc $int)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 			

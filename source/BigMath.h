@@ -172,9 +172,13 @@ inline SBigInt BintShiftRight(const SBigInt & bintLhs, const SBigInt & bintRhs)
 	{
 		return BintFromUint(NTwosCompliment(nLhs << bintRhs.m_nAbs, bintLhs.m_fIsNegative), bintLhs.m_fIsNegative);
 	}
+	else if (!bintLhs.m_fIsNegative)
+	{
+		return BintFromUint(nLhs >> bintRhs.m_nAbs, false);
+	}
 	else
 	{
-		u64 nSignExtend = (bintLhs.m_fIsNegative) ? (0xFFFFFFFFFFFFFFFF << (64 - bintRhs.m_nAbs)) : 0;
+		u64 nSignExtend = (bintRhs.m_nAbs > 0) ? 0xFFFFFFFFFFFFFFFF << (64 - bintRhs.m_nAbs) : 0; // shift right by 64 bits is undefined behavior (doesn't work on x64)
 		return BintFromUint(NTwosCompliment((nLhs >> bintRhs.m_nAbs) | nSignExtend, bintLhs.m_fIsNegative), bintLhs.m_fIsNegative);
 	}
 }
