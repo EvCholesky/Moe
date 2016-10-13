@@ -71,7 +71,7 @@ enum TOK
 		RW(Continue) STR(continue), \
 		RW(Return) STR(return), \
 		RW(For) STR(for), \
-		RW(ForEach) STR(forEach), \
+		RW(ForEach) STR(for_each), \
 		RW(While) STR(while), \
 		RW(Enum) STR(enum), \
 		RW(Proc) STR(proc), \

@@ -623,37 +623,37 @@ TestForLoop proc ()
 	printf("\nFor Loops:\n")
 
 	printf ("Expect 1,2,3,4,5:  ")
-	forEach iter := iterMake(1,6)
+	for_each iter := iterMake(1,6)
 	{
 		printf("%d,", iter.m_i)
 	}
 
 	printf ("\nExpect 2,3,4:  ")
 	iter: SIntIterator
-	forEach iter = iterMake(2,5)
+	for_each iter = iterMake(2,5)
 	{
 		printf("%d,", iter.m_i)
 	}
 
 	printf ("\nExpect 0,1,2,3:  ")
 	iter2:= iterMake(0, 4)
-	forEach iter2
+	for_each iter2
 	{
 		printf("%d,", iter2.m_i)
 	}
 	printf("\n")
 
-	forEach pCoz := "Test"
+	for_each pCoz := "Test"
 	{
 		printf("'%c',", @pCoz)
 	}
 	printf("\n")
-	forEach pCoz := "😁Test✂"
+	for_each pCoz := "😁Test✂"
 	{
 		printf("%s\n", pCoz)
 	}
 	printf("\n expect'' :'")
-	forEach pCoz := ""
+	for_each pCoz := ""
 	{
 		printf("'%c',", @pCoz)
 	}
@@ -664,7 +664,7 @@ TestBreakContinue proc ()
 {
 	printf("\nBreak & Continue:\n")
 
-	forEach iter := iterMake(0, 10)
+	for_each iter := iterMake(0, 10)
 	{
 		if (iter.m_i == 3 || iter.m_i == 4)
 			{ continue }
@@ -693,10 +693,10 @@ TestBreakContinue proc ()
 
 	// labels
 	#label Outer
-	forEach iterY := iterMake(0, 10)
+	for_each iterY := iterMake(0, 10)
 	{
 		printf("\n")
-		forEach iterX := iterMake(0, 10)
+		for_each iterX := iterMake(0, 10)
 		{
 			if iterX.m_i == 4
 			{ 

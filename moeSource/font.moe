@@ -830,7 +830,7 @@ PGlyphFind proc (pGlyphf: & SFontGlyphFile, wch: u32) -> & SFontGlyph
 DXFindKerning proc (pFont: & SFont, iDxMin: int, iDxMax: int, wchOther: u32) -> f32
 {
 	//for(int iDx=iDxMin; iDx<iDxMax; ++iDx)
-	forEach iterDx := iterMake(iDxMin, iDxMax)
+	for_each iterDx := iterMake(iDxMin, iDxMax)
 	{
 		if pFont.m_aWchKerning[iterDx.m_i] == wchOther
 		{
