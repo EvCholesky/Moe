@@ -3186,7 +3186,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case RWORD_Else:
 				EWC_ASSERT(false, "Else reserved word should be handled during codegen for if");
 				return nullptr;
-			case RWORD_For:
+			case RWORD_ForEach:
 				{
 					auto pStfor = pStnod->m_pStfor;
 					if (!EWC_FVERIFY(pStfor, "bad for loop"))

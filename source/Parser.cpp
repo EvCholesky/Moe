@@ -2465,7 +2465,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 	}
 
 	rword = RwordLookup(pLex);
-	if (rword == RWORD_For)
+	if (rword == RWORD_ForEach)
 	{
 		//for decl := iterMake {}
 		//for decl : iterType = iterMake {}
@@ -2474,7 +2474,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 		//and maybe anonymous iterator...    for : iterMake {}			(I like the simplicity of this, but it's not really cohesive)
 		//and maybe anonymous iterator...    for --- := iterMake {}		(This one matches the other syntaxes, but is ugly and verbose)
 
-		CSTNode * pStnodFor = PStnodParseReservedWord(pParctx, pLex, RWORD_For);
+		CSTNode * pStnodFor = PStnodParseReservedWord(pParctx, pLex, RWORD_ForEach);
 		
 		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
 		pStnodFor->m_pStfor = pStfor;

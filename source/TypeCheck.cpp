@@ -4248,7 +4248,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;
-					case RWORD_For:
+					case RWORD_ForEach:
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())
 							{
