@@ -78,7 +78,9 @@ PVAllocDefault :: (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVA
         // For now, we dont even bother with realloc, just allocate, copy, free.
         pVNew := PVMalloc(cB)
         if !pVNew
+        {
             return null
+        }
 
         if pVPrev && (cBPrev > 0) 
         {
@@ -169,10 +171,10 @@ iterNext :: (ppCoz: &&u8)
     pCoz := @ppCoz
     pCozEnd : &u8
 
-    if ((@pCoz & 0xF8) == 0xF0)         pCozEnd = pCoz + 4
-    else if ((@pCoz & 0xF0) == 0xE0)    pCozEnd = pCoz + 3
-    else if ((@pCoz & 0xE0) == 0xC0)    pCozEnd = pCoz + 2
-    else                                pCozEnd = pCoz + 1
+    if ((@pCoz & 0xF8) == 0xF0)         { pCozEnd = pCoz + 4 }
+    else if ((@pCoz & 0xF0) == 0xE0)    { pCozEnd = pCoz + 3 }
+    else if ((@pCoz & 0xE0) == 0xC0)    { pCozEnd = pCoz + 2 }
+    else                                { pCozEnd = pCoz + 1 }
 
     ++pCoz
     while ((@pCoz & 0xC0) == 0x80) && (pCoz != pCozEnd)

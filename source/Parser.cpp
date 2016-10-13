@@ -35,6 +35,7 @@ enum FPDECL
 EWC_DEFINE_GRF(GRFPDECL, FPDECL, u32);
 
 CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtab);
+CSTNode * PStnodExpectCompoundStatement(CParseContext * pParctx, SLexer * pLex, const char * pCozPriorStatement);
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pLex);
@@ -363,7 +364,7 @@ void ExpectEndOfStatement(CParseContext * pParctx, SLexer * pLex, const char * p
 		{
 			TokNext(pLex);
 
-			if (pLex->m_grflexer.FIsSet(FLEXER_EndOfLine))
+			if (FIsEndOfStatement(pLex))
 			{
 				auto strUnexpected = StrUnexpectedToken(pLex);
 				ParseWarning(pParctx, pLex, "Unnecessary c-style ';' found before '%s'", strUnexpected.PCoz());
@@ -2329,6 +2330,19 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pLex, C
 	return pStnodList;
 }
 
+CSTNode * PStnodExpectCompoundStatement(CParseContext * pParctx, SLexer * pLex, const char * pCozPriorStatement)
+{
+	if (pLex->m_tok != TOK('{'))
+	{
+		ParseError(pParctx, pLex, "Expected '{' after %s'", pCozPriorStatement);
+
+		// just take a swing at parsing a one line statement - not actually safe, just trying to generate the next error.
+		return PStnodParseStatement(pParctx, pLex);
+	}
+
+	return PStnodParseCompoundStatement(pParctx, pLex, nullptr);
+}
+
 CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SLexer * pLex)
 {
 	RWORD rword = RwordLookup(pLex);
@@ -2382,7 +2396,7 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pLex)
 		CSTNode * pStnodExp = PStnodParseExpression(pParctx, pLex);
 		pStnodIf->IAppendChild(pStnodExp);
 		
-		CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pLex);
+		CSTNode * pStnodStatement = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
 		if (!pStnodStatement)
 		{
 			ParseError( pParctx, pLex, "Error parsing if statement. unexpected token '%s'", PCozFromTok((TOK)pLex->m_tok));
@@ -2407,7 +2421,11 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pLex)
 		{
 			CSTNode * pStnodElse = PStnodParseReservedWord(pParctx, pLex, RWORD_Else);
 
-			CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pLex);
+			RWORD rwordNext = RwordLookup(pLex);
+			CSTNode * pStnodStatement = (rwordNext == RWORD_If) ? 
+											PStnodParseSelectionStatement(pParctx, pLex) :
+											PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
+
 			if (pStnodStatement->m_grfstnod.FIsSet(FSTNOD_EntryPoint))
 			{
 				EWC_ASSERT(pStnodStatement->m_park == PARK_ProcedureDefinition, "Unknown entry point park");
@@ -2544,7 +2562,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 
 		}
 
-		CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pLex);
+		CSTNode * pStnodStatement = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
 		pStfor->m_iStnodBody = pStnodFor->IAppendChild(pStnodStatement);
 
 		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
@@ -2559,7 +2577,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 		pStnodWhile->IAppendChild(pStnodExp);
 		pStnodWhile->m_pStident = pStidentLabel;
 		
-		CSTNode * pStnodStatement = PStnodParseStatement(pParctx, pLex);
+		CSTNode * pStnodStatement = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
 		pStnodWhile->IAppendChild(pStnodStatement);
 		return pStnodWhile;
 	}
@@ -3666,159 +3684,159 @@ void TestParse()
 		pCozOut = "(for $it (procCall $iterMake $foo) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = u8"😁+✂;";
+		pCozIn = u8"😁+✂";
 		pCozOut = u8"(+ $😁 $✂)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "n1: int, g1, g2: float = ---;";
+		pCozIn = "n1: int, g1, g2: float = ---";
 		pCozOut = "(decl (decl $n1 $int) (decl $g1 $float) (decl $g2 $float) (---))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "n1, n2: int, g: float;";
+		pCozIn = "n1, n2: int, g: float";
 		pCozOut = "(decl (decl $n1 $int) (decl $n2 $int) (decl $g $float))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "(@ppFunc)(2);";
+		pCozIn = "(@ppFunc)(2)";
 		pCozOut = "(procCall (unary[@] $ppFunc) 2)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "func: (n: s32)->s64 = fooFunc;";		// procedure reference declaration
+		pCozIn = "func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
 		pCozOut = "(decl $func (procref (params (decl $n $s32)) $s64) $fooFunc)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "apFunc[2](2);";
+		pCozIn = "apFunc[2](2)";
 		pCozOut = "(procCall (elem $apFunc 2) 2)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "pN = cast(& int) pG;";
+		pCozIn = "pN = cast(& int) pG";
 		pCozOut = "(= $pN (cast (ptr $int) $pG))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "aN := {:int: 2, 4, 5}; ";
+		pCozIn = "aN := {:int: 2, 4, 5} ";
 		pCozOut = "(decl $aN (arrayLit $int ({} 2 4 5)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo; }";
+		pCozIn = "{ ENUMK :: enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo }";
 		pCozOut = "({} (enum $ENUMK $int ({} (enumConst $nil) (enumConst $min) (enumConst $last) (enumConst $max) (arrayLit $names) (arrayLit $values) (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
 			" (decl $enumk (member $ENUMK $Foo)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "SOut :: struct { SIn :: struct { ConstTwo :: 2; }} n := SOut.SIn.ConstTwo; ";
+		pCozIn = "SOut :: struct { SIn :: struct { ConstTwo :: 2 }} n := SOut.SIn.ConstTwo ";
 		pCozOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $SIn) $ConstTwo))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "PtrType :: typedef & s16; ArrayType :: typedef [2] s8; ";
+		pCozIn = "PtrType :: typedef & s16; ArrayType :: typedef [2] s8 ";
 		pCozOut = "(typedef $PtrType (ptr $s16)) (typedef $ArrayType ([] 2 $s8))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "SomeConst :: 0xFF; ";
+		pCozIn = "SomeConst :: 0xFF ";
 		pCozOut = "(const $SomeConst 255)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "SomeConst : s16 : 0xFF; ";
+		pCozIn = "SomeConst : s16 : 0xFF ";
 		pCozOut = "(const $SomeConst $s16 255)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "SFoo :: struct { m_n := 2; } foo : SFoo; foo.m_n = 1; ";
+		pCozIn = "SFoo :: struct { m_n := 2 } foo : SFoo; foo.m_n = 1 ";
 		pCozOut = "(struct $SFoo ({} (decl $m_n 2))) (decl $foo $SFoo) (= (member $foo $m_n) 1)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "paN : & [4] int;";
+		pCozIn = "paN : & [4] int";
 		pCozOut = "(decl $paN (ptr ([] 4 $int)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "aN : [4] int; n := aN[0];";
+		pCozIn = "aN : [4] int; n := aN[0]";
 		pCozOut = "(decl $aN ([] 4 $int)) (decl $n (elem $aN 0))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "x + 3*5;";
+		pCozIn = "x + 3*5";
 		pCozOut = "(+ $x (* 3 5))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "(ugh + foo) / ((x + 3)*5);";
+		pCozIn = "(ugh + foo) / ((x + 3)*5)";
 		pCozOut = "(/ (+ $ugh $foo) (* (+ $x 3) 5))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "ugh/foo/guh/ack;";
+		pCozIn = "ugh/foo/guh/ack";
 		pCozOut = "(/ (/ (/ $ugh $foo) $guh) $ack)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "(5 + -x) * -(3 / foo);";
+		pCozIn = "(5 + -x) * -(3 / foo)";
 		pCozOut = "(* (+ 5 (unary[-] $x)) (unary[-] (/ 3 $foo)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "ick * ack * -(3 / foo);";
+		pCozIn = "ick * ack * -(3 / foo)";
 		pCozOut = "(* (* $ick $ack) (unary[-] (/ 3 $foo)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "ick & (ack&&foo | 123) || guh;";
+		pCozIn = "ick & (ack&&foo | 123) || guh";
 		pCozOut = "(|| (& $ick (&& $ack (| $foo 123))) $guh)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "ick == ack < foo\n != 123 >= guh;";
+		pCozIn = "ick == ack < foo\n != 123 >= guh";
 		pCozOut = "(!= (== $ick (< $ack $foo)) (>= 123 $guh))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		// NOTE - weird ordering shouldn't matter as we will ensure lhs is l-value
-		pCozIn = "ick = 5 += foo *= guh;";
+		pCozIn = "ick = 5 += foo *= guh";
 		pCozOut = "(*= (+= (= $ick 5) $foo) $guh)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "++foo.bah[23];";
+		pCozIn = "++foo.bah[23]";
 		pCozOut = "(unary[++] (elem (member $foo $bah) 23))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ i=5; foo.bah = ack; }";
+		pCozIn = "{ i=5; foo.bah = ack }";
 		pCozOut = "({} (= $i 5) (= (member $foo $bah) $ack))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ if i==foo.bar.fug ick = 3; else ick = 7; }";
-		pCozOut = "({} (if (== $i (member (member $foo $bar) $fug)) (= $ick 3) (else (= $ick 7))))";
+		pCozIn = "{ if i==foo.bar.fug { ick = 3 } else { ick = 7 } }";
+		pCozOut = "({} (if (== $i (member (member $foo $bar) $fug)) ({} (= $ick 3)) (else ({} (= $ick 7)))))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ while x > 0 { --x; } }";
+		pCozIn = "{ while x > 0 { --x } }";
 		pCozOut = "({} (while (> $x 0) ({} (unary[--] $x))))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ break; continue; return foo=\"test\"; }";
+		pCozIn = "{ break; continue; return foo=\"test\" }";
 		pCozOut = "({} (break) (continue) (return (= $foo \"test\")))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "VarArgs :: (a : int, ..) #foreign;";
+		pCozIn = "VarArgs :: (a : int, ..) #foreign";
 		pCozOut = "(func $VarArgs (params (decl $a $int) (..)) $void)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b; } bah := 3; }";
+		pCozIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b } bah := 3 }";
 		pCozOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
 			" ({} (decl $bah 3))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "AddLocal :: (nA : int) -> int { nLocal := 2; return nA + nLocal; }";
+		pCozIn = "AddLocal :: (nA : int) -> int { nLocal := 2; return nA + nLocal }";
 		pCozOut = "(func $AddLocal (params (decl $nA $int)) $int ({} (decl $nLocal 2) (return (+ $nA $nLocal))))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b; } AddNums(2, 3); }";
+		pCozIn = "{ AddNums :: (a : int, b := 1) -> int { return a + b }	AddNums(2, 3) }";
 		pCozOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
 			" ({} (procCall $AddNums 2 3))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ FooFunc(); n:=BarFunc(x+(ack)); }";
+		pCozIn = "{ FooFunc(); n:=BarFunc(x+(ack)) }";
 		pCozOut = "({} (procCall $FooFunc) (decl $n (procCall $BarFunc (+ $x $ack))))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ NopFunc :: () { guh := 2; } wha : & int; }";
+		pCozIn = "{ NopFunc :: () { guh := 2 } wha : & int }";
 		pCozOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "STest :: struct { m_a := 2; m_b : int; } boo : int = 3;";
+		pCozIn = "STest :: struct { m_a := 2; m_b : int } boo : int = 3";
 		pCozOut = "(struct $STest ({} (decl $m_a 2) (decl $m_b $int))) (decl $boo $int 3)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "pChz := foo; guh : gur = 5; bah : s32 = woo;";
+		pCozIn = "pChz := foo; guh : gur = 5; bah : s32 = woo";
 		pCozOut = "(decl $pChz $foo) (decl $guh $gur 5) (decl $bah $s32 $woo)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "ForeignFunc :: () -> int #foreign;";
+		pCozIn = "ForeignFunc :: () -> int #foreign";
 		pCozOut = "(func $ForeignFunc $int)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 			

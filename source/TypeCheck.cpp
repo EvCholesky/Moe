@@ -5017,6 +5017,15 @@ void AssertEquals(const SBigInt & bintLhs, const SBigInt & bintRhs)
 
 void AssertTestSigned65()
 {
+	/* Failing on x64, shifting by 64 bits is undefined behavior
+	s64 x = 0xFFFFFFFFFFFFFFFF << 64;
+
+	s64 nL = -400000000;
+	s64 nR = 0;
+	s64 shift = nL >> nR;
+	AssertEquals(BintShiftRight(BintFromInt(nL), BintFromInt(nR)), BintFromInt(nL >> nR));
+	*/
+
 	s64 s_aNSigned[] = { 0, 1, -1, 400000000, -400000000 }; //, LLONG_MAX, LLONG_MIN + 1
 
 	// NOTE: This does not replicate s64 overflow exactly, Signed65 structs overflow like a u64 but maintaining sign 
@@ -5171,12 +5180,12 @@ void TestTypeCheck()
 	const char * pCozIn;
 	const char * pCozOut;
 
-	pCozIn = "pN: &s16; cB := pN - pN; pN = pN + 2; pN += 1;";
+	pCozIn = "pN: &s16; cB := pN - pN; pN = pN + 2; pN += 1";
 	pCozOut = "(&s16 $pN (&s16 s16)) (sSize $cB (sSize &s16 &s16)) (= &s16 (&s16 &s16 Literal:Int8)) (= &s16 Literal:Int64)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "iterMake :: (n: u8) -> u8 { return n; } "
-			 "iterIsDone :: (pN: & u8) -> bool { return false; } "
+	pCozIn = "iterMake :: (n: u8) -> u8 { return n } "
+			 "iterIsDone :: (pN: & u8) -> bool { return false } "
 			 "iterNext :: (pN: & u8) { } "
 			"it: u8; for it = iterMake(2) { }";
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
@@ -5185,8 +5194,8 @@ void TestTypeCheck()
 				"(u8 $it u8) (??? u8 (u8 iterMake(u8)->u8 Literal:Int8) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "iterMake :: (n: u8) -> u8 { return n; } "
-			 "iterIsDone :: (pN: & u8) -> bool { return false; } "
+	pCozIn = "iterMake :: (n: u8) -> u8 { return n } "
+			 "iterIsDone :: (pN: & u8) -> bool { return false } "
 			 "iterNext :: (pN: & u8) { } "
 			"for it := iterMake(2) { }";
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
@@ -5195,264 +5204,264 @@ void TestTypeCheck()
 				"(??? (u8 $it (u8 iterMake(u8)->u8 Literal:Int8)) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "SFunc :: () { { n:=5; n=2; } }";
+	pCozIn = "SFunc :: () { { n:=5; n=2 } }";
 	pCozOut = "(SFunc()->void $SFunc void ({} ({} (int $n Literal:Int##) (= int Literal:Int##)) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ n:s32=0xFFFFFFFF; }";
+	pCozIn = "{ n:s32=0xFFFFFFFF }";
 	pCozOut = "({} (s32 $n s32 Literal:Int32))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ ch:= 'a'; }";
+	pCozIn = "{ ch:= 'a' }";
 	pCozOut = "({} (char $ch Literal:Int32))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ n1: int, g1, g2: float = ---; }";
+	pCozIn = "{ n1: int, g1, g2: float = --- }";
 	pCozOut = "({} (??? (int $n1 int) (float $g1 float) (float $g2 float) (---)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ n1, n2: int, g: float; }";
+	pCozIn = "{ n1, n2: int, g: float }";
 	pCozOut = "({} (??? (int $n1 int) (int $n2 int) (float $g float)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= " SelfRef :: () { pfunc := SelfRef; }";
+	pCozIn		= " SelfRef :: () { pfunc := SelfRef }";
 	pCozOut		= "(SelfRef()->void $SelfRef void ({} (SelfRef()->void $pfunc SelfRef()->void) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= " { ppfunc: & (n: s32)->s32; }";
+	pCozIn		= " { ppfunc: & (n: s32)->s32 }";
 	pCozOut		= "({} (&(s32)->s32 $ppfunc (&(s32)->s32 ((s32)->s32 (Params (s32 $n s32)) s32))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= " { n:int=2; Foo :: ()->int { n2:=n; g:=Bar(); return 1;}    Bar :: ()->float { n:=Foo(); return 1;} }";
+	pCozIn		= " { n:int=2; Foo :: ()->int { n2:=n; g:=Bar(); return 1}    Bar :: ()->float { n:=Foo(); return 1} }";
 	pCozOut		=	"(Foo()->int $Foo int ({} (int $n2 int) (float $g (float Bar()->float)) (int Literal:Int##)))"
 					" (Bar()->float $Bar float ({} (int $n (int Foo()->int)) (float Literal:Float32)))"
 					" ({} (int $n int Literal:Int##))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "fooFunc :: (n: s32) -> s64 { return 2; }     func: (n: s32)->s64 = fooFunc;";		// procedure reference declaration
+	pCozIn = "fooFunc :: (n: s32) -> s64 { return 2 }     func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
 	pCozOut = "(fooFunc(s32)->s64 $fooFunc (Params (s32 $n s32)) s64 ({} (s64 Literal:Int64))) "
 			  "((s32)->s64 $func ((s32)->s64 (Params (s32 $n s32)) s64) fooFunc(s32)->s64)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pFunc: (n: s32)->s64;   pFunc(33);";
+	pCozIn = "pFunc: (n: s32)->s64;   pFunc(33)";
 	pCozOut = "((s32)->s64 $pFunc ((s32)->s64 (Params (s32 $n s32)) s64)) (s64 (s32)->s64 Literal:Int32)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pG : & float = null; pN := cast(& int) pG;";
+	pCozIn = "pG : & float = null; pN := cast(& int) pG";
 	pCozOut = "(&float $pG (&float float) Literal:Null) (&int $pN (&int (&int int) &float))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "aN := {:s32: 2, 4, 5};";
+	pCozIn = "aN := {:s32: 2, 4, 5}";
 	pCozOut = "([3]s32 $aN (Literal:Array s32 ({} Literal:Int32 Literal:Int32 Literal:Int32)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "aN : [] int = {2, 4, 5};";
+	pCozIn = "aN : [] int = {2, 4, 5}";
 	pCozOut = "([]int $aN ([]int int) (Literal:Array ({} Literal:Int## Literal:Int## Literal:Int##)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "aN : [] & u8 = {\"foo\", \"bar\", \"ack\"};";
+	pCozIn = "aN : [] & u8 = {\"foo\", \"bar\", \"ack\"}";
 	pCozOut = "([]&u8 $aN ([]&u8 (&u8 u8)) (Literal:Array ({} Literal:String Literal:String Literal:String)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "ArrayConst :: {2, 4, 5};";
+	pCozIn = "ArrayConst :: {2, 4, 5}";
 	pCozOut = "(Literal:Array $ArrayConst (Literal:Array ({} Literal:Int Literal:Int Literal:Int)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ aN : [2] int; n := aN.count; }";
+	pCozIn = "{ aN : [2] int; n := aN.count }";
 	pCozOut = "({} ([2]int $aN ([2]int Literal:Int## int)) (int $n (Literal:Int## [2]int $count)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ aN : [2] int; aNUnsized : [] int = aN; }";
+	pCozIn = "{ aN : [2] int; aNUnsized : [] int = aN }";
 	pCozOut = "({} ([2]int $aN ([2]int Literal:Int## int)) ([]int $aNUnsized ([]int int) [2]int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah;}";
+	pCozIn = "{ ENUMK :: enum s32 { Ick : 1, Foo, Bah : 3 } enumk := ENUMK.Bah}";
 	pCozOut = "({} (ENUMK_enum $ENUMK s32 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
 		"(Literal:Array $names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array $values (Literal:Array Literal:Int32 Literal:Int32 Literal:Int32)) "
 		"(Literal:Enum $Ick Literal:Int) (Literal:Enum $Foo) (Literal:Enum $Bah Literal:Int))) "
 		"(ENUMK_enum $enumk (Literal:Int32 ENUMK_enum $Bah)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick; }";
+	pCozIn = "{ EEK :: enum s16 { Ick : 1 } eek : EEK.strict = EEK.Ick; n : EEK.loose = EEK.Ick }";
 	pCozOut = "({} (EEK_enum $EEK s16 ({} (Literal:Enum $nil) (Literal:Enum $min) (Literal:Enum $last) (Literal:Enum $max) "
 		"(Literal:Array $names (Literal:Array Literal:String)) (Literal:Array $values (Literal:Array Literal:Int16)) (Literal:Enum $Ick Literal:Int))) "
 		"(EEK_enum $eek (EEK_enum EEK_enum EEK_enum) (Literal:Int16 EEK_enum $Ick)) "
 		"(s16 $n (s16 EEK_enum s16) (Literal:Int16 EEK_enum $Ick)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "SomeConst : s16 : 0xFF; n := SomeConst;";
+	pCozIn = "SomeConst : s16 : 0xFF; n := SomeConst";
 	pCozOut = "(Literal:Int16 $SomeConst s16 Literal:Int16) (s16 $n Literal:Int16)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "SomeConst :: 0xFF; n : s16 = SomeConst; n2 := SomeConst;";
+	pCozIn = "SomeConst :: 0xFF; n : s16 = SomeConst; n2 := SomeConst";
 	pCozOut = "(Literal:Int $SomeConst Literal:Int) (s16 $n s16 Literal:Int16) (int $n2 Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pUgh : & SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo; } SFoo :: struct { m_n : s8; }";
+	pCozIn = "pUgh : & SUgh; pUgh.m_foo.m_n = 1; SUgh :: struct { m_foo : SFoo } SFoo :: struct { m_n : s8 }";
 	pCozOut = "(&SUgh_struct $pUgh (&SUgh_struct SUgh_struct)) (= (s8 (SFoo_struct &SUgh_struct $m_foo) $m_n) Literal:Int8) "
 		"(SUgh_struct $SUgh ({} (SFoo_struct $m_foo SFoo_struct))) "
 		"(SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pFoo : & SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8; }";
+	pCozIn = "pFoo : & SFoo; pFoo.m_n = 1; SFoo :: struct { m_n : s8 }";
 	pCozOut = "(&SFoo_struct $pFoo (&SFoo_struct SFoo_struct)) (= (s8 &SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "foo : SFoo; foo.m_n = 1; SFoo :: struct { m_n : s8; }";
+	pCozIn = "foo : SFoo; foo.m_n = 1; SFoo :: struct { m_n : s8 }";
 	pCozOut = "(SFoo_struct $foo SFoo_struct) (= (s8 SFoo_struct $m_n) Literal:Int8) (SFoo_struct $SFoo ({} (s8 $m_n s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "SFoo :: struct { m_n : s32; m_g := 1.2; } foo : SFoo;";
+	pCozIn = "SFoo :: struct { m_n : s32; m_g := 1.2 } foo : SFoo";
 	pCozOut = "(SFoo_struct $SFoo ({} (s32 $m_n s32) (float $m_g Literal:Float32))) (SFoo_struct $foo SFoo_struct)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "aN : [4] s32; pN : & s32; fEq := aN.data == pN; ";
+	pCozIn = "aN : [4] s32; pN : & s32; fEq := aN.data == pN ";
 	pCozOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (&s32 $pN (&s32 s32)) (bool $fEq (bool (&s32 [4]s32 $data) &s32))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "aN : [4] s32; paN : & [4] s32 = &aN;";
+	pCozIn = "aN : [4] s32; paN : & [4] s32 = &aN";
 	pCozOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (&[4]s32 $paN (&[4]s32 ([4]s32 Literal:Int## s32)) (&[4]s32 [4]s32))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "aN : [4] s32; n := aN[0];";
+	pCozIn = "aN : [4] s32; n := aN[0]";
 	pCozOut = "([4]s32 $aN ([4]s32 Literal:Int## s32)) (s32 $n (s32 [4]s32 Literal:Int##))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "n:s32=2; n++; n--;";
+	pCozIn = "n:s32=2; n++; n--";
 	pCozOut ="(s32 $n s32 Literal:Int32) (s32 s32) (s32 s32)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ ; n : s32 = ---;}";
+	pCozIn = "{ ; n : s32 = ---}";
 	pCozOut ="({} (Nop) (s32 $n s32 (---)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "printf :: (pCh : & u8, ..) -> s32 #foreign;";
+	pCozIn = "printf :: (pCh : & u8, ..) -> s32 #foreign";
 	pCozOut ="(printf(&u8, ..)->s32 $printf (Params (&u8 $pCh (&u8 u8)) (..)) s32)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000);";
+	pCozIn = "Vararg :: (..) #foreign; Vararg(2.2, 8,2000)";
 	pCozOut ="(Vararg(..)->void $Vararg (Params (..)) void) (void Vararg(..)->void Literal:Float64 Literal:Int## Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "n:=7; pN:=&n; ppN:=&pN; pN2:=@ppN; n2:=@pN2;";
+	pCozIn = "n:=7; pN:=&n; ppN:=&pN; pN2:=@ppN; n2:=@pN2";
 	pCozOut ="(int $n Literal:Int##) (&int $pN (&int int)) (&&int $ppN (&&int &int)) "
 				"(&int $pN2 (&int &&int)) (int $n2 (int &int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pN : & int; @pN = 2;";
+	pCozIn = "pN : & int; @pN = 2";
 	pCozOut ="(&int $pN (&int int)) (= (int &int) Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "pChz:&u8=\"teststring\"; ";
+	pCozIn = "pChz:&u8=\"teststring\" ";
 	pCozOut ="(&u8 $pChz (&u8 u8) Literal:String)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "a:=2-2; n:=-2;";
+	pCozIn = "a:=2-2; n:=-2";
 	pCozOut ="(int $a (Literal:Int## Literal:Int Literal:Int)) (int $n (Literal:Int## Literal:Int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n; }"; 
+	pCozIn		= "foo :: (n : bool) #foreign; n:s16; ack :: ( n : s32) { test := n; n : s64; test2 := n }"; 
 	pCozOut		= "(foo(bool)->void $foo (Params (bool $n bool)) void) (s16 $n s16) "
 					"(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (s32 $test s32) (s64 $n s64) (s64 $test2 s64) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ i:=5; foo:=i; g:=g_g; } g_g:=2.2;";
+	pCozIn =	"{ i:=5; foo:=i; g:=g_g } g_g:=2.2";
 	pCozOut = "({} (int $i Literal:Int##) (int $foo int) (float $g float)) (float $g_g Literal:Float32)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"i:= (5-4) + (5-6); g:=2.2 + (3.3*10);";
+	pCozIn =	"i:= (5-4) + (5-6); g:=2.2 + (3.3*10)";
 	pCozOut = "(int $i (Literal:Int## (Literal:Int Literal:Int Literal:Int) (Literal:Int Literal:Int Literal:Int))) "
 				"(float $g (Literal:Float32 Literal:Float (Literal:Float Literal:Float Literal:Int)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "n:=2; n = 100-n;";
+	pCozIn = "n:=2; n = 100-n";
 	pCozOut ="(int $n Literal:Int##) (= int (int Literal:Int## int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g; } g_g : f64 = 2.2;";
+	pCozIn =	"{ i:s8=5; foo:=i; bar:s16=i; g:=g_g } g_g : f64 = 2.2";
 	pCozOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (s16 $bar s16 s8) (f64 $g f64)) (f64 $g_g f64 Literal:Float64)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ i:=true; foo:=i; g:=g_g; } g_g : bool = false;";
+	pCozIn =	"{ i:=true; foo:=i; g:=g_g } g_g : bool = false";
 	pCozOut = "({} (bool $i Literal:Bool8) (bool $foo bool) (bool $g bool)) (bool $g_g bool Literal:Bool8)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g; }";
+	pCozIn		= "ParamFunc :: (nA : s32, g : float) { foo := nA; bah := g }";
 	pCozOut		= "(ParamFunc(s32, float)->void $ParamFunc (Params (s32 $nA s32) (float $g float)) void ({} (s32 $foo s32) (float $bah float) (void)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ i:=\"hello\"; foo:=i; g:=g_g; } g_g : &u8 = \"huzzah\";";
+	pCozIn =	"{ i:=\"hello\"; foo:=i; g:=g_g } g_g : &u8 = \"huzzah\"";
 	pCozOut = "({} (&u8 $i Literal:String) (&u8 $foo &u8) (&u8 $g &u8)) (&u8 $g_g (&u8 u8) Literal:String)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ pN:& s8; pNInfer:=pN; pNTest:&s8=null;}";
+	pCozIn =	"{ pN:& s8; pNInfer:=pN; pNTest:&s8=null}";
 	pCozOut = "({} (&s8 $pN (&s8 s8)) (&s8 $pNInfer &s8) (&s8 $pNTest (&s8 s8) Literal:Null))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ ppN:&& s8; ppNInfer:=ppN; ppNTest:&&s8=null;}";
+	pCozIn =	"{ ppN:&& s8; ppNInfer:=ppN; ppNTest:&&s8=null}";
 	pCozOut = "({} (&&s8 $ppN (&&s8 (&s8 s8))) (&&s8 $ppNInfer &&s8) (&&s8 $ppNTest (&&s8 (&s8 s8)) Literal:Null))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ i:s8=5; foo:=i; foo=6; i = foo; }";
+	pCozIn =	"{ i:s8=5; foo:=i; foo=6; i = foo }";
 	pCozOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (= s8 Literal:Int8) (= s8 s8))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ i:s8=5; foo:=i; fBool:bool = foo==i; fBool = i<2; }";
+	pCozIn =	"{ i:s8=5; foo:=i; fBool:bool = foo==i; fBool = i<2 }";
 	pCozOut = "({} (s8 $i s8 Literal:Int8) (s8 $foo s8) (bool $fBool bool (bool s8 s8)) (= bool (bool s8 Literal:Int8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i; }";
+	pCozIn =	"{ i:s8; foo:s32; foo=i+foo; foo=foo<<i }";
 	pCozOut = "({} (s8 $i s8) (s32 $foo s32) (= s32 (s32 s8 s32)) (= s32 (s32 s32 s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ n:s8; pN:=&n; n2:=@pN; }";
+	pCozIn =	"{ n:s8; pN:=&n; n2:=@pN }";
 	pCozOut = "({} (s8 $n s8) (&s8 $pN (&s8 s8)) (s8 $n2 (s8 &s8)))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ n:s64; pN:&s8; fN := !pN; ++n; --n;}";
+	pCozIn =	"{ n:s64; pN:&s8; fN := !pN; ++n; --n}";
 	pCozOut = "({} (s64 $n s64) (&s8 $pN (&s8 s8)) (bool $fN (bool &s8)) (s64 s64) (s64 s64))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ n:s64; if n == 2 n = 5; else n = 6;}";
-	pCozOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) (= s64 Literal:Int64) (??? (= s64 Literal:Int64))))";
+	pCozIn =	"{ n:s64; if n == 2 {n = 5 } else {n = 6}}";
+	pCozOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) ({} (= s64 Literal:Int64)) (??? ({} (= s64 Literal:Int64)))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ n:s64 = 5; while n > 0 { --n; } }";
+	pCozIn =	"{ n:s64 = 5; while n > 0 { --n } }";
 	pCozOut = "({} (s64 $n s64 Literal:Int64) (bool (bool s64 Literal:Int64) ({} (s64 s64))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA); }";
+	pCozIn = "{ nA : s8; nB : s8; nC := (nA < nB) == (nB >= nA) }";
 	pCozOut = "({} (s8 $nA s8) (s8 $nB s8) (bool $nC (bool (bool s8 s8) (bool s8 s8))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn =	"{ n:s64; if n n = 5; else n = 6;}";
-	pCozOut = "({} (s64 $n s64) (bool s64 (= s64 Literal:Int64) (??? (= s64 Literal:Int64))))";
+	pCozIn =	"{ n:s64; if n {n = 5} else {n = 6}}";
+	pCozOut = "({} (s64 $n s64) (bool s64 ({} (= s64 Literal:Int64)) (??? ({} (= s64 Literal:Int64)))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "AddNums :: (a : int, b := 1)->int { return a + b;} n := AddNums(2,3);";
+	pCozIn		= "AddNums :: (a : int, b := 1)->int { return a + b} n := AddNums(2,3)";
 	pCozOut		= "(AddNums(int, int)->int $AddNums (Params (int $a int) (int $b Literal:Int##)) int ({} (int (int int int))))"
 					" (int $n (int AddNums(int, int)->int Literal:Int## Literal:Int##))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "NoReturn :: (a : int) { n := a;} NoReturn(2);";
+	pCozIn		= "NoReturn :: (a : int) { n := a} NoReturn(2)";
 	pCozOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "NoReturn :: (a : int) { n := a; return; } NoReturn(2);";
+	pCozIn		= "NoReturn :: (a : int) { n := a; return } NoReturn(2)";
 	pCozOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
-	pCozIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
+	pCozIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr } n:=ovr }"; 
 	pCozOut		= "({} (int $ovr Literal:Int##) ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float)) (int $n int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
-	pCozIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr; } n:=ovr; }"; 
+	pCozIn		= " { ovr:=2; Foo :: () { nNest:= ovr; ovr:float=2.2; g:=ovr } n:=ovr }"; 
 	pCozOut		=	"(Foo()->void $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
 					" ({} (int $ovr Literal:Int##) (int $n int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
-	pCozIn		= "ack :: ( n : s32) { if (n < 2) foo(true); }  foo :: (n : bool) #foreign;"; 
-	pCozOut		= "(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) (void foo(bool)->void Literal:Bool8)) (void))) "
+	pCozIn		= "ack :: ( n : s32) { if (n < 2) {foo(true) }}  foo :: (n : bool) #foreign"; 
+	pCozOut		= "(ack(s32)->void $ack (Params (s32 $n s32)) void ({} (bool (bool s32 Literal:Int32) ({} (void foo(bool)->void Literal:Bool8))) (void))) "
 					"(foo(bool)->void $foo (Params (bool $n bool)) void)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 

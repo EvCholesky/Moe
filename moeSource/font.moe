@@ -79,7 +79,9 @@ SDrawStateStack :: struct	// tag = drasstk
 PushDras :: (pDrasstk: & SDrawStateStack)
 {
 	if !fverify(pDrasstk.m_iDrasTop + 1 < pDrasstk.m_aDras.count, "DrawStateStack Overflow", #file, #line)
+	{
 		return
+	}
 
 	pDrasstk.m_aDras[pDrasstk.m_iDrasTop + 1] = pDrasstk.m_aDras[pDrasstk.m_iDrasTop]
 	++pDrasstk.m_iDrasTop
@@ -558,7 +560,9 @@ SetShaderParam:: (iParam: s32, pTex: & STexture, iTextureUnit: s32)
 {
 	assert(pTex, "Null texture in SetShaderParam", #file, #line)
 	if(pTex == null)
+	{
 		return
+	}
 
 	glEnable(pTex.m_druTarget)
 
@@ -638,13 +642,17 @@ PTexLoad :: (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
     {
         pTex := &g_aTex[iTex]
         if (FAreEqual(pTex.m_shashFilename, shashFilename))
+        {
             return pTex
+        }
         ++iTex
     }
 
     if !fverify(iTex == cast(s32) cast(s16)iTex, "iTex overflow", #file, #line) ||
         !fverify(g_cTex < g_aTex.count, "s_aryTex overflow", #file, #line)
-        return null
+    {
+		return null
+	}
 
     //STexture * pTex = (STexture*)s_aryTex.AppendNew()
     pTex := &g_aTex[g_cTex]
@@ -1136,15 +1144,15 @@ DrawTextAligned :: inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 		default: EWC_ASSERT(false, "unknown ALIGNK")
 	}*/
 
-	if alignkX == ALIGNK.Left			{ x = pos.m_x; }
-	else if alignkX == ALIGNK.Center	{ x = pos.m_x - vecDxDy.m_x * 0.5; }
-	else if alignkX == ALIGNK.Right		{ x = pos.m_x - vecDxDy.m_x; }
-	else 								{ assert(false, "unknown ALIGNK", #file, #line); }
+	if alignkX == ALIGNK.Left			{ x = pos.m_x }
+	else if alignkX == ALIGNK.Center	{ x = pos.m_x - vecDxDy.m_x * 0.5 }
+	else if alignkX == ALIGNK.Right		{ x = pos.m_x - vecDxDy.m_x }
+	else 								{ assert(false, "unknown ALIGNK", #file, #line) }
 
-	if alignkY == ALIGNK.Top 			{ y = pos.m_y - vecDxDy.m_y; }
-	else if alignkY == ALIGNK.Center	{ y = pos.m_y - vecDxDy.m_y * 0.5;	}
-	else if alignkY == ALIGNK.Bottom	{ y = pos.m_y; }
-	else 								{ assert(false, "unknown ALIGNK", #file, #line); }
+	if alignkY == ALIGNK.Top 			{ y = pos.m_y - vecDxDy.m_y }
+	else if alignkY == ALIGNK.Center	{ y = pos.m_y - vecDxDy.m_y * 0.5	}
+	else if alignkY == ALIGNK.Bottom	{ y = pos.m_y }
+	else 								{ assert(false, "unknown ALIGNK", #file, #line) }
 
 	// draw characters to the right. pos is the left side baseline
 

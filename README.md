@@ -169,9 +169,9 @@ foo := SFoo(.m_n = 45)
 
 short term tasks:
 - [x] remove semicolon requirement
-- [ ] add required brackets for single line conditionals
-- [ ] add c-style for loop
+- [x] add required brackets for single line conditionals
 - [ ] switch :: definitions for more descriptive keywords struct, enum, proc & const
+- [ ] add c-style for loop
 - [ ] move inline to after the parameters like the other procedure qualifiers
 - [ ] error if return value is ignored 
 

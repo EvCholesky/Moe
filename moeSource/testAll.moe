@@ -108,11 +108,11 @@ TestIfElse :: ()
 	while n < CLoop
 	{
 		if n == 0
-			printf("(if) %d == 0\n",n)
+			{ printf("(if) %d == 0\n",n) }
 		else if n < 2
-			printf("(else if) %d < 2\n",n)
+			{ printf("(else if) %d < 2\n",n) }
 		else
-			printf("(else) %d\n",n)
+			{ printf("(else) %d\n",n) }
 		++n
 	}
 

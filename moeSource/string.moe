@@ -74,20 +74,20 @@ FTryConvertUcs4ToUtf8 ::(pWchzIn: & u32, pCozOut: & u8, pCozOutMax: & u8) -> boo
 		if wch < 0x80
 		{
 			if cBOutLeft < 1	
-				{ break; }
+				{ break }
 			@pCozOut++ = cast (u8) wch
 		}
 		else if wch < 0x7FF
 		{
 			if cBOutLeft < 2
-				{ break; }
+				{ break }
 			@pCozOut++ = cast (u8) ((wch >> 6) | 0xC0)
 			@pCozOut++ = cast (u8) (wch & 0x3F) | 0x80
 		}
 		else if wch < 0xFFFF
 		{
 			if cBOutLeft < 3 	
-				{ break; }
+				{ break }
 			@pCozOut++ = cast (u8) (wch >> 12) | 0xE0
 			@pCozOut++ = (cast (u8) (wch >> 6) & 0x3F) | 0x80
 			@pCozOut++ = cast (u8) (wch & 0x3F) | 0x80
@@ -95,14 +95,16 @@ FTryConvertUcs4ToUtf8 ::(pWchzIn: & u32, pCozOut: & u8, pCozOutMax: & u8) -> boo
 		else if wch < 0x10FFFF
 		{
 			if cBOutLeft < 4
-			 	{break; }
+			 	{break }
 			@pCozOut++ = cast (u8) ((wch >> 18) | 0xF0)
 			@pCozOut++ = ( cast (u8) (wch >> 12) & 0x3F) | 0x80
 			@pCozOut++ = ( cast (u8) (wch >> 6) & 0x3F) | 0x80
 			@pCozOut++ = cast (u8) (wch & 0x3F) | 0x80
 		}
 		else
+		{
 			return false
+		}
 	}
 
 	if (pCozOut == pCozOutMax)

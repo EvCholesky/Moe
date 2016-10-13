@@ -121,8 +121,8 @@ VecMul :: inline (vec: SVector4, r: f32) -> SVector4
 	return Vec4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r)
 }
 
-GMin :: inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) return gA; return gB }
-GMax :: inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) return gA; return gB }
+GMin :: inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) { return gA } return gB }
+GMax :: inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) { return gA } return gB }
 GClamp :: inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax) }
 GLerp :: inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp }
 
@@ -165,7 +165,10 @@ GRandom :: (pRng : & SRandomGenJenkinsSmall, gMin: f32, gMax: f32) -> f32
 {
 	d := gMax-gMin
 	if (d <= 0.000001)
+	{
 		return gMin
+	}
+
 	assert(d >= 0.0, "bad range in GRandom", #file, #line)
 
 	return gMin + ( cast(f32) NGenerateRand(pRng) / cast (f32)0xFFFFFFFF) * d
@@ -176,7 +179,10 @@ NRandom :: (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
 { 
 	d := cast(u32)(nMax-nMin)
 	if (d == 0)
+	{
 		return nMin
+	}
+
 	assert(d > 0, "bad range in NRandom", #file, #line)
 	return nMin + cast(s32) (NGenerateRand(pRng) % d)
 }
@@ -185,7 +191,9 @@ BuildRandomOrderedArray :: (pRng : & SRandomGenJenkinsSmall, aiN: [] s32)
 {
 	c := aiN.count
 	if (c <= 0)
+	{
 		return
+	}
 
 	// build a random ordered array containing all values [0..(c-1)] exactly once.
 	//  this is an implementation of the "inside-out" fisher-yates shuffle
