@@ -83,7 +83,9 @@ aN := {:s16: 2, 3, 4}
 ```
 
 Each array type also has a member `count` to query the number of elements it contains.
-`numElements := aN.count`
+```
+numElements := aN.count
+```
 
 
 
@@ -123,7 +125,7 @@ SFoo struct
 
 
 
-## Typesdef
+## Typedef
 Types can be aliased with the typedef keyword:
 ```
 NewName typedef s32
@@ -175,7 +177,6 @@ foo := SFoo(.m_n = 45)
 
 
 ## Enumerations
-Enumerations
 ```
 SOMEENUM enum
 {
@@ -196,10 +197,12 @@ Enumerations also define several implicit constants:
   * `max` one past the last value.
   * `nil` a sentinel to signal an invalid value.
 
-An enumerations loose type is the type used to store it in memory. The loose type can be used directly (i.e. `n: SOMEENUM.loose`) and the loose type can be specified explicitly in the enum definition:
+An enumeration's loose type is the type used to store it in memory. The loose type can be used directly in a declaration and the loose type can be specified explicitly in the enum definition:
 ```
 SOMEENUM enum s16
 {
+}
+n: SOMEENUM.loose   // this is an s16
 ```
 
 Each enum type also defines static arrays containing the names and values of each enum constant.
