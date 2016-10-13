@@ -3673,12 +3673,12 @@ void TestParse()
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
 
-		pCozIn = "for it := iterMake(foo) { }";
-		pCozOut = "(for (decl $it (procCall $iterMake $foo)) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
+		pCozIn = "for_each it := iterMake(foo) { }";
+		pCozOut = "(for_each (decl $it (procCall $iterMake $foo)) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "for it = iterMake(foo) { }";
-		pCozOut = "(for $it (procCall $iterMake $foo) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
+		pCozIn = "for_each it = iterMake(foo) { }";
+		pCozOut = "(for_each $it (procCall $iterMake $foo) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = u8"😁+✂";

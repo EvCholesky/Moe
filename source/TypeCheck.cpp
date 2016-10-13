@@ -5187,7 +5187,7 @@ void TestTypeCheck()
 	pCozIn = "iterMake proc (n: u8) -> u8 { return n } "
 			 "iterIsDone proc (pN: & u8) -> bool { return false } "
 			 "iterNext proc (pN: & u8) { } "
-			"it: u8; for it = iterMake(2) { }";
+			"it: u8; for_each it = iterMake(2) { }";
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
 				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
 				"(iterNext(&u8)->void $iterNext (Params (&u8 $pN (&u8 u8))) void ({} (void))) "
@@ -5197,7 +5197,7 @@ void TestTypeCheck()
 	pCozIn = "iterMake proc (n: u8) -> u8 { return n } "
 			 "iterIsDone proc (pN: & u8) -> bool { return false } "
 			 "iterNext proc (pN: & u8) { } "
-			"for it := iterMake(2) { }";
+			"for_each it := iterMake(2) { }";
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
 				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
 				"(iterNext(&u8)->void $iterNext (Params (&u8 $pN (&u8 u8))) void ({} (void))) "
