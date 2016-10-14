@@ -2280,7 +2280,7 @@ void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CS
 	pStnodArray->m_pSym->m_pTin = pTinlit;
 
 	CSTNode * pStnodList = EWC_NEW(pSymtab->m_pAlloc, CSTNode) CSTNode(pSymtab->m_pAlloc, pStnodArray->m_lexloc);
-	pStnodList->m_park = PARK_List;
+	pStnodList->m_park = PARK_ExpressionList;
 	pStnodList->m_pTin = pTinlit;
 
 	EWC_ASSERT(pStnodArray->m_pStdecl->m_iStnodInit == -1, "expected empty array");
@@ -3418,9 +3418,30 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			case PARK_ReferenceDecl:
 			case PARK_ParameterList:
 			case PARK_List:
+			case PARK_ExpressionList:
 			{
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())
 				{
+					if (pStnod->m_park == PARK_List)
+					{
+						int cStnodChild = pStnod->CStnodChild();
+						for (int iStnod = 0; iStnod < cStnodChild; ++iStnod)
+						{
+							auto pStnodChild = pStnod->PStnodChild(iStnod);
+							switch (pStnodChild->m_park)
+							{
+							case PARK_Identifier:
+							case PARK_Cast:
+							case PARK_Literal:
+								{
+									EmitError(pTcwork, pStnod, 
+										"%s is left hand side, has no effect",
+										PChzFromPark(pStnodChild->m_park));
+								} break;
+							}
+						}
+					}
+
 					pStnod->m_strees = STREES_TypeChecked;
 					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 					break;
@@ -3428,7 +3449,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
 
 				STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
-				if (pStnod->m_park == PARK_List)
+				if (pStnod->m_park == PARK_List || pStnod->m_park == PARK_ExpressionList)
 				{
 					if (pStnod->m_pSymtab)
 					{
@@ -3903,7 +3924,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					{
 						auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
 
-						EWC_ASSERT(pStnodInit->m_park == PARK_List, "invalid ArrayLiteral");
+						EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid ArrayLiteral");
 						pTinlit->m_c = pStnodInit->CStnodChild();
 					}
 				}
@@ -4248,7 +4269,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;
-					case RWORD_ForEach:
+					case RWORD_For:
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())
 							{
@@ -4263,6 +4284,41 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							if (pStnod->m_pStfor == nullptr)
 							{
 								EmitError(pTcwork, pStnod, "for loop was improperly parsed.");
+								return TCRET_StoppingError;
+							}
+
+							auto pStfor = pStnod->m_pStfor;
+							auto pStnodPredicate = pStnod->PStnodChildSafe(pStfor->m_iStnodPredicate);
+							if (pStnodPredicate)
+							{
+								if (!pStnodPredicate->m_pTin || pStnodPredicate->m_pTin->m_tink != TINK_Bool)
+								{
+									CString strTin = StrFromTypeInfo(pStnodPredicate->m_pTin);
+									EmitError(pTcwork, pStnod,
+										"For loop predicate must evaluate to a bool, but evaluates to a %s",
+										strTin.PCoz());
+								}
+							}
+
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+
+						} break;
+					case RWORD_ForEach:
+						{
+							if (pTcsentTop->m_nState < pStnod->CStnodChild())
+							{
+								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+								pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
+								EWC_ASSERT(pTcsentPushed->m_pSymtab, "null symbol table");
+
+								break;
+							}
+
+							if (pStnod->m_pStfor == nullptr)
+							{
+								EmitError(pTcwork, pStnod, "for_each loop was improperly parsed.");
 								return TCRET_StoppingError;
 							}
 
@@ -4320,7 +4376,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							auto pStnodPredicate = pStnod->PStnodChildSafe(pStfor->m_iStnodPredicate);
-							if (EWC_FVERIFY(pStnodPredicate, "for loop missing predicate child"))
+							if (EWC_FVERIFY(pStnodPredicate, "for_each loop missing predicate child"))
 							{
 								if (!pStnodPredicate->m_pTin || pStnodPredicate->m_pTin->m_tink != TINK_Bool)
 								{

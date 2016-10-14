@@ -127,6 +127,7 @@ enum PARK // PARse Kind
 	PARK_ProcedureCall,		// [procedure, arg0, arg1, ...]
 	PARK_List,
 	PARK_ParameterList,		// comma separated declarations, used by structs, argument lists and one line compound decls
+	PARK_ExpressionList,	// list of expressions, used by array literals - doesn't error on rhs only values.
 	PARK_If,
 	PARK_Else,
 
@@ -327,7 +328,7 @@ public:
 	CSTNode *			PStnodChildSafe(int iStnod)
 							{ return ((iStnod >= 0) & (iStnod < (int)m_arypStnodChild.C())) ? m_arypStnodChild[iStnod] : nullptr; }
 
-	TOK					m_tok;
+	TOK						m_tok;
 	PARK					m_park;
 	STREES					m_strees;
 	GRFSTNOD				m_grfstnod;

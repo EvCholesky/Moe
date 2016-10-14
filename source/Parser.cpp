@@ -71,6 +71,7 @@ const char * PChzFromPark(PARK park)
 		"Argument Call",		// [procedure, arg0, arg1, ...]
 		"List",
 		"Parameter List",
+		"Expression List",
 		"If",
 		"Else",
 		"Array Decl",
@@ -364,7 +365,7 @@ void ExpectEndOfStatement(CParseContext * pParctx, SLexer * pLex, const char * p
 		{
 			TokNext(pLex);
 
-			if (FIsEndOfStatement(pLex))
+			if (pLex->m_tok != TOK(';') && FIsEndOfStatement(pLex))
 			{
 				auto strUnexpected = StrUnexpectedToken(pLex);
 				ParseWarning(pParctx, pLex, "Unnecessary c-style ';' found before '%s'", strUnexpected.PCoz());
@@ -472,7 +473,7 @@ CSTNode * PStnodParseExpressionList(
 	if (pStnodExp)
 	{
 		pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-		pStnodList->m_park = PARK_List;
+		pStnodList->m_park = PARK_ExpressionList;
 		pStnodList->IAppendChild(pStnodExp);
 
 		while (FConsumeToken(pLex, TOK(',')))
@@ -2465,7 +2466,52 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 	}
 
 	rword = RwordLookup(pLex);
-	if (rword == RWORD_ForEach)
+	if (rword == RWORD_For)
+	{
+		CSTNode * pStnodFor = PStnodParseReservedWord(pParctx, pLex, RWORD_For);
+
+		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
+		pStnodFor->m_pStfor = pStfor;
+		pStnodFor->m_pStident = pStidentLabel;
+
+		SLexerLocation lexloc(pLex);
+		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for");
+		pStnodFor->m_pSymtab = pSymtabLoop;
+
+		PushSymbolTable(pParctx, pSymtabLoop, lexloc);
+
+		GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl;
+		auto * pStnodDecl =  PStnodParseParameter(pParctx, pLex, pParctx->m_pSymtab, grfpdecl);
+		if (pStnodDecl)
+			ExpectEndOfStatement(pParctx, pLex);
+		else
+			Expect(pParctx, pLex, TOK(';'));
+		pStfor->m_iStnodDecl = pStnodFor->IAppendChild(pStnodDecl);
+
+		CSTNode * pStnodPred = PStnodParseExpression(pParctx, pLex);
+		if (pStnodPred)
+			ExpectEndOfStatement(pParctx, pLex);
+		else
+			Expect(pParctx, pLex, TOK(';'));
+		pStfor->m_iStnodPredicate = pStnodFor->IAppendChild(pStnodPred);
+
+		CSTNode * pStnodIncrement = PStnodParseExpression(pParctx, pLex);
+		if (pStnodIncrement)
+			ExpectEndOfStatement(pParctx, pLex);
+		else
+			Expect(pParctx, pLex, TOK(';'));
+		pStfor->m_iStnodIncrement = pStnodFor->IAppendChild(pStnodIncrement);
+
+		CSTNode * pStnodBody = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
+		pStfor->m_iStnodBody = pStnodFor->IAppendChild(pStnodBody);
+
+		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+		EWC_ASSERT(pSymtabLoop == pSymtabPop, "CSymbol table push/pop mismatch (list)");
+
+		return pStnodFor;
+	}
+
+	else if (rword == RWORD_ForEach)
 	{
 		//for decl := iterMake {}
 		//for decl : iterType = iterMake {}
@@ -2559,14 +2605,15 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 
 		}
 
-		CSTNode * pStnodStatement = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
-		pStfor->m_iStnodBody = pStnodFor->IAppendChild(pStnodStatement);
+		CSTNode * pStnodBody = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
+		pStfor->m_iStnodBody = pStnodFor->IAppendChild(pStnodBody);
 
 		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
 		EWC_ASSERT(pSymtabLoop == pSymtabPop, "CSymbol table push/pop mismatch (list)");
 
 		return pStnodFor;
 	}
+
 	if (rword == RWORD_While)
 	{
 		CSTNode * pStnodWhile = PStnodParseReservedWord(pParctx, pLex, RWORD_While);
@@ -3265,6 +3312,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 	{
 		switch (park)
 		{
+		case PARK_ExpressionList:
 		case PARK_List:				AppendCoz(pStrbuf, "{}");		return;
 		case PARK_Identifier:		AppendCoz(pStrbuf, "Ident");	return;
 		case PARK_ParameterList:	AppendCoz(pStrbuf, "Params");	return; 
@@ -3427,6 +3475,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_ArrayElement:		    AppendCoz(pStrbuf, "elem");					return;
 	case PARK_MemberLookup:		    AppendCoz(pStrbuf, "member");				return;
 	case PARK_ProcedureCall:		AppendCoz(pStrbuf, "procCall");				return;
+	case PARK_ExpressionList:
 	case PARK_List:				    AppendCoz(pStrbuf, "{}");					return;
 	case PARK_ParameterList:	    AppendCoz(pStrbuf, "params");				return;
 	case PARK_If:				    AppendCoz(pStrbuf, "if");					return;

@@ -3009,6 +3009,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			}
 		} break;
 	case PARK_List:
+	case PARK_ExpressionList:
 		{
 			int cStnodChild = pStnod->CStnodChild();
 			for (int iStnodChild = 0; iStnodChild < cStnodChild; ++iStnodChild)
@@ -3186,10 +3187,80 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			case RWORD_Else:
 				EWC_ASSERT(false, "Else reserved word should be handled during codegen for if");
 				return nullptr;
-			case RWORD_ForEach:
+			case RWORD_For:
 				{
 					auto pStfor = pStnod->m_pStfor;
 					if (!EWC_FVERIFY(pStfor, "bad for loop"))
+						return nullptr;
+
+					EmitLocation(pWork, pBuild, pStnod->m_lexloc);
+
+					CSTNode * pStnodFor = pStnod;
+					if (pStfor->m_iStnodDecl >= 0)
+					{
+						(void) PValGenerate(pWork, pBuild, pStnodFor->PStnodChild(pStfor->m_iStnodDecl), VALGENK_Instance);
+					}
+
+					CIRProcedure * pProc = pBuild->m_pProcCur;
+					CIRBasicBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "fbody");
+					CIRBasicBlock * pBlockPost = pBuild->PBlockCreate(pProc, "fpost");
+
+					CIRBasicBlock *	pBlockPred = pBlockBody;
+					CSTNode * pStnodPred = pStnodFor->PStnodChildSafe(pStfor->m_iStnodPredicate);
+					if (pStnodPred)
+					{
+						pBlockPred = pBuild->PBlockCreate(pProc, "fpred");
+					}
+
+					CIRBasicBlock * pBlockIncrement = pBlockPred;
+					CSTNode * pStnodIncrement = pStnodFor->PStnodChildSafe(pStfor->m_iStnodIncrement);
+					if (pStnodIncrement)
+					{
+						pBlockIncrement = pBuild->PBlockCreate(pProc, "finc");
+					}
+
+					(void) pBuild->PInstCreateBranch(pBlockPred);	
+
+					if (pStnodPred)
+					{
+						pBuild->ActivateBlock(pBlockPred);
+
+						STypeInfo * pTinBool = pStnodPred->m_pTin;
+						EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for for loop predicate");
+
+						GeneratePredicate(pWork, pBuild, pStnodPred, pBlockBody, pBlockPost, pTinBool);
+					}
+
+					auto pJumpt = pBuild->m_aryJumptStack.AppendNew();
+					pJumpt->m_pBlockBreak = pBlockPost;
+					pJumpt->m_pBlockContinue = (pStnodIncrement) ? pBlockIncrement : pBlockBody;
+					if (pStnodFor->m_pStident)
+					{
+						pJumpt->m_strLabel = pStnodFor->m_pStident->m_str;
+					}
+
+					pBuild->ActivateBlock(pBlockBody);
+					(void) PValGenerate(pWork, pBuild, pStnodFor->PStnodChild(pStfor->m_iStnodBody), VALGENK_Instance);
+
+					(void) pBuild->PInstCreateBranch(pBlockIncrement);	
+					pBuild->m_aryJumptStack.PopLast();
+
+					if (pStnodIncrement)
+					{
+
+						pBuild->ActivateBlock(pBlockIncrement);
+						(void) PValGenerate(pWork, pBuild, pStnodIncrement, VALGENK_Instance);
+
+						(void) pBuild->PInstCreateBranch(pBlockPred);	
+					}
+
+					pBuild->ActivateBlock(pBlockPost);
+
+				} break;
+			case RWORD_ForEach:
+				{
+					auto pStfor = pStnod->m_pStfor;
+					if (!EWC_FVERIFY(pStfor, "bad for_each loop"))
 						return nullptr;
 
 					EmitLocation(pWork, pBuild, pStnod->m_lexloc);
