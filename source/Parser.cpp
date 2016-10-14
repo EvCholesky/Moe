@@ -1789,14 +1789,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			// function definition
 			if (rword == RWORD_Proc)
 			{
-				INLINEK inlinek = INLINEK_Nil;
-				RWORD rword = RwordLookup(pLex);
-				if (rword == RWORD_Inline || rword == RWORD_NoInline)
-				{
-					inlinek = (rword == RWORD_Inline) ? INLINEK_AlwaysInline : INLINEK_NoInline;
-					TokNext(pLex);
-				}
-
 				Expect(pParctx, pLex, TOK('('));
 
 				CSTNode * pStnodProc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
@@ -1822,6 +1814,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex);
 				pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 
+				INLINEK inlinek = INLINEK_Nil;
 				CALLCONV callconv = CALLCONV_Nil;
 				pStproc->m_iStnodBody = -1;
 				if (pLex->m_tok == TOK_ReservedWord)
@@ -1845,8 +1838,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 									//TokNextToken(pLex);
 								}
 							} break;
-						case RWORD_CDecl:	callconv = CALLCONV_CX86;	break;
-						case RWORD_StdCall: callconv = CALLCONV_StdcallX86;	break;
+						case RWORD_CDecl:	callconv = CALLCONV_CX86;			break;
+						case RWORD_StdCall: callconv = CALLCONV_StdcallX86;		break;
+						case RWORD_Inline:		inlinek = INLINEK_AlwaysInline;	break;
+						case RWORD_NoInline:	inlinek = INLINEK_NoInline;		break;
 						default:
 							{
 								ParseError(
@@ -1858,7 +1853,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 						}
 					}
 
-					ExpectEndOfStatement(pParctx, pLex, "While parsing foreign directive");
+					if (pLex->m_tok != TOK('{'))
+					{
+						ExpectEndOfStatement(pParctx, pLex, "While parsing procedure qualifiers");
+					}
 				}
 
 				if (pLex->m_tok == TOK('{'))

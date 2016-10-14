@@ -432,7 +432,7 @@ PShmanStaticInit proc () -> & SShaderManager
 	return &g_shman
 }
 
-ShhandFindUnused proc inline (pShman: &SShaderManager) -> SHHAND
+ShhandFindUnused proc (pShman: &SShaderManager) -> SHHAND inline
 {
 	iShad: SHHAND
 	pShadEnd := &pShman.m_aShad[pShman.m_aShad.count]
@@ -840,12 +840,12 @@ DXFindKerning proc (pFont: & SFont, iDxMin: int, iDxMax: int, wchOther: u32) -> 
 	return 0
 }
 
-FillOutVert proc inline (
+FillOutVert proc (
 					x: float, y: float, 
 					u: float, v: float, 
 					r: float, g: float, b: float, a: float, 
 					pGlyph: & SFontGlyph, 
-					pFvbuf: & SFontVertexBuffer)
+					pFvbuf: & SFontVertexBuffer) inline
 {
 	pFvert: & SFontVertex = &pFvbuf.m_aFvert[pFvbuf.m_cFvert]
 	++pFvbuf.m_cFvert
@@ -1111,7 +1111,7 @@ DrawTextRaw proc (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
 	FlushVerts(pDrac, &g_Fvbuf)
 }
 
-DrawTextAligned proc inline (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32)
+DrawTextAligned proc (pDrac: & SDrawContext, pos: SVector2, pWchz: & u32) inline
 {
 	pDras := pDrac.m_pDras
 

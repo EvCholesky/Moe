@@ -23,7 +23,6 @@ To build the compiler and debug compiled source you will need to get the followi
   - puck.moe has a dependency on GLFW 3.1.2
 
 # Syntax
-#### this section describes the intended syntax once the current set of changes is complete
 
 ## Types And Declarations:
 
@@ -143,7 +142,7 @@ DoThing proc (a: int, b: int) -> int
 }
 ```
 
-Procedure Qualifiers
+Procedure Qualifiers are placed after the return type, but before the procedure body.
   - `inline`, `noinline`: forces the function to be inlined (or not). Not treated as a suggestion as in C.
   - `#foreign`: Used to declare a foreign function that should be found by the linker. (This will prevent name mangling so it won't work with overloaded procedures)
   - `#stdcall`: Used to specify the stdcall calling convention.
@@ -228,8 +227,7 @@ short term tasks:
 - [x] add required brackets for single line conditionals
 - [x] switch :: definitions for more descriptive keywords struct, enum, proc & const
 - [x] add c-style for loop
-- [ ] move inline to after the parameters like the other procedure qualifiers
-- [ ] error if return value is ignored 
+- [x] move inline to after the parameters like the other procedure qualifiers
 
 longer term tasks:
 - [ ] run time type info
@@ -239,3 +237,6 @@ longer term tasks:
 - [ ] struct literal support
 - [ ] support for inheritance, protocols
 - [ ] first class bitfield type
+
+tasks that might happen:
+- [ ] #mustuse return qualifier that generates an error if ignored 

@@ -68,37 +68,37 @@ VecRotate proc (gRadians: float, vec: SVector2) -> SVector2
 	return Vec2Create(gCos * vec.m_x - gSin * vec.m_y, gCos * vec.m_y + gSin * vec.m_x)
 }
 
-VecAdd proc inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
+VecAdd proc (vecLhs: SVector2, vecRhs: SVector2) -> SVector2 inline
 {
 	return Vec2Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y)
 }
 
-VecSub proc inline (vecLhs: SVector2, vecRhs: SVector2) -> SVector2
+VecSub proc (vecLhs: SVector2, vecRhs: SVector2) -> SVector2 inline
 {
 	return Vec2Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y)
 }
 
-VecMul proc inline (vec: SVector2, r: f32) -> SVector2
+VecMul proc (vec: SVector2, r: f32) -> SVector2 inline
 {
 	return Vec2Create(vec.m_x * r, vec.m_y * r)
 }
 
-VecAdd proc inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
+VecAdd proc (vecLhs: SVector3, vecRhs: SVector3) -> SVector3 inline
 {
 	return Vec3Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y, vecLhs.m_z + vecRhs.m_z)
 }
 
-VecSub proc inline (vecLhs: SVector3, vecRhs: SVector3) -> SVector3
+VecSub proc (vecLhs: SVector3, vecRhs: SVector3) -> SVector3 inline
 {
 	return Vec3Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y, vecLhs.m_z - vecRhs.m_z)
 }
 
-VecMul proc inline (vec: SVector3, r: f32) -> SVector3
+VecMul proc (vec: SVector3, r: f32) -> SVector3 inline
 {
 	return Vec3Create(vec.m_x * r, vec.m_y * r, vec.m_z * r)
 }
 
-VecAdd proc inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
+VecAdd proc (vecLhs: SVector4, vecRhs: SVector4) -> SVector4 inline
 {
 	return Vec4Create(
 			vecLhs.m_x + vecRhs.m_x,
@@ -107,7 +107,7 @@ VecAdd proc inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 			vecLhs.m_w + vecRhs.m_w)
 }
 
-VecSub proc inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
+VecSub proc (vecLhs: SVector4, vecRhs: SVector4) -> SVector4 inline
 {
 	return Vec4Create(
 			vecLhs.m_x - vecRhs.m_x,
@@ -116,15 +116,15 @@ VecSub proc inline (vecLhs: SVector4, vecRhs: SVector4) -> SVector4
 			vecLhs.m_w - vecRhs.m_w)
 }
 
-VecMul proc inline (vec: SVector4, r: f32) -> SVector4
+VecMul proc (vec: SVector4, r: f32) -> SVector4 inline
 {
 	return Vec4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r)
 }
 
-GMin proc inline (gA: f32, gB: f32) -> f32					{ if (gA < gB) { return gA } return gB }
-GMax proc inline (gA: f32, gB: f32) -> f32					{ if (gA > gB) { return gA } return gB }
-GClamp proc inline (gValue: f32, gMin: f32, gMax: f32) -> f32 { return GMin(GMax(gValue, gMin), gMax) }
-GLerp proc inline (gA: f32, gB: f32, uLerp: f32) -> f32 		{ return gA + (gB - gA) * uLerp }
+GMin proc (gA: f32, gB: f32) -> f32 inline						{ if (gA < gB) { return gA } return gB }
+GMax proc (gA: f32, gB: f32) -> f32 inline						{ if (gA > gB) { return gA } return gB }
+GClamp proc (gValue: f32, gMin: f32, gMax: f32) -> f32 inline	{ return GMin(GMax(gValue, gMin), gMax) }
+GLerp proc (gA: f32, gB: f32, uLerp: f32) -> f32 inline			{ return gA + (gB - gA) * uLerp }
 
 SRandomGenJenkinsSmall struct // tag = rng
 {

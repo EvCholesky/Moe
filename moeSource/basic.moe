@@ -60,7 +60,7 @@ ProcAlloc typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVA
 memcpy proc (dest: &void, source: &void, count: uSize) -> &void #foreign
 memset proc (dest: &void, value: int, count: uSize)    -> &void #foreign
 
-PVAllocSimple proc inline (pFnAlloc : ProcAlloc, cB: uSize) -> & void
+PVAllocSimple proc (pFnAlloc : ProcAlloc, cB: uSize) -> & void inline
 {
     // This is just a simple wrapper for allocations that won't be necessary once default args are done.
 
