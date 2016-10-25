@@ -459,6 +459,7 @@ enum BK // block kind
 	BK_Parse,
 	BK_TypeCheck,
 	BK_CodeGen,
+	BK_CodeGenReflect,
 	BK_SyntaxTree,
 	BK_IR,
 	BK_Symbol,

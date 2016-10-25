@@ -433,6 +433,51 @@ TestArrays proc ()
 	PrintIntArray("ANTerse", aNTerse)
 
 	PrintIntArray("AnArgs", {3,4,4567, 2})
+
+
+	kN :: {1, 2, 3, 4}
+
+	aN1: [4] int = {1, 2, 3, 4}
+	aN2: [] int = {1, 2, 3, 4}
+	aN3 := {1, 2, 3, 4}
+	aN3 := {:int: 1, 2, 3, 4}
+	aN4 := kN
+
+	aN5 : [] int
+	aN6 : [] int
+	aN7 : [] int
+	aN8 : [] int
+	aN5 = aN1
+	aN6 = aN2
+	aN7 = {1, 2, 3, 4}
+	aN8 = kN
+
+	pN1: & int = aN1
+	pN2: & int = aN2
+	pN3: & int = {1, 2, 3, 4}
+	pN4: & int = kN
+	pN5: & int = aN5
+
+	for iN := 0; iN < aN1.count; ++iN
+	{
+		n := aN1[iN]
+//		assert(kN[iN] == n, "bad array lookup", #file, #line)
+
+		assert(aN2[iN] == n, "bad array lookup", #file, #line)
+		assert(aN3[iN] == n, "bad array lookup", #file, #line)
+		assert(aN4[iN] == n, "bad array lookup", #file, #line)
+		assert(aN5[iN] == n, "bad array lookup", #file, #line)
+		assert(aN6[iN] == n, "bad array lookup", #file, #line)
+		assert(aN7[iN] == n, "bad array lookup", #file, #line)
+		assert(aN8[iN] == n, "bad array lookup", #file, #line)
+
+		assert(pN1[iN] == n, "bad array lookup", #file, #line)
+		assert(pN2[iN] == n, "bad array lookup", #file, #line)
+		assert(pN3[iN] == n, "bad array lookup", #file, #line)
+		assert(pN4[iN] == n, "bad array lookup", #file, #line)
+		assert(pN5[iN] == n, "bad array lookup", #file, #line)
+	}
+	
 }
 TestCasting proc () 
 {

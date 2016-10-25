@@ -173,7 +173,6 @@ const char * PChzFromTink(TINK tink)
 		"integer",
 		"float",
 		"bool",
-		"string",
 		"pointer",
 		"procedure",
 		"void",
@@ -2000,29 +1999,26 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				(void) pSymtabEnum->PSymEnsure(pErrman, "loose", pStnodEnum, FSYM_IsType);
 				(void) pSymtabEnum->PSymEnsure(pErrman, "strict", pStnodEnum, FSYM_IsType);
 
-				if (FConsumeToken(pLex, TOK('{')))
-				{
-					SLexerLocation lexloc(pLex);
+				Expect(pParctx, pLex, TOK('{'));
 
-					PushSymbolTable(pParctx, pSymtabEnum, lexloc);
-					pStnodEnum->m_pSymtab = pSymtabEnum;
+				PushSymbolTable(pParctx, pSymtabEnum, lexloc);
+				pStnodEnum->m_pSymtab = pSymtabEnum;
 
-					pStnodConstantList = PStnodParseEnumConstantList(pParctx, pLex);
-					pStenum->m_iStnodConstantList = pStnodEnum->IAppendChild(pStnodConstantList);
+				pStnodConstantList = PStnodParseEnumConstantList(pParctx, pLex);
+				pStenum->m_iStnodConstantList = pStnodEnum->IAppendChild(pStnodConstantList);
 
-					CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
-					EWC_ASSERT(pSymtabEnum == pSymtabPop, "CSymbol table push/pop mismatch (enum)");
+				CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+				EWC_ASSERT(pSymtabEnum == pSymtabPop, "CSymbol table push/pop mismatch (enum)");
 
-					Expect(pParctx, pLex, TOK('}'));
-				}
+				Expect(pParctx, pLex, TOK('}'));
 
 				// type info enum
 				int cStnodChild;
 				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
-				int cStnodMember = cStnodChild; // cStnodArray;
 
-
-				int cConstant = cStnodChild - (ENUMIMP_Max - ENUMIMP_Min) + ENUMIMP_CConstant;
+				int cConstant = (ppStnodMember) ? 
+									cStnodChild - (ENUMIMP_Max - ENUMIMP_Min) + ENUMIMP_CConstant : 
+									0;
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant)) + 
 								cConstant * sizeof(STypeInfoEnumConstant);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
@@ -2033,7 +2029,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				pTinenum->m_tinstructProduced.m_pStnodStruct = pStnodEnum;
 
-				CSTNode ** ppStnodMemberMax = &ppStnodMember[cStnodMember];
+				CSTNode ** ppStnodMemberMax = (ppStnodMember) ? &ppStnodMember[cStnodChild] : nullptr;
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
 					CSTNode * pStnodMember = *ppStnodMember;
@@ -2914,7 +2910,6 @@ void CSymbolTable::AddBuiltInSymbols(SErrorManager * pErrman)
 {
 	AddSimpleBuiltInType(pErrman, this, "bool", TINK_Bool);
 	AddSimpleBuiltInType(pErrman, this, "void", TINK_Void);
-	AddSimpleBuiltInType(pErrman, this, "string", TINK_String);
 
 	AddBuiltInInteger(pErrman, this, "u8", 8, false);
 	AddBuiltInInteger(pErrman, this, "u16", 16, false);
@@ -3430,7 +3425,6 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			return;
 		}
     case TINK_Bool:			// fall through ...
-    case TINK_String:		// fall through ...
     case TINK_Void:			// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
@@ -3719,6 +3713,10 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pCozIn = "ick[2] == ack";
+		pCozOut = "(== (elem $ick 2) $ack)";
+		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "for_each it := iterMake(foo) { }";
 		pCozOut = "(for_each (decl $it (procCall $iterMake $foo)) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";

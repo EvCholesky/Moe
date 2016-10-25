@@ -223,15 +223,11 @@ for i:=0; i<SOMEENUM.names.count; ++i
 ## To Do
 
 short term tasks:
-- [x] remove semicolon requirement
-- [x] add required brackets for single line conditionals
-- [x] switch :: definitions for more descriptive keywords struct, enum, proc & const
-- [x] add c-style for loop
-- [x] move inline to after the parameters like the other procedure qualifiers
-
-longer term tasks:
 - [ ] run time type info
 - [ ] 'Any' type-boxing
+
+longer term tasks:
+- [ ] first class string type
 - [ ] array bounds checking
 - [ ] named default arguments
 - [ ] struct literal support
@@ -239,4 +235,5 @@ longer term tasks:
 - [ ] first class bitfield type
 
 tasks that might happen:
-- [ ] #mustuse return qualifier that generates an error if ignored 
+- [ ] #mustuse return qualifier that generates an error if ignored
+

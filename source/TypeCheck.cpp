@@ -118,6 +118,7 @@ bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst);
 void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
 STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit);
 bool FDoesOperatorReturnBool(PARK park);
+void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit);
 
 CNameMangler::CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax)
 :m_pAlloc(pAlloc)
@@ -189,7 +190,6 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 			AppendCoz(&m_strbuf, aChz);
 		} break;
 	case TINK_Bool:		AppendCoz(&m_strbuf, "Bf");	break;
-	case TINK_String:	AppendCoz(&m_strbuf, "Bs");	break;
 	case TINK_Void:		AppendCoz(&m_strbuf, "Bv");	break;
     case TINK_Pointer:
 		{
@@ -1032,6 +1032,32 @@ inline bool FComputeBinaryOpOnLiterals(
 	}
 }
 
+
+void FinalizeArrayLiteralType(CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit, CSTNode * pStnodLit)
+{
+	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "finalizing array with non-array literal"))
+		return;
+	
+	CSTNode * pStnodDef = pStnodLit;
+	if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
+	{
+		pStnodDef = pTinlit->m_pStnodDefinition;
+	}
+	
+	auto pStdecl = pStnodDef->m_pStdecl;
+	if (!pStdecl)
+		return;
+
+	auto pStnodList = pStnodDef->PStnodChildSafe(pStdecl->m_iStnodInit);
+	if (pStnodList)
+	{
+		for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
+		{
+			FinalizeLiteralType(pSymtab, pTinlit->m_pTinSource, pStnodList->PStnodChild(iStnod));
+		}
+	}
+}
+
 void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit)
 {
 	if (!pStnodLit->m_pTin || pStnodLit->m_pTin->m_tink != TINK_Literal)
@@ -1056,7 +1082,6 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 			pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Float, pTinfloat->m_cBit, true);
 		}break;
 	case TINK_Bool:		pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Bool);	break;
-    case TINK_String:	pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_String);	break;
 	case TINK_Procedure:
 		{
 			LITK litkPrev = LITK_Nil;
@@ -1086,7 +1111,7 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
     case TINK_Pointer:
 		{
 			LITK litkPrev = LITK_Nil;
-			STypeInfoLiteral * pTinlitPrev = (STypeInfoLiteral *)pStnodLit->m_pTin;
+			STypeInfoLiteral * pTinlitPrev = PTinDerivedCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
 			STypeInfoLiteral * pTinlit = nullptr;
 			
 			switch (pTinlitPrev->m_litty.m_litk)
@@ -1106,6 +1131,10 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 				{
 					CSTValue * pStval = pStnodLit->m_pStval;
 					pTinlit = pSymtab->PTinlitFromLitk(LITK_Integer, 64, pStval->m_stvalk == STVALK_SignedInt);
+				} break;
+			case LITK_Array:
+				{
+					FinalizeArrayLiteralType(pSymtab, pTinlitPrev, pStnodLit);
 				} break;
 			default: EWC_ASSERT(false, "unexpected literal type");
 			}
@@ -1127,27 +1156,8 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 		} break;
 	case TINK_Array:
 		{
-			if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "finalizing array with non-array literal"))
-				break;
-			
-			CSTNode * pStnodDef = pStnodLit;
-			if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
-			{
-				pStnodDef = pTinlit->m_pStnodDefinition;
-			}
-			
-			auto pStdecl = pStnodDef->m_pStdecl;
-			if (!pStdecl)
-				break;
-
-			auto pStnodList = pStnodDef->PStnodChildSafe(pStdecl->m_iStnodInit);
-			if (pStnodList)
-			{
-				for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
-				{
-					FinalizeLiteralType(pSymtab, pTinlit->m_pTinSource, pStnodList->PStnodChild(iStnod));
-				}
-			}
+			STypeInfoLiteral * pTinlitPrev = PTinDerivedCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
+			FinalizeArrayLiteralType(pSymtab, pTinlitPrev, pStnodLit);
 
 		} break;
 	case TINK_Null: // fall through
@@ -1642,10 +1652,12 @@ SOpTypes OptypeFromPark(
 
 		if (fLhsIsReference & fRhsIsReference)
 		{
+			bool fLhsIsArrayRef = pTinLhs->m_tink == TINK_Array && 
+									((STypeInfoArray*)pTinLhs)->m_aryk == ARYK_Reference;
 			STypeInfo * pTinRefMax;
 			if (tinkMax == TINK_Array)
 			{
-				if (tinkMin != TINK_Pointer) // no operand for array & array
+				if (tinkMin != TINK_Pointer && !fLhsIsArrayRef) // no operand for array & array
 					return SOpTypes();
 
 				pTinRefMax = ((STypeInfoArray *)pTinMax)->m_pTin;
@@ -1662,7 +1674,7 @@ SOpTypes OptypeFromPark(
 			{
 				if (tok == TOK('='))
 				{
-					if (pTinLhs->m_tink == TINK_Array)
+					if (pTinLhs->m_tink == TINK_Array && !fLhsIsArrayRef)
 						return SOpTypes();
 
 					if (!fAreRefTypesSame && 
@@ -1690,15 +1702,15 @@ SOpTypes OptypeFromPark(
 			return SOpTypes();
 		}
 
-		STypeInfo * pTinPtr = pTinLhs;
+		STypeInfo * pTinRef = pTinLhs;
 		STypeInfo * pTinOther = pTinRhs;
-		if (pTinOther->m_tink == TINK_Pointer)
+		if (pTinOther->m_tink == TINK_Pointer || pTinOther->m_tink == TINK_Array)
 		{
-			pTinPtr = pTinRhs;
+			pTinRef = pTinRhs;
 			pTinOther = pTinLhs;
 		}
 
-		if (((STypeInfoPointer *)pTinPtr)->m_pTinPointedTo->m_tink == TINK_Void)
+		if (pTinRef->m_tink == TINK_Pointer && ((STypeInfoPointer *)pTinRef)->m_pTinPointedTo->m_tink == TINK_Void)
 		{
 			return SOpTypes();
 		}
@@ -1715,7 +1727,7 @@ SOpTypes OptypeFromPark(
 			{
 				if (pTinOther->m_tink == TINK_Integer)
 				{
-					return SOpTypes(pTinLhs, pTinRhs, pTinPtr);
+					return SOpTypes(pTinLhs, pTinRhs, pTinRef);
 				}
 				else
 				{
@@ -1826,7 +1838,6 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 				return pTinfloatDst->m_cBit >= pTinfloatSrc->m_cBit;
 			}
 		case TINK_Bool: return true;
-		case TINK_String: return true;
 		case TINK_Pointer:
 			{
 				auto pTinptrSrc = (STypeInfoPointer *)pTinSrc;
@@ -4188,31 +4199,35 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					break;
 				}
 
-				CSTNode * pStnodLhs = pStnod->PStnodChild(0);
+				auto pSymtab = pTcsentTop->m_pSymtab;
+
+				auto pStnodLhs = pStnod->PStnodChild(0);
+
+				auto pTinLhs = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLhs);
+				FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
+
 				CSTNode * pStnodIndex = pStnod->PStnodChild(1);
 				if (!EWC_FVERIFY(pStnodLhs && pStnodLhs->m_pTin, "Array element LHS has no type") ||
 					!EWC_FVERIFY(pStnodIndex && pStnodIndex->m_pTin, "Array index has no type"))
 					return TCRET_StoppingError;
 
-				switch (pStnodLhs->m_pTin->m_tink)
+				switch (pTinLhs->m_tink)
 				{
 				case TINK_Array:
 					{
-						auto pTinary = (STypeInfoArray *)pStnodLhs->m_pTin;
+						auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinLhs);
 						pStnod->m_pTin = pTinary->m_pTin;
 					} break;
 				case TINK_Pointer:
 					{
-						auto pTinptr = (STypeInfoPointer *)pStnodLhs->m_pTin;
+						auto pTinptr = PTinDerivedCast<STypeInfoPointer *>(pTinLhs);
 						pStnod->m_pTin = pTinptr->m_pTinPointedTo;
 					} break;
 				default: 
-					CString strLhs = StrFromTypeInfo(pStnodLhs->m_pTin);
+					CString strLhs = StrFromTypeInfo(pTinLhs);
 					EmitError(pTcwork, pStnod, "%s cannot be indexed as an array", strLhs.PCoz());
 					return TCRET_StoppingError;
 				}
-
-				auto pSymtab = pTcsentTop->m_pSymtab;
 
 				auto pTinIndex = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodIndex);
 				if (pTinIndex->m_tink == TINK_Enum)
@@ -5235,6 +5250,11 @@ void TestTypeCheck()
 
 	const char * pCozIn;
 	const char * pCozOut;
+
+	//pCozIn = "n:int; {:int: 2, 3, 4}[n] == n";
+	//pCozIn = "n:int; n == {:int: 2, 3, 4}[n]";
+	//pCozOut = "([2]int $aN ([2]int Literal:Int64 int)) (int $n int) (bool (int [2]int Literal:Int64) int)";
+	//AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn = "pN: &s16; cB := pN - pN; pN = pN + 2; pN += 1";
 	pCozOut = "(&s16 $pN (&s16 s16)) (sSize $cB (sSize &s16 &s16)) (= &s16 (&s16 &s16 Literal:Int8)) (= &s16 Literal:Int64)";

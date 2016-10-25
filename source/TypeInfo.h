@@ -19,26 +19,28 @@
 #include "EwcArray.h"
 #include "EwcString.h"
 
+class CIRGlobal;
 class CSTNode;
 struct LLVMOpaqueType;
 struct LLVMOpaqueValue;
 
-enum TINK 
+enum TINK : s8
 {
-    TINK_Integer,
-    TINK_Float,
-    TINK_Bool,			// no specialized type info
-    TINK_String,		// no specialized type info
-    TINK_Pointer,
-    TINK_Procedure,
-    TINK_Void,			// no specialized type info
-    TINK_Struct,
-    TINK_Array,
-    TINK_Null,			// no specialized type info
-    TINK_Any,			// no specialized type info
-    TINK_Enum,
-	TINK_ForwardDecl,	// Type info added for resolving pointers to self during the type-check phase.
-	TINK_Literal,		// literal that hasn't been resolved to a specific type yet
+    TINK_Integer	= 0,
+    TINK_Float		= 1,
+    TINK_Bool		= 2,			// no specialized type info
+    TINK_Pointer	= 3,
+    TINK_Procedure	= 4,
+    TINK_Void		= 5,			// no specialized type info
+    TINK_Struct		= 6,
+    TINK_Array		= 7,
+    TINK_Null		= 8,			// no specialized type info
+    TINK_Any		= 9,			// no specialized type info
+    TINK_Enum		= 10,
+	TINK_ReflectedMax,
+
+	TINK_ForwardDecl= TINK_ReflectedMax,	// Type info added for resolving pointers to self during the type-check phase.
+	TINK_Literal,							// literal that hasn't been resolved to a specific type yet
 
 	EWC_MAX_MIN_NIL(TINK)
 };
@@ -51,11 +53,14 @@ struct STypeInfo	// tag = tin
 						:m_tink(tink)
 						,m_strName(pCozName)
 						,m_pLvalDIType(nullptr)
+						,m_pLvalReflectGlobal(nullptr)
 							{ ; }
 
     TINK				m_tink;
 	EWC::CString		m_strName;
 	LLVMOpaqueValue *	m_pLvalDIType;
+	LLVMOpaqueValue *	m_pLvalReflectGlobal;	// global variable pointing to the type info struct
+												// const TypeInfo entry in the reflection type table
 };
 
 template <typename T>
@@ -182,13 +187,15 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 						,m_fIsFinalized(false)
 						,m_litty()
 						,m_pStnodDefinition(nullptr)
+						,m_pGlob(nullptr)
 							{ ; }
 	
-	s64				m_c;
-	STypeInfo *		m_pTinSource;		// source type (for finalized null pointers or enum literals)
-	bool			m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
-	SLiteralType	m_litty;
-	CSTNode *		m_pStnodDefinition;	// (needed for array literal values)
+	s64					m_c;
+	STypeInfo *			m_pTinSource;		// source type (for finalized null pointers or enum literals)
+	bool				m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
+	SLiteralType		m_litty;
+	CSTNode *			m_pStnodDefinition;	// (needed for array literal values)
+	CIRGlobal *			m_pGlob;			// value for this literal's global instance, created iff needed to array index literals
 };
 
 struct STypeStructMember	// tag = typememb

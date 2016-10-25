@@ -371,7 +371,7 @@ PUNYRET PunyretDecode(const char * pCozInput, char * pCozOut, size_t cBOutMax)
 
 	    // iN was supposed to wrap around from out+1 to 0, incrementing n each time, so we'll fix that now:
 
-		size_t dWrap = iN / (cNOut + 1);
+		ptrdiff_t dWrap = iN / (cNOut + 1);
 	    if (dWrap > s_nU32Max  - cWrap) 
 			return PUNYRET_Overflow;
 	    cWrap += dWrap;
