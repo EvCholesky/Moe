@@ -1704,6 +1704,8 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 	case TINK_Struct:
 		{ 
 			auto pTinstruct = (STypeInfoStruct *)pTin;
+			auto pLtypeStruct = PLtypeFromPTin(pTin);
+
 			u32 cTypememb = u32(pTinstruct->m_aryTypemembField.C());
 			auto apLvalMemberArray = (LLVMOpaqueValue **)alloca(sizeof(LLVMOpaqueValue**) * cTypememb);
 			auto pLtypeTinMember = PLtypeForTypeInfo(pWork, "STypeInfoMember");
@@ -1716,7 +1718,10 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 
 				arypLvalMember.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTypememb->m_strName.PCoz(), "strMemb")); //m_pCozName
 				arypLvalMember.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTypememb->m_pTin));
-				arypLvalMember.Append(LLVMConstInt(PLtypeSizeInt(pBuild), 0, false)); //m_iB
+
+				u64 dBMember = LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeStruct, iTypememb);
+				arypLvalMember.Append(LLVMConstInt(PLtypeSizeInt(pBuild), dBMember, false)); //m_iB
+
 
 				apLvalMemberArray[iTypememb] = LLVMConstNamedStruct(pLtypeTinMember, arypLvalMember.A(), u32(arypLvalMember.C()));
 			}

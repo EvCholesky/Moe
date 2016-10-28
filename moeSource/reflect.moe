@@ -163,7 +163,7 @@ PrintTypeInfo proc (pTin: & STypeInfo, fIsTopLevel: bool)
 			for iMember := 0; iMember < pTinstruct.m_aryMember.count; ++iMember
 			{
 				pMember := &pTinstruct.m_aryMember[iMember]
-				printf("%s: ", pMember.m_pCozName)
+				printf("%s(%d): ", pMember.m_pCozName, pMember.m_iB)
 
 				PrintTypeInfo(pMember.m_pTin, false)
 				if iMember < pTinstruct.m_aryMember.count-1
