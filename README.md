@@ -223,7 +223,9 @@ for i:=0; i<SOMEENUM.names.count; ++i
 ## To Do
 
 short term tasks:
-- [ ] run time type info
+- [x] run time type info
+- [ ] typeinfoOf operator
+- [ ] typeIsEquivalent operator
 - [ ] 'Any' type-boxing
 
 longer term tasks:
@@ -236,4 +238,3 @@ longer term tasks:
 
 tasks that might happen:
 - [ ] #mustuse return qualifier that generates an error if ignored
-

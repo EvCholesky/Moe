@@ -44,23 +44,24 @@ STypeInfoPointer struct	// tag = tinptr
 
 INLINEK enum s8
 {
-	AlwaysInline,
-	NoInline,
+	AlwaysInline:	0,
+	NoInline: 		1,
 }
 
 CALLCONV enum s8
 {
-	CX86,
-	StdCallX86,
-	X64,
+	CX86:			0,
+	StdCallX86:		1,
+	X64:			2,
 }
 
 STypeInfoProcedure struct // tag = tinproc
 {
 	m_tin: STypeInfo 
+	m_pCozName: & u8
 
-    m_arypTinParams : [] & STypeInfo
-    m_arypTinReturns: [] & STypeInfo
+    m_arypTinParam: [] & STypeInfo
+    m_arypTinReturn: [] & STypeInfo
 
     m_fHasVarArg: bool
     m_inlinek: INLINEK
@@ -70,7 +71,7 @@ STypeInfoProcedure struct // tag = tinproc
 STypeInfoStruct struct
 {
 	m_tin: STypeInfo	
-    m_aryMembers : [] STypeInfoMember
+    m_aryMember : [] STypeInfoMember
 
 	m_pCozName: & u8
 }
@@ -79,14 +80,14 @@ STypeInfoMember struct
 {
 	m_pCozName: & u8
 	m_pTin: & STypeInfo
-	m_iB: sSize				// offset in bytes fro the start of the structure
+	m_iB: sSize				// offset in bytes from the start of the structure
 }
 
 ARYK enum s8
 {
-	Fixed,					// c-style fixed size array.			aN : [3] int;
-    Dynamic,				// dynamically resizing array.			aN : [..] int;
-    Reference,				// reference to array of either type.	aN : [] int;
+	Fixed:		0,				// c-style fixed size array.			aN : [3] int;
+    Dynamic:	1,				// dynamically resizing array.			aN : [..] int;
+    Reference:	2,				// reference to array of either type.	aN : [] int;
 }
 
 STypeInfoArray struct
@@ -95,15 +96,25 @@ STypeInfoArray struct
 
 	m_pTinElement: & STypeInfo
 	m_aryk: ARYK
-	m_cElement: sSize 		// number of elements, -1 if not fixed array
+	m_c: sSize 		// number of elements, -1 if not fixed array
 }
 
-STypeInfoEnum struct
+STypeInfoEnumConstant struct	// tag = econ
+{
+	m_pCozName: & u8
+
+	// BB - This would just need one if we had a union construct
+	m_nUnsigned: u64
+	m_nSigned: u64
+}
+
+STypeInfoEnum struct	// tag = tinenum
 {
 	m_tin: STypeInfo	
 	m_pTinLoose: & STypeInfo
+	m_pCozName: & u8
 
-	// TBD - how did we handle standard constants
+	m_aryEcon: [] STypeInfoEnumConstant
 }
 
 Any struct
@@ -116,18 +127,6 @@ _tinTable: [] & STypeInfo
 
 PrintTypeInfo proc (pTin: & STypeInfo, fIsTopLevel: bool)
 {
-	if fIsTopLevel
-	{
-		if pTin.m_tink == TINK.nil
-		{
-			printf("nil: ")
-		}
-		else
-		{
-			printf("%s: ", TINK.names[pTin.m_tink])
-		}
-	}
-
 	if pTin.m_tink == TINK.Integer
 	{
 		pTinint := cast(& STypeInfoInteger)pTin
@@ -152,6 +151,106 @@ PrintTypeInfo proc (pTin: & STypeInfo, fIsTopLevel: bool)
 		printf("& ")
 
 		PrintTypeInfo(pTinptr.m_pTinPointedTo, false)
+	}
+	else if pTin.m_tink == TINK.Struct
+	{
+		pTinstruct := cast(& STypeInfoStruct)pTin
+		printf("%s", pTinstruct.m_pCozName)
+
+		if (fIsTopLevel)
+		{
+			printf(" struct {")
+			for iMember := 0; iMember < pTinstruct.m_aryMember.count; ++iMember
+			{
+				pMember := &pTinstruct.m_aryMember[iMember]
+				printf("%s: ", pMember.m_pCozName)
+
+				PrintTypeInfo(pMember.m_pTin, false)
+				if iMember < pTinstruct.m_aryMember.count-1
+				{
+					printf(", ")
+				}
+			}
+			printf(" }")
+		}
+	}
+	else if pTin.m_tink == TINK.Enum
+	{
+		pTinenum := cast(& STypeInfoEnum)pTin
+		printf("%s", pTinenum.m_pCozName)
+
+		if (fIsTopLevel)
+		{
+			printf(" enum ")
+			PrintTypeInfo(pTinenum.m_pTinLoose, false)
+			printf(" {")
+
+			assert(pTinenum.m_pTinLoose.m_tink == TINK.Integer, "expected enum pTinLoose to be an integer", #file, #line)
+			pTinint := cast (& STypeInfoInteger)pTinenum.m_pTinLoose
+
+			for iEcon := 0; iEcon < pTinenum.m_aryEcon.count; ++iEcon
+			{
+				pEcon := &pTinenum.m_aryEcon[iEcon]
+				printf("%s: ", pEcon.m_pCozName)
+
+				if (pTinint.m_fIsSigned)
+					{ printf("%d", pEcon.m_nSigned) }
+				else
+					{ printf("%d", pEcon.m_nUnsigned) }
+
+				if iEcon < pTinenum.m_aryEcon.count-1
+					{ printf(", ") }
+			}
+			printf(" }")
+		}
+	}
+	else if pTin.m_tink == TINK.Array
+	{
+		pTinary := cast(& STypeInfoArray)pTin
+
+		if (pTinary.m_aryk == ARYK.Fixed)
+			{ printf("[%d] ", pTinary.m_c) }
+		else
+			{ printf("[] ") }
+
+		PrintTypeInfo(pTinary.m_pTinElement, false)
+	}
+	else if pTin.m_tink == TINK.Procedure
+	{
+		pTinproc := cast(& STypeInfoProcedure)pTin
+
+		printf("%s proc (", pTinproc.m_pCozName)
+		for iParam := 0; iParam < pTinproc.m_arypTinParam.count; ++iParam
+		{
+			PrintTypeInfo(pTinproc.m_arypTinParam[iParam], false)
+
+			if iParam < pTinproc.m_arypTinParam.count-1
+				{ printf(", ") }
+		}
+
+		printf(")")
+		cReturn : sSize = pTinproc.m_arypTinReturn.count
+
+		if cReturn > 0
+			{ printf(" -> ")}
+
+		if cReturn > 1
+			{ printf("(") }
+
+		for iReturn := 0; iReturn < pTinproc.m_arypTinReturn.count; ++iReturn
+		{
+			PrintTypeInfo(pTinproc.m_arypTinReturn[iReturn], false)
+
+			if iReturn < pTinproc.m_arypTinReturn.count-1
+				{ printf(", ") }
+		}
+
+		if (cReturn > 1)
+			{printf(")") }
+	}
+	else 
+	{
+		printf("%s", TINK.names[pTin.m_tink])
 	}
 
 	if fIsTopLevel

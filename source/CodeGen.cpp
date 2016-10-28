@@ -40,6 +40,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod);
 LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodProc, SDIFile * pDif);
 CIRValue * PValGenerateLiteral(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk, bool fCreateGlobal);
+LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBuild, LLVMOpaqueType * pLtypeTin, STypeInfo * pTin);
 
 CIRInstruction * PInstGenerateAssignmentFromRef(
 	CWorkspace * pWork,
@@ -1609,6 +1610,52 @@ LLVMOpaqueType * PLtypeForTypeInfo(CWorkspace * pWork, const char * pChzTinName)
 	return nullptr;
 }
 
+LLVMOpaqueType * PLtypeSizeInt(CIRBuilder * pBuild)
+{
+	return LLVMInt64Type();
+}
+
+LLVMOpaqueValue * PLvalBuildConstantGlobalArrayRef(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	LLVMOpaqueType * pLtypeElem, 
+	LLVMOpaqueValue ** apLvalElem,
+	u32 cElem)
+{
+	auto pLtypeArray = LLVMArrayType(pLtypeElem, cElem);
+
+	auto pLvalGlobal = LLVMAddGlobal(pBuild->m_pLmoduleCur, pLtypeArray, "");
+	LLVMSetGlobalConstant(pLvalGlobal, true);
+
+	auto pLvalArrayInit = LLVMConstArray(pLtypeElem, apLvalElem, cElem);
+	LLVMSetInitializer(pLvalGlobal, pLvalArrayInit);
+
+	LLVMOpaqueValue * apLvalMember[2]; // count, pointer
+	apLvalMember[ARYMEMB_Count] = LLVMConstInt(PLtypeSizeInt(pBuild), cElem, false);
+
+	auto pLtypePElem = LLVMPointerType(pLtypeElem, 0);
+	auto pLvalCast = LLVMConstPointerCast(pLvalGlobal, pLtypePElem);
+	apLvalMember[ARYMEMB_Data] = pLvalCast;
+
+	return LLVMConstStruct(apLvalMember, EWC_DIM(apLvalMember), false);
+}
+
+static inline LLVMOpaqueValue * PLvalPTinReflectedSafe(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	LLVMOpaqueType * pLtypeTin,
+	LLVMOpaqueType * pLtypePTin,
+	STypeInfo * pTin)
+{
+	auto pLvalReflect = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pTin);
+	if (pLvalReflect)
+	{
+		return LLVMConstPointerCast(pLvalReflect, pLtypePTin);
+	}
+
+	return LLVMConstNull(pLtypePTin);
+}
+
 LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBuild, LLVMOpaqueType * pLtypeTin, STypeInfo * pTin)
 {
 	if (pTin->m_pLvalReflectGlobal)
@@ -1648,12 +1695,136 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 			auto pTinptr = (STypeInfoPointer *)pTin;
 			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));
 
-			auto pLvalPointedTo = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pTinptr->m_pTinPointedTo);
-			arypLval.Append(pLvalPointedTo);
+			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
+			arypLval.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinptr->m_pTinPointedTo));
 
 			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoPointer");
 			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
 		} break; 
+	case TINK_Struct:
+		{ 
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+			u32 cTypememb = u32(pTinstruct->m_aryTypemembField.C());
+			auto apLvalMemberArray = (LLVMOpaqueValue **)alloca(sizeof(LLVMOpaqueValue**) * cTypememb);
+			auto pLtypeTinMember = PLtypeForTypeInfo(pWork, "STypeInfoMember");
+			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
+
+			for (u32 iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
+			{
+				auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
+				CFixAry<LLVMOpaqueValue *, 3> arypLvalMember;
+
+				arypLvalMember.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTypememb->m_strName.PCoz(), "strMemb")); //m_pCozName
+				arypLvalMember.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTypememb->m_pTin));
+				arypLvalMember.Append(LLVMConstInt(PLtypeSizeInt(pBuild), 0, false)); //m_iB
+
+				apLvalMemberArray[iTypememb] = LLVMConstNamedStruct(pLtypeTinMember, arypLvalMember.A(), u32(arypLvalMember.C()));
+			}
+
+			auto pLvalAryMembers = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypeTinMember, apLvalMemberArray, cTypememb);
+
+			// build the STypeInfoStruct
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+			arypLval.Append(pLvalAryMembers);	//m_aryMembers
+			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinstruct->m_strName.PCoz(), "strStruct")); //m_pCozName
+
+			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoStruct");
+			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
+		} break;
+	case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTin;
+			u32 cTinecon = (u32)pTinenum->m_aryTinecon.C();
+			auto apLvalEconArray = (LLVMOpaqueValue **)alloca(sizeof(LLVMOpaqueValue**) * cTinecon);
+			auto pLtypeTinEcon = PLtypeForTypeInfo(pWork, "STypeInfoEnumConstant");
+
+			for (u32 iTinecon = 0; iTinecon < cTinecon; ++iTinecon)
+			{
+				auto pTinecon = &pTinenum->m_aryTinecon[iTinecon];
+				CFixAry<LLVMOpaqueValue *, 3> arypLvalEcon;
+
+				u64 nUnsigned = 0;
+				s64 nSigned = 0;
+				if (PTinDerivedCast<STypeInfoInteger *>(pTinenum->m_pTinLoose)->m_fIsSigned)
+				{
+					nSigned = pTinecon->m_bintValue.S64Coerce();
+				}
+				else
+				{
+					nUnsigned = pTinecon->m_bintValue.U64Coerce();
+				}
+
+				arypLvalEcon.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinecon->m_strName.PCoz(), "strStruct")); //m_pCozName
+				arypLvalEcon.Append(LLVMConstInt(LLVMInt64Type(), nUnsigned, false)); // m_nUnsigned
+				arypLvalEcon.Append(LLVMConstInt(LLVMInt64Type(), nSigned, true)); // m_nSigned
+
+				apLvalEconArray[iTinecon] = LLVMConstNamedStruct(pLtypeTinEcon, arypLvalEcon.A(), u32(arypLvalEcon.C()));
+			}
+
+			auto pLvalAryEconArray = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypeTinEcon, apLvalEconArray, cTinecon);
+
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+
+			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
+
+			arypLval.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinenum->m_pTinLoose));
+			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinenum->m_strName.PCoz(), "strEnum")); //m_pCozName
+			arypLval.Append(pLvalAryEconArray);
+
+			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoEnum");
+			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
+		} break;
+	case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTin;
+
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+
+			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
+
+			arypLval.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinary->m_pTin));
+			arypLval.Append(LLVMConstInt(LLVMInt8Type(), pTinary->m_aryk, true)); //m_aryk
+			arypLval.Append(LLVMConstInt(PLtypeSizeInt(pBuild), pTinary->m_c, true)); //m_c
+
+			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoArray");
+			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
+		} break;
+	case TINK_Procedure:
+		{
+			auto pTinproc = (STypeInfoProcedure *)pTin;
+			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
+
+			u32 cParam = (u32)pTinproc->m_arypTinParams.C();
+			auto apLvalParam = (LLVMOpaqueValue **)alloca(sizeof(LLVMOpaqueValue**) * cParam);
+			for (u32 iParam = 0; iParam < cParam; ++iParam)
+			{
+				apLvalParam[iParam] = PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinproc->m_arypTinParams[iParam]);
+			}
+
+			auto pLvalAryParam = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypePTin, apLvalParam, cParam);
+
+			u32 cReturn = (u32)pTinproc->m_arypTinReturns.C();
+			auto apLvalReturn = (LLVMOpaqueValue **)alloca(sizeof(LLVMOpaqueValue**) * cReturn);
+			for (u32 iReturn = 0; iReturn < cReturn; ++iReturn)
+			{
+				apLvalReturn[iReturn] = PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinproc->m_arypTinReturns[iReturn]);
+			}
+
+			auto pLvalAryReturn = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypePTin, apLvalReturn, cReturn);
+
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinproc->m_strName.PCoz(), "strEnum")); //m_pCozName
+
+			arypLval.Append(pLvalAryParam); //m_arypTinParam
+			arypLval.Append(pLvalAryReturn); //m_arypTinReturn
+
+			arypLval.Append(LLVMConstInt(LLVMInt1Type(), pTinproc->m_fHasVarArgs, false)); //m_fHasVarArgs
+			arypLval.Append(LLVMConstInt(LLVMInt8Type(), pTinproc->m_inlinek, true)); //m_inlinek
+			arypLval.Append(LLVMConstInt(LLVMInt8Type(), pTinproc->m_callconv, true)); //m_callconv
+
+			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoProcedure");
+			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
+		} break;
 	case TINK_Bool:
 	case TINK_Void:
 	case TINK_Null:
@@ -1680,6 +1851,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 static inline LLVMOpaqueValue * PLvalGenerateReflectTypeTable(CWorkspace * pWork, CIRBuilder * pBuild)
 {
 	CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGenReflect, 256);
+	CHash<STypeInfo *, s32> mpPTinITin(pBuild->m_pAlloc, 256);
 
 	auto pLtypeTin = PLtypeForTypeInfo(pWork, "STypeInfo");
 	auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
@@ -1698,11 +1870,16 @@ static inline LLVMOpaqueValue * PLvalGenerateReflectTypeTable(CWorkspace * pWork
 			if (!pTin || pTin->m_tink >= TINK_ReflectedMax)
 				continue;
 
-			LLVMOpaqueValue * pLvalReflect = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pTin);
-			if (pLvalReflect)
+			s32 * piTin = nullptr;
+			if (mpPTinITin.FinsEnsureKey(pTin, &piTin) == FINS_Inserted)
 			{
-				auto pLvalCast = LLVMConstPointerCast(pLvalReflect, pLtypePTin);
-				arypLval.Append(pLvalCast);
+				*piTin = (s32)arypLval.C();
+				LLVMOpaqueValue * pLvalReflect = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pTin);
+				if (pLvalReflect)
+				{
+					auto pLvalCast = LLVMConstPointerCast(pLvalReflect, pLtypePTin);
+					arypLval.Append(pLvalCast);
+				}
 			}
 		}
 		

@@ -54,6 +54,7 @@ struct STypeInfo	// tag = tin
 						,m_strName(pCozName)
 						,m_pLvalDIType(nullptr)
 						,m_pLvalReflectGlobal(nullptr)
+						,m_pTinSource(nullptr)
 							{ ; }
 
     TINK				m_tink;
@@ -61,6 +62,8 @@ struct STypeInfo	// tag = tin
 	LLVMOpaqueValue *	m_pLvalDIType;
 	LLVMOpaqueValue *	m_pLvalReflectGlobal;	// global variable pointing to the type info struct
 												// const TypeInfo entry in the reflection type table
+
+	STypeInfo *			m_pTinSource;			// actual source type, ignoring aliases (ie sSize->s64)
 };
 
 template <typename T>
@@ -120,17 +123,17 @@ struct STypeInfoPointer : public STypeInfo	// tag = tinptr
 
 enum CALLCONV
 {
-	CALLCONV_CX86,
-	CALLCONV_StdcallX86,
-	CALLCONV_X64,
+	CALLCONV_CX86		= 0,
+	CALLCONV_StdcallX86	= 1,
+	CALLCONV_X64		= 2,
 
 	EWC_MAX_MIN_NIL(CALLCONV)
 };
 
 enum INLINEK
 {
-	INLINEK_AlwaysInline,
-	INLINEK_NoInline,
+	INLINEK_AlwaysInline = 0,
+	INLINEK_NoInline	 = 1,
 
 	EWC_MAX_MIN_NIL(INLINEK)
 };
@@ -264,9 +267,9 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 
 enum ARYK
 {
-    ARYK_Fixed,		// c-style fixed size array.			aN : [3] int;
-    ARYK_Dynamic,	// dynamically resizing array.			aN : [..] int;
-    ARYK_Reference,	// reference to array of either type.	aN : [] int;
+    ARYK_Fixed		= 0,	// c-style fixed size array.			aN : [3] int;
+    ARYK_Dynamic	= 1,	// dynamically resizing array.			aN : [..] int;
+    ARYK_Reference	= 2,	// reference to array of either type.	aN : [] int;
 
 	EWC_MAX_MIN_NIL(ARYK)
 };
@@ -290,14 +293,12 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 					STypeInfoArray()
 					:STypeInfo("", s_tink)
 					,m_pTin(nullptr)
-					,m_soaPacking(-1)
 					,m_c(0)
 					,m_aryk(ARYK_Fixed)
 					{ ; }
 
 	STypeInfo *		m_pTin;
 	s64				m_c;
-	s32				m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
 	ARYK			m_aryk;
 };
 

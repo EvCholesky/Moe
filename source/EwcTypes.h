@@ -1087,6 +1087,13 @@ HV HvExtract(const T * pT)
 	return HvFromP((void *)pT);
 }
 
+template <typename T>
+HV HvExtract(T * pT)
+{
+	return HvFromP((void *)pT);
+}
+
+
 // Thomas Wang's 32-bit hash mix function
 template<typename T>
 struct SHash

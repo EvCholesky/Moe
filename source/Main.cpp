@@ -171,7 +171,7 @@ int main(int cpChzArg, const char * apChzArg[])
 			static const char * s_pChzPathRelease = "Release";
 			const char * pChzOptPath = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzPathRelease : s_pChzPathDebug;
 
-			static const char * s_pChzOptimizedDebug = "/debug";
+			static const char * s_pChzOptimizedDebug = "/debug /incremental:no";
 			static const char * s_pChzOptimizedRelease = "";
 			const char * pChzOptimized = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzOptimizedRelease : s_pChzOptimizedDebug;
 
@@ -191,6 +191,7 @@ int main(int cpChzArg, const char * apChzArg[])
 					"c:/code/moe/external/glfw/lib/x64"
 				};
 
+				// s_unusedOptions = " /time+";
 				static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo /NODEFAULTLIB:MSVCRT.lib /NODEFAULTLIB:LIBCMTD.lib";
 
 			#else
