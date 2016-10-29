@@ -100,6 +100,7 @@ enum TOK
 		RW(Sizeof) STR(sizeof), \
 		RW(Alignof) STR(alignof), \
 		RW(Typeof) STR(typeof), \
+		RW(Typeinfo) STR(typeinfo), \
 		RW(CDecl) STR(#cdecl), \
 		RW(StdCall) STR(#stdcall)
 

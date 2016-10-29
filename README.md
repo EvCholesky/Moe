@@ -224,7 +224,7 @@ for i:=0; i<SOMEENUM.names.count; ++i
 
 short term tasks:
 - [x] run time type info
-- [ ] typeinfoOf operator
+- [x] typeinfo operator
 - [ ] typeIsEquivalent operator
 - [ ] 'Any' type-boxing
 

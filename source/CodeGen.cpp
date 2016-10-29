@@ -3461,6 +3461,21 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					return pConst;
 				} break;
+			case RWORD_Typeinfo:
+				{
+					auto pStnodChild = pStnod->PStnodChildSafe(0);
+					if (!EWC_FVERIFY(pStnodChild && pStnodChild->m_pTin, "bad Typeinfo directive"))
+						return nullptr;
+
+					CIRGlobal * pGlob = EWC_NEW(pBuild->m_pAlloc, CIRGlobal) CIRGlobal();
+					pBuild->AddManagedVal(pGlob);
+
+					auto pLtypePTin = PLtypeFromPTin(pStnod->m_pTin);
+					auto pLtypeTin = LLVMGetElementType(pLtypePTin);
+
+					pGlob->m_pLval = PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pStnodChild->m_pTin);
+					return pGlob;
+				} break;
 			case RWORD_If:
 				{
 

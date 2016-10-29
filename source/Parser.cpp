@@ -716,7 +716,13 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 					TOK(')'),
 					"while parsing procedure call '%s'", 
 					pStnodIdent ? StrFromIdentifier(pStnodIdent).PCoz() : "unknown");
-			}break;
+			} break;
+		case TOK_Arrow:
+			{ 
+				SLexerLocation lexloc(pLex);
+				EmitError(pParctx->m_pWork->m_pErrman, &lexloc, "c-style member dereference '->' is not supported, use '.'");
+
+			} // fallthrough
 		case TOK('.'):		// . identifier
 			{
 				TokNext(pLex); // consume '.'
@@ -774,16 +780,21 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SLexer * pLex)
 			{
 			case RWORD_Sizeof:
 			case RWORD_Alignof:
+			case RWORD_Typeinfo:
 				{
 					TOK tokPrev = TOK(pLex->m_tok);	
 					SLexerLocation lexloc(pLex);
 					TokNext(pLex);
 
+					Expect(pParctx, pLex, TOK('('));
+
 					CSTNode * pStnodChild = PStnodParseUnaryExpression(pParctx, pLex);
 					if (!pStnodChild)
 					{
-						ParseError(pParctx, pLex, "%s missing right hand side.", PCozFromRword(rword));
+						ParseError(pParctx, pLex, "%s missing argument.", PCozFromRword(rword));
 					}
+					
+					Expect(pParctx, pLex, TOK(')'));
 
 					CSTNode * pStnodRword = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 					pStnodRword->m_tok = tokPrev;
@@ -2880,6 +2891,38 @@ void AddBuiltInInteger(SErrorManager * pErrman, CSymbolTable * pSymtab, const CS
 	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strName.PCoz(), cBit, fSigned);
 	pSymtab->AddBuiltInType(pErrman, nullptr, pTinint);
 }
+
+
+/*
+void AddBuiltInAlias(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strNameOld, const CString & strNameNew)
+{
+	STypeInfo *	pTinOld = pSymtab->PTinBuiltin(strNameOld);
+	if EWC_FVERIFY(pTinOld && , "bad built in alias"))
+	{
+		switch (pTinOld->m_tink)
+		{
+		case TINK_Integer:
+			{
+				auto pTinintOld = PTinDerivedCast<STypeInfoInteger *>(pTinOld);
+				auto pTinintNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strNameNew.PCoz(), cBit, fSigned);
+
+				pTinintNew->m_cBit = pTinintOld->m_cBit;
+				pTinintNew->m_fIsSigned = pTinintOld->m_fIsSigned;
+				pTinintNew->m_pTinSource = pTin;
+				pSymtab->AddBuiltInType(pErrman, nullptr, pTinintNew);
+			} break;
+		case TINK_Float:
+			{
+				auto pTinfloatOld = PTinDerivedCast<STypeInfoFloat *>(pTinOld);
+				auto pTinfloatNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(strNameNew.PCoz(), cBit);
+
+				pTinfloatNew->m_cBit = pTinfloatOld->m_cBit;
+				pTinfloatNew->m_pTinSource = pTin;
+				pSymtab->AddBuiltInType(pErrman, nullptr, pTinfloatNew);
+			} break;
+		}
+	}
+}*/
 
 void AddBuiltInFloat(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, u32 cBit)
 {

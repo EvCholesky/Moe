@@ -4262,6 +4262,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						} break;
 					case RWORD_Sizeof:
 					case RWORD_Alignof:
+					case RWORD_Typeinfo:
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())
 							{
@@ -4270,7 +4271,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							auto pStnodChild = pStnod->PStnodChild(0);
-							if (!EWC_FVERIFY(pStnodChild, "sizeof/typeof missing child"))
+							if (!EWC_FVERIFY(pStnodChild, "%s missing child", PCozFromRword(rword)))
 								break;
 
 							if (!pStnodChild->m_pTin)
@@ -4279,7 +4280,23 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							auto pSymtab = pTcsentTop->m_pSymtab;
-							pStnod->m_pTin = pSymtab->PTinBuiltin("uSize");
+
+							if (rword == RWORD_Typeinfo)
+							{
+								// lookup STypeInfo, or return waiting for type
+								auto pSymtab = pTcsentTop->m_pSymtab;
+								auto pSymTypeinfo = pSymtab->PSymLookup("STypeInfo", SLexerLocation());
+
+								if (!pSymTypeinfo)
+								{
+									return TcretWaitForTypeSymbol(pTcwork, pTcfram, pSymTypeinfo, pStnod);
+								}
+								pStnod->m_pTin = PTinptrAlloc( pSymtab, pSymTypeinfo->m_pTin);
+							}
+							else
+							{
+								pStnod->m_pTin = pSymtab->PTinBuiltin("uSize");
+							}
 
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
