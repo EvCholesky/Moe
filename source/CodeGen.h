@@ -338,7 +338,6 @@ public:
 						~CIRBuilder();
 	
 	void				PrintDump();
-	void				GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax);
 
 	CIRBasicBlock *		PBlockCreate(CIRProcedure * pProc, const char * pChzName);
 
@@ -391,8 +390,6 @@ public:
 	EWC::CDynAry<CIRProcedure *>		m_arypProcVerify;	// all the procedures that need verification.
 	EWC::CDynAry<CIRValue *> *			m_parypValManaged;
 	EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
-	EWC::CHash<HV, u32>					m_hashHvNUnique;	// map for generating unique strings
-
 };
 
 

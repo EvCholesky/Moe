@@ -57,24 +57,6 @@ struct SUnknownType // tag = untype
 
 #define VALIDATE_NAME_MANGLING 1
 
-class CNameMangler // tag = mang
-{
-public:
-					CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax=1024);
-					~CNameMangler();
-
-	void			Resize(size_t cBStartingMax);
-	void			AppendName(const char * pCoz);
-	void			AppendType(STypeInfo * pTin);
-
-	EWC::CString	StrMangleMethodName(STypeInfoProcedure * pTinproc);
-	STypeInfoProcedure * 
-					PTinprocDemangle(const EWC::CString & strName, CSymbolTable * pSymtab);
-
-	EWC::CAlloc *		m_pAlloc;
-	EWC::SStringBuffer	m_strbuf;
-};
-
 
 
 struct STypeCheckWorkspace // tag = tcwork
@@ -85,7 +67,7 @@ struct STypeCheckWorkspace // tag = tcwork
 					,m_mang(pAlloc)
 					,m_nIdNext(0)
 					,m_aryTcfram()
-					,m_hashPSymUntype(pAlloc)
+					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
 					,m_arypTcframPending()
 					,m_arypTcframWaiting()
 						{
@@ -197,8 +179,14 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 			AppendCoz(&m_strbuf, "P");
 			AppendType(pTinptr->m_pTinPointedTo);
 		} break;
-    case TINK_Struct:	AppendName(pTin->m_strName.PCoz());	break;
-    case TINK_Enum:		AppendName(pTin->m_strName.PCoz()); break;
+    case TINK_Struct:
+		{
+			AppendName(pTin->m_strName.PCoz()); 
+		}break;
+    case TINK_Enum:
+		{
+			AppendName(pTin->m_strName.PCoz()); 
+		}break;
     case TINK_Array:
 		{
 			auto pTinary = (STypeInfoArray *)pTin;
@@ -294,7 +282,11 @@ static inline bool FMatchString(const char * pCozRef, const char ** ppCoz)
 	return true;
 }
 
-static STypeInfoProcedure * PTinprocAlloc(EWC::CAlloc * pAlloc, size_t cParams, size_t cReturns, const char * pCozName)
+static STypeInfoProcedure * PTinprocAlloc(
+	EWC::CAlloc * pAlloc,
+	size_t cParams,
+	size_t cReturns,
+	const char * pCozName)
 {
 	size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 	cBAlloc = cBAlloc +	(cParams + cReturns) * sizeof(STypeInfo *);
@@ -424,6 +416,7 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 
 		auto strName = StrReadName(ppCoz);
 		SLexerLocation lexloc;
+
 		auto pSym = pSymtab->PSymLookup(strName, lexloc);
 		return (pSym) ? pSym->m_pTin : nullptr;
 	}
@@ -689,11 +682,13 @@ inline s64 NSignedLiteralCast(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, c
 		return (s64)pStval->m_g;
 	case STVALK_ReservedWord:
 		{
-			if (EWC_FVERIFY(pStval->m_rword == RWORD_LineDirective, "unexpected reserved word"))
+			if (pStval->m_rword != RWORD_LineDirective)
 			{
-				return pStval->m_nUnsigned;
+				EmitError(pTcwork, pStnod, "expected #line directive, encountered %s", PCozFromRword(pStval->m_rword));
+				return 0;
 			}
-			return 0;
+
+			return pStval->m_nUnsigned;
 		}
 	default:
 		EWC_ASSERT(false, "bad literal cast to signed int");
@@ -1093,12 +1088,13 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 			case LITK_Null:		
 				{
 					pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
-					pSymtab->AddManagedTin(pTinlit);
 					pTinlit->m_litty.m_litk = LITK_Null;
 					pTinlit->m_litty.m_cBit = -1;
 					pTinlit->m_litty.m_fIsSigned = false;
 					pTinlit->m_fIsFinalized = true;
 					pTinlit->m_pTinSource = (STypeInfoPointer*)pTinDst;
+					pSymtab->AddManagedTin(pTinlit);
+
 				} break;
 			default: EWC_ASSERT(false, "unexpected literal type");
 			}
@@ -1295,10 +1291,11 @@ static inline STypeInfo * PTinPromoteUntypedCommon(STypeCheckWorkspace * pTcwork
 		}
 
 		STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-		pSymtab->AddManagedTin(pTinary);
 		pTinary->m_pTin = pTinlit->m_pTinSource;
 		pTinary->m_c = pTinlit->m_c;
 		pTinary->m_aryk = ARYK_Fixed;
+		pSymtab->AddManagedTin(pTinary);
+		pTinary = pSymtab->PTinMakeUnique(pTinary);
 
 		return pTinary;
 	}
@@ -1598,14 +1595,6 @@ inline STypeInfo * PTinElement(STypeInfo * pTin)
 		case TINK_Array:	return ((STypeInfoArray *)pTin)->m_pTin;
 		default :			return nullptr;
 	}
-}
-
-STypeInfoPointer * PTinptrAlloc(CSymbolTable * pSymtab, STypeInfo * pTinPointedTo)
-{
-	auto pTinptr = EWC_NEW(pSymtab->m_pAlloc, STypeInfoPointer) STypeInfoPointer();
-	pSymtab->AddManagedTin(pTinptr);
-	pTinptr->m_pTinPointedTo = pTinPointedTo;
-	return pTinptr;
 }
 
 bool FDoesOperatorReturnBool(PARK park)
@@ -2081,7 +2070,7 @@ STypeInfo * PTinFromTypeSpecification(
 		{
 		case PARK_ReferenceDecl:
 			{
-				auto pTinptr = PTinptrAlloc(pSymtab, nullptr);
+				auto pTinptr = pSymtab->PTinptrAllocReference(nullptr);
 				pStnodIt->m_pTin = pTinptr;
 
 				pTinPrev = pTinptr;
@@ -2094,7 +2083,6 @@ STypeInfo * PTinFromTypeSpecification(
 		case PARK_ArrayDecl:
 			{
 				STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-				pSymtab->AddManagedTin(pTinary);
 
 				*ppTinCur = pTinary;
 				ppTinCur = &pTinary->m_pTin;
@@ -2141,6 +2129,8 @@ STypeInfo * PTinFromTypeSpecification(
 					EmitError(pTcwork, pStnod, "Dynamic arrays are not yet supported");
 				}
 
+				pSymtab->AddManagedTin(pTinary);
+
 				pStnodIt->m_pTin = pTinary;
 				pStnodIt = pStnodIt->PStnodChild(pStnodIt->CStnodChild()-1);
 			} break;
@@ -2171,6 +2161,8 @@ STypeInfo * PTinFromTypeSpecification(
 			} break;
 		}
 	}
+
+	pTinReturn = pSymtab->PTinMakeUnique(pTinReturn);
 	return pTinReturn;
 }
 
@@ -2499,7 +2491,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				switch(pTcsentTop->m_nState++)
 				{
 				case 0:
-					{	// push the parameter list
+					{	
+						// push the parameter list
 						if (pStproc->m_iStnodParameterList >= 0)
 						{
 							CSTNode * pStnodParamList = pStnod->PStnodChild(pStproc->m_iStnodParameterList);
@@ -3925,11 +3918,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 
 					STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
-					pSymtab->AddManagedTin(pTinlit);
 					pTinlit->m_litty.m_litk = LITK_Array;
 					pTinlit->m_pTinSource = pTinType;
 					pTinlit->m_pStnodDefinition = pStnod;
-					pStnod->m_pTin = pTinlit;
 
 					if (pStdecl->m_iStnodInit >= 0)
 					{
@@ -3938,6 +3929,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid ArrayLiteral");
 						pTinlit->m_c = pStnodInit->CStnodChild();
 					}
+
+					pSymtab->AddManagedTin(pTinlit);
+					pTinlit = pSymtab->PTinMakeUnique(pTinlit);
+					pStnod->m_pTin = pTinlit;
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
@@ -3949,13 +3944,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
-					pSymtab->AddManagedTin(pTinlit);
-					pStnod->m_pTin = pTinlit;
 
 					if (EWC_FVERIFY(pStnod->m_pStval, "null value in literal"))
 					{
 						pTinlit->m_litty.m_litk = pStnod->m_pStval->m_litkLex;
 					}
+
+					pSymtab->AddManagedTin(pTinlit);
+					pTinlit = pSymtab->PTinMakeUnique(pTinlit);
+					pStnod->m_pTin = pTinlit;
 				}
 				
 				pStnod->m_strees = STREES_TypeChecked;
@@ -4143,6 +4140,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											auto pTinlitInt = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
 											pTinlitInt->m_litty.m_litk = LITK_Integer;
 											pSymtab->AddManagedTin(pTinlitInt);
+											pTinlitInt = pSymtab->PTinMakeUnique(pTinlitInt);
 											pTinMember = pTinlitInt;
 
 											pStvalMember = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
@@ -4158,7 +4156,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								} break;
 							case ARYMEMB_Data:
 								{
-									pTinMember = PTinptrAlloc(pSymtab, pTinary->m_pTin);
+									pTinMember = pSymtab->PTinptrAllocReference(pTinary->m_pTin);
 								} break;
 							default: 
 								EmitError(pTcwork, pStnod, "unknown array member '%s'", strMemberName.PCoz());
@@ -4280,18 +4278,18 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							auto pSymtab = pTcsentTop->m_pSymtab;
+							pStnodChild->m_pTin = pSymtab->PTinMakeUnique(pStnodChild->m_pTin);
 
 							if (rword == RWORD_Typeinfo)
 							{
 								// lookup STypeInfo, or return waiting for type
-								auto pSymtab = pTcsentTop->m_pSymtab;
 								auto pSymTypeinfo = pSymtab->PSymLookup("STypeInfo", SLexerLocation());
 
 								if (!pSymTypeinfo)
 								{
 									return TcretWaitForTypeSymbol(pTcwork, pTcfram, pSymTypeinfo, pStnod);
 								}
-								pStnod->m_pTin = PTinptrAlloc( pSymtab, pSymTypeinfo->m_pTin);
+								pStnod->m_pTin = pSymtab->PTinptrAllocReference(pSymTypeinfo->m_pTin);
 							}
 							else
 							{
@@ -4978,7 +4976,7 @@ void PerformTypeCheck(
 
 		pTcwork->m_arypTcframPending.Append(pTcfram);
 	}
-	
+
 	int cStoppingError = 0;
 	while (pTcwork->m_arypTcframPending.C())
 	{

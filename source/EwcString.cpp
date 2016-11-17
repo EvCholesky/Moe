@@ -33,6 +33,18 @@ u32 HvFromPBFVN(const void * pV, size_t cB)
     return hv;
 }
 
+u32 HvConcatPBFVN(u32 hv, const void * pV, size_t cB)
+{
+	auto pB = (u8*)pV;
+	for (size_t iB=0; iB < cB; ++iB)
+    {
+        hv = (hv * 16777619) ^ pB[iB];
+    }
+
+    return hv;
+}
+
+
 u32 HvFromPCozLowercaseFVN(const char * pV, size_t cB)
 {
 	auto pB = (u8*)pV;
@@ -55,15 +67,14 @@ class CStringTable // tag=strtab
 public:
 				CStringTable(CAlloc * pAlloc)
 				:m_pAlloc(pAlloc)
-				,m_mpHvEntry(pAlloc,128)
+				,m_mpHvEntry(pAlloc, EWC::BK_StringTable, 128)
 					{ ; }
 
-	const char * PCozAlloc(const char * pCoz, size_t cCodepoint, HV hv)
+	const char * PCozAlloc(const char * pCoz, size_t cB, HV hv)
 					{
 						Entry * pEntry = nullptr;
 						if (m_mpHvEntry.FinsEnsureKey(hv, &pEntry) == FINS_Inserted)
 						{
-							size_t cB = CBFromCoz(pCoz, cCodepoint);
 							pEntry->m_cRef = 1;
 							pEntry->m_pCoz = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cB, EWC_ALIGN_OF(char));
 							(void) CBCopyCoz(pCoz, pEntry->m_pCoz, cB);
@@ -71,13 +82,13 @@ public:
 						else
 						{
 							++pEntry->m_cRef;
-							EWC_ASSERT(FAreCozEqual(pEntry->m_pCoz, pCoz, cCodepoint), "bad table lookup in CStringTable");
+							EWC_ASSERT(FAreCozEqual(pEntry->m_pCoz, pCoz, cB-1), "bad table lookup in CStringTable");
 						}
 
 						return pEntry->m_pCoz;
 					}
 
-	void		FreePCoz(const char * pCoz, size_t cB,HV hv)
+	void		FreePCoz(const char * pCoz, HV hv)
 					{
 						Entry * pEntry = m_mpHvEntry.Lookup(hv);
 						if (!pEntry)
@@ -136,8 +147,7 @@ void CAsciString::SetPChz(const char * pChzNew)
 
 	if(m_pChz)
 	{
-		size_t cB = EWC::CCh(m_pChz) + 1;
-		s_pStrtab->FreePCoz(m_pChz, cB, m_shash.HvRaw());
+		s_pStrtab->FreePCoz(m_pChz, m_shash.HvRaw());
 		m_pChz = nullptr;
 		m_shash = CStringHash(0);
 	}
@@ -161,8 +171,7 @@ void CAsciString::SetPCh(const char * pChNew, size_t cCh)
 
 	if(m_pChz)
 	{
-		size_t cB = EWC::CCh(m_pChz) + 1;
-		s_pStrtab->FreePCoz(m_pChz, cB, m_shash.HvRaw());
+		s_pStrtab->FreePCoz(m_pChz, m_shash.HvRaw());
 		m_pChz = nullptr;
 		m_shash = CStringHash(0);
 	}
@@ -200,8 +209,7 @@ void CString::SetPCoz(const char * pCozNew)
 
 	if(m_pCoz)
 	{
-		size_t cB = CBCoz(m_pCoz);
-		s_pStrtab->FreePCoz(m_pCoz, cB, m_shash.HvRaw());
+		s_pStrtab->FreePCoz(m_pCoz, m_shash.HvRaw());
 		m_pCoz = nullptr;
 		m_shash = CStringHash(0);
 	}
@@ -209,8 +217,26 @@ void CString::SetPCoz(const char * pCozNew)
 	if(pCozNew)
 	{
 		m_shash = CStringHash(pCozNew);
-		m_pCoz = s_pStrtab->PCozAlloc(pCozNew, EWC::CCodepoint(pCozNew), m_shash.HvRaw());
+		m_pCoz = s_pStrtab->PCozAlloc(pCozNew, EWC::CBCoz(pCozNew), m_shash.HvRaw());
 	}
+}
+
+CString StrFromConcat(const char * pCozA, const char * pCozEndA, const char * pCozB, const char * pCozEndB)
+{
+	size_t cBA = (pCozEndA - pCozA);
+	size_t cBB = (pCozEndB - pCozB);
+	size_t cBDest = cBA+cBB+1;
+
+	// BB - we could try to do something clever here and construct the string/hash inside the table, I started
+	//  on it but it seemed like a bigger mess than it was worth
+	char * pCozWork = (char *)CString::s_pStrtab->m_pAlloc->EWC_ALLOC(cBDest, 1);
+	(void)CBCopyCoz(pCozA, pCozWork, cBDest);
+	(void)CBCopyCoz(pCozB, &pCozWork[cBA], cBDest-cBA);
+
+	CString str(pCozWork); //, cBDest);
+
+	CString::s_pStrtab->m_pAlloc->EWC_DELETE(pCozWork);
+	return str;
 }
 
 void CString::SetPCo(const char * pCoNew, size_t cCodepoint)
@@ -225,16 +251,16 @@ void CString::SetPCo(const char * pCoNew, size_t cCodepoint)
 
 	if(m_pCoz)
 	{
-		size_t cB = CBCoz(m_pCoz);
-		s_pStrtab->FreePCoz(m_pCoz, cB, m_shash.HvRaw());
+		s_pStrtab->FreePCoz(m_pCoz, m_shash.HvRaw());
 		m_pCoz = nullptr;
 		m_shash = CStringHash(0);
 	}
 
 	if(pCoNew)
 	{
-		m_shash = CStringHash(pCoNew, cCodepoint);
-		m_pCoz = s_pStrtab->PCozAlloc(pCoNew, cCodepoint, m_shash.HvRaw());
+		size_t cB = CBFromCoz(pCoNew, cCodepoint);
+		m_shash = CStringHash(pCoNew, cB-1);
+		m_pCoz = s_pStrtab->PCozAlloc(pCoNew, cB, m_shash.HvRaw());
 	}
 }
 
@@ -271,7 +297,7 @@ void StaticInitStrings(CAlloc * pAlloc)
 {
 	CString::s_pStrtab = EWC_NEW(pAlloc, CStringTable) CStringTable(pAlloc);
 						
-	s_pHashOidStr = EWC_NEW(pAlloc, OidTable) OidTable(pAlloc);
+	s_pHashOidStr = EWC_NEW(pAlloc, OidTable) OidTable(pAlloc, EWC::BK_StringTable);
 }
 
 void StaticShutdownStrings(CAlloc * pAlloc)

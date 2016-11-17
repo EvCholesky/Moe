@@ -118,26 +118,29 @@ public:
 		HV									m_hv;
 	};
 
-				CHash(CAlloc * pAlloc, u32 cCapacityStarting = 32)
+				CHash(CAlloc * pAlloc, BK bk, u32 cCapacityStarting = 32)
 				:m_pAlloc(pAlloc)
 				,m_aEntry(nullptr)
 				,m_cUsed(0)
 				,m_cCapacity(0)
-					{ SetAlloc(pAlloc, cCapacityStarting); }
+				,m_bk(bk)
+					{ SetAlloc(pAlloc, bk, cCapacityStarting); }
 
 				CHash()
 				:m_pAlloc(nullptr)
 				,m_aEntry(nullptr)
 				,m_cUsed(0)
 				,m_cCapacity(0)
+				,m_bk(BK_Nil)
 					{ ; }
 
 				~CHash()
 					{ Clear(0); }
 
-	void		SetAlloc(CAlloc * pAlloc, u32 cCapacityStarting = 32)
+	void		SetAlloc(CAlloc * pAlloc, BK bk, u32 cCapacityStarting = 32)
 					{
 						m_pAlloc = pAlloc;
+						m_bk = bk;
 						Grow(cCapacityStarting);
 					}
 
@@ -452,7 +455,7 @@ public:
 
 						EWC_ASSERT(FIsPowerOfTwo(cCapacityNew), "invalid CHash capacity");
 
-						SEntry * aEntryNew = (SEntry*)m_pAlloc->EWC_ALLOC(sizeof(SEntry) * cCapacityNew, EWC_ALIGN_OF(SEntry));
+						SEntry * aEntryNew = (SEntry*)m_pAlloc->EWC_ALLOC_BK(sizeof(SEntry) * cCapacityNew, EWC_ALIGN_OF(SEntry), m_bk);
 						ConstructN<SEntry>(aEntryNew, cCapacityNew);
 
 						if (m_aEntry)
@@ -525,6 +528,7 @@ protected:
 	SEntry *	m_aEntry;
 	u32			m_cUsed;
 	u32			m_cCapacity;
+	BK			m_bk;
 };
 } // namespace EWC
 

@@ -215,6 +215,41 @@ const char * PChzFromEnumimp(ENUMIMP enumimp)
 	return s_mpEnumimpPChz[enumimp];
 }
 
+const char * PChzFromCallconv(CALLCONV callconv)
+{
+	static const char * s_mpCallconvPChz[] =
+	{
+		"#x86",			//CALLCONV_CX86
+		"#stdcall",		//CALLCONV_StdcallX86
+		"#x64",			//CALLCONV_X64
+	};
+	EWC_CASSERT(EWC_DIM(s_mpCallconvPChz) == CALLCONV_Max, "missing CALLCONV string");
+	if (callconv == CALLCONV_Nil)
+		return "Nil";
+
+	if ((callconv < CALLCONV_Nil) | (callconv >= CALLCONV_Max))
+		return "Unknown CALLCONV";
+
+	return s_mpCallconvPChz[callconv];
+}
+
+const char * PChzFromInlinek(INLINEK inlinek)
+{
+	static const char * s_mpInlinekPChz[] =
+	{
+		"inline",		// INLINEK_AlwaysInline
+		"noinline",		// INLINEK_NoInline
+	};
+	EWC_CASSERT(EWC_DIM(s_mpInlinekPChz) == INLINEK_Max, "missing INLINEK string");
+	if (inlinek == INLINEK_Nil)
+		return "Nil";
+
+	if ((inlinek < INLINEK_Nil) | (inlinek >= INLINEK_Max))
+		return "Unknown INLINEK";
+
+	return s_mpInlinekPChz[inlinek];
+}
+
 CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
 {
 	if (!pStval)
@@ -1198,10 +1233,10 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex);
 		pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 
-		// allocate a PTinptr to a PTinproc
+		CSTNode ** ppStnodReturns = &pStnodReturns;
 		int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
 		int cStnodParams;
-		(void) PPStnodChildFromPark(pStnodParams, &cStnodParams, PARK_ParameterList);
+		CSTNode ** ppStnodParams = PPStnodChildFromPark(pStnodParams, &cStnodParams, PARK_ParameterList);
 
 		size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 		cBAlloc = cBAlloc +	(cStnodParams + cStnodReturns) * sizeof(STypeInfo *);
@@ -1211,23 +1246,57 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure("");
 		STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), 
 																EWC_ALIGN_OF(STypeInfo *));
+		// allocate room for pTins here, but types won't be resolved until type check
 		pTinproc->m_arypTinParams.SetArray(ppTin, 0, cStnodParams);
 		pTinproc->m_arypTinParams.AppendFill(cStnodParams, nullptr);
 
 		pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
 		pTinproc->m_arypTinReturns.AppendFill(cStnodReturns, nullptr);
-		pParctx->m_pSymtab->AddManagedTin(pTinproc);
-		pStnodProc->m_pTin = pTinproc;
 
+		pTinproc->m_pStnodDefinition = pStnodProc;
+
+		INLINEK inlinek = INLINEK_Nil;
+		CALLCONV callconv = CALLCONV_Nil;
 		if (pLex->m_tok == TOK_ReservedWord)
 		{
-			RWORD rword = RwordLookup(pLex);
-			if (rword == RWORD_StdCall)
+			while (pLex->m_tok == TOK_ReservedWord)
 			{
-				pTinproc->m_callconv = CALLCONV_StdcallX86;
+				RWORD rwordLookup = RwordLookup(pLex);
 				TokNext(pLex);
+				switch (rwordLookup)
+				{
+				case RWORD_ForeignDirective:
+					{
+						pStproc->m_fIsForeign = true;
+						pStproc->m_fUseUnmangledName = true;
+
+						if (!FIsEndOfStatement(pLex) && pLex->m_tok == TOK_Identifier)
+						{
+							auto pStnodAlias = PStnodParseIdentifier(pParctx, pLex);
+							pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
+						}
+					} break;
+				case RWORD_CDecl:	callconv = CALLCONV_CX86;			break;
+				case RWORD_StdCall: callconv = CALLCONV_StdcallX86;		break;
+				case RWORD_Inline:		inlinek = INLINEK_AlwaysInline;	break;
+				case RWORD_NoInline:	inlinek = INLINEK_NoInline;		break;
+				default:
+					{
+						ParseError(
+							pParctx,
+							pLex,
+							"Unexpected token following procedure declaration %s\n",
+							PCozFromRword(rwordLookup));
+					} break;
+				}
 			}
 		}
+		pTinproc->m_callconv = callconv;
+		pTinproc->m_inlinek = inlinek;
+
+		pParctx->m_pSymtab->AddManagedTin(pTinproc);
+
+		pStnodProc->m_pTin = pTinproc;
 
 		return pStnodProc;
 	}
@@ -1844,8 +1913,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 								{
 									auto pStnodAlias = PStnodParseIdentifier(pParctx, pLex);
 									pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
-
-									//TokNextToken(pLex);
 								}
 							} break;
 						case RWORD_CDecl:	callconv = CALLCONV_CX86;			break;
@@ -1899,8 +1966,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				int cStnodParams;
 				CSTNode ** ppStnodParams = PPStnodChildFromPark(pStnodParams, &cStnodParams, PARK_ParameterList);
 
-				//int cStnodReturns = CChildrenInList(pStnodReturns, ppStnodReturns, PARK_Uhhhh);
-				CSTNode ** ppStnodReturns = &pStnodReturns;
+				CSTNode ** ppStnodReturn = &pStnodReturns;
 				int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
 
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
@@ -1908,12 +1974,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
-				STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName.PCoz());
+				STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName);
 				STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), 
 																		EWC_ALIGN_OF(STypeInfo *));
+
+				// allocate room for type pointers here, but the types won't be resolved until typeCheck
 				pTinproc->m_arypTinParams.SetArray(ppTin, 0, cStnodParams);
 				pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
-				pStnodProc->m_pTin = pTinproc;
+
 				pTinproc->m_pStnodDefinition = pStnodProc;
 				pTinproc->m_callconv = callconv;
 				pTinproc->m_inlinek = inlinek;
@@ -1932,11 +2000,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					}
 				}
 
-				CSTNode ** ppStnodReturnMax = &ppStnodReturns[cStnodReturns];
-				for ( ; ppStnodReturns != ppStnodReturnMax; ++ppStnodReturns)
+				CSTNode ** ppStnodReturnMax = &ppStnodReturn[cStnodReturns];
+				for ( ; ppStnodReturn != ppStnodReturnMax; ++ppStnodReturn)
 				{
-					pTinproc->m_arypTinReturns.Append((*ppStnodReturns)->m_pTin);
+					pTinproc->m_arypTinReturns.Append((*ppStnodReturn)->m_pTin);
 				}
+
+				pSymtabParent->AddManagedTin(pTinproc);
+				pStnodProc->m_pTin = pTinproc;
 
 				if (pStproc->m_iStnodBody >= 0)
 				{
@@ -1984,7 +2055,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pSymProc->m_pTin = pTinproc;
 				pStnodProc->m_pSym = pSymProc;
 
-				pSymtabParent->AddManagedTin(pTinproc);
 
 				return pStnodProc;
 			}
@@ -2034,11 +2104,13 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 								cConstant * sizeof(STypeInfoEnumConstant);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent.PCoz());
+				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent);
+
 				auto aTinecon = (STypeInfoEnumConstant *)PVAlign( pB + sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant));
 				pTinenum->m_aryTinecon.SetArray(aTinecon, 0, cConstant);
 
 				pTinenum->m_tinstructProduced.m_pStnodStruct = pStnodEnum;
+				pSymtabParent->AddManagedTin(pTinenum);
 
 				CSTNode ** ppStnodMemberMax = (ppStnodMember) ? &ppStnodMember[cStnodChild] : nullptr;
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
@@ -2061,8 +2133,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					default: EWC_ASSERT(false, "Expected enum child value");
 					}
 				}
-
-				pSymtabParent->AddManagedTin(pTinenum);
 
 				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType);
 				pSymEnum->m_grfsym.AddFlags(FSYM_IsType);
@@ -2142,7 +2212,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 								cStnodField * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent.PCoz());
+				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent);
+
 				pTinstruct->m_pStnodStruct = pStnodStruct;
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
 																		pB + sizeof(STypeInfoStruct), 
@@ -2879,58 +2950,58 @@ CSymbolTable::~CSymbolTable()
 	}
 }
 
-void AddSimpleBuiltInType(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, TINK tink)
+void AddSimpleBuiltInType(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, TINK tink)
 {
-	STypeInfo * pTin = EWC_NEW(pSymtab->m_pAlloc, STypeInfo) STypeInfo(strName.PCoz(), tink);
+	STypeInfo * pTin = EWC_NEW(pSymtab->m_pAlloc, STypeInfo) STypeInfo(strName, tink);
 
-	pSymtab->AddBuiltInType(pErrman, nullptr, pTin);
+	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTin);
 }
 
-void AddBuiltInInteger(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, u32 cBit, bool fSigned)
+void AddBuiltInInteger(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, u32 cBit, bool fSigned)
 {
-	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strName.PCoz(), cBit, fSigned);
-	pSymtab->AddBuiltInType(pErrman, nullptr, pTinint);
+	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strName, cBit, fSigned);
+	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTinint);
 }
 
 
-/*
-void AddBuiltInAlias(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strNameOld, const CString & strNameNew)
+void AddBuiltInAlias(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strNameNew, const CString & strNameOld)
 {
 	STypeInfo *	pTinOld = pSymtab->PTinBuiltin(strNameOld);
-	if EWC_FVERIFY(pTinOld && , "bad built in alias"))
+	if (EWC_FVERIFY(pTinOld, "bad built in alias"))
 	{
 		switch (pTinOld->m_tink)
 		{
 		case TINK_Integer:
 			{
 				auto pTinintOld = PTinDerivedCast<STypeInfoInteger *>(pTinOld);
-				auto pTinintNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strNameNew.PCoz(), cBit, fSigned);
+				auto pTinintNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) 
+									STypeInfoInteger(strNameNew, pTinintOld->m_cBit, pTinintOld->m_fIsSigned);
 
-				pTinintNew->m_cBit = pTinintOld->m_cBit;
-				pTinintNew->m_fIsSigned = pTinintOld->m_fIsSigned;
-				pTinintNew->m_pTinSource = pTin;
-				pSymtab->AddBuiltInType(pErrman, nullptr, pTinintNew);
+				pTinintNew->m_pTinNative = (pTinOld->m_pTinNative) ? pTinOld->m_pTinNative : pTinOld;
+				pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTinintNew);
 			} break;
 		case TINK_Float:
 			{
 				auto pTinfloatOld = PTinDerivedCast<STypeInfoFloat *>(pTinOld);
-				auto pTinfloatNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(strNameNew.PCoz(), cBit);
+				auto pTinfloatNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) 
+										STypeInfoFloat(strNameNew, pTinfloatOld->m_cBit);
 
-				pTinfloatNew->m_cBit = pTinfloatOld->m_cBit;
-				pTinfloatNew->m_pTinSource = pTin;
-				pSymtab->AddBuiltInType(pErrman, nullptr, pTinfloatNew);
+				pTinfloatNew->m_pTinNative = (pTinOld->m_pTinNative) ? pTinOld->m_pTinNative : pTinOld;
+				pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTinfloatNew);
 			} break;
+		default:
+			EWC_ASSERT(false, "unsupported built in alias type");
 		}
 	}
-}*/
+}
 
-void AddBuiltInFloat(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, u32 cBit)
+void AddBuiltInFloat(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, u32 cBit)
 {
-	STypeInfoFloat * pTinfloat = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(strName.PCoz(), cBit);
+	STypeInfoFloat * pTinfloat = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(strName, cBit);
 	pSymtab->AddBuiltInType(nullptr, nullptr, pTinfloat);
 }
 
-void AddBuiltInLiteral(SErrorManager * pErrman, CSymbolTable * pSymtab, const CString & strName, LITK litk, s8 cBit, bool fIsSigned)
+void AddBuiltInLiteral(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, LITK litk, s8 cBit, bool fIsSigned)
 {
 	STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
 	pTinlit->m_strName = strName;
@@ -2949,53 +3020,53 @@ void AddBuiltInLiteral(SErrorManager * pErrman, CSymbolTable * pSymtab, const CS
 	paryPTinlit->Append(pTinlit);
 }
 
-void CSymbolTable::AddBuiltInSymbols(SErrorManager * pErrman)
+void CSymbolTable::AddBuiltInSymbols(CWorkspace * pWork)
 {
-	AddSimpleBuiltInType(pErrman, this, "bool", TINK_Bool);
-	AddSimpleBuiltInType(pErrman, this, "void", TINK_Void);
+	AddSimpleBuiltInType(pWork, this, "bool", TINK_Bool);
+	AddSimpleBuiltInType(pWork, this, "void", TINK_Void);
 
-	AddBuiltInInteger(pErrman, this, "u8", 8, false);
-	AddBuiltInInteger(pErrman, this, "u16", 16, false);
-	AddBuiltInInteger(pErrman, this, "u32", 32, false);
-	AddBuiltInInteger(pErrman, this, "char", 32, false);
-	AddBuiltInInteger(pErrman, this, "u64", 64, false);
+	AddBuiltInInteger(pWork, this, "u8", 8, false);
+	AddBuiltInInteger(pWork, this, "u16", 16, false);
+	AddBuiltInInteger(pWork, this, "u32", 32, false);
+	AddBuiltInInteger(pWork, this, "char", 32, false);
+	AddBuiltInInteger(pWork, this, "u64", 64, false);
 
-	AddBuiltInInteger(pErrman, this, "s8", 8, true);
-	AddBuiltInInteger(pErrman, this, "s16", 16, true);
-	AddBuiltInInteger(pErrman, this, "s32", 32, true);
-	AddBuiltInInteger(pErrman, this, "s64", 64, true);
+	AddBuiltInInteger(pWork, this, "s8", 8, true);
+	AddBuiltInInteger(pWork, this, "s16", 16, true);
+	AddBuiltInInteger(pWork, this, "s32", 32, true);
+	AddBuiltInInteger(pWork, this, "s64", 64, true);
 
 #if EWC_X64
-	AddBuiltInInteger(pErrman, this, "int", 64, true);
-	AddBuiltInInteger(pErrman, this, "uint", 64, false);
-	AddBuiltInInteger(pErrman, this, "uSize", 64, false);
-	AddBuiltInInteger(pErrman, this, "sSize", 64, true);
+	AddBuiltInAlias(pWork, this, "int", "s64");
+	AddBuiltInAlias(pWork, this, "uint", "u64");
+	AddBuiltInAlias(pWork, this, "sSize", "s64");
+	AddBuiltInAlias(pWork, this, "uSize", "u64");
 #else
-	AddBuiltInInteger(pErrman, this, "int", 32, true);
-	AddBuiltInInteger(pErrman, this, "uint", 32, false);
-	AddBuiltInInteger(pErrman, this, "uSize", 32, false);
-	AddBuiltInInteger(pErrman, this, "sSize", 32, true);
+	AddBuiltInAlias(pWork, this, "int", "s32");
+	AddBuiltInAlias(pWork, this, "uint", "u32");
+	AddBuiltInAlias(pWork, this, "sSize", "s32");
+	AddBuiltInAlias(pWork, this, "uSize", "u32");
 #endif
 
-	AddBuiltInFloat(pErrman, this, "float", 32);
-	AddBuiltInFloat(pErrman, this, "f32", 32);
-	AddBuiltInFloat(pErrman, this, "double", 64);
-	AddBuiltInFloat(pErrman, this, "f64", 64);
+	AddBuiltInFloat(pWork, this, "f32", 32);
+	AddBuiltInFloat(pWork, this, "f64", 64);
+	AddBuiltInAlias(pWork, this, "float", "f32");
+	AddBuiltInAlias(pWork, this, "double", "f64");
 
-	AddBuiltInLiteral(pErrman, this, "__bool_Literal", LITK_Bool, 8, false);
-	AddBuiltInLiteral(pErrman, this, "__u8_Literal", LITK_Integer, 8, false);
-	AddBuiltInLiteral(pErrman, this, "__u16_Literal", LITK_Integer, 16, false);
-	AddBuiltInLiteral(pErrman, this, "__u32_Literal", LITK_Integer, 32, false);
-	AddBuiltInLiteral(pErrman, this, "__u64_Literal", LITK_Integer, 64, false);
-	AddBuiltInLiteral(pErrman, this, "__s8_Literal", LITK_Integer, 8, true);
-	AddBuiltInLiteral(pErrman, this, "__s16_Literal", LITK_Integer, 16, true);
-	AddBuiltInLiteral(pErrman, this, "__s32_Literal", LITK_Integer, 32, true);
-	AddBuiltInLiteral(pErrman, this, "__s64_Literal", LITK_Integer, 64, true);
-	AddBuiltInLiteral(pErrman, this, "__f32_Literal", LITK_Float, 32, true);
-	AddBuiltInLiteral(pErrman, this, "__f64_Literal", LITK_Float, 64, true);
-	AddBuiltInLiteral(pErrman, this, "__string_Literal", LITK_String, -1, true);
-	AddBuiltInLiteral(pErrman, this, "__char_Literal", LITK_Char, 32, true);
-	AddBuiltInLiteral(pErrman, this, "__void_Literal", LITK_Null, -1, true);
+	AddBuiltInLiteral(pWork, this, "__bool_Literal", LITK_Bool, 8, false);
+	AddBuiltInLiteral(pWork, this, "__u8_Literal", LITK_Integer, 8, false);
+	AddBuiltInLiteral(pWork, this, "__u16_Literal", LITK_Integer, 16, false);
+	AddBuiltInLiteral(pWork, this, "__u32_Literal", LITK_Integer, 32, false);
+	AddBuiltInLiteral(pWork, this, "__u64_Literal", LITK_Integer, 64, false);
+	AddBuiltInLiteral(pWork, this, "__s8_Literal", LITK_Integer, 8, true);
+	AddBuiltInLiteral(pWork, this, "__s16_Literal", LITK_Integer, 16, true);
+	AddBuiltInLiteral(pWork, this, "__s32_Literal", LITK_Integer, 32, true);
+	AddBuiltInLiteral(pWork, this, "__s64_Literal", LITK_Integer, 64, true);
+	AddBuiltInLiteral(pWork, this, "__f32_Literal", LITK_Float, 32, true);
+	AddBuiltInLiteral(pWork, this, "__f64_Literal", LITK_Float, 64, true);
+	AddBuiltInLiteral(pWork, this, "__string_Literal", LITK_String, -1, true);
+	AddBuiltInLiteral(pWork, this, "__char_Literal", LITK_Char, 32, true);
+	AddBuiltInLiteral(pWork, this, "__void_Literal", LITK_Null, -1, true);
 }
 
 
@@ -3170,15 +3241,126 @@ STypeInfoPointer * CSymbolTable::PTinptrAllocReference(STypeInfo * pTinPointedTo
 	// Note: I should unique'ify these
 
 	STypeInfoPointer * pTinptr = EWC_NEW(m_pAlloc, STypeInfoPointer) STypeInfoPointer();
-	AddManagedTin(pTinptr);
-
 	pTinptr->m_pTinPointedTo = pTinPointedTo;
+
+	AddManagedTin(pTinptr);
 	return pTinptr;
 }
 
 void CSymbolTable::AddManagedTin(STypeInfo * pTin)
 {
 	m_arypTinManaged.Append(pTin);
+}
+	
+void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
+{
+	switch (pTin->m_tink)
+	{
+	case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTin;
+
+			switch(pTinary->m_aryk)
+			{
+			case ARYK_Fixed:
+				{
+					char aCh[48];
+					SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+					FormatCoz(&strbuf, "[%d]", pTinary->m_c);
+					pSeb->AppendCoz(aCh);
+				} break;
+			case ARYK_Reference:	pSeb->AppendCoz("[]");	break;
+			case ARYK_Dynamic:		pSeb->AppendCoz("[..]");	break;
+			}
+			AppendTypeDescriptor(pTinary->m_pTin, pSeb);
+		} break;
+	case TINK_Pointer:
+		{
+			auto pTinptr = (STypeInfoPointer *)pTin;
+
+			pSeb->AppendCoz("&");
+			AppendTypeDescriptor(pTinptr->m_pTinPointedTo, pSeb);
+		} break;
+	case TINK_Procedure:
+		{
+			auto pTinproc = (STypeInfoProcedure *)pTin;
+
+			pSeb->AppendCoz(pTinproc->m_strName.PCoz());
+			pSeb->AppendCoz("(");
+
+			auto ppTinParamMax = pTinproc->m_arypTinParams.PMac();
+			for (auto ppTin = pTinproc->m_arypTinParams.A(); ppTin != ppTinParamMax; ++ppTin)
+			{
+				AppendTypeDescriptor(*ppTin, pSeb);
+				if (ppTin+1 != ppTinParamMax)
+				{
+					pSeb->AppendCoz(",");
+				}
+			}
+
+			if (pTinproc->m_fHasVarArgs)
+			{
+				pSeb->AppendCoz(",..");
+			}
+			pSeb->AppendCoz(")->(");
+
+			auto ppTinReturnMax = pTinproc->m_arypTinReturns.PMac();
+			for (auto ppTin = pTinproc->m_arypTinReturns.A(); ppTin != ppTinReturnMax; ++ppTin)
+			{
+				AppendTypeDescriptor(*ppTin, pSeb);
+				if (ppTin+1 != ppTinReturnMax)
+				{
+					pSeb->AppendCoz(",");
+				}
+			}
+			pSeb->AppendCoz(")");
+
+			if (pTinproc->m_inlinek != INLINEK_Nil)
+			{
+				pSeb->AppendCoz(PChzFromInlinek(pTinproc->m_inlinek));
+			}
+
+			if (pTinproc->m_callconv != CALLCONV_Nil)
+			{
+				pSeb->AppendCoz(PChzFromCallconv(pTinproc->m_callconv));
+			}
+
+		} break;
+	default:
+		pSeb->AppendCoz(pTin->m_strName.PCoz());
+	}
+}
+
+STypeInfo * CSymbolTable::PTinMakeUniqueBase(STypeInfo * pTin, SStringEditBuffer * pSeb)
+{
+	if (pTin->m_grftin.FIsSet(FTIN_IsUnique) || pTin->m_tink == TINK_Literal)
+		return pTin;
+
+	pSeb->Clear();
+	AppendTypeDescriptor(pTin, pSeb);
+
+	pTin->m_strDesc = CString(pSeb->PCoz(), pSeb->CB());
+
+	STypeInfo ** ppTin;
+	FINS fins = m_phashHvPTinUnique->FinsEnsureKey(pTin->m_strDesc.Hv(), &ppTin);
+	if (fins == FINS_AlreadyExisted)
+	{
+		// NOTE: doesn't delete non-unique type!
+		return *ppTin;
+	}
+
+	if (ppTin)
+	{
+		pTin->m_grftin.AddFlags(FTIN_IsUnique);
+
+		if (pTin->m_pTinNative)
+		{
+			pTin->m_pTinNative = PTinMakeUniqueBase(pTin->m_pTinNative, pSeb);
+		}
+
+		*ppTin = pTin;
+	}
+	return pTin;
 }
 
 void CSymbolTable::AddManagedSymtab(CSymbolTable * pSymtab)
@@ -3224,7 +3406,14 @@ void CSymbolTable::PrintDump()
 	while (SSymbol ** ppSym = iter.Next())
 	{
 		SSymbol * pSym = *ppSym;
-		printf("%p: %s : '%s'\n",pSym, pSym->m_strName.PCoz(), (pSym->m_pTin) ? pSym->m_pTin->m_strName.PCoz() : "Nill");
+		if (pSym->m_pTin)
+		{
+			printf("%p: %s %x : '%s' %x\n",pSym, pSym->m_strName.PCoz(), pSym->m_strName.Hv(), pSym->m_pTin->m_strName.PCoz(), pSym->m_pTin->m_strName.Hv());
+		}
+		else
+		{
+			printf("%p: %s : 'nil'\n",pSym, pSym->m_strName.PCoz());
+		}
 	}
 
 	printf("\n");

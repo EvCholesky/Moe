@@ -17,7 +17,10 @@ TINK enum s8
 
 STypeInfo struct // tag = pTin
 {
+	m_pCozName: & u8
     m_tink: TINK
+    m_ipTinNative: s32		// index of the type this is an alias of (or self)
+    m_cAliasTypeMax: s32	// count of the types aliased from this type (including self)
 }
 
 STypeInfoInteger struct // tag = pTinint
@@ -129,21 +132,28 @@ PrintTypeInfo proc (pTin: & STypeInfo, fIsTopLevel: bool)
 {
 	if pTin.m_tink == TINK.Integer
 	{
-		pTinint := cast(& STypeInfoInteger)pTin
-
-		pChzSigned := "u"
-		if pTinint.m_fIsSigned
+		printf("%s", pTin.m_pCozName)
+		if fIsTopLevel
 		{
-			pChzSigned = "s"
-		}
+			pTinint := cast(& STypeInfoInteger)pTin
 
-		printf("%s%d", pChzSigned, pTinint.m_cBit)
+			pChzSigned := "u"
+			if pTinint.m_fIsSigned
+			{
+				pChzSigned = "s"
+			}
+
+			printf(" (%s%d)", pChzSigned, pTinint.m_cBit)
+		}
 	}
 	else if pTin.m_tink == TINK.Float
 	{
-		pTinfloat := cast(& STypeInfoFloat)pTin
-		printf("f%d", pTinfloat.m_cBit)
-
+		printf("%s", pTin.m_pCozName)
+		if fIsTopLevel
+		{
+			pTinfloat := cast(& STypeInfoFloat)pTin
+			printf(" (f%d)", pTinfloat.m_cBit)
+		}
 	}
 	else if pTin.m_tink == TINK.Pointer
 	{

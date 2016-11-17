@@ -393,6 +393,47 @@ struct SStringBuffer // tag=strbuf
 	size_t	m_cBMax;
 };
 
+class CAlloc;
+
+// growing buffer for string edits
+struct SStringEditBuffer // tag = seb
+{
+				SStringEditBuffer(CAlloc * pAlloc)
+				:m_pAlloc(pAlloc)
+				,m_pCozMin(nullptr)
+				,m_pCozBegin(nullptr)
+				,m_pCozAppend(nullptr)
+				,m_pCozMax(nullptr)
+					{ ; }
+
+				~SStringEditBuffer();
+
+	void		PrependCo(const char * pCoz, size_t cB);
+	void		PrependCoz(const char * pCoz);
+	void		AppendCo(const char * pCoz, size_t cB);
+	void		AppendCoz(const char * pCoz);
+
+	void		Clear();
+	void		Resize(size_t cBPrefix, size_t cbUsed, size_t cBPostfix);
+
+	char *		PCoz()
+					{ return m_pCozBegin; }
+	size_t		CB()
+					{ 
+						if (!m_pCozBegin)
+							return 0;
+						return m_pCozAppend - m_pCozBegin + 1;
+					}
+
+	static const int s_cChPrefixPad = 128;
+
+	CAlloc *	m_pAlloc;
+	char *		m_pCozMin;
+	char *		m_pCozBegin;
+	char *		m_pCozAppend;
+	char *		m_pCozMax;
+};
+
 inline bool FIsValid(const SStringBuffer & strbuf)
 {
 	return strbuf.m_pCozBegin != nullptr && strbuf.m_pCozAppend != nullptr;
@@ -464,6 +505,8 @@ enum BK // block kind
 	BK_IR,
 	BK_Symbol,
 	BK_Stack,	// should be stack array allocated
+	BK_StringTable,
+	BK_ReflectTable,
 };
 
 #define EWC_ALLOC(numBytes, alignment) 			AllocImpl(numBytes, alignment, __FILE__, __LINE__)
@@ -1210,7 +1253,7 @@ public:
 
 			CAllocTracker(CAlloc * pAlloc)
 			:m_aryEntry(pAlloc, BK_Core)
-			,m_hashHvIentry(pAlloc)
+			,m_hashHvIentry(pAlloc, BK_Nil)
 				{ ; }
 #endif 
 
@@ -1290,7 +1333,7 @@ public:
 		{
 			if (pEntry->m_cB == 0)
 				continue;
-			printf("%zd / %zd\t\t %s (%d) : %d\n", pEntry->m_cB, pEntry->m_cBHighwater, pEntry->m_pChzFile, pEntry->m_bk, pEntry->m_cLine);
+			printf("%zd / %zd\t\t %s BK(%d) : %d\n", pEntry->m_cB, pEntry->m_cBHighwater, pEntry->m_pChzFile, pEntry->m_bk, pEntry->m_cLine);
 			cBTotal += pEntry->m_cB;
 		}
 		printf("%zd tracked\n", cBTotal);
@@ -1659,6 +1702,95 @@ void ReplaceChars(const char * pChSrc, size_t cCh, const char * pChzRemove, char
 		char chSrc = *pChSrc;
 		*pChDst = FPChzContainsChar(pChzRemove, chSrc) ? chFill : chSrc;
 	}
+}
+
+SStringEditBuffer::~SStringEditBuffer()
+{
+	if (m_pCozMin)
+	{
+		m_pAlloc->EWC_DELETE(m_pCozMin);
+		m_pCozMin = nullptr;
+		m_pCozBegin = nullptr;
+		m_pCozAppend = nullptr;
+		m_pCozMax = nullptr;
+	}
+}
+
+void SStringEditBuffer::PrependCo(const char * pCoz, size_t cB)
+{
+	auto cCh = cB - 1;
+	size_t cBPrefix = m_pCozBegin - m_pCozMin;
+	if (cBPrefix < cCh)
+	{
+		Resize(cCh + s_cChPrefixPad, ewcMax<size_t>(s_cChPrefixPad, m_pCozAppend - m_pCozBegin), m_pCozMax - m_pCozAppend);
+	}
+
+	m_pCozBegin -= cCh;
+	CopyAB(pCoz, m_pCozBegin, cCh);
+}
+
+void SStringEditBuffer::PrependCoz(const char * pCoz)
+{
+	size_t cBCoz = CBCoz(pCoz);
+	PrependCo(pCoz, cBCoz);
+}
+
+void SStringEditBuffer::AppendCo(const char * pCoz, size_t cB)
+{
+	size_t cBAvail = m_pCozMax - m_pCozBegin;
+	if (cBAvail < cB) // +1 for null terminator
+	{
+		Resize(s_cChPrefixPad, ewcMax<size_t>(s_cChPrefixPad, m_pCozAppend - m_pCozBegin), cB + s_cChPrefixPad);
+	}
+
+	CopyAB(pCoz, m_pCozAppend, cB);
+	m_pCozAppend += cB-1;
+}
+
+void SStringEditBuffer::AppendCoz(const char * pCoz)
+{
+	size_t cBCoz = CBCoz(pCoz);
+	AppendCo(pCoz, cBCoz);
+}
+
+void SStringEditBuffer::Clear()
+{
+	if (!m_pCozMin)
+		return;
+
+	m_pCozBegin = m_pCozMin + s_cChPrefixPad;
+	m_pCozAppend = m_pCozBegin;
+	*m_pCozAppend = '\0';
+}
+
+void SStringEditBuffer::Resize(size_t cBPrefix, size_t cBUsed, size_t cBPostfix)
+{
+	if (!EWC_FVERIFY(m_pAlloc, "missing allocator"))
+		return;
+
+	auto pCozMinOld = m_pCozMin;
+	auto pCozBeginOld = m_pCozBegin;
+	auto cBOld = CB();
+
+	cBPostfix = ewcMin<size_t>(1, cBPostfix);
+	size_t cB = cBPrefix + cBUsed + cBPostfix;
+	//cB = ewcMin(cB, cBOld + s_cChPrefixPad*2);
+
+	m_pCozMin = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cB, EWC_ALIGN_OF(char));
+	m_pCozBegin = m_pCozMin + cBPrefix;
+	m_pCozAppend = m_pCozBegin;
+	m_pCozMax = m_pCozMin + cB;
+	
+	if (pCozBeginOld)
+	{
+		cBOld = ewcMin<size_t>(cBOld, cBUsed);
+		CopyAB(pCozBeginOld, m_pCozBegin, cBOld);
+
+		m_pCozAppend = m_pCozBegin + (cBOld -1); // -1 to point at the null terminator.
+		m_pAlloc->EWC_DELETE(pCozMinOld);
+	}
+
+	*m_pCozAppend = '\0';
 }
 
 void DoNothing()

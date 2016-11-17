@@ -35,12 +35,18 @@ using namespace EWC;
 #include "MissingLlvmC/llvmcDIBuilder.h"
 #include <stdio.h>
 
+struct SReflectGlobalTable;
 extern bool FIsDirectCall(CSTNode * pStnodCall);
 CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodStruct);
 CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod);
 LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodProc, SDIFile * pDif);
 CIRValue * PValGenerateLiteral(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk, bool fCreateGlobal);
-LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBuild, LLVMOpaqueType * pLtypeTin, STypeInfo * pTin);
+LLVMOpaqueValue * PLvalEnsureReflectStruct(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	LLVMOpaqueType * pLtypeTin,
+	STypeInfo * pTin,
+	SReflectGlobalTable * pReftab);
 
 CIRInstruction * PInstGenerateAssignmentFromRef(
 	CWorkspace * pWork,
@@ -923,7 +929,6 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValMa
 ,m_arypProcVerify(pWork->m_pAlloc, EWC::BK_CodeGen)
 ,m_parypValManaged(parypValManaged)
 ,m_aryJumptStack(pWork->m_pAlloc, EWC::BK_CodeGen)
-,m_hashHvNUnique(pWork->m_pAlloc)
 { 
 	CAlloc * pAlloc = pWork->m_pAlloc;
 
@@ -1051,44 +1056,6 @@ CIRBuilder::~CIRBuilder()
 	{
 		LLVMDisposeDIBuilder(m_pDib);
 		m_pDib = nullptr;
-	}
-}
-
-void CIRBuilder::GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax)
-{
-	size_t iCh = CBCoz(pCozIn) - 2;
-
-	// not handling whitespace...
-	u32 nIn = 0;
-	u32 nMultiple = 1;
-	while (iCh >= 0 && ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9')))
-	{
-		nIn = (pCozIn[iCh] - '0') * nMultiple + nIn;
-		nMultiple *= 10;
-		--iCh;
-	}
-
-	HV hv = 0;
-	if (iCh >= 0)
-	{
-		hv = HvFromPCoz(pCozIn, iCh+1);
-	}
-
-	u32 * pN = nullptr;
-	FINS fins = m_hashHvNUnique.FinsEnsureKey(hv, &pN);
-	EWC::SStringBuffer strbufOut(pCozOut, cBOutMax);
-	if (fins == FINS_Inserted)
-	{
-		*pN = nIn;
-		AppendCoz(&strbufOut, pCozIn);
-	}
-	else
-	{
-		*pN = ewcMax(nIn, *pN + 1);
-		AppendCoz(&strbufOut, pCozIn);
-
-		strbufOut.m_pCozAppend = &strbufOut.m_pCozBegin[iCh+1];
-		FormatCoz(&strbufOut, "%d", *pN); 
 	}
 }
 
@@ -1585,10 +1552,39 @@ LLVMOpaqueValue * PLvalFromEnumConstant(CIRBuilder * pBuild, STypeInfo * pTinLoo
 	return PLvalConstantInt(pTinint->m_cBit, pTinint->m_fIsSigned, pStval->m_nUnsigned);
 }
 
-LLVMOpaqueValue * PLvalCreateReflectTin(CIRBuilder * pBuild, LLVMOpaqueType * pLtypeTin, TINK tink)
+struct SReflectTableEntry // reftent
 {
-	LLVMOpaqueValue * apLval[1];
-	apLval[0] = LLVMConstInt(LLVMInt8Type(), tink, true);
+	STypeInfo *			m_pTin;
+	LLVMOpaqueValue *	m_pVal;
+	s32					m_ipTinNative;
+	s32					m_cAliasChild;
+
+	s32					m_ipTin;
+};
+
+struct SReflectGlobalTable	// reftab
+{
+public:
+								SReflectGlobalTable(CAlloc * pAlloc)
+								:m_mpPTinReftent(pAlloc, EWC::BK_ReflectTable, 256)
+									{ ; }
+
+	CHash<STypeInfo *, SReflectTableEntry>
+								m_mpPTinReftent;
+};
+
+LLVMOpaqueValue * PLvalCreateReflectTin(CIRBuilder * pBuild, LLVMOpaqueType * pLtypeTin, STypeInfo * pTin, SReflectGlobalTable * pReftab)
+{
+	SReflectTableEntry * pReftent = pReftab->m_mpPTinReftent.Lookup(pTin);
+	if (!EWC_FVERIFY(pReftent, "missing reflect table entry"))
+		return nullptr;
+
+	LLVMOpaqueValue * apLval[4];
+	apLval[0] = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTin->m_strName.PCoz(), "pCozName");	// m_pCozName
+	apLval[1] = LLVMConstInt(LLVMInt8Type(), pTin->m_tink, true);	// m_tink
+	apLval[2] = LLVMConstInt(LLVMInt32Type(), pReftent->m_ipTinNative, true);	// m_ipTinNative
+	apLval[3] = LLVMConstInt(LLVMInt32Type(), pReftent->m_cAliasChild, true);	// m_cAliasTypeMax
+
 	return LLVMConstNamedStruct(pLtypeTin, apLval, EWC_DIM(apLval));
 }
 
@@ -1640,27 +1636,17 @@ LLVMOpaqueValue * PLvalBuildConstantGlobalArrayRef(
 	return LLVMConstStruct(apLvalMember, EWC_DIM(apLvalMember), false);
 }
 
-static inline LLVMOpaqueValue * PLvalPTinReflectedSafe(
+LLVMOpaqueValue * PLvalEnsureReflectStruct(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild,
 	LLVMOpaqueType * pLtypeTin,
 	LLVMOpaqueType * pLtypePTin,
-	STypeInfo * pTin)
-{
-	auto pLvalReflect = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pTin);
-	if (pLvalReflect)
-	{
-		return LLVMConstPointerCast(pLvalReflect, pLtypePTin);
-	}
-
-	return LLVMConstNull(pLtypePTin);
-}
-
-LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBuild, LLVMOpaqueType * pLtypeTin, STypeInfo * pTin)
+	STypeInfo * pTin,
+	SReflectGlobalTable * pReftab)
 {
 	if (pTin->m_pLvalReflectGlobal)
 	{
-		return pTin->m_pLvalReflectGlobal;
+		return LLVMConstPointerCast(pTin->m_pLvalReflectGlobal, pLtypePTin);
 	}
 
 	CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGenReflect, 16);
@@ -1673,7 +1659,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 		{
 			auto pTinint = (STypeInfoInteger *)pTin;
 
-			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));
 			arypLval.Append(LLVMConstInt(LLVMInt1Type(), pTinint->m_fIsSigned, false));
 			arypLval.Append(LLVMConstInt(LLVMInt32Type(), pTinint->m_cBit, false));
 
@@ -1684,7 +1670,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 		{
 			auto pTinfloat = (STypeInfoFloat *)pTin;
 
-			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));
 			arypLval.Append(LLVMConstInt(LLVMInt32Type(), pTinfloat->m_cBit, false));
 
 			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoFloat");
@@ -1693,10 +1679,10 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 	case TINK_Pointer:
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
-			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));
 
 			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
-			arypLval.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinptr->m_pTinPointedTo));
+			arypLval.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTinptr->m_pTinPointedTo, pReftab));
 
 			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoPointer");
 			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
@@ -1717,11 +1703,10 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 				CFixAry<LLVMOpaqueValue *, 3> arypLvalMember;
 
 				arypLvalMember.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTypememb->m_strName.PCoz(), "strMemb")); //m_pCozName
-				arypLvalMember.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTypememb->m_pTin));
+				arypLvalMember.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTypememb->m_pTin, pReftab));
 
 				u64 dBMember = LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeStruct, iTypememb);
 				arypLvalMember.Append(LLVMConstInt(PLtypeSizeInt(pBuild), dBMember, false)); //m_iB
-
 
 				apLvalMemberArray[iTypememb] = LLVMConstNamedStruct(pLtypeTinMember, arypLvalMember.A(), u32(arypLvalMember.C()));
 			}
@@ -1729,7 +1714,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 			auto pLvalAryMembers = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypeTinMember, apLvalMemberArray, cTypememb);
 
 			// build the STypeInfoStruct
-			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));	//m_tin
 			arypLval.Append(pLvalAryMembers);	//m_aryMembers
 			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinstruct->m_strName.PCoz(), "strStruct")); //m_pCozName
 
@@ -1768,11 +1753,11 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 
 			auto pLvalAryEconArray = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypeTinEcon, apLvalEconArray, cTinecon);
 
-			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));	//m_tin
 
 			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
 
-			arypLval.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinenum->m_pTinLoose));
+			arypLval.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTinenum->m_pTinLoose, pReftab));
 			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinenum->m_strName.PCoz(), "strEnum")); //m_pCozName
 			arypLval.Append(pLvalAryEconArray);
 
@@ -1783,11 +1768,11 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 		{
 			auto pTinary = (STypeInfoArray *)pTin;
 
-			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));	//m_tin
 
 			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
 
-			arypLval.Append(PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinary->m_pTin));
+			arypLval.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTinary->m_pTin, pReftab));
 			arypLval.Append(LLVMConstInt(LLVMInt8Type(), pTinary->m_aryk, true)); //m_aryk
 			arypLval.Append(LLVMConstInt(PLtypeSizeInt(pBuild), pTinary->m_c, true)); //m_c
 
@@ -1803,7 +1788,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 			auto apLvalParam = (LLVMOpaqueValue **)alloca(sizeof(LLVMOpaqueValue**) * cParam);
 			for (u32 iParam = 0; iParam < cParam; ++iParam)
 			{
-				apLvalParam[iParam] = PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinproc->m_arypTinParams[iParam]);
+				apLvalParam[iParam] = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTinproc->m_arypTinParams[iParam], pReftab);
 			}
 
 			auto pLvalAryParam = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypePTin, apLvalParam, cParam);
@@ -1812,12 +1797,12 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 			auto apLvalReturn = (LLVMOpaqueValue **)alloca(sizeof(LLVMOpaqueValue**) * cReturn);
 			for (u32 iReturn = 0; iReturn < cReturn; ++iReturn)
 			{
-				apLvalReturn[iReturn] = PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pTinproc->m_arypTinReturns[iReturn]);
+				apLvalReturn[iReturn] = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTinproc->m_arypTinReturns[iReturn], pReftab);
 			}
 
 			auto pLvalAryReturn = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypePTin, apLvalReturn, cReturn);
 
-			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink));	//m_tin
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));	//m_tin
 			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinproc->m_strName.PCoz(), "strEnum")); //m_pCozName
 
 			arypLval.Append(pLvalAryParam); //m_arypTinParam
@@ -1837,7 +1822,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 	default:
 		{
 			pLtypeTinDerived = pLtypeTin;
-			pLvalReflect = PLvalCreateReflectTin(pBuild, pLtypeTin, pTin->m_tink);
+			pLvalReflect = PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab);
 		} break;
 	}
 
@@ -1850,45 +1835,219 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(CWorkspace * pWork, CIRBuilder * pBui
 	LLVMSetGlobalConstant(pTin->m_pLvalReflectGlobal, true);
 
 	LLVMSetInitializer(pTin->m_pLvalReflectGlobal, pLvalReflect);
-	return pTin->m_pLvalReflectGlobal;
+
+	return LLVMConstPointerCast(pTin->m_pLvalReflectGlobal, pLtypePTin);
+}
+
+struct SReflectOrderData // tag = reord
+{
+	s32		m_ipTinParent;
+	s32		m_cpTinChild;
+	s32		m_cpTinDescend;
+
+	s32		m_ipTinDest;		// index of this type in the final table
+	s32		m_ipTinMax;			// current end of children in the final table
+};
+
+void ComputeReflectLayout(CAry<SReflectOrderData> * paryReord, SReflectOrderData * pReord, s32 * pipTinGlobal)
+{
+	if (pReord->m_ipTinParent == -1)
+	{
+		pReord->m_ipTinDest = *pipTinGlobal;
+		pReord->m_ipTinMax = pReord->m_ipTinDest + 1;
+		*pipTinGlobal += pReord->m_cpTinDescend + 1;
+		return;
+	}
+
+	SReflectOrderData * pReordParent = &(*paryReord)[pReord->m_ipTinParent];
+	if (pReordParent->m_ipTinDest == -1)
+	{
+		ComputeReflectLayout(paryReord, pReordParent, pipTinGlobal);
+	}
+
+	pReord->m_ipTinDest = pReordParent->m_ipTinMax;
+	pReord->m_ipTinMax = pReord->m_ipTinDest + 1;
+	pReordParent->m_ipTinMax += pReord->m_cpTinDescend + 1;
+}
+
+void ComputeTableOrder(SReflectGlobalTable * pReftab, CDynAry<SReflectOrderData> * paryReord, CDynAry<STypeInfo *> & arypTin)
+{
+	SReflectOrderData reord;
+	reord.m_ipTinParent = -1;
+	reord.m_cpTinChild = 0;
+	reord.m_cpTinDescend = 0;
+	reord.m_ipTinDest = -1;
+	reord.m_ipTinMax = -1;
+
+	int cReord = pReftab->m_mpPTinReftent.C();
+	paryReord->Clear();
+	paryReord->EnsureSize(cReord);
+	paryReord->AppendFill(cReord, reord);
+
+	for (int iReord = 0; iReord < cReord; ++iReord)
+	{
+		STypeInfo * pTin = arypTin[iReord];
+
+		if (pTin->m_pTinNative)
+		{
+			SReflectTableEntry * pReftent = pReftab->m_mpPTinReftent.Lookup(pTin->m_pTinNative);
+			if (EWC_FVERIFY(pReftent, "cannot find type during reflect table generation"))
+			{
+				(*paryReord)[iReord].m_ipTinParent = pReftent->m_ipTin;
+			}
+		}
+	}
+
+	// count up immediate children
+	SReflectOrderData * pReordMax = paryReord->PMac();
+	for (SReflectOrderData * pReordIt = paryReord->A(); pReordIt != pReordMax; ++pReordIt)
+	{
+		if (pReordIt->m_ipTinParent != -1)
+		{
+			auto pReordParent = &(*paryReord)[pReordIt->m_ipTinParent];
+			++pReordParent->m_cpTinChild;
+		}
+	}
+
+	// count up descendants
+	for (SReflectOrderData * pReordIt = paryReord->A(); pReordIt != pReordMax; ++pReordIt)
+	{
+		int ipTin = pReordIt->m_ipTinParent;
+		while (ipTin != -1)
+		{
+			auto pReord = &(*paryReord)[ipTin];
+			pReord->m_cpTinDescend += pReordIt->m_cpTinChild + 1;
+			ipTin = pReord->m_ipTinParent;
+		}
+	}
+
+	s32 ipTinGlobal = 0;
+
+	// layout self and ancestors
+	for (SReflectOrderData * pReordIt = paryReord->A(); pReordIt != pReordMax; ++pReordIt)
+	{
+		if (pReordIt->m_ipTinDest != -1)
+			continue;
+
+		ComputeReflectLayout(paryReord, pReordIt, &ipTinGlobal);
+	}
+
+	EWC_ASSERT(ipTinGlobal == cReord, "Bad table layout calculations");
+}
+
+void EnsureReftent(SReflectGlobalTable * pReftab, STypeInfo * pTin, CDynAry<STypeInfo *> * parypTin)
+{
+	EWC_ASSERT(pTin, "bad type info");
+
+	SReflectTableEntry * pReftent;
+	if (pReftab->m_mpPTinReftent.FinsEnsureKey(pTin, &pReftent) != FINS_Inserted)
+		return;
+
+	pReftent->m_ipTin = S32Coerce(parypTin->C());
+	parypTin->Append(pTin);
+	pReftent->m_ipTinNative = -1;
+	pReftent->m_cAliasChild = 0;
+
+	switch (pTin->m_tink)
+	{
+	case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTin;
+			EnsureReftent(pReftab, pTinary->m_pTin, parypTin);
+		} break;
+	case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTin;
+			EnsureReftent(pReftab, pTinenum->m_pTinLoose, parypTin);
+		} break;
+	case TINK_Literal:
+		{
+			auto pTinlit = (STypeInfoLiteral *)pTin;
+			if (pTinlit->m_pTinSource)
+			{
+				EnsureReftent(pReftab, pTinlit->m_pTinSource, parypTin);
+			}
+		} break;
+	case TINK_Pointer:
+		{
+			auto pTinptr = (STypeInfoPointer *)pTin;
+			EnsureReftent(pReftab, pTinptr->m_pTinPointedTo, parypTin);
+		} break;
+	case TINK_Procedure:
+		{
+			auto pTinproc = (STypeInfoProcedure *)pTin;
+
+			{
+				auto ppTinMax = pTinproc->m_arypTinParams.PMac();
+				for (auto ppTin = pTinproc->m_arypTinParams.A(); ppTin != ppTinMax; ++ppTin)
+				{
+					EnsureReftent(pReftab, (*ppTin), parypTin);
+				}
+			}
+
+			{
+				auto ppTinMax = pTinproc->m_arypTinReturns.PMac();
+				for (auto ppTin = pTinproc->m_arypTinReturns.A(); ppTin != ppTinMax; ++ppTin)
+				{
+					EnsureReftent(pReftab, (*ppTin), parypTin);
+				}
+			}
+		} break;
+	case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+
+			auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
+			for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb) 
+			{
+				EnsureReftent(pReftab, pTypememb->m_pTin, parypTin);
+			}
+
+		} break;
+	}
 }
 
 static inline LLVMOpaqueValue * PLvalGenerateReflectTypeTable(CWorkspace * pWork, CIRBuilder * pBuild)
 {
-	CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGenReflect, 256);
-	CHash<STypeInfo *, s32> mpPTinITin(pBuild->m_pAlloc, 256);
+	CDynAry<STypeInfo *> arypTin(pBuild->m_pAlloc, BK_CodeGenReflect, 256);
+	SReflectGlobalTable reftab(pBuild->m_pAlloc);
 
 	auto pLtypeTin = PLtypeForTypeInfo(pWork, "STypeInfo");
 	auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
 	CSymbolTable * pSymtab = pWork->m_pSymtab;
-	while (pSymtab)
+
+	STypeInfo ** ppTin;
+	EWC::CHash<HV, STypeInfo *>::CIterator iter(pSymtab->m_phashHvPTinUnique);
+	while (ppTin = iter.Next())
 	{
-		EWC::CHash<HV, SSymbol *>::CIterator iter(&pSymtab->m_hashHvPSym);
-		SSymbol ** ppSym;
-		while (ppSym = iter.Next())
+		auto pTin = *ppTin;
+		if (!pTin || pTin->m_tink >= TINK_ReflectedMax)
+			continue;
+
+		EnsureReftent(&reftab, pTin, &arypTin);
+	}
+
+	{
+		CDynAry<SReflectOrderData> aryReord(pWork->m_pAlloc, BK_CodeGenReflect);
+		ComputeTableOrder(&reftab, &aryReord, arypTin);
+
+		CDynAry<STypeInfo *> arypTinDest(pWork->m_pAlloc, BK_CodeGenReflect);
+		arypTinDest.AppendFill(arypTin.C(), nullptr);
+
+		SReflectOrderData * pReordMax = aryReord.PMac();
+		auto ppTinSrc = arypTin.A();
+		for (auto pReordIt = aryReord.A(); pReordIt != pReordMax; ++pReordIt, ++ppTinSrc)
 		{
-			auto pSym = *ppSym;
-			if (!pSym->m_grfsym.FIsSet(FSYM_IsType))
-				continue;
-
-			auto pTin = pSym->m_pTin;
-			if (!pTin || pTin->m_tink >= TINK_ReflectedMax)
-				continue;
-
-			s32 * piTin = nullptr;
-			if (mpPTinITin.FinsEnsureKey(pTin, &piTin) == FINS_Inserted)
-			{
-				*piTin = (s32)arypLval.C();
-				LLVMOpaqueValue * pLvalReflect = PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pTin);
-				if (pLvalReflect)
-				{
-					auto pLvalCast = LLVMConstPointerCast(pLvalReflect, pLtypePTin);
-					arypLval.Append(pLvalCast);
-				}
-			}
+			arypTinDest[pReordIt->m_ipTinDest] = *ppTinSrc;
 		}
-		
-		pSymtab = pSymtab->m_pSymtabNextManaged;
+		arypTin.Swap(&arypTinDest);
+	}
+
+	CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGenReflect, 256);
+	for (STypeInfo ** ppTin = arypTin.A(); ppTin != arypTin.PMac(); ++ppTin)
+	{
+		STypeInfo * pTin = *ppTin;
+		arypLval.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTin, &reftab));
 	}
 
 	// array of pointers 
@@ -3258,7 +3417,7 @@ CIRValue * PValGenerateDecl(
 		}
 
 		// yuck, we're doing this check for every global variable?!?
-		if (strName == "_tinTable")
+		if (FAreCozEqual(strName.PCoz(), "_tinTable"))
 		{
 			pLvalInit = PLvalGenerateReflectTypeTable(pWork, pBuild);
 		}
@@ -3467,13 +3626,16 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					if (!EWC_FVERIFY(pStnodChild && pStnodChild->m_pTin, "bad Typeinfo directive"))
 						return nullptr;
 
+					if (!EWC_FVERIFY(pStnodChild->m_pTin->m_pLvalReflectGlobal, "expected global type info to already be emitted"))
+						return nullptr;
+
 					CIRGlobal * pGlob = EWC_NEW(pBuild->m_pAlloc, CIRGlobal) CIRGlobal();
 					pBuild->AddManagedVal(pGlob);
 
 					auto pLtypePTin = PLtypeFromPTin(pStnod->m_pTin);
 					auto pLtypeTin = LLVMGetElementType(pLtypePTin);
 
-					pGlob->m_pLval = PLvalPTinReflectedSafe(pWork, pBuild, pLtypeTin, pLtypePTin, pStnodChild->m_pTin);
+					pGlob->m_pLval = LLVMConstPointerCast(pStnodChild->m_pTin->m_pLvalReflectGlobal, pLtypePTin);
 					return pGlob;
 				} break;
 			case RWORD_If:
@@ -4631,7 +4793,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	if (!pChzMangled)
 	{
-		pBuild->GenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
+		pWork->GenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
 		pChzMangled = aCh;
 	}
 
@@ -4805,7 +4967,7 @@ void CodeGenEntryPoint(
 			CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 			pEntry->m_pProc = pProc;
 
-			pBuild->GenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
+			pWork->GenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
 
 			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
 			pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
@@ -4887,26 +5049,26 @@ void TestUniqueNames(CAlloc * pAlloc)
 		char aCh[128];
 
 		pChzIn = "funcName";
-		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual(pChzIn, aCh), "bad unique name");
 
-		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("funcName1", aCh), "bad unique name");
 
 		pChzIn = "funcName20";
-		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("funcName20", aCh), "bad unique name");
 
 		pChzIn = "234";
-		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("234", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("test6000", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		build.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("test6001", aCh), "bad unique name");
 	}
 

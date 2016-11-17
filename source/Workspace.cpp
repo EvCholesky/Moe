@@ -16,6 +16,7 @@
 #include "CodeGen.h"
 #include "Lexer.h"
 #include "Parser.h"
+#include "TypeInfo.h"
 #include "Workspace.h"
 #include <cstdarg>
 #include <stdio.h>
@@ -186,11 +187,13 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_aryEntry(pAlloc, EWC::BK_Workspace)
 ,m_aryiEntryChecked(pAlloc, EWC::BK_Workspace) 
 ,m_arypValManaged(pAlloc, EWC::BK_WorkspaceVal, 0)
-,m_hashHvIPFileSource(pAlloc)
-,m_hashHvIPFileLibrary(pAlloc)
+,m_hashHvIPFileSource(pAlloc, EWC::BK_Workspace)
+,m_hashHvIPFileLibrary(pAlloc, EWC::BK_Workspace)
 ,m_arypFile(pAlloc, EWC::BK_WorkspaceFile, 200)
 ,m_pChzObjectFilename(nullptr)
 ,m_pSymtab(nullptr)
+,m_hashHvPTin(pAlloc, EWC::BK_Workspace, 0)
+,m_hashHvNUnique(pAlloc, EWC::BK_Workspace, 0)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
 ,m_targetos(TARGETOS_Nil)
@@ -211,13 +214,92 @@ void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 
 CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strName)
 {
-	CSymbolTable * pSymtabNew = EWC_NEW(m_pAlloc, CSymbolTable) CSymbolTable(strName, m_pAlloc);
+	CSymbolTable * pSymtabNew = EWC_NEW(m_pAlloc, CSymbolTable) CSymbolTable(strName, m_pAlloc, &m_hashHvPTin);
 	if (m_pSymtab)
 	{
 		m_pSymtab->AddManagedSymtab(pSymtabNew);
 	}
 
 	return pSymtabNew;
+}
+
+void CWorkspace::GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax)
+{
+	size_t iCh = CBCoz(pCozIn) - 2;
+
+	// not handling whitespace...
+	u32 nIn = 0;
+	u32 nMultiple = 1;
+	while (iCh >= 0 && ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9')))
+	{
+		nIn = (pCozIn[iCh] - '0') * nMultiple + nIn;
+		nMultiple *= 10;
+		--iCh;
+	}
+
+	HV hv = 0;
+	if (iCh >= 0)
+	{
+		hv = HvFromPCoz(pCozIn, iCh+1);
+	}
+
+	u32 * pN = nullptr;
+	FINS fins = m_hashHvNUnique.FinsEnsureKey(hv, &pN);
+	EWC::SStringBuffer strbufOut(pCozOut, cBOutMax);
+	if (fins == FINS_Inserted)
+	{
+		*pN = nIn;
+		AppendCoz(&strbufOut, pCozIn);
+	}
+	else
+	{
+		*pN = ewcMax(nIn, *pN + 1);
+		AppendCoz(&strbufOut, pCozIn);
+
+		strbufOut.m_pCozAppend = &strbufOut.m_pCozBegin[iCh+1];
+		FormatCoz(&strbufOut, "%d", *pN); 
+	}
+}
+
+CString	CWorkspace::StrUniqueName(const CString & strIn)
+{
+	size_t iCh = strIn.CB() - 2;
+
+	const char * pCozIn = strIn.PCoz();
+	// not handling whitespace...
+	u32 nIn = 0;
+	u32 nMultiple = 1;
+	while (iCh >= 0 && ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9')))
+	{
+		nIn = (pCozIn[iCh] - '0') * nMultiple + nIn;
+		nMultiple *= 10;
+		--iCh;
+	}
+
+	HV hv = 0;
+	if (iCh >= 0)
+	{
+		hv = HvFromPCoz(pCozIn, iCh+1);
+	}
+
+	u32 * pN = nullptr;
+	FINS fins = m_hashHvNUnique.FinsEnsureKey(hv, &pN);
+
+	if (fins == FINS_Inserted)
+	{
+		*pN = nIn;
+		return strIn;
+	}
+	else
+	{
+		*pN = ewcMax(nIn, *pN + 1);
+
+		char aCh[24];
+		EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+		FormatCoz(&strbuf, "%d", *pN); 
+
+		return StrFromConcat(pCozIn, &pCozIn[iCh+1], strbuf.m_pCozBegin, strbuf.m_pCozAppend);
+	}
 }
 
 CWorkspace::SFile * CWorkspace::PFileEnsure(const char * pCozFile, FILEK filek)
@@ -270,9 +352,12 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_hashHvIPFileLibrary.Clear(0);
 	pWork->m_cbFreePrev = pAlloc->CB();
 
+	pWork->m_hashHvPTin.Clear(0);
+	pWork->m_hashHvNUnique.Clear(0);
+
 	pWork->m_pSymtab = pWork->PSymtabNew("global");
 	pWork->m_pSymtab->m_grfsymtab.Clear(FSYMTAB_Ordered);
-	pWork->m_pSymtab->AddBuiltInSymbols(pWork->m_pErrman);
+	pWork->m_pSymtab->AddBuiltInSymbols(pWork);
 }
 
 void BeginParse(CWorkspace * pWork, SLexer * pLex, const char * pCozIn, const char * pCozFilename)
@@ -350,6 +435,9 @@ void EndWorkspace(CWorkspace * pWork)
 	pWork->m_aryiEntryChecked.Clear();
 	pWork->m_hashHvIPFileSource.Clear(0);
 	pWork->m_hashHvIPFileLibrary.Clear(0);
+
+	pWork->m_hashHvPTin.Clear(0);
+	pWork->m_hashHvNUnique.Clear(0);
 
 	size_t cipFile = pWork->m_arypFile.C();
 	for (size_t ipFile = 0; ipFile < cipFile; ++ipFile)

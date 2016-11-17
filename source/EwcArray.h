@@ -160,8 +160,8 @@ public:
 	void		Swap(CAry<T> * paryTOther)
 					{
 						T * m_aTemp    = m_a;
-						s32 m_cTemp    = m_c;
-						s32 m_cMaxTemp = m_cMax;
+						size_t m_cTemp    = m_c;
+						size_t m_cMaxTemp = m_cMax;
 
 						m_a    = paryTOther->m_a;
 						m_c    = paryTOther->m_c;
@@ -242,7 +242,7 @@ public:
 						CopyConstruct(retValue, t);
 					}
 
-	void		AppendFill(s32 c, const Type t)
+	void		AppendFill(size_t c, const Type t)
 					{
 						EnsureSize(m_c + c);
 						CopyConstructN(m_a, c, t);

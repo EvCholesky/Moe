@@ -13,6 +13,37 @@
 | COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR 
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
+
+
+
+// notes on type uniqueness:
+
+// It is difficult/impossible eradicate non-unique types in the compiler without creating a relocatable type pointer-pointer. 
+// Non-unique types must be created prior to type checking (as we cannot resolve names) and by the time types are 
+// resolved types pointers are buried throughout the code. (syntax-tree, symbol tables, type definitions, etc.) 
+
+// The Plan:
+//  Leave non-unique types throughout the compiler, build unique types and find the unique values whenever they are needed for 
+//  code generation.
+
+// Named types are
+// - basic types	(unique globally from the start)
+// - typedefs		(unique name in definition scope, target type can be uniqued after type checking)
+// - structures		(unique name in definition scope)
+// - enums			(unique name in definition scope)
+// - named procedures (unique name in definition scope)
+
+// Unnamed types
+// - pointer type
+// - array type
+// - anonymous procedure type
+
+// not unique types
+// - unfinalized literals
+
+
+
+
 #pragma once
 
 #include "BigMath.h"
@@ -47,23 +78,42 @@ enum TINK : s8
 
 const char * PChzFromTink(TINK tink);
 
+enum FTIN
+{
+	FTIN_IsUnique	= 0x1,
+
+	FTIN_None,
+	FTIN_All		= 0x1
+};
+
+EWC_DEFINE_GRF(GRFTIN, FTIN, u8);
+
 struct STypeInfo	// tag = tin
 {
-						STypeInfo(const char * pCozName, TINK tink)
+						STypeInfo(const EWC::CString & strName, TINK tink)
 						:m_tink(tink)
-						,m_strName(pCozName)
+						,m_grftin(FTIN_None)
+						,m_strName(strName)
+						,m_strScope()
+						,m_strDesc()
 						,m_pLvalDIType(nullptr)
 						,m_pLvalReflectGlobal(nullptr)
-						,m_pTinSource(nullptr)
+						,m_pTinNative(nullptr)
 							{ ; }
 
     TINK				m_tink;
-	EWC::CString		m_strName;
+	GRFTIN				m_grftin;
+
+	EWC::CString		m_strName;				// user facing name 
+	EWC::CString		m_strScope;				// strScope.strName must be unique for named types (scope may be someProc.someNestedProc.etc ...)
+	EWC::CString		m_strDesc;				// unique descriptor for this type 
+	//EWC::CString		m_strUnique;			// unique name (used for mangling and type unique-ing)
+
 	LLVMOpaqueValue *	m_pLvalDIType;
 	LLVMOpaqueValue *	m_pLvalReflectGlobal;	// global variable pointing to the type info struct
 												// const TypeInfo entry in the reflection type table
 
-	STypeInfo *			m_pTinSource;			// actual source type, ignoring aliases (ie sSize->s64)
+	STypeInfo *			m_pTinNative;			// native non-aliased source type (ie sSize->s64)
 };
 
 template <typename T>
@@ -85,8 +135,8 @@ struct STypeInfoInteger : public STypeInfo // tag = tinint
 {
 	static const TINK s_tink = TINK_Integer;
 
-			STypeInfoInteger(const char * pCozName, u32 cBit, bool fSigned)
-			:STypeInfo(pCozName, s_tink)
+			STypeInfoInteger(const EWC::CString & strName, u32 cBit, bool fSigned)
+			:STypeInfo(strName, s_tink)
 			,m_cBit(cBit)
 			,m_fIsSigned(fSigned)
 				{ ; }
@@ -99,8 +149,8 @@ struct STypeInfoFloat : public STypeInfo	// tag = tinfloat
 {
 	static const TINK s_tink = TINK_Float;
 
-			STypeInfoFloat(const char * pCozName, u32 cBit)
-			:STypeInfo(pCozName, s_tink)
+			STypeInfoFloat(const EWC::CString & strName, u32 cBit)
+			:STypeInfo(strName, s_tink)
 			,m_cBit(cBit)
 				{ ; }
 
@@ -129,6 +179,7 @@ enum CALLCONV
 
 	EWC_MAX_MIN_NIL(CALLCONV)
 };
+const char * PChzFromCallconv(CALLCONV callconv);
 
 enum INLINEK
 {
@@ -137,13 +188,14 @@ enum INLINEK
 
 	EWC_MAX_MIN_NIL(INLINEK)
 };
+const char * PChzFromInlinek(INLINEK inlinek);
 
 struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
 
-						STypeInfoProcedure(const char * pCozName)
-						:STypeInfo(pCozName, s_tink)
+						STypeInfoProcedure(const EWC::CString & strName)
+						:STypeInfo(strName, s_tink)
 						,m_strMangled()
 						,m_pStnodDefinition(nullptr)
 						,m_arypTinParams()
@@ -167,8 +219,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 {
 	static const TINK s_tink = TINK_ForwardDecl;
-						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const char * pCozName)
-						:STypeInfo(pCozName, s_tink)
+						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const EWC::CString & strName)
+						:STypeInfo(strName, s_tink)
 						,m_arypTinReferences(pAlloc, EWC::BK_TypeCheck)
 							{ ; }
 
@@ -218,8 +270,8 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 {
 	static const TINK s_tink = TINK_Struct;
 
-									STypeInfoStruct(const char * pCozName)
-									:STypeInfo(pCozName, s_tink)
+									STypeInfoStruct(const EWC::CString & strName)
+									:STypeInfo(strName, s_tink)
 									,m_pLvalInitMethod(nullptr)
 									,m_pLtype(nullptr)
 									,m_pStnodStruct(nullptr)
@@ -246,13 +298,13 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 {
 	static const TINK s_tink = TINK_Enum;
 
-						STypeInfoEnum(const char * pCozName)
-						:STypeInfo(pCozName, s_tink)
+						STypeInfoEnum(const EWC::CString & strName)
+						:STypeInfo(strName, s_tink)
 						,m_pTinLoose(nullptr)
 						,m_bintMin()
 						,m_bintMax()
 						,m_bintLatest()
-						,m_tinstructProduced(pCozName)
+						,m_tinstructProduced(strName)
 							{ ; }
 
 	STypeInfo *			m_pTinLoose;

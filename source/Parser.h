@@ -38,6 +38,11 @@ struct STypeInfoLiteral;
 struct STypeInfoPointer;
 struct STypeInfoProcedure;
 
+namespace EWC
+{
+	struct SStringEditBuffer;
+}
+
 // type should only indicate storage type - actual type info should come from STypeInfoLiteral
 enum STVALK
 {
@@ -429,12 +434,13 @@ protected:
 	friend class CWorkspace;
 
 							// protected constructor to force use of CWorkspace::PSymtabNew()
-							CSymbolTable(const EWC::CString & strName, EWC::CAlloc * pAlloc)
+							CSymbolTable(const EWC::CString & strName, EWC::CAlloc * pAlloc, EWC::CHash<HV, STypeInfo *> * phashHvPTinUnique)
 							:m_strName(strName)
 							,m_pAlloc(pAlloc)
-							,m_hashHvPSym(pAlloc)
-							,m_hashHvPTinBuiltIn(pAlloc)
-							,m_hashHvPTinfwd(pAlloc)
+							,m_hashHvPSym(pAlloc, EWC::BK_Symbol)
+							,m_hashHvPTinBuiltIn(pAlloc, EWC::BK_Symbol)
+							,m_phashHvPTinUnique(phashHvPTinUnique)
+							,m_hashHvPTinfwd(pAlloc, EWC::BK_Symbol)
 							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
@@ -470,7 +476,7 @@ public:
 
 							~CSymbolTable();
 
-	void					AddBuiltInSymbols(SErrorManager * pErrman);
+	void					AddBuiltInSymbols(CWorkspace * pWork);
 	SSymbol *				PSymEnsure(
 								SErrorManager * pErrman,
 								const EWC::CString & strName,
@@ -488,6 +494,15 @@ public:
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
 	STypeInfoPointer *		PTinptrAllocReference(STypeInfo * pTinPointedTo);
 
+	STypeInfo *				PTinMakeUniqueBase(STypeInfo * pTin, EWC::SStringEditBuffer * pSeb);
+
+	template <typename T>
+	T *						PTinMakeUnique(T * pTin)
+								{ 
+									EWC::SStringEditBuffer seb(m_pAlloc);
+									return (T *)PTinMakeUniqueBase(pTin, &seb); 
+								}
+
 	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
@@ -500,6 +515,10 @@ public:
 													//  walking up the parent list
 	EWC::CHash<HV, STypeInfo *>
 								m_hashHvPTinBuiltIn;	// Builtin Types declared in this scope
+
+	EWC::CHash<HV, STypeInfo *> *
+								m_phashHvPTinUnique;	// pointer to global unique type table
+
 	EWC::CHash<HV, STypeInfoForwardDecl *>
 								m_hashHvPTinfwd;	// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.

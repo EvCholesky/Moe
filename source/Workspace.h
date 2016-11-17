@@ -65,6 +65,26 @@ void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocati
 
 
 
+class CNameMangler // tag = mang
+{
+public:
+					CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax=1024);
+					~CNameMangler();
+
+	void			Resize(size_t cBStartingMax);
+	void			AppendName(const char * pCoz);
+	void			AppendType(STypeInfo * pTin);
+
+	EWC::CString	StrMangleMethodName(STypeInfoProcedure * pTinproc);
+	STypeInfoProcedure * 
+					PTinprocDemangle(const EWC::CString & strName, CSymbolTable * pSymtab);
+
+	EWC::CAlloc *		m_pAlloc;
+	EWC::SStringBuffer	m_strbuf;
+};
+
+
+
 enum OPTLEVEL
 {
 	OPTLEVEL_Debug,
@@ -146,6 +166,9 @@ public:
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
 	CSymbolTable *			PSymtabNew(const EWC::CString & strName);
 
+	void					GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax);
+	EWC::CString			StrUniqueName(const EWC::CString & strIn);
+
 	SFile *					PFileEnsure(const char * pCozFile, FILEK filek);
 	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek) 
 								{ return (filek == FILEK_Source) ? &m_hashHvIPFileSource :  &m_hashHvIPFileLibrary; }
@@ -166,6 +189,9 @@ public:
 	const char *					m_pChzObjectFilename;
 
 	CSymbolTable *					m_pSymtab;				// top level symbols
+	EWC::CHash<HV, STypeInfo *>		m_hashHvPTin;			// global unique typeinfo table
+	EWC::CHash<HV, u32>				m_hashHvNUnique;		// map for generating unique strings
+
 
 	SErrorManager *					m_pErrman;
 	size_t							m_cbFreePrev;

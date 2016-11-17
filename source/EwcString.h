@@ -19,6 +19,7 @@
 #include "EwcTypes.h"
 
 u32 HvFromPBFVN(const void * pV, size_t cB);
+u32 HvConcatPBFVN(u32 hv, const void * pV, size_t cB);
 u32 HvFromPCozLowercaseFVN(const char * pV, size_t cB);
 
 namespace EWC
@@ -34,6 +35,16 @@ inline u32		HvFromPCoz(const char * pCoz, size_t cB = 0)
 							cB = CBCoz(pCoz)-1;
 
 						return HvFromPBFVN(pCoz, cB);
+					}
+
+inline u32		HvConcatPCoz(u32 hv, const char * pCoz, size_t cB = 0)
+					{
+						if (!pCoz)
+							return hv;
+						if (cB == 0)
+							cB = CBCoz(pCoz)-1;
+
+						return HvConcatPBFVN(hv, pCoz, cB);
 					}
 
 inline u32		HvFromPCozLowercase(const char * pCoz, size_t cB = 0)
@@ -209,10 +220,10 @@ public:
 					,m_shash(0)
 						{ SetPCoz(pCoz); }
 
-					CString(const char * pCh, size_t cCh)
+					CString(const char * pCh, size_t cB)
 					:m_pCoz(nullptr)
 					,m_shash(0)
-						{ SetPCo(pCh, cCh); }
+						{ SetPCo(pCh, cB); }
 
 					CString(const CString & strOther)
 					:m_pCoz(nullptr)
@@ -256,12 +267,16 @@ public:
 
 protected:
 
+	friend CString	StrFromConcat(const char * , const char * , const char * , const char * );
+
 	const char *		  m_pCoz;
 	CStringHash			  m_shash;
 
 public:
 	static CStringTable * s_pStrtab;
 };
+
+CString StrFromConcat(const char * pCozA, const char * pCozEndA, const char * pCozB, const char * pCozEndB);
 
 
 
