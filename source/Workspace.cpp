@@ -193,7 +193,8 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_pChzObjectFilename(nullptr)
 ,m_pSymtab(nullptr)
 ,m_hashHvPTin(pAlloc, EWC::BK_Workspace, 0)
-,m_hashHvNUnique(pAlloc, EWC::BK_Workspace, 0)
+,m_unset(pAlloc, EWC::BK_Workspace, 0)
+,m_unsetTin(pAlloc, EWC::BK_Workspace, 0)
 ,m_pErrman(pErrman)
 ,m_cbFreePrev(-1)
 ,m_targetos(TARGETOS_Nil)
@@ -212,9 +213,9 @@ void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 	pEntry->m_pProc = nullptr;
 }
 
-CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strName)
+CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strNamespace, SUniqueNameSet * pUnsetTin)
 {
-	CSymbolTable * pSymtabNew = EWC_NEW(m_pAlloc, CSymbolTable) CSymbolTable(strName, m_pAlloc, &m_hashHvPTin);
+	CSymbolTable * pSymtabNew = EWC_NEW(m_pAlloc, CSymbolTable) CSymbolTable(strNamespace, m_pAlloc, &m_hashHvPTin, pUnsetTin);
 	if (m_pSymtab)
 	{
 		m_pSymtab->AddManagedSymtab(pSymtabNew);
@@ -223,7 +224,7 @@ CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strName)
 	return pSymtabNew;
 }
 
-void CWorkspace::GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax)
+void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCozOut, size_t cBOutMax)
 {
 	size_t iCh = CBCoz(pCozIn) - 2;
 
@@ -244,7 +245,7 @@ void CWorkspace::GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t 
 	}
 
 	u32 * pN = nullptr;
-	FINS fins = m_hashHvNUnique.FinsEnsureKey(hv, &pN);
+	FINS fins = pUnset->m_hashHvNUnique.FinsEnsureKey(hv, &pN);
 	EWC::SStringBuffer strbufOut(pCozOut, cBOutMax);
 	if (fins == FINS_Inserted)
 	{
@@ -261,7 +262,7 @@ void CWorkspace::GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t 
 	}
 }
 
-CString	CWorkspace::StrUniqueName(const CString & strIn)
+CString	StrUniqueName(SUniqueNameSet * pUnset, const CString & strIn)
 {
 	size_t iCh = strIn.CB() - 2;
 
@@ -283,7 +284,7 @@ CString	CWorkspace::StrUniqueName(const CString & strIn)
 	}
 
 	u32 * pN = nullptr;
-	FINS fins = m_hashHvNUnique.FinsEnsureKey(hv, &pN);
+	FINS fins = pUnset->m_hashHvNUnique.FinsEnsureKey(hv, &pN);
 
 	if (fins == FINS_Inserted)
 	{
@@ -353,9 +354,10 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_cbFreePrev = pAlloc->CB();
 
 	pWork->m_hashHvPTin.Clear(0);
-	pWork->m_hashHvNUnique.Clear(0);
+	pWork->m_unset.Clear(0);
+	pWork->m_unsetTin.Clear(0);
 
-	pWork->m_pSymtab = pWork->PSymtabNew("global");
+	pWork->m_pSymtab = pWork->PSymtabNew("global", &pWork->m_unsetTin);
 	pWork->m_pSymtab->m_grfsymtab.Clear(FSYMTAB_Ordered);
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork);
 }
@@ -437,7 +439,8 @@ void EndWorkspace(CWorkspace * pWork)
 	pWork->m_hashHvIPFileLibrary.Clear(0);
 
 	pWork->m_hashHvPTin.Clear(0);
-	pWork->m_hashHvNUnique.Clear(0);
+	pWork->m_unset.Clear(0);
+	pWork->m_unsetTin.Clear(0);
 
 	size_t cipFile = pWork->m_arypFile.C();
 	for (size_t ipFile = 0; ipFile < cipFile; ++ipFile)

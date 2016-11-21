@@ -283,20 +283,24 @@ static inline bool FMatchString(const char * pCozRef, const char ** ppCoz)
 }
 
 static STypeInfoProcedure * PTinprocAlloc(
-	EWC::CAlloc * pAlloc,
+	CSymbolTable * pSymtab,
 	size_t cParams,
 	size_t cReturns,
 	const char * pCozName)
 {
+	EWC::CAlloc * pAlloc = pSymtab->m_pAlloc;
+
 	size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 	cBAlloc = cBAlloc +	(cParams + cReturns) * sizeof(STypeInfo *);
 
 	u8 * pB = (u8 *)pAlloc->EWC_ALLOC(cBAlloc,8);
-	STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(pCozName);
+	CString strName(pCozName);
+	STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName, StrUniqueName(pSymtab->m_pUnsetTin, strName));
 	STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 
 	pTinproc->m_arypTinParams.SetArray(ppTin, 0, cParams);
 	pTinproc->m_arypTinReturns.SetArray(&ppTin[cParams], 0, cReturns);
+	pSymtab->AddManagedTin(pTinproc);
 	return pTinproc;
 }
 
@@ -392,7 +396,7 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 				return nullptr;
 		}
 
-		auto pTinproc = PTinprocAlloc(pSymtab->m_pAlloc, arypTinParams.C(), arypTinReturns.C(), "");
+		auto pTinproc = PTinprocAlloc(pSymtab, arypTinParams.C(), arypTinReturns.C(), "");
 		pTinproc->m_fHasVarArgs = fHasVarArgs;
 
 		size_t cpTin = arypTinParams.C();
@@ -407,7 +411,6 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 			pTinproc->m_arypTinReturns.Append(arypTinReturns[ipTin]);
 		}
 
-		pSymtab->AddManagedTin(pTinproc);
 		return pTinproc;
 	}
 	else
@@ -486,8 +489,7 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 			return nullptr;
 	}
 
-	auto pTinproc = PTinprocAlloc(pSymtab->m_pAlloc, arypTinParams.C(), arypTinReturns.C(), strProcName.PCoz());
-	pSymtab->AddManagedTin(pTinproc);
+	auto pTinproc = PTinprocAlloc(pSymtab, arypTinParams.C(), arypTinReturns.C(), strProcName.PCoz());
 	pTinproc->m_fHasVarArgs = fHasVarArgs;
 
 	size_t cpTin = arypTinParams.C();
@@ -1357,7 +1359,8 @@ STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
 	case LITK_Null:
 		{
-			EmitError(pTcwork, pStnodLit, "Cannot infer type for null");
+			auto pTinU8 = pSymtab->PTinBuiltin("void");
+			return pSymtab->PTinptrAllocReference(pTinU8);
 		}break;
 	case LITK_Enum:
 		{
@@ -4278,10 +4281,25 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							auto pSymtab = pTcsentTop->m_pSymtab;
+
+							auto pTinDefault = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodChild);
+							if (pStnodChild->m_pTin->m_tink == TINK_Literal)
+							{
+								pStnodChild->m_pTin = pTinDefault;
+							}
+
 							pStnodChild->m_pTin = pSymtab->PTinMakeUnique(pStnodChild->m_pTin);
 
 							if (rword == RWORD_Typeinfo)
 							{
+								// Make sure the type table is already resoved, this ensures that it will codegen before
+								//  this typeInfo statement is generated
+								auto pSymTinTable = pSymtab->PSymLookup(STypeInfo::s_pChzGlobalTinTable, SLexerLocation());
+								if (!pSymTinTable )
+								{
+									return TcretWaitForTypeSymbol(pTcwork, pTcfram, pSymTinTable , pStnod);
+								}
+
 								// lookup STypeInfo, or return waiting for type
 								auto pSymTypeinfo = pSymtab->PSymLookup("STypeInfo", SLexerLocation());
 

@@ -755,7 +755,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 		case TOK_Arrow:
 			{ 
 				SLexerLocation lexloc(pLex);
-				EmitError(pParctx->m_pWork->m_pErrman, &lexloc, "c-style member dereference '->' is not supported, use '.'");
+				EmitError(pParctx->m_pWork->m_pErrman, &lexloc, "c-style member dereference '->' is not required, use '.'");
 
 			} // fallthrough
 		case TOK('.'):		// . identifier
@@ -1243,7 +1243,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 
 		u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
-		STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure("");
+		STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure("", "");
 		STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), 
 																EWC_ALIGN_OF(STypeInfo *));
 		// allocate room for pTins here, but types won't be resolved until type check
@@ -1881,7 +1881,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				const CString & strName = StrFromIdentifier(pStnodIdent);
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
-				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew(strName);
+				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew(strName, pSymtabParent->m_pUnsetTin);
 
 				// BB - don't mangle the main function so the linker can find it. yuck.
 				pStproc->m_fUseUnmangledName |= (strName == "main");
@@ -1974,7 +1974,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
 
-				STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName);
+				STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName, StrUniqueName(
+																						pSymtabParent->m_pUnsetTin,
+																						strName));
 				STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), 
 																		EWC_ALIGN_OF(STypeInfo *));
 
@@ -2051,7 +2053,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				}
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				SSymbol * pSymProc = pSymtabParent->PSymEnsure(pErrman, StrFromIdentifier(pStnodIdent), pStnodProc);
+				SSymbol * pSymProc = pSymtabParent->PSymEnsure( pErrman, StrFromIdentifier(pStnodIdent), pStnodProc);
 				pSymProc->m_pTin = pTinproc;
 				pStnodProc->m_pSym = pSymProc;
 
@@ -2073,7 +2075,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				
 				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
-				CSymbolTable * pSymtabEnum = pParctx->m_pWork->PSymtabNew(strIdent);
+				CSymbolTable * pSymtabEnum = pParctx->m_pWork->PSymtabNew(strIdent, pSymtabParent->m_pUnsetTin);
 				CSTNode * pStnodConstantList = nullptr;
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
@@ -2104,7 +2106,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 								cConstant * sizeof(STypeInfoEnumConstant);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent);
+				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent, StrUniqueName(pSymtabParent->m_pUnsetTin, strIdent));
 
 				auto aTinecon = (STypeInfoEnumConstant *)PVAlign( pB + sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant));
 				pTinenum->m_aryTinecon.SetArray(aTinecon, 0, cConstant);
@@ -2134,7 +2136,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					}
 				}
 
-				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType);
+				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType, FSHADOW_NoShadowing);
 				pSymEnum->m_grfsym.AddFlags(FSYM_IsType);
 				pSymEnum->m_pTin = pTinenum;
 
@@ -2155,7 +2157,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				SLexerLocation lexlocChild(pLex);
-				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew(strIdent);
+				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew(strIdent, pSymtabParent->m_pUnsetTin);
 
 				// NOTE: struct symbol tables at the global scope should be unordered.
 				if (!pParctx->m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered))
@@ -2212,7 +2214,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 								cStnodField * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent);
+				auto pSymtab = pParctx->m_pSymtab;
+				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent, StrUniqueName(pSymtab->m_pUnsetTin, strIdent));
+				pSymtab->AddManagedTin(pTinstruct);
 
 				pTinstruct->m_pStnodStruct = pStnodStruct;
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
@@ -2257,10 +2261,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					}
 				}
 
-				pParctx->m_pSymtab->AddManagedTin(pTinstruct);
-
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodStruct, FSYM_IsType);
+				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodStruct, FSYM_IsType, FSHADOW_NoShadowing);
 				pStnodStruct->m_pSym = pSymStruct;
 				pSymStruct->m_pTin = pTinstruct;
 				pStnodStruct->m_pTin = pTinstruct;
@@ -2292,8 +2294,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSymbolTable * pSymtab = pParctx->m_pSymtab;
 				auto pErrman = pParctx->m_pWork->m_pErrman;
 
-				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef, FSYM_IsType);
+				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef, FSYM_IsType, FSHADOW_NoShadowing);
 				pStnodTypedef->m_pSym = pSym;
+
 
 				return pStnodTypedef;
 			}
@@ -2367,13 +2370,12 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pLex, C
 		pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 		pStnodList->m_tok = TOK('{');
 		pStnodList->m_park = PARK_List;
-		pStnodList->m_pSymtab = pSymtab;
 
 		if (!pSymtab)
 		{
-			pSymtab = pParctx->m_pWork->PSymtabNew("anon");
-			pStnodList->m_pSymtab = pSymtab;
+			pSymtab = pParctx->m_pWork->PSymtabNew("anon", &pParctx->m_pWork->m_unsetTin);
 		}
+		pStnodList->m_pSymtab = pSymtab;
 		PushSymbolTable(pParctx, pSymtab, lexloc);
 
 		while (pLex->m_tok != TOK('}'))
@@ -2551,7 +2553,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 		pStnodFor->m_pStident = pStidentLabel;
 
 		SLexerLocation lexloc(pLex);
-		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for");
+		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for", &pParctx->m_pWork->m_unsetTin);
 		pStnodFor->m_pSymtab = pSymtabLoop;
 
 		PushSymbolTable(pParctx, pSymtabLoop, lexloc);
@@ -2603,7 +2605,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 		pStnodFor->m_pStident = pStidentLabel;
 
 		SLexerLocation lexloc(pLex);
-		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for");
+		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for", &pParctx->m_pWork->m_unsetTin);
 		pStnodFor->m_pSymtab = pSymtabLoop;
 
 		PushSymbolTable(pParctx, pSymtabLoop, lexloc);
@@ -2952,14 +2954,21 @@ CSymbolTable::~CSymbolTable()
 
 void AddSimpleBuiltInType(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, TINK tink)
 {
-	STypeInfo * pTin = EWC_NEW(pSymtab->m_pAlloc, STypeInfo) STypeInfo(strName, tink);
+	STypeInfo * pTin = EWC_NEW(pSymtab->m_pAlloc, STypeInfo) STypeInfo(
+																strName,
+																StrUniqueName(pSymtab->m_pUnsetTin, strName),
+																tink);
 
 	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTin);
 }
 
 void AddBuiltInInteger(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, u32 cBit, bool fSigned)
 {
-	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(strName, cBit, fSigned);
+	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(
+																				strName,
+																				StrUniqueName(pSymtab->m_pUnsetTin, strName),
+																				cBit,
+																				fSigned);
 	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTinint);
 }
 
@@ -2975,7 +2984,11 @@ void AddBuiltInAlias(CWorkspace * pWork, CSymbolTable * pSymtab, const CString &
 			{
 				auto pTinintOld = PTinDerivedCast<STypeInfoInteger *>(pTinOld);
 				auto pTinintNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) 
-									STypeInfoInteger(strNameNew, pTinintOld->m_cBit, pTinintOld->m_fIsSigned);
+									STypeInfoInteger(
+										strNameNew,
+										StrUniqueName(pSymtab->m_pUnsetTin, strNameNew),
+										pTinintOld->m_cBit,
+										pTinintOld->m_fIsSigned);
 
 				pTinintNew->m_pTinNative = (pTinOld->m_pTinNative) ? pTinOld->m_pTinNative : pTinOld;
 				pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTinintNew);
@@ -2984,7 +2997,10 @@ void AddBuiltInAlias(CWorkspace * pWork, CSymbolTable * pSymtab, const CString &
 			{
 				auto pTinfloatOld = PTinDerivedCast<STypeInfoFloat *>(pTinOld);
 				auto pTinfloatNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) 
-										STypeInfoFloat(strNameNew, pTinfloatOld->m_cBit);
+										STypeInfoFloat(
+											strNameNew,
+											StrUniqueName(pSymtab->m_pUnsetTin, strNameNew),
+											pTinfloatOld->m_cBit);
 
 				pTinfloatNew->m_pTinNative = (pTinOld->m_pTinNative) ? pTinOld->m_pTinNative : pTinOld;
 				pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTinfloatNew);
@@ -2997,7 +3013,10 @@ void AddBuiltInAlias(CWorkspace * pWork, CSymbolTable * pSymtab, const CString &
 
 void AddBuiltInFloat(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, u32 cBit)
 {
-	STypeInfoFloat * pTinfloat = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(strName, cBit);
+	STypeInfoFloat * pTinfloat = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(
+																				strName,
+																				StrUniqueName(pSymtab->m_pUnsetTin, strName),
+																				cBit);
 	pSymtab->AddBuiltInType(nullptr, nullptr, pTinfloat);
 }
 
@@ -3071,7 +3090,12 @@ void CSymbolTable::AddBuiltInSymbols(CWorkspace * pWork)
 
 
 
-SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
+SSymbol * CSymbolTable::PSymEnsure(
+	SErrorManager * pErrman,
+	const CString & strName,
+	CSTNode * pStnodDefinition,
+	GRFSYM grfsym,
+	FSHADOW fshadow)
 {
 	SLexerLocation lexloc;
 	if (pStnodDefinition)
@@ -3099,6 +3123,25 @@ SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strN
 
 			EmitError(pErrman, &lexloc, "Shadowing symbol '%s' in unordered symbol table", strName.PCoz());
 			*/
+
+			 if (fshadow != FShadow_ShadowingAllowed)
+			 {
+				s32 iLine = 0;
+				s32 iCol = 0;
+				const char * pChzFilename = "unknown";
+				if (pSymPrev->m_pStnodDefinition)
+				{
+					CalculateLinePosition(pErrman->m_pWork, &pSymPrev->m_pStnodDefinition->m_lexloc, &iLine, &iCol);
+					pChzFilename = pSymPrev->m_pStnodDefinition->m_lexloc.m_strFilename.PCoz();
+
+				}
+
+				EmitError(pErrman, &lexloc, "%s symbol shadows previous type definition at %s(%d, %d)", 
+					strName.PCoz(),
+					pChzFilename,
+					iLine,
+					iCol);
+			 }
 		}
 	}
 	
@@ -3115,7 +3158,7 @@ SSymbol * CSymbolTable::PSymEnsure(SErrorManager * pErrman, const CString & strN
 	pSym->m_pVal = nullptr;
 	pSym->m_pSymPrev = pSymPrev;
 
-	/* This is trying to check fo ensure previous symbols are in reverse lexical order, but once they
+	/* This is trying to check to ensure previous symbols are in reverse lexical order, but once they
 	    have a different file scope the lexloc comparisons are meaningless
 
 	while (pSymPrev)
@@ -3285,7 +3328,7 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 		{
 			auto pTinproc = (STypeInfoProcedure *)pTin;
 
-			pSeb->AppendCoz(pTinproc->m_strName.PCoz());
+			pSeb->AppendCoz(pTinproc->m_strUnique.PCoz());
 			pSeb->AppendCoz("(");
 
 			auto ppTinParamMax = pTinproc->m_arypTinParams.PMac();
@@ -3327,7 +3370,7 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 
 		} break;
 	default:
-		pSeb->AppendCoz(pTin->m_strName.PCoz());
+		pSeb->AppendCoz(pTin->m_strUnique.PCoz());
 	}
 }
 

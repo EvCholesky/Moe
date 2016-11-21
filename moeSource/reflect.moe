@@ -23,6 +23,23 @@ STypeInfo struct // tag = pTin
     m_cAliasTypeMax: s32	// count of the types aliased from this type (including self)
 }
 
+FAreTypesEquivalent proc (pTinLhs: & STypeInfo, pTinRhs: & STypeInfo) -> bool
+{
+	pTinNativeLhs := pTinLhs
+	if pTinLhs.m_ipTinNative >= 0
+	{
+		pTinNativeLhs = _tinTable[pTinLhs.m_ipTinNative]
+	}
+
+	pTinNativeRhs := pTinRhs
+	if pTinRhs.m_ipTinNative >= 0
+	{
+		pTinNativeRhs = _tinTable[pTinRhs.m_ipTinNative]
+	}
+
+	return pTinNativeLhs == pTinNativeRhs
+}
+
 STypeInfoInteger struct // tag = pTinint
 {
 	m_tin: STypeInfo

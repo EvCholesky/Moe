@@ -37,6 +37,7 @@ struct STypeInfoForwardDecl;
 struct STypeInfoLiteral;
 struct STypeInfoPointer;
 struct STypeInfoProcedure;
+struct SUniqueNameSet;
 
 namespace EWC
 {
@@ -428,20 +429,31 @@ enum FSYMTAB	// SYMbol LOOKup flags
 
 EWC_DEFINE_GRF(GRFSYMTAB, FSYMTAB, u8);
 
+enum FSHADOW
+{
+	FSHADOW_NoShadowing,
+	FShadow_ShadowingAllowed,
+};
+
 class CSymbolTable		// tag = symtab
 {
 protected:
 	friend class CWorkspace;
 
 							// protected constructor to force use of CWorkspace::PSymtabNew()
-							CSymbolTable(const EWC::CString & strName, EWC::CAlloc * pAlloc, EWC::CHash<HV, STypeInfo *> * phashHvPTinUnique)
-							:m_strName(strName)
+							CSymbolTable(
+								const EWC::CString & strNamespace,
+								EWC::CAlloc * pAlloc,
+								EWC::CHash<HV, STypeInfo *> * phashHvPTinUnique,
+								SUniqueNameSet * pUnsetTin)
+							:m_strNamespace(strNamespace)
 							,m_pAlloc(pAlloc)
 							,m_hashHvPSym(pAlloc, EWC::BK_Symbol)
 							,m_hashHvPTinBuiltIn(pAlloc, EWC::BK_Symbol)
 							,m_phashHvPTinUnique(phashHvPTinUnique)
 							,m_hashHvPTinfwd(pAlloc, EWC::BK_Symbol)
 							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
+							,m_pUnsetTin(pUnsetTin)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
 							,m_grfsymtab(FSYMTAB_Default)
@@ -481,7 +493,8 @@ public:
 								SErrorManager * pErrman,
 								const EWC::CString & strName,
 								CSTNode * pStnodDefinition,
-								GRFSYM grfsym = FSYM_None);
+								GRFSYM grfsym = FSYM_None, 
+	 							FSHADOW fshadow = FShadow_ShadowingAllowed);
 
 	SSymbol *				PSymLookup(
 								const EWC::CString & str,
@@ -509,7 +522,7 @@ public:
 
 	void					PrintDump();
 
-	EWC::CString				m_strName;
+	EWC::CString				m_strNamespace;	// unique name for this symbol table's scope
 	EWC::CAlloc *				m_pAlloc;
 	EWC::CHash<HV, SSymbol *>	m_hashHvPSym;		// All the symbols defined within this scope, a full lookup requires
 													//  walking up the parent list
@@ -522,6 +535,7 @@ public:
 	EWC::CHash<HV, STypeInfoForwardDecl *>
 								m_hashHvPTinfwd;	// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.
+	SUniqueNameSet *			m_pUnsetTin;		// set of unique names for types (created during parse)
 	EWC::CDynAry<STypeInfoLiteral *>	
 								m_mpLitkArypTinlit[LITK_Max];
 

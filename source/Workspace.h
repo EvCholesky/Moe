@@ -104,6 +104,20 @@ enum GLOBMOD
 };
 
 
+struct SUniqueNameSet // tag = unset
+{
+							SUniqueNameSet(EWC::CAlloc * pAlloc, EWC::BK bk, u32 cCapacityStarting = 32)
+							:m_hashHvNUnique(pAlloc, bk, cCapacityStarting)
+								{ ; }
+	void					Clear(u32 cCapacity)
+								{ m_hashHvNUnique.Clear(cCapacity); }
+
+	EWC::CHash<HV, u32>		m_hashHvNUnique;		// map for generating unique strings
+};
+
+extern void			GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCozOut, size_t cBOutMax);
+extern EWC::CString	StrUniqueName(SUniqueNameSet * pUnset, const EWC::CString & strIn);
+
 
 class CWorkspace	// tag = work
 {
@@ -164,10 +178,7 @@ public:
 
 	char *					PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * pAlloc);
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
-	CSymbolTable *			PSymtabNew(const EWC::CString & strName);
-
-	void					GenerateUniqueName(const char * pCozIn, char * pCozOut, size_t cBOutMax);
-	EWC::CString			StrUniqueName(const EWC::CString & strIn);
+	CSymbolTable *			PSymtabNew(const EWC::CString & strNamespace, SUniqueNameSet * pUnset);
 
 	SFile *					PFileEnsure(const char * pCozFile, FILEK filek);
 	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek) 
@@ -190,8 +201,8 @@ public:
 
 	CSymbolTable *					m_pSymtab;				// top level symbols
 	EWC::CHash<HV, STypeInfo *>		m_hashHvPTin;			// global unique typeinfo table
-	EWC::CHash<HV, u32>				m_hashHvNUnique;		// map for generating unique strings
-
+	SUniqueNameSet					m_unset;
+	SUniqueNameSet					m_unsetTin;				// unique names used by types
 
 	SErrorManager *					m_pErrman;
 	size_t							m_cbFreePrev;

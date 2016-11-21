@@ -56,6 +56,8 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 	CIRValue * pValLhs,
 	CIRValue * pValRhsRef);
 
+const char * STypeInfo::s_pChzGlobalTinTable =  "_tinTable";
+
 const char * PChzFromIrop(IROP irop)
 {
 	if (!EWC_FVERIFY((irop >= IROP_Nil) & (irop < IROP_Max), "unknown IR operand"))
@@ -1841,12 +1843,12 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 
 struct SReflectOrderData // tag = reord
 {
-	s32		m_ipTinParent;
-	s32		m_cpTinChild;
-	s32		m_cpTinDescend;
+	s32					m_ipTinParent;
+	s32					m_cpTinChild;
+	s32					m_cpTinDescend;
 
-	s32		m_ipTinDest;		// index of this type in the final table
-	s32		m_ipTinMax;			// current end of children in the final table
+	s32					m_ipTinDest;		// index of this type in the final table
+	s32					m_ipTinMax;			// current end of children in the final table
 };
 
 void ComputeReflectLayout(CAry<SReflectOrderData> * paryReord, SReflectOrderData * pReord, s32 * pipTinGlobal)
@@ -1887,7 +1889,7 @@ void ComputeTableOrder(SReflectGlobalTable * pReftab, CDynAry<SReflectOrderData>
 	for (int iReord = 0; iReord < cReord; ++iReord)
 	{
 		STypeInfo * pTin = arypTin[iReord];
-
+		
 		if (pTin->m_pTinNative)
 		{
 			SReflectTableEntry * pReftent = pReftab->m_mpPTinReftent.Lookup(pTin->m_pTinNative);
@@ -1924,12 +1926,28 @@ void ComputeTableOrder(SReflectGlobalTable * pReftab, CDynAry<SReflectOrderData>
 	s32 ipTinGlobal = 0;
 
 	// layout self and ancestors
-	for (SReflectOrderData * pReordIt = paryReord->A(); pReordIt != pReordMax; ++pReordIt)
+	s32 ipTin = 0;;
+	for (SReflectOrderData * pReordIt = paryReord->A(); pReordIt != pReordMax; ++pReordIt, ++ipTin)
 	{
+		STypeInfo * pTin = arypTin[ipTin];
+
+		SReflectTableEntry * pReftent = pReftab->m_mpPTinReftent.Lookup(pTin);
+		if (!EWC_FVERIFY(pReftent, "cannot find type during reflect table generation"))
+			continue;
+
+		pReftent->m_cAliasChild = pReordIt->m_cpTinDescend;
+
 		if (pReordIt->m_ipTinDest != -1)
 			continue;
 
 		ComputeReflectLayout(paryReord, pReordIt, &ipTinGlobal);
+
+
+		if (pReordIt->m_ipTinParent != -1)
+		{
+			SReflectOrderData * pReordParent = &(*paryReord)[pReordIt->m_ipTinParent];
+			pReftent->m_ipTinNative = pReordParent->m_ipTinDest;
+		}
 	}
 
 	EWC_ASSERT(ipTinGlobal == cReord, "Bad table layout calculations");
@@ -3417,7 +3435,8 @@ CIRValue * PValGenerateDecl(
 		}
 
 		// yuck, we're doing this check for every global variable?!?
-		if (FAreCozEqual(strName.PCoz(), "_tinTable"))
+
+		if (FAreCozEqual(strName.PCoz(),STypeInfo::s_pChzGlobalTinTable))
 		{
 			pLvalInit = PLvalGenerateReflectTypeTable(pWork, pBuild);
 		}
@@ -4793,7 +4812,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	if (!pChzMangled)
 	{
-		pWork->GenerateUniqueName("__AnnonFunc__", aCh, EWC_DIM(aCh));
+		GenerateUniqueName(&pWork->m_unset, "__AnnonFunc__", aCh, EWC_DIM(aCh));
 		pChzMangled = aCh;
 	}
 
@@ -4967,7 +4986,7 @@ void CodeGenEntryPoint(
 			CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 			pEntry->m_pProc = pProc;
 
-			pWork->GenerateUniqueName("__AnonFunc__", aCh, EWC_DIM(aCh));
+			GenerateUniqueName(&pWork->m_unset, "__AnonFunc__", aCh, EWC_DIM(aCh));
 
 			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
 			pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
@@ -5048,27 +5067,28 @@ void TestUniqueNames(CAlloc * pAlloc)
 		const char * pChzIn;
 		char aCh[128];
 
+		auto pUnset = &work.m_unset;
 		pChzIn = "funcName";
-		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual(pChzIn, aCh), "bad unique name");
 
-		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("funcName1", aCh), "bad unique name");
 
 		pChzIn = "funcName20";
-		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("funcName20", aCh), "bad unique name");
 
 		pChzIn = "234";
-		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("234", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("test6000", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		work.GenerateUniqueName(pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("test6001", aCh), "bad unique name");
 	}
 

@@ -90,11 +90,11 @@ EWC_DEFINE_GRF(GRFTIN, FTIN, u8);
 
 struct STypeInfo	// tag = tin
 {
-						STypeInfo(const EWC::CString & strName, TINK tink)
+						STypeInfo(const EWC::CString & strName, const EWC::CString & strUnique, TINK tink)
 						:m_tink(tink)
 						,m_grftin(FTIN_None)
 						,m_strName(strName)
-						,m_strScope()
+						,m_strUnique(strUnique)
 						,m_strDesc()
 						,m_pLvalDIType(nullptr)
 						,m_pLvalReflectGlobal(nullptr)
@@ -105,15 +105,16 @@ struct STypeInfo	// tag = tin
 	GRFTIN				m_grftin;
 
 	EWC::CString		m_strName;				// user facing name 
-	EWC::CString		m_strScope;				// strScope.strName must be unique for named types (scope may be someProc.someNestedProc.etc ...)
+	EWC::CString		m_strUnique;			// unique name (if a named type)
 	EWC::CString		m_strDesc;				// unique descriptor for this type 
-	//EWC::CString		m_strUnique;			// unique name (used for mangling and type unique-ing)
 
 	LLVMOpaqueValue *	m_pLvalDIType;
 	LLVMOpaqueValue *	m_pLvalReflectGlobal;	// global variable pointing to the type info struct
 												// const TypeInfo entry in the reflection type table
 
 	STypeInfo *			m_pTinNative;			// native non-aliased source type (ie sSize->s64)
+
+	static const char * s_pChzGlobalTinTable;
 };
 
 template <typename T>
@@ -135,8 +136,8 @@ struct STypeInfoInteger : public STypeInfo // tag = tinint
 {
 	static const TINK s_tink = TINK_Integer;
 
-			STypeInfoInteger(const EWC::CString & strName, u32 cBit, bool fSigned)
-			:STypeInfo(strName, s_tink)
+			STypeInfoInteger(const EWC::CString & strName, const EWC::CString & strUnique, u32 cBit, bool fSigned)
+			:STypeInfo(strName, strUnique, s_tink)
 			,m_cBit(cBit)
 			,m_fIsSigned(fSigned)
 				{ ; }
@@ -149,8 +150,8 @@ struct STypeInfoFloat : public STypeInfo	// tag = tinfloat
 {
 	static const TINK s_tink = TINK_Float;
 
-			STypeInfoFloat(const EWC::CString & strName, u32 cBit)
-			:STypeInfo(strName, s_tink)
+			STypeInfoFloat(const EWC::CString & strName, const EWC::CString & strUnique, u32 cBit)
+			:STypeInfo(strName, strUnique, s_tink)
 			,m_cBit(cBit)
 				{ ; }
 
@@ -162,7 +163,7 @@ struct STypeInfoPointer : public STypeInfo	// tag = tinptr
 	static const TINK s_tink = TINK_Pointer;
 
 						STypeInfoPointer()
-						:STypeInfo("", s_tink)
+						:STypeInfo("", "", s_tink)
 						,m_pTinPointedTo(nullptr)
 						,m_soaPacking(-1)
 							{ ; }
@@ -194,8 +195,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
 
-						STypeInfoProcedure(const EWC::CString & strName)
-						:STypeInfo(strName, s_tink)
+						STypeInfoProcedure(const EWC::CString & strName, const EWC::CString & strUnique)
+						:STypeInfo(strName, strUnique, s_tink)
 						,m_strMangled()
 						,m_pStnodDefinition(nullptr)
 						,m_arypTinParams()
@@ -219,8 +220,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 {
 	static const TINK s_tink = TINK_ForwardDecl;
-						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const EWC::CString & strName)
-						:STypeInfo(strName, s_tink)
+						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const EWC::CString & strName, const EWC::CString & strUnique)
+						:STypeInfo(strName, strUnique, s_tink)
 						,m_arypTinReferences(pAlloc, EWC::BK_TypeCheck)
 							{ ; }
 
@@ -236,7 +237,7 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 {
 	static const TINK s_tink = TINK_Literal;
 						STypeInfoLiteral()
-						:STypeInfo("", s_tink)
+						:STypeInfo("", "", s_tink)
 						,m_c(-1)
 						,m_pTinSource(nullptr)
 						,m_fIsFinalized(false)
@@ -270,8 +271,8 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 {
 	static const TINK s_tink = TINK_Struct;
 
-									STypeInfoStruct(const EWC::CString & strName)
-									:STypeInfo(strName, s_tink)
+									STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
+									:STypeInfo(strName, strUnique, s_tink)
 									,m_pLvalInitMethod(nullptr)
 									,m_pLtype(nullptr)
 									,m_pStnodStruct(nullptr)
@@ -298,13 +299,13 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 {
 	static const TINK s_tink = TINK_Enum;
 
-						STypeInfoEnum(const EWC::CString & strName)
-						:STypeInfo(strName, s_tink)
+						STypeInfoEnum(const EWC::CString & strName, const EWC::CString & strUnique)
+						:STypeInfo(strName, strUnique, s_tink)
 						,m_pTinLoose(nullptr)
 						,m_bintMin()
 						,m_bintMax()
 						,m_bintLatest()
-						,m_tinstructProduced(strName)
+						,m_tinstructProduced(strName, "")
 							{ ; }
 
 	STypeInfo *			m_pTinLoose;
@@ -343,7 +344,7 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 	static const TINK s_tink = TINK_Array;
 
 					STypeInfoArray()
-					:STypeInfo("", s_tink)
+					:STypeInfo("", "", s_tink)
 					,m_pTin(nullptr)
 					,m_c(0)
 					,m_aryk(ARYK_Fixed)
