@@ -5,6 +5,7 @@
 #foreign_library "user32"
 #foreign_library "gdi32"
 #foreign_library "shell32"
+#foreign_library "winmm"
 #import "Basic"
 
 SRect struct 
@@ -15,11 +16,18 @@ SRect struct
     m_bottom : s32
 }
 
-CreateWindow proc (dX : s64, dY : s64, pChzName : & u8, ppVHwnd : && void) -> bool #foreign
+CreateWindow proc (dX : s64, dY : s64, pChzName : & u8, ppVHwnd : && void) -> bool #foreign CreateWindow_MOE
 ClearWindow proc (uRed : float, uGreen : float, uBlue : float, uAlpha : float) -> void #foreign
 UpdateWindowEvents proc () -> void #foreign
 SwapBuffers proc (pVHwnd : & void) -> void #foreign SwapBuffers_MOE
+GetMonitorRefresh proc (pVHwnd: & void) -> s32 #foreign
+CTickPerSecond proc () -> s64 #foreign
+CTickWallClock proc () -> s64 #foreign
+FTrySetTimerResolution proc (msResolution: u32) -> bool #foreign
+Sleep proc (msResolution: u32) #foreign
+
 FGetNextEvent proc (pEvent: & SEvent) -> bool #foreign
+
 
 GL_POINTS ::                0x0000
 GL_LINES ::                 0x0001

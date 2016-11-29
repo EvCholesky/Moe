@@ -8,6 +8,9 @@ PrintPointer proc (pB : & u8) #foreign
 PrintString proc (pCh : & u8) #foreign
 printf proc (pChz : &u8, ..) -> s32 #foreign
 
+snprintf proc (aChz: & u8, cBMax: uSize, pCozFormat: & u8, ..) -> sSize #foreign snprintf_MOE
+
+
 strlen proc (pChz: &u8) -> int #foreign
 tolower proc (ch: int) -> int #foreign
 

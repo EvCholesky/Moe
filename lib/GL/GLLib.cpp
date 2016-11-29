@@ -1,7 +1,11 @@
 #define EWC_TYPES_IMPLEMENTATION
 
 #include "EwcTypes.h"
+
+#include <WindowsStub.h>
+#include <mmsystem.h>
 #include <GLFW/glfw3.h>
+
 
 enum EVENTK : s32   // JB - If we set this to u8, our packing will stop matching C's.
 {
@@ -245,7 +249,7 @@ extern "C" pfnGlProc PFnGlProcLookup(const char * pChzProcname)
 	return pFnGlProc;
 }
 
-extern "C" void CreateWindow(s64 dX, s64 dY, const char * pChzName, void ** ppVHwnd)
+extern "C" void CreateWindow_MOE(s64 dX, s64 dY, const char * pChzName, void ** ppVHwnd)
 {
 	glfwSetErrorCallback(GlfwErrorCallback);
 
@@ -281,6 +285,38 @@ extern "C" void SwapBuffers_MOE(void * pVHwnd)
 {
 	auto pWindow = (GLFWwindow *)pVHwnd;
 	glfwSwapBuffers(pWindow);
+}
+
+extern "C" s32 GetMonitorRefresh(void * pVHwnd)
+{
+	GLFWmonitor * pMonitor = glfwGetPrimaryMonitor();
+
+	if (pMonitor)
+	{
+		const GLFWvidmode * pVidmode = glfwGetVideoMode(pMonitor);
+		if (pVidmode)
+			return pVidmode->refreshRate;
+	}
+	return 0;
+}
+
+extern "C" s64 CTickPerSecond()
+{
+    LARGE_INTEGER lrgintFrequency;
+    QueryPerformanceFrequency(&lrgintFrequency);
+    return lrgintFrequency.QuadPart;
+}
+
+extern "C" s64 CTickWallClock()
+{
+    LARGE_INTEGER lrgint;
+    QueryPerformanceCounter(&lrgint);
+    return lrgint.QuadPart;
+}
+
+extern "C" bool FTrySetTimerResolution(u32 msResolution)
+{
+    return timeBeginPeriod(msResolution) == TIMERR_NOERROR;
 }
 
 extern "C" void UpdateWindowEvents()

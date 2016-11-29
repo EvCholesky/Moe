@@ -5212,7 +5212,6 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		lex.m_pCozFilename = pFile->m_strFilename.PCoz();
 
 		ParseGlobalScope(pWork, &lex, true);
-		EWC_ASSERT(pWork->m_aryEntry.C() > 0);
 
 		EndParse(pWork, &lex);
 

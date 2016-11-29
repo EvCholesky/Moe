@@ -1,3 +1,4 @@
+#include <cstdarg>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,4 +69,69 @@ extern "C" float sinf_MOE(float g)
 extern "C" float sqrtf_MOE(float g)
 {
 	return sqrtf(g);
+}
+
+
+void EnsureTerminatedCopy(char * pCozBegin, char * pCozAppend, size_t cBMax, char ch)
+{
+	auto pCozMax = &pCozBegin[cBMax];
+	size_t iB = pCozAppend - pCozBegin;
+
+	if (cBMax <= 0)
+		return;
+
+	iB = (cBMax - 1 < iB) ? cBMax-1 : iB;
+
+	auto pCozEnd = &pCozBegin[iB];
+	auto pCozBackup = pCozEnd; // - 1;	// skip the spot our terminator will go
+
+	while (pCozBackup != pCozBegin)
+	{
+		--pCozBackup;
+
+		bool fIsBasicChar = (*pCozBackup & 0x80) == 0;
+		bool fIsStarterChar = (*pCozBackup & 0xC0) == 0xC0;
+		if (fIsBasicChar || fIsStarterChar)
+			break;
+	}
+
+	size_t cBBackup;
+	if ((*pCozBackup & 0xF8) == 0xF0)		cBBackup = 4;
+	else if ((*pCozBackup & 0xF0) == 0xE0)	cBBackup = 3;
+	else if ((*pCozBackup & 0xE0) == 0xC0)	cBBackup = 2;
+	else									cBBackup = 1;
+
+	if (cBBackup > size_t(pCozEnd - pCozBackup))
+	{
+		*pCozBackup = ch;
+	}
+	else
+	{
+		*pCozEnd = ch;
+	}
+}
+
+extern "C" ptrdiff_t snprintf_MOE(char * aCh, size_t cBMax, const char * pCozFormat, ...)
+{
+	// BB - could just use EWC::FormatCoz if there was a vararg version 
+	// BB - Actually, trying to use EWC functions here causes a mess of duplicate symbols, so I guess I'll just copy this for now.
+
+	char * pCozAppend = nullptr;
+	if (cBMax > 1)
+	{
+		va_list ap;
+		va_start(ap, pCozFormat);
+		ptrdiff_t cCh = vsnprintf_s(aCh, cBMax, _TRUNCATE, pCozFormat, ap);
+		va_end(ap);
+
+		if (cCh == -1)
+		{
+			cCh = cBMax-1;
+		}
+		pCozAppend = aCh + cCh;
+	}
+
+	// handle truncation within utf8 multibyte char
+	EnsureTerminatedCopy(aCh, pCozAppend, cBMax, '\0');
+	return pCozAppend - aCh;
 }

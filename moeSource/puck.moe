@@ -5,6 +5,7 @@
 
 g_dXWindow :: 1280
 g_dYWindow :: 720
+g_cTickPerSecond: s64 = 1
 
 FHandleEvents proc () -> bool
 {
@@ -48,6 +49,11 @@ DrawTestTriangle proc (gRadians:float)
     glEnd()
 }
 
+DTElapsed proc (cTickStart: s64, cTickEnd: s64) -> f32 inline
+{
+    return cast (f32)(cTickEnd - cTickStart) / cast(f32)g_cTickPerSecond
+}
+
 main proc () -> int
 {
 	pWindow : HWND
@@ -59,28 +65,71 @@ main proc () -> int
 		return 0
 	}
 
+	pDrac.m_pDras.m_fontd.m_gCharSize = 20
+
 	SetupOrthoViewport(0, 0, g_dXWindow, g_dYWindow)
 
-    dRadSpin :: 0.001
+    dRadSpin :: 0.01
     gRadSpin: float
 
+    // Make sure sleep has 1ms granularity
+    s_cMsDesiredGranularity :: 1
+    fIsSleepGranular := FTrySetTimerResolution(s_cMsDesiredGranularity)
+    g_cTickPerSecond = CTickPerSecond() 
+
+    nHzMonitorRefresh : s32 = GetMonitorRefresh(pWindow)
+    nHzTarget := cast (f32)(nHzMonitorRefresh)
+  	printf("%d %f\n", nHzMonitorRefresh, nHzTarget)
+
+    dTFrameTarget := 1.0 / nHzTarget
+	aChStatus: [512] u8
+
+	cTickLast := CTickWallClock()
 	fShouldClose := false
 	while fShouldClose == false
 	{
 		fShouldClose |= !FHandleEvents()
 
-		ClearWindow(0, 0.5, 1, 1)
-
 		gRadSpin += dRadSpin
 		DrawTestTriangle(gRadSpin)
 
-		DrawText(pDrac, Vec2Create(100, 100), "TheQuickBrownFoxJumpsOverTheLazyDog")
-		//DrawTexturedQuad(pDrac.m_pFontman.m_aFont[0].m_pTex, 400, 400);
-
         SwapBuffers(pWindow)
+		ClearWindow(0, 0.5, 1, 1)
 
-        // sleep_milliseconds(5);
         UpdateWindowEvents()
+
+// 		if !s_fIsPaused
+	    {
+	    	cTickWork := CTickWallClock()
+	    	dTWorkElapsed := DTElapsed(cTickLast, cTickWork)
+
+	        dTElapsedFrame := dTWorkElapsed
+	        if dTElapsedFrame < dTFrameTarget
+	        {                        
+	            if fIsSleepGranular
+	            {
+	                SleepMS := cast (u32)(1000.0 * (dTFrameTarget - dTElapsedFrame))
+	                if SleepMS > 0
+	                {
+	                    Sleep(SleepMS)
+	                }
+	            }
+
+	            while dTElapsedFrame < dTFrameTarget
+	            {                            
+	                dTElapsedFrame = DTElapsed(cTickLast, CTickWallClock())
+	            }
+	        }
+	    }
+
+	    cTickEnd := CTickWallClock()
+	    dTFrameActual := DTElapsed(cTickLast, cTickEnd)
+	    cTickLast = cTickEnd
+
+	    nHzActual := 1 / dTFrameActual
+	    snprintf(aChStatus, aChStatus.count, "%0.1f / %0.1f, %0.2f ms", nHzActual, nHzTarget, dTFrameActual * 1000)
+		DrawText(pDrac, Vec2Create(20, g_dYWindow - 35), aChStatus)
+
 	}
 	return 1
 }
