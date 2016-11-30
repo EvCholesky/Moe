@@ -3580,6 +3580,30 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			}
 		} break;
 	case PARK_List:
+		{
+			auto pDif = PDifEnsure(pWork, pBuild, pStnod->m_lexloc.m_strFilename.PCoz());
+			auto pLvalScope = PLvalFromDIFile(pBuild, pDif);
+
+			s32 iLine;
+			s32 iCol;
+			CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLine, &iCol);
+
+			LLVMValueRef pLvalDiBlock = LLVMDIBuilderCreateLexicalBlock(
+											pBuild->m_pDib,
+											pLvalScope,
+											pDif->m_pLvalFile,
+											iLine, iCol);
+			PushDIScope(pDif, pLvalDiBlock);
+
+			int cStnodChild = pStnod->CStnodChild();
+			for (int iStnodChild = 0; iStnodChild < cStnodChild; ++iStnodChild)
+			{
+				PValGenerate(pWork, pBuild, pStnod->PStnodChild(iStnodChild), VALGENK_Instance);
+			}
+
+			PopDIScope(pDif, pLvalDiBlock);
+
+		} break;
 	case PARK_ExpressionList:
 		{
 			int cStnodChild = pStnod->CStnodChild();
