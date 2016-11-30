@@ -249,7 +249,8 @@ public:
 						,m_pLvalDIFunction(nullptr)
 						,m_pLvalFunction(nullptr)
 						,m_pLvalDebugLocCur(nullptr)
-						,m_pBlockEntry(nullptr)
+						,m_pBlockLocals(nullptr)
+						,m_pBlockFirst(nullptr)
 						,m_arypBlockManaged(pAlloc, EWC::BK_IR)
 							{ ; }
 
@@ -259,7 +260,8 @@ public:
 	LLVMOpaqueValue *	m_pLvalDIFunction;
 	LLVMOpaqueValue *	m_pLvalFunction;		// null if anonymous function
 	LLVMOpaqueValue *	m_pLvalDebugLocCur;
-	CIRBasicBlock *		m_pBlockEntry;	
+	CIRBasicBlock *		m_pBlockLocals;			// entry basic block containing argument stores and local variable allocas
+	CIRBasicBlock *		m_pBlockFirst;			// first
 
 	EWC::CDynAry<CIRBasicBlock *>
 						m_arypBlockManaged;

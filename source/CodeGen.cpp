@@ -3011,13 +3011,20 @@ static inline CIRValue * PValGenerateMethodBody(
 	auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PCoz());
 	PushDIScope(pDif, pProc->m_pLvalDIFunction);
 
-	pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
+	pBuild->ActivateProcedure(pProc, pProc->m_pBlockLocals);
+	pBuild->ActivateBlock(pProc->m_pBlockFirst);
+
 	CIRValue * pValRet = PValGenerate(pWork, pBuild, pStnodBody, VALGENK_Instance);
 
 	if (fNeedsNullReturn)
 	{
 		(void) pBuild->PInstCreate(IROP_Ret, nullptr, "RetTmp");
 	}
+
+
+	pBuild->ActivateBlock(pProc->m_pBlockLocals);
+	pBuild->PInstCreateBranch(pProc->m_pBlockFirst);
+
 
 	PopDIScope(pDif, pProc->m_pLvalDIFunction);
 
@@ -3451,7 +3458,14 @@ CIRValue * PValGenerateDecl(
 	}
 	else
 	{
+		// generate the local variable into the first basic block for procedure
+
+		auto pBlockCur = pBuild->m_pBlockCur;
+		pBuild->ActivateBlock(pBuild->m_pProcCur->m_pBlockLocals);
 		auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, strPunyName.PCoz());
+		pBuild->ActivateBlock(pBlockCur);
+
+
 		pStnod->m_pSym->m_pVal = pInstAlloca;
 	
 		auto pLvalDIVariable = LLVMDIBuilderCreateAutoVariable(
@@ -3554,7 +3568,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			CSTNode * pStnodBody = nullptr;
 			CSTProcedure * pStproc = pStnod->m_pStproc;
-			if (!pStproc->m_fIsForeign && EWC_FVERIFY(pStproc && pProc->m_pBlockEntry, "Encountered procedure without CSTProcedure"))
+			if (!pStproc->m_fIsForeign && 
+				EWC_FVERIFY(pStproc && pProc->m_pBlockFirst, "Encountered procedure without CSTProcedure"))
 			{
 				pStnodBody = pStnod->PStnodChildSafe(pStproc->m_iStnodBody);
 			}
@@ -4644,12 +4659,12 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 
 	pProc->m_pLvalFunction = pLvalFunc;
-	pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, aChName);
+	pProc->m_pBlockFirst = pBuild->PBlockCreate(pProc, aChName);
 	
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
 
-	pBuild->ActivateProcedure(pProc, pProc->m_pBlockEntry);
+	pBuild->ActivateProcedure(pProc, pProc->m_pBlockFirst);
 
 	{ // create debug info
 		CreateDebugInfo(pWork, pBuild, pStnodStruct, pTinstruct);
@@ -4837,7 +4852,8 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	if (!pStproc->m_fIsForeign)
 	{
-		pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, pChzMangled);
+		pProc->m_pBlockLocals = pBuild->PBlockCreate(pProc, pChzMangled);
+		pProc->m_pBlockFirst = pBuild->PBlockCreate(pProc, pChzMangled);
 
 		if (EWC_FVERIFY(pTinproc))
 		{
@@ -4871,7 +4887,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
 
-	pBuild->ActivateProcedure(pProc, (pStproc->m_fIsForeign) ? pBlockPrev : pProc->m_pBlockEntry);
+	pBuild->ActivateProcedure(pProc, (pStproc->m_fIsForeign) ? pBlockPrev : pProc->m_pBlockLocals);
 	if (pStnodParamList)
 	{
 		// set up llvm argument values for our formal parameters
@@ -4991,7 +5007,8 @@ void CodeGenEntryPoint(
 			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
 			pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
 
-			pProc->m_pBlockEntry = pBuild->PBlockCreate(pProc, aCh);
+			pProc->m_pBlockLocals = pBuild->PBlockCreate(pProc, aCh);
+			pProc->m_pBlockFirst = pBuild->PBlockCreate(pProc, aCh);
 
 			s32 iLineBody, iColBody;
 			CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLineBody, &iColBody);
