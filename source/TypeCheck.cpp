@@ -4339,13 +4339,22 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							auto pStnodPredicate = pStnod->PStnodChildSafe(pStfor->m_iStnodPredicate);
 							if (pStnodPredicate)
 							{
-								if (!pStnodPredicate->m_pTin || pStnodPredicate->m_pTin->m_tink != TINK_Bool)
+								STypeInfo * pTinPred = pStnodPredicate->m_pTin;
+
+								auto pSymtab = pTcsentTop->m_pSymtab;
+								STypeInfo * pTinBool = pSymtab->PTinBuiltin("bool");
+								STypeInfo * pTinPredPromoted = PTinPromoteUntypedTightest(
+																pTcwork,
+																pTcsentTop->m_pSymtab,
+																pStnodPredicate,
+																pTinBool);
+
+								if (!FCanImplicitCast(pTinPredPromoted, pTinBool))
 								{
-									CString strTin = StrFromTypeInfo(pStnodPredicate->m_pTin);
-									EmitError(pTcwork, pStnod,
-										"For loop predicate must evaluate to a bool, but evaluates to a %s",
-										strTin.PCoz());
+									CString strTin = StrFromTypeInfo(pTinPredPromoted);
+									EmitError(pTcwork, pStnod, "Cannot convert predicate from %s to bool", strTin.PCoz());
 								}
+								FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinBool, pStnodPredicate);
 							}
 
 							pStnod->m_strees = STREES_TypeChecked;

@@ -3839,6 +3839,15 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						pBuild->ActivateBlock(pBlockPred);
 
 						STypeInfo * pTinBool = pStnodPred->m_pTin;
+						if (pTinBool->m_tink == TINK_Literal)
+						{
+							auto pTinlit = (STypeInfoLiteral *)pTinBool;
+							if (pTinlit->m_litty.m_litk == LITK_Bool)
+							{
+								pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
+							}
+						}
+
 						EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for for loop predicate");
 
 						GeneratePredicate(pWork, pBuild, pStnodPred, pBlockBody, pBlockPost, pTinBool);

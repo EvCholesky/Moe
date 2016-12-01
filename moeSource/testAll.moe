@@ -126,6 +126,11 @@ TestIfElse proc ()
 		printf("E")
 	}
 
+	if false
+	{
+		assert(false, "should never fire", #file, #line)
+	}
+
 	printf("\nshort circuit: AB0-AB1-AB2-AB = ")
 	n = 0
 	while (FPrint("A", false) || FPrint("B", true) && n < 3)
@@ -663,7 +668,7 @@ HERE
 	printf("\n%s\n", pChzTest)
 }
 
-TestForLoop proc ()
+TestLoops proc ()
 {
 	printf("\nFor Loops:\n")
 
@@ -671,6 +676,16 @@ TestForLoop proc ()
 	for i:=1; i<6; ++i
 	{
 		printf("%d,", i)
+	}
+
+	while true
+	{
+		break
+	}
+
+	for i:=1; true;  ++i
+	{
+		break	
 	}
 
 	printf ("\nExpect 2,3,4:  ")
@@ -779,7 +794,7 @@ main proc () -> int
 	TestGlobals()
 	TestProcedureRef()
 	TestHereStrings()
-	TestForLoop()
+	TestLoops()
 	TestBreakContinue()
 
 	return 1
