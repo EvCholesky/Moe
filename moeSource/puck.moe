@@ -1,4 +1,5 @@
 #import "Basic"
+#import "Color"
 #import "Font"
 #import "GL"
 #import "Math"
@@ -6,6 +7,77 @@
 g_dXWindow :: 1280
 g_dYWindow :: 720
 g_cTickPerSecond: s64 = 1
+
+// map string 15x13
+g_pChzMap :: #string END
+ WWWWWW WWWWWW 
+WW           WW
+W  W WWWWW W  W
+W WW       WW W
+W    WW WW    W
+WW W W   W W WW
+   W W W W W   
+WW W W   W W WW
+W    WW WW    W
+W WW       WW W
+W  W WWWWW W  W
+WW           WW
+ WWWWWW WWWWWW 
+END
+
+g_dXCell :: 50
+g_dYCell :: 50
+
+g_dXMapCell :: 15
+g_dYMapCell :: 13
+
+FMapGridFromString proc (pChzInput: & u8, aChMap: [] u8) -> bool
+{
+	//printf("%s\n", pChzInput)
+
+	cChExpected := g_dXMapCell * g_dYMapCell
+	if aChMap.count != cChExpected
+	{
+		return false
+	}
+
+	pChMax := &aChMap[aChMap.count]
+	for pCh := aChMap.data; pCh != pChMax; ++pCh
+	{
+		@pCh = ' '
+	}
+
+	pChIn := pChzInput
+
+	#label Outer	
+	for yCell := 0; yCell < g_dYMapCell; ++yCell
+	{
+		yMin := cast (f32)yCell * g_dYCell
+		yMax := yMin + g_dYCell
+
+		for xCell := 0; true; ++xCell
+		{
+			ch := @pChIn
+			++pChIn
+
+			if ch == 0
+				{ break Outer }
+
+			if ch == '\n'
+				{ break }
+
+			if xCell > g_dXMapCell
+			{
+				printf("map input line too long\n")
+				return false
+			}
+
+			aChMap[xCell + yCell * g_dXMapCell] = ch
+		}
+	}
+
+	return true
+}
 
 FHandleEvents proc () -> bool
 {
@@ -17,13 +89,157 @@ FHandleEvents proc () -> bool
 	{
 		printf("Event: keycode=%d, edges = %d\n", event.m_keycode, event.m_edges)
 		if event.m_keycode == KEYCODE.Escape && event.m_edges == EDGES.Press
-		{
-			return false
-		}
+			{ return false }
 	}
 
 	return true
 }
+
+DrawMapBackground proc (pDrac: & SDrawContext, pChzMap: & u8)
+{
+	colvecBg := ColvecFromCol(ColCreate(19, 29, 43, 255))
+	dXMax: f32 = g_dXMapCell * g_dXCell
+	dYMax: f32 = g_dYMapCell * g_dYCell
+	AppendTile (0, 0, dXMax, dYMax, &colvecBg, &g_tilbuf)
+
+	colvecWall := ColvecFromCol(ColCreate(87, 130, 168, 255))
+
+	dXStride := g_dXMapCell
+	for yCell := 0; yCell < g_dYMapCell; ++yCell
+	{
+		yMin := cast (f32)yCell * g_dYCell
+		yMax := yMin + g_dYCell
+
+		for xCell := 0; xCell < g_dXMapCell; ++xCell
+		{
+			ch := pChzMap[xCell + yCell*dXStride]
+
+			if ch == 'W'
+			{
+				xMin:= cast (f32)xCell * g_dXCell
+				xMax := xMin + g_dXCell
+
+				AppendTile (xMin, yMin, xMax, yMax, &colvecWall, &g_tilbuf)
+			}
+		}
+	}
+
+	FlushTileVerts(pDrac, &g_tilbuf)
+}
+
+STileVertex struct // tag=tilvert
+{
+	m_x, m_y: f32
+	m_u, m_v: f32
+	m_r, m_g, m_b, m_a: f32
+}
+
+STileVertexBuffer struct // tag=tilbuf
+{
+	m_aTilvert: [1024] STileVertex
+	m_cTilvert: int
+}
+g_tilbuf: STileVertexBuffer
+
+AppendTile proc (
+			xMin: float, yMin: float,
+			xMax: float, yMax: float,
+			colvec: & SColorVec,
+			pTilbuf: & STileVertexBuffer)
+{
+	AppendTilvert(
+		xMin, yMax,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
+
+	AppendTilvert(
+		xMax, yMax,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
+
+	AppendTilvert(
+		xMax, yMin,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
+
+	AppendTilvert(
+		xMin, yMin,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
+}
+
+AppendTilvert proc (
+				x: float, y: float, 
+				u: float, v: float, 
+				r: float, g: float, b: float, a: float, 
+				pTilbuf: & STileVertexBuffer) inline
+{
+	pTilvert: & STileVertex = &pTilbuf.m_aTilvert[pTilbuf.m_cTilvert]
+	++pTilbuf.m_cTilvert
+
+	pTilvert.m_x = x
+	pTilvert.m_y = y
+
+	pTilvert.m_u = u
+	pTilvert.m_v = v
+
+	pTilvert.m_r = r
+	pTilvert.m_g = g
+	pTilvert.m_b = b
+	pTilvert.m_a = a
+}
+
+FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
+{
+	aTilvert: [] STileVertex = pTilbuf.m_aTilvert
+
+	// push orthographic projection
+	glPushMatrix()
+	glLoadIdentity()
+
+	// set scissor rect
+
+	// set up shader
+	//glEnable(GL_BLEND)
+	//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+	assert(pDrac.m_pShman != null, "NULL GContext in flushTileVerts", #file, #line)
+	BeginShader(pDrac.m_pShman, pDrac.m_pShman.m_mpCoreshkShhand[CORESHK.Sprite])
+
+	//pTex := pFontman.m_aFont[fontk].m_pTex
+	//SetShaderParam(pFontman.m_mpFontshkIParamTex[iShhand], pTex, 0)
+
+	pTilvert := &aTilvert[0]
+	glVertexPointer(3, GL_FLOAT, sizeof(STileVertex), &aTilvert[0].m_x)
+	glEnableClientState(GL_VERTEX_ARRAY)
+			
+	glColorPointer(4, GL_FLOAT, sizeof(STileVertex), &aTilvert[0].m_r)
+	glEnableClientState(GL_COLOR_ARRAY)
+
+	glClientActiveTexture(GL_TEXTURE0)
+	glTexCoordPointer(2, GL_FLOAT, sizeof(STileVertex), &aTilvert[0].m_u)
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+
+	glDrawArrays(GL_QUADS, 0, cast (s32) pTilbuf.m_cTilvert)
+
+	//if (pTex)
+	//{
+	//	glDisable(pTex.m_druTarget)
+	//}
+
+	glDisableClientState(GL_VERTEX_ARRAY)
+	glDisableClientState(GL_COLOR_ARRAY)	
+	glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+
+	EndShader()
+
+	glPopMatrix()
+
+	pTilbuf.m_cTilvert = 0
+}	
 
 DrawTestTriangle proc (gRadians:float)
 {
@@ -84,6 +300,14 @@ main proc () -> int
     dTFrameTarget := 1.0 / nHzTarget
 	aChStatus: [512] u8
 
+	aChMap: [g_dXMapCell * g_dYMapCell] u8
+	fIsValidMap := FMapGridFromString (g_pChzMap, aChMap)
+	if !fIsValidMap
+	{
+		assert(fIsValidMap, "bad map grid", #file, #line)
+		return 0
+	}
+
 	cTickLast := CTickWallClock()
 	fShouldClose := false
 	while fShouldClose == false
@@ -91,10 +315,12 @@ main proc () -> int
 		fShouldClose |= !FHandleEvents()
 
 		gRadSpin += dRadSpin
-		DrawTestTriangle(gRadSpin)
+
+		DrawMapBackground(pDrac, aChMap)
+		//DrawTestTriangle(gRadSpin)
 
         SwapBuffers(pWindow)
-		ClearWindow(0, 0.5, 1, 1)
+		ClearWindow(0, 0, 0, 1)
 
         UpdateWindowEvents()
 
