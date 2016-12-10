@@ -194,7 +194,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release32
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>_WINDOWS;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;NDEBUG;_CONSOLE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\llvm39\src\include;..\llvm39\cmade64\include;external</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>

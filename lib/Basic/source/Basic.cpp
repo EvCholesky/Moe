@@ -71,6 +71,42 @@ extern "C" float sqrtf_MOE(float g)
 	return sqrtf(g);
 }
 
+extern "C" float GSign(float g)
+{
+	return g < 0 ? -1.0f : 1.0f; 
+}
+
+extern "C" float GAbs(float x)
+{ 
+	return fabsf(x);
+}
+
+extern "C" float GSqrt(float g)
+{
+	return sqrtf(g);
+}
+
+extern "C" float GMod(float x, float y)
+{ 
+	return fmodf(x, y); 
+}
+
+extern "C" int32_t NTrunc(float g)
+{
+	return static_cast<int32_t>(g);
+}
+
+extern "C" int32_t NCeil(float g)
+{ 
+	return static_cast<int32_t>(ceil(g)); 
+}
+
+extern "C" int32_t NRound(float g)
+{
+	float gSign = GSign(g); 
+
+	return static_cast<int32_t>((GAbs(g)+0.5f) * gSign); 
+}
 
 void EnsureTerminatedCopy(char * pCozBegin, char * pCozAppend, size_t cBMax, char ch)
 {

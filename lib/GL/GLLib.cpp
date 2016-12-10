@@ -96,9 +96,9 @@ SEvent * SEventFifo::PEventPushBack()
 {
 	if (!EWC_FVERIFY(m_cEvent < s_cEventMax, "EventFifo overflow"))
 		return PEventFront();
-	++m_cEvent;
 
 	int iEvent = (m_iEventFront + m_cEvent) % s_cEventMax;
+	++m_cEvent;
 
 	auto pEvent = &m_aEvent[iEvent];
 	new (pEvent) SEvent;
