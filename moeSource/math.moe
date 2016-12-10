@@ -121,10 +121,58 @@ VecMul proc (vec: SVector4, r: f32) -> SVector4 inline
 	return Vec4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r)
 }
 
+gEpsilon :: 0.0001
+gEpsilonNormalize :: 0.00001
+GLengthSqr proc (vec: SVector2) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y) }
+GLengthSqr proc (vec: SVector3) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y + vec.m_z * vec.m_z) }
+
+GLength proc (vec: SVector2) -> f32 inline 						{return GSqrt(vec.m_x * vec.m_x + vec.m_y * vec.m_y) }
+GLength proc (vec: SVector3) -> f32 inline 						{return GSqrt(vec.m_x * vec.m_x + vec.m_y * vec.m_y  + vec.m_z * vec.m_z) }
+
+VecNormalize proc (vec: SVector2) -> SVector2 inline 			{ return VecMul(vec, 1 / GLength(vec)) }
+VecNormalize proc (vec: SVector3) -> SVector3 inline 			{ return VecMul(vec, 1 / GLength(vec)) }
+
+VecNormalizeElse proc (vec: SVector2, vecElse: SVector2) -> SVector2 inline
+{ 
+	gLength := GLength(vec)
+	if gLength < gEpsilonNormalize
+	{
+		return vecElse
+	}
+	return VecMul(vec, 1 / gLength) 
+}
+
+VecNormalizeElse proc (vec: SVector3, vecElse: SVector3) -> SVector3 inline
+{ 
+	gLength := GLength(vec)
+	if gLength < gEpsilonNormalize
+	{
+		return vecElse
+	}
+	return VecMul(vec, 1 / gLength) 
+}
+
+VecNormalizeAndLength proc (vec: SVector2, pLength: & f32) -> SVector2 inline 
+{
+	gLength := GLength(vec)
+	@pLength = gLength
+	return VecMul(vec, 1 / gLength)
+}
+
+VecNormalizeAndLength proc (vec: SVector3, pLength: & f32) -> SVector3 inline
+{
+	gLength := GLength(vec)
+	@pLength = gLength
+	return VecMul(vec, 1 / gLength)
+}
+
 GMin proc (gA: f32, gB: f32) -> f32 inline						{ if (gA < gB) { return gA } return gB }
 GMax proc (gA: f32, gB: f32) -> f32 inline						{ if (gA > gB) { return gA } return gB }
 GClamp proc (gValue: f32, gMin: f32, gMax: f32) -> f32 inline	{ return GMin(GMax(gValue, gMin), gMax) }
 GLerp proc (gA: f32, gB: f32, uLerp: f32) -> f32 inline			{ return gA + (gB - gA) * uLerp }
+
+NMin proc (nA: int, nB: int) -> int inline						{ if (nA < nB) { return nA } return nB }
+NMax proc (nA: int, nB: int) -> int inline						{ if (nA > nB) { return nA } return nB }
 
 SRandomGenJenkinsSmall struct // tag = rng
 {

@@ -106,6 +106,10 @@ void PrintCommandLineOptions()
 
 int main(int cpChzArg, const char * apChzArg[])
 {
+#ifdef MOE_DEBUG
+	printf("Warning: Compiler was built in debug mode and may be very slow.\n"); 
+#endif
+
 	if (cpChzArg < 2)
 	{
 		PrintCommandLineOptions();

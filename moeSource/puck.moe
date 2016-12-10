@@ -10,26 +10,520 @@ g_cTickPerSecond: s64 = 1
 
 // map string 15x13
 g_pChzMap :: #string END
- WWWWWW WWWWWW 
-WW           WW
-W  W WWWWW W  W
-W WW       WW W
-W    WW WW    W
-WW W W   W W WW
-   W W W W W   
-WW W W   W W WW
-W    WW WW    W
-W WW       WW W
-W  W WWWWW W  W
-WW           WW
- WWWWWW WWWWWW 
+ WWWWWW.WWWWWW 
+WW...........WW
+W..W.WWWWW.Wo.W
+W.WW.......WW.W
+W....WW.WW....W
+WW.W.W...W.W.WW
+...W.W.W.W.W...
+WW.W.W...W.W.WW
+W....WW.WW....W
+W.WW.......WW.W
+W.oW.WWWWW.W..W
+WW...........WW
+ WWWWWWpWWWWWW 
 END
 
 g_dXCell :: 50
 g_dYCell :: 50
+g_dXCellHalf :: (g_dXCell / 2)
+g_dYCellHalf :: (g_dYCell / 2)
 
 g_dXMapCell :: 15
 g_dYMapCell :: 13
+
+SMapDimensions struct // tag = mapdim
+{
+	m_dXMax: int
+	m_dYMax: int
+	m_dXStride: int
+}	
+
+g_pActPuck: & SActor
+
+FindNearestCell proc (pVec2: & SVector2, pX: & int, pY: & int)
+{
+	@pX = NRound(pVec2.m_x - g_dXCellHalf)
+	@pY = NRound(pVec2.m_y - g_dYCellHalf)
+}
+
+PosFromCell proc (iVecCell: SIntVector2) -> SVector2
+{
+	return Vec2Create(cast (f32) iVecCell.m_x * g_dXCell + g_dXCellHalf, cast (f32) iVecCell.m_y * g_dYCell + g_dYCellHalf)
+}
+
+FIsCellBlocked proc (aChMap: & u8, pMapdim: & SMapDimensions, xCell: int, yCell: int) -> bool
+{
+	if (xCell < 0) | (xCell >= pMapdim.m_dXMax) | (yCell < 0) | (yCell >= pMapdim.m_dYMax)
+	{
+		return true
+	}
+
+	ch := aChMap[xCell + yCell * pMapdim.m_dXStride]
+
+	return ch == 'W'
+}
+
+UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: & u8, pMapdim: & SMapDimensions)
+{
+//	UpdatePuckInput(pActPuck, pPlayinp)
+	UpdatePuckMovementNew(pActPuck, dT, aChMap, pMapdim, pPlayinp)
+
+	UpdatePuckInput proc (pActPuck: & SActor, pPlayinp: & SPlayerInput)
+	{
+		dXyPuckSpeed :: 100
+		
+		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Release && pActPuck.m_v.m_x > 0
+			{ pActPuck.m_v.m_x = 0 }
+		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Release && pActPuck.m_v.m_x < 0
+			{ pActPuck.m_v.m_x = 0 }
+
+		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
+			{ pActPuck.m_v.m_x = dXyPuckSpeed }
+		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
+			{ pActPuck.m_v.m_x = -dXyPuckSpeed }
+
+		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Release && pActPuck.m_v.m_y > 0
+			{ pActPuck.m_v.m_y = 0 }
+		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Release && pActPuck.m_v.m_y < 0
+			{ pActPuck.m_v.m_y = 0 }
+
+		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
+			{ pActPuck.m_v.m_y = dXyPuckSpeed }
+		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Press
+			{ pActPuck.m_v.m_y = -dXyPuckSpeed }
+	}
+
+	/* too complicated, trying cell based version instead 
+	FFindRayCastWall proc (aChMap: & u8, pMapdim: & SMapDimensions, pPos: & SVector2, pVecRay: & SVector2, gRadius: f32, pPosIntersect: & SVector2) -> bool
+	{
+		if pVecRay.m_x > 0
+		{
+			xCell := NTrunc((pPos.m_x - g_dXCellHalf) / g_dXCell) + 1
+			yCell := NRound((pPos.m_y - g_dYCellHalf) / g_dYCell)
+
+			xMax := NCeil((pPos.m_x + gRadius + pVecRay.m_x) / g_dXCell)
+			xMax = NMin(pMapdim.m_dXMax, xMax)
+
+			while xCell < xMax
+			{
+				if FIsCellBlocked(aChMap, pMapdim, xCell, yCell)	
+				{
+					pPosIntersect.m_x = cast (f32) xCell  * g_dXCell - gRadius
+					pPosIntersect.m_y = pPos.m_y
+					return true
+				}
+				xCell++
+			}
+		}
+		else if pVecRay.m_x < 0
+		{
+
+		}
+
+		return false
+	}*/
+
+	DrawCellDebug proc (ivecCell: SIntVector2, col: SColor)
+	{
+		// draw goal
+		xMin := cast (f32) ivecCell.m_x * g_dXCell
+		yMin := cast (f32) ivecCell.m_y * g_dYCell
+		colvec := ColvecFromCol(col)
+		AppendTile (xMin, yMin, xMin+g_dXCell, yMin+g_dXCell, &colvec, &g_tilbuf)
+	}
+
+	UpdatePuckMovementNew proc (pActPuck: & SActor, dT: f32, aChMap: & u8, pMapdim: & SMapDimensions, pPlayinp: & SPlayerInput)
+	{
+		dXyPuckSpeed :: 125
+		gInputWindow :: 50
+
+		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
+		{ 
+			pActPuck.m_vInput = Vec2Create(dXyPuckSpeed, 0)
+			pActPuck.m_gInputWindow = gInputWindow
+		}
+		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
+		{
+			pActPuck.m_vInput = Vec2Create(-dXyPuckSpeed, 0)
+			pActPuck.m_gInputWindow = gInputWindow
+		}
+
+		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
+		{ 
+			pActPuck.m_vInput = Vec2Create(0, dXyPuckSpeed)
+			pActPuck.m_gInputWindow = gInputWindow
+		}
+		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Press
+		{ 
+			pActPuck.m_vInput = Vec2Create(0, -dXyPuckSpeed)
+			pActPuck.m_gInputWindow = gInputWindow
+		}
+
+		pEnt := pActPuck.m_pEnt
+		gStep := dXyPuckSpeed * dT
+
+		pActPuck.m_gInputWindow -= gStep
+		if pActPuck.m_gInputWindow <= 0
+		{
+			pActPuck.m_gInputWindow = 0
+		}
+		else
+		{
+			ivecCellInput := IvecCellAdvance(pActPuck.m_ivecGoal, pActPuck.m_vInput)
+			if !FIsCellBlocked(aChMap, pMapdim, ivecCellInput.m_x, ivecCellInput.m_y)	
+			{
+				pActPuck.m_vAfter = pActPuck.m_vInput
+				pActPuck.m_vInput = Vec2Create(0, 0)
+				pActPuck.m_gInputWindow = 0
+			}
+		}
+
+		while gStep > gEpsilon
+		{
+			posTarget	:= PosFromCell(pActPuck.m_ivecGoal)
+			vecToTarget := VecSub(posTarget, pEnt.m_pos)
+			gDistToTarget := GLength(vecToTarget)
+			if gDistToTarget >= gStep
+			{
+				pEnt.m_pos = VecAdd(pEnt.m_pos, VecMul(VecNormalize(vecToTarget), gStep))
+				gStep = 0
+			}
+			else
+			{
+				gStep - gDistToTarget
+
+				if GLengthSqr(pActPuck.m_vAfter) < gEpsilon
+				{
+					gStep = 0
+				}
+				else
+				{
+					ivecCellNew := IvecCellAdvance(pActPuck.m_ivecGoal, pActPuck.m_vAfter)
+
+					if FIsCellBlocked(aChMap, pMapdim, ivecCellNew.m_x, ivecCellNew.m_y)	
+					{
+						pActPuck.m_vAfter = Vec2Create(0, 0)
+						gStep = 0
+					}
+					else
+					{
+						pActPuck.m_ivecGoal = ivecCellNew
+					}
+				}
+			}
+		}
+
+		//DrawCellDebug(pActPuck.m_ivecGoal, ColCreate(220, 10, 10, 200))
+	}
+
+	IvecCellAdvance proc (ivec: SIntVector2, vecDir: SVector2) -> SIntVector2
+	{
+		ivecRet: SIntVector2
+
+		if vecDir.m_x > gEpsilon
+			{ ivecRet.m_x = ivec.m_x + 1 }
+		else if vecDir.m_x < -gEpsilon
+			{ ivecRet.m_x = ivec.m_x - 1 }
+		else
+			{ ivecRet.m_x = ivec.m_x }
+
+		if vecDir.m_y > gEpsilon
+			{ ivecRet.m_y = ivec.m_y + 1 }
+		else if vecDir.m_y < -gEpsilon
+			{ ivecRet.m_y = ivec.m_y - 1 }
+		else
+			{ ivecRet.m_y = ivec.m_y }
+		return ivecRet
+	}
+
+	UpdatePuckMovement proc (pActPuck: & SActor, dT: f32, aChMap: & u8, pMapdim: & SMapDimensions, pPlayinp: & SPlayerInput)
+	{
+		pEnt := pActPuck.m_pEnt
+
+		dXY := VecMul(pActPuck.m_v, dT)
+
+		//dXYGraceTurn :: 5
+		xCell, yCell: int
+		//xCell = NRound(pVec2.m_x - g_dXCellHalf)
+		//yCell = NRound(pVec2.m_y - g_dYCellHalf)
+
+		dXYGrace :: 20
+		// find next cell
+		vecCellOffs: SVector2
+		if pActPuck.m_v.m_x > 0
+			{ vecCellOffs.m_x = (g_dXCell - dXYGrace)}
+		else if pActPuck.m_v.m_x < 0
+			{ vecCellOffs.m_x = -(g_dXCell - dXYGrace) }
+
+		if pActPuck.m_v.m_y > 0
+			{ vecCellOffs.m_y = (g_dYCell - dXYGrace) }
+		else if pActPuck.m_v.m_y < 0
+			{ vecCellOffs.m_y = -(g_dYCell - dXYGrace) }
+
+		xCell = NRound((pEnt.m_pos.m_x - g_dXCellHalf + vecCellOffs.m_x) / g_dXCell)
+		yCell = NRound((pEnt.m_pos.m_y - g_dYCellHalf + vecCellOffs.m_y) / g_dYCell)
+
+		pActPuck.m_ivecNext.m_x = xCell
+		pActPuck.m_ivecNext.m_y = yCell
+
+		//if pActPuck.m_fHasGoal
+		{
+			// check 'next' cell, if blocked use the current cell
+			if FIsCellBlocked(aChMap, pMapdim, pActPuck.m_ivecNext.m_x, pActPuck.m_ivecNext.m_y)	
+			{
+				//use current cell
+				pActPuck.m_ivecNext.m_x = NRound(pEnt.m_pos.m_x - g_dXCellHalf)
+				pActPuck.m_ivecNext.m_y = NRound(pEnt.m_pos.m_y - g_dYCellHalf)
+
+				//pActPuck.m_fHasGoal
+			}
+
+			xMin := cast (f32) xCell * g_dXCell
+			yMin := cast (f32) yCell * g_dYCell
+			colvec := ColvecFromCol(ColCreate(220, 220, 10, 180))
+			AppendTile (xMin, yMin, xMin+g_dXCell, yMin+g_dXCell, &colvec, &g_tilbuf)
+		}
+
+		// examine input to check for new dest cell	
+
+		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
+		{ 
+			pActPuck.m_ivecGoal = IvecCreate(xCell+1, yCell)
+			pActPuck.m_fHasGoal = true
+		}
+		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
+		{
+			pActPuck.m_ivecGoal = IvecCreate(xCell-1, yCell) 
+			pActPuck.m_fHasGoal = true
+		}
+
+		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
+		{ 
+			pActPuck.m_ivecGoal = IvecCreate(xCell, yCell+1) 
+			pActPuck.m_fHasGoal = true
+		}
+		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Press
+		{ 
+			pActPuck.m_ivecGoal = IvecCreate(xCell, yCell-1)
+			pActPuck.m_fHasGoal = true
+		}
+
+		if FIsCellBlocked(aChMap, pMapdim, pActPuck.m_ivecGoal.m_x, pActPuck.m_ivecGoal.m_y)	
+		{
+			pActPuck.m_ivecGoal	= pActPuck.m_ivecNext
+			//pActPuck.m_ivecGoal.m_x = NRound(pVec2.m_x - g_dXCellHalf)
+			//pActPuck.m_ivecGoal.m_y = NRound(pVec2.m_y - g_dYCellHalf)
+		}
+
+		// draw goal
+		xMin := cast (f32) pActPuck.m_ivecGoal.m_x * g_dXCell
+		yMin := cast (f32) pActPuck.m_ivecGoal.m_y * g_dYCell
+		colvec := ColvecFromCol(ColCreate(50, 50, 220, 180))
+		AppendTile (xMin, yMin, xMin+g_dXCell, yMin+g_dXCell, &colvec, &g_tilbuf)
+
+		// update velocity to head towards dest cell
+		//dPosStep := VecMul(pActPuck.m_v, dT)
+		//gStep := GLength(dPosStep)
+
+		dXyPuckSpeed :: 100
+		gStep: f32 = dXyPuckSpeed * dT
+
+		vecZero := Vec2Create(0, 0)
+		//if gStep > gEpsilon
+		{
+			posNext	:= PosFromCell(pActPuck.m_ivecNext)
+			vecToCell := VecSub(pEnt.m_pos, posNext)
+			dPosToCell: f32 = GLength(vecToCell)
+			//vecDir := VecNormalizeAndLength(vecToCell, &dPosToCell)
+
+			if dPosToCell <= gStep
+			{
+				gStep -= dPosToCell
+				pEnt.m_pos = posNext	
+
+				if gStep > 0 && pActPuck.m_fHasGoal
+				{
+					posDest	:= PosFromCell(pActPuck.m_ivecGoal)
+					vecToCell = VecSub(posDest, posNext)
+
+					vecToCell = VecNormalizeElse(vecToCell, vecZero)
+					pActPuck.m_v = VecMul(vecToCell, cast (f32)dXyPuckSpeed)
+					pActPuck.m_fHasGoal = false
+				}
+			}
+
+			vecDir := VecNormalizeElse(pActPuck.m_v, vecZero)
+			pEnt.m_pos = VecAdd(pEnt.m_pos, VecMul(vecDir, gStep))
+		}
+
+		//pEnt.m_pos = VecAdd(pEnt.m_pos, dXY)
+
+		//expend velocity heading towards 'next' cell
+		// if we get there
+		//{
+			// head towards dest cell and set velocity in that direction
+			// if no dest cell set velocity to zero (?)  only if truncated 'next'?
+		//}
+
+/*
+		if (pAct.m_fHasGoal)
+		{
+			posCellNext := VecCreate(pAct.m_ivecGoal.m_x * g_dXCell + g_dXCellHalf, pAct.m_ivecGoal.m_y * g_dYCell + g_dYCellHalf);
+			dPos := VecSub(posCellNext, pEnt.m_pos)
+
+			gStep := GLength(dPosStep)
+			gDistToCell: f32;	
+			vecDir := VecNormalizeAndLength(dPos, &gDistToCell)
+			if gDistToCell < gStep
+			{
+				// position at cell center
+				gStep - gDistToCell
+				pAct.m_fHasGoal = false
+			}
+		}
+		*/
+
+
+
+
+		//FindNearestCell(&pEnt.m_pos, &xCell, &yCell)
+
+		// BB - handle starting in collision case 
+
+		/*
+
+		rRadius :: 0.5
+		posIntersect: SVector2
+		gRadius := g_dXCell * rRadius
+		if (FFindRayCastWall(aChMap, pMapdim, &pEnt.m_pos, &dXY, gRadius, &posIntersect))
+		{
+			printf("wall contact\n")
+			dXY = VecSub(posIntersect, pEnt.m_pos)
+		}
+		*/
+
+		/*
+		pEnt.m_pos = VecAdd(pEnt.m_pos, dXY)
+		pV := &pActPuck.m_v
+		//if GAbs(pV.x) > 0.0
+		if pV.x > 0
+		{
+			x := NTrunc(pEnt.m_pos.m_x) + 1
+
+			float xCollis
+			fBlocked := false
+			while x < pMapdim.m_dXMax
+			{
+				if FIsCellBlocked(aChMap, pMapdims, x, yCell)	
+				{
+					fBlocked := true
+					xBlocked = cast (float) x - 0.5
+					break
+				}
+			}
+
+			if (xBlocked
+		}
+		*/
+	}
+}
+
+SIntVector2 struct // tag = ivec
+{
+	m_x: int	
+	m_y: int
+}
+
+IvecCreate proc (x: int, y: int) -> SIntVector2
+{
+	ivec: SIntVector2
+	ivec.m_x = x
+	ivec.m_y = y
+	return ivec
+}
+
+ENTK enum // Entity kind
+{
+	Puck,
+	Ghost,
+	Coin,
+	Powerup,
+}
+
+SEntity struct // tag = ent
+{
+	m_pos: SVector2		// center position
+	m_col: SColor
+	m_dX: f32
+	m_dY: f32
+	m_entk: ENTK
+	m_fIsAllocated: bool
+}
+
+SActor struct // tag = act
+{
+	m_v: SVector2
+	m_pEnt: & SEntity
+	m_fIsAllocated: bool
+
+	m_ivecNext: SIntVector2
+	m_ivecGoal: SIntVector2
+	m_fHasGoal: bool
+
+	m_ivecCur: SIntVector2
+	m_vAfter: SVector2
+
+	m_vInput: SVector2
+	m_gInputWindow: f32		// hold the input for some distance to allow tweaking the turn-input threshold
+}
+
+BUTK enum // button kind
+{
+	Up,
+	Down,
+	Left,
+	Right,
+	Select,
+	Cancel,
+}
+
+SPlayerInput struct // tag = playinp
+{
+	m_mpButkEdges: [BUTK.max] EDGES
+}
+
+PActAllocate proc (aAct: [] SActor, aEnt: [] SEntity, entk: ENTK) -> & SActor
+{
+	pEnt := PEntAllocate(aEnt)	
+	if !pEnt
+		{ return null }
+
+	pAct: & SActor
+	pActMax := &aAct[aAct.count]
+	for pActIt := aAct.data; pActIt != pActMax; ++pActIt
+	{
+		pActIt.m_fIsAllocated 
+
+		if !pActIt.m_fIsAllocated
+		{
+			pActIt.m_fIsAllocated = true
+			pAct = pActIt
+			break
+		}
+	}
+
+	if !pAct
+	{
+		FreeEntity(pEnt)
+		return null
+	}
+
+	pAct.m_pEnt = pEnt
+	pEnt.m_entk = entk
+	return pAct
+}
 
 FMapGridFromString proc (pChzInput: & u8, aChMap: [] u8) -> bool
 {
@@ -49,14 +543,17 @@ FMapGridFromString proc (pChzInput: & u8, aChMap: [] u8) -> bool
 
 	pChIn := pChzInput
 
+	aChMap[(g_dYMapCell-1) * g_dXMapCell] = 'W'
+
 	#label Outer	
 	for yCell := 0; yCell < g_dYMapCell; ++yCell
 	{
-		yMin := cast (f32)yCell * g_dYCell
-		yMax := yMin + g_dYCell
-
 		for xCell := 0; true; ++xCell
 		{
+			// skip carriage returns
+			while @pChIn == 13
+				{ ++pChIn }
+
 			ch := @pChIn
 			++pChIn
 
@@ -66,23 +563,60 @@ FMapGridFromString proc (pChzInput: & u8, aChMap: [] u8) -> bool
 			if ch == '\n'
 				{ break }
 
-			if xCell > g_dXMapCell
+			if xCell >= g_dXMapCell
 			{
 				printf("map input line too long\n")
 				return false
 			}
 
-			aChMap[xCell + yCell * g_dXMapCell] = ch
+			if xCell < g_dXMapCell
+			{
+				// flip vertically
+				aChMap[xCell + (g_dYMapCell - yCell - 1) * g_dXMapCell] = ch
+			}
 		}
 	}
 
 	return true
 }
 
-FHandleEvents proc () -> bool
+FHandlePlayerInputEvent proc (pEvent: & SEvent, pPlayinp: & SPlayerInput)
+{
+	mpKeycodeButk: [BUTK.max] KEYCODE = 
+	{	
+		KEYCODE.ArrowUp, 		//Up,
+		KEYCODE.ArrowDown, 		//Down,
+		KEYCODE.ArrowLeft, 		//Left,
+		KEYCODE.ArrowRight, 	//Right,
+		KEYCODE.F2, 			//Select,
+		KEYCODE.F3				//Cancel,
+	}	
+
+	for butk := BUTK.min; butk != BUTK.max; ++butk
+	{
+		if pEvent.m_keycode == mpKeycodeButk[butk]
+		{
+			pPlayinp.m_mpButkEdges[butk] = pEvent.m_edges
+			return
+		}
+	}
+
+}
+
+ClearPlayerInput proc (pPlayinp: & SPlayerInput)
+{
+	for butk := BUTK.min; butk != butk.max; ++butk
+	{
+		pPlayinp.m_mpButkEdges[butk] = EDGES.Off
+	}
+}
+
+FHandleEvents proc (pPlayinp: & SPlayerInput) -> bool
 {
 	a : int = 1	
 	b : int = 1	
+
+	ClearPlayerInput(pPlayinp)
 
 	event : SEvent
 	while FGetNextEvent(&event)
@@ -90,17 +624,113 @@ FHandleEvents proc () -> bool
 		printf("Event: keycode=%d, edges = %d\n", event.m_keycode, event.m_edges)
 		if event.m_keycode == KEYCODE.Escape && event.m_edges == EDGES.Press
 			{ return false }
+
+		FHandlePlayerInputEvent(&event, pPlayinp)
 	}
 
 	return true
 }
 
-DrawMapBackground proc (pDrac: & SDrawContext, pChzMap: & u8)
+PEntAllocate proc (aEnt: [] SEntity) -> & SEntity
+{
+	pEntMax := &aEnt[aEnt.count]
+	for pEnt := aEnt.data; pEnt != pEntMax; ++pEnt 
+	{
+		if !pEnt.m_fIsAllocated
+		{
+			pEnt.m_fIsAllocated = true
+			return pEnt
+		}
+	}
+
+	return null
+}
+
+FreeEntity proc (pEnt: & SEntity)
+{
+	pEnt.m_fIsAllocated = false
+}
+
+AddMapEntities proc (pChzMap: & u8, aEnt: [] SEntity, aAct: [] SActor)
+{
+	dXStride := g_dXMapCell
+	for yCell := 0; yCell < g_dYMapCell; ++yCell
+	{
+		y := (cast (f32)yCell + 0.5) * g_dYCell
+
+		for xCell := 0; xCell < g_dXMapCell; ++xCell
+		{
+			x := (cast (f32)xCell + 0.5) * g_dXCell
+
+			ch := pChzMap[xCell + yCell*dXStride]
+			if (ch == '.')
+			{
+				pEnt := PEntAllocate(aEnt)
+				if !fverify(pEnt, "failed to allocate new entity", #file, #line)
+					{ return }
+
+				pEnt.m_entk = ENTK.Coin
+				pEnt.m_pos = Vec2Create(x, y)
+				pEnt.m_col = ColCreate(152, 50, 62, 255)
+				pEnt.m_dX = 15
+				pEnt.m_dY = 15
+			}
+			else if (ch == 'o')
+			{
+				pEnt := PEntAllocate(aEnt)
+				if !fverify(pEnt, "failed to allocate powerup", #file, #line)
+					{ return }
+
+				pEnt.m_entk = ENTK.Powerup
+				pEnt.m_pos = Vec2Create(x, y)
+				pEnt.m_col = ColCreate(203, 86, 98, 255)
+				pEnt.m_dX = 25
+				pEnt.m_dY = 25
+			}
+			else if (ch == 'p')
+			{
+				pActPuck := PActAllocate(aAct, aEnt, ENTK.Puck)
+				if !fverify(pActPuck, "failed to allocate puck", #file, #line)
+					{ return }
+
+				pEntPuck := pActPuck.m_pEnt
+				pEntPuck.m_col = ColCreate(238, 227, 191, 255)
+				pEntPuck.m_dX = 30
+				pEntPuck.m_dY = 30
+				pEntPuck.m_pos = Vec2Create(x, y)
+				pActPuck.m_ivecGoal = IvecCreate(xCell, yCell)
+				g_pActPuck = pActPuck
+			}
+		}
+	}
+}
+
+DrawEntities proc (aEnt: [] SEntity, pTilbuf: & STileVertexBuffer)
+{
+	for iEnt := 0; iEnt < aEnt.count; ++iEnt	
+	{
+		pEnt := &aEnt[iEnt]
+		if !pEnt.m_fIsAllocated
+			{ continue }
+
+		dX := pEnt.m_dX
+		dY := pEnt.m_dY
+
+		xMin := pEnt.m_pos.m_x - (dX / 2)
+		yMin := pEnt.m_pos.m_y - (dY / 2)
+
+		colvec := ColvecFromCol(pEnt.m_col)
+
+		AppendTile (xMin, yMin, xMin+dX, yMin+dY, &colvec, pTilbuf)
+	}
+}
+
+DrawMapBackground proc (pChzMap: & u8, pTilbuf: & STileVertexBuffer)
 {
 	colvecBg := ColvecFromCol(ColCreate(19, 29, 43, 255))
 	dXMax: f32 = g_dXMapCell * g_dXCell
 	dYMax: f32 = g_dYMapCell * g_dYCell
-	AppendTile (0, 0, dXMax, dYMax, &colvecBg, &g_tilbuf)
+//	AppendTile (0, 0, dXMax, dYMax, &colvecBg, pTilbuf)
 
 	colvecWall := ColvecFromCol(ColCreate(87, 130, 168, 255))
 
@@ -119,12 +749,10 @@ DrawMapBackground proc (pDrac: & SDrawContext, pChzMap: & u8)
 				xMin:= cast (f32)xCell * g_dXCell
 				xMax := xMin + g_dXCell
 
-				AppendTile (xMin, yMin, xMax, yMax, &colvecWall, &g_tilbuf)
+				AppendTile (xMin, yMin, xMax, yMax, &colvecWall, pTilbuf)
 			}
 		}
 	}
-
-	FlushTileVerts(pDrac, &g_tilbuf)
 }
 
 STileVertex struct // tag=tilvert
@@ -308,21 +936,40 @@ main proc () -> int
 		return 0
 	}
 
+	aEnt: [512] SEntity
+	aAct: [32] SActor
+	AddMapEntities(aChMap, aEnt, aAct)
+
+    mapdim: SMapDimensions
+    mapdim.m_dXStride = g_dXMapCell
+    mapdim.m_dXMax = g_dXMapCell
+    mapdim.m_dYMax = g_dYMapCell
+
+	playinp: SPlayerInput 
+	ClearPlayerInput(&playinp)
+
 	cTickLast := CTickWallClock()
 	fShouldClose := false
+	dTGame: f32
 	while fShouldClose == false
 	{
-		fShouldClose |= !FHandleEvents()
+		fShouldClose |= !FHandleEvents(&playinp)
 
 		gRadSpin += dRadSpin
 
-		DrawMapBackground(pDrac, aChMap)
+		DrawMapBackground(aChMap, &g_tilbuf)
+		DrawEntities(aEnt, &g_tilbuf)
+
+		FlushTileVerts(pDrac, &g_tilbuf)
+
 		//DrawTestTriangle(gRadSpin)
 
         SwapBuffers(pWindow)
 		ClearWindow(0, 0, 0, 1)
 
         UpdateWindowEvents()
+
+		UpdatePuck(g_pActPuck, &playinp, dTGame, aChMap, &mapdim)
 
 // 		if !s_fIsPaused
 	    {
@@ -356,6 +1003,7 @@ main proc () -> int
 	    snprintf(aChStatus, aChStatus.count, "%0.1f / %0.1f, %0.2f ms", nHzActual, nHzTarget, dTFrameActual * 1000)
 		DrawText(pDrac, Vec2Create(20, g_dYWindow - 35), aChStatus)
 
+		dTGame = dTFrameActual
 	}
 	return 1
 }
