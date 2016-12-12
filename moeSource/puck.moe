@@ -67,63 +67,7 @@ FIsCellBlocked proc (aChMap: & u8, pMapdim: & SMapDimensions, xCell: int, yCell:
 
 UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: & u8, pMapdim: & SMapDimensions)
 {
-//	UpdatePuckInput(pActPuck, pPlayinp)
 	UpdatePuckMovementNew(pActPuck, dT, aChMap, pMapdim, pPlayinp)
-
-	UpdatePuckInput proc (pActPuck: & SActor, pPlayinp: & SPlayerInput)
-	{
-		dXyPuckSpeed :: 100
-		
-		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Release && pActPuck.m_v.m_x > 0
-			{ pActPuck.m_v.m_x = 0 }
-		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Release && pActPuck.m_v.m_x < 0
-			{ pActPuck.m_v.m_x = 0 }
-
-		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
-			{ pActPuck.m_v.m_x = dXyPuckSpeed }
-		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
-			{ pActPuck.m_v.m_x = -dXyPuckSpeed }
-
-		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Release && pActPuck.m_v.m_y > 0
-			{ pActPuck.m_v.m_y = 0 }
-		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Release && pActPuck.m_v.m_y < 0
-			{ pActPuck.m_v.m_y = 0 }
-
-		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
-			{ pActPuck.m_v.m_y = dXyPuckSpeed }
-		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Press
-			{ pActPuck.m_v.m_y = -dXyPuckSpeed }
-	}
-
-	/* too complicated, trying cell based version instead 
-	FFindRayCastWall proc (aChMap: & u8, pMapdim: & SMapDimensions, pPos: & SVector2, pVecRay: & SVector2, gRadius: f32, pPosIntersect: & SVector2) -> bool
-	{
-		if pVecRay.m_x > 0
-		{
-			xCell := NTrunc((pPos.m_x - g_dXCellHalf) / g_dXCell) + 1
-			yCell := NRound((pPos.m_y - g_dYCellHalf) / g_dYCell)
-
-			xMax := NCeil((pPos.m_x + gRadius + pVecRay.m_x) / g_dXCell)
-			xMax = NMin(pMapdim.m_dXMax, xMax)
-
-			while xCell < xMax
-			{
-				if FIsCellBlocked(aChMap, pMapdim, xCell, yCell)	
-				{
-					pPosIntersect.m_x = cast (f32) xCell  * g_dXCell - gRadius
-					pPosIntersect.m_y = pPos.m_y
-					return true
-				}
-				xCell++
-			}
-		}
-		else if pVecRay.m_x < 0
-		{
-
-		}
-
-		return false
-	}*/
 
 	DrawCellDebug proc (ivecCell: SIntVector2, col: SColor)
 	{
@@ -138,6 +82,9 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: 
 	{
 		dXyPuckSpeed :: 125
 		gInputWindow :: 50
+		
+		xMapMax := cast (float) pMapdim.m_dXMax * g_dXCell
+		yMapMax := cast (float) pMapdim.m_dYMax * g_dYCell
 
 		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
 		{ 
@@ -171,7 +118,7 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: 
 		}
 		else
 		{
-			ivecCellInput := IvecCellAdvance(pActPuck.m_ivecGoal, pActPuck.m_vInput)
+			ivecCellInput := IvecCellAdvance(pActPuck.m_ivecGoal, pActPuck.m_vInput, pMapdim)
 			if !FIsCellBlocked(aChMap, pMapdim, ivecCellInput.m_x, ivecCellInput.m_y)	
 			{
 				pActPuck.m_vAfter = pActPuck.m_vInput
@@ -185,9 +132,44 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: 
 			posTarget	:= PosFromCell(pActPuck.m_ivecGoal)
 			vecToTarget := VecSub(posTarget, pEnt.m_pos)
 			gDistToTarget := GLength(vecToTarget)
+
+			// check for dist to mirrored cell
+			ivecMirror := pActPuck.m_ivecGoal
+			if ivecMirror.m_x == 0
+				{ ivecMirror.m_x = pMapdim.m_dXMax }
+			if ivecMirror.m_x == pMapdim.m_dXMax-1
+				{ ivecMirror.m_x = -1 }
+
+			if ivecMirror.m_y == 0
+				{ ivecMirror.m_y = pMapdim.m_dYMax }
+			if ivecMirror.m_y == pMapdim.m_dYMax-1
+				{ ivecMirror.m_y = -1 }
+
+			posMirror	:= PosFromCell(ivecMirror)
+			vecToMirror := VecSub(posMirror, pEnt.m_pos)
+			gDistToMirror := GLength(vecToMirror)
+			if (gDistToTarget > gDistToMirror)
+			{
+				posTarget = posMirror
+				vecToTarget = vecToMirror
+				gDistToTarget = gDistToMirror
+			}
+
 			if gDistToTarget >= gStep
 			{
 				pEnt.m_pos = VecAdd(pEnt.m_pos, VecMul(VecNormalize(vecToTarget), gStep))
+
+				// mirror position if outside bounds
+				if pEnt.m_pos.m_x < 0
+					{ pEnt.m_pos.m_x += xMapMax }
+				if pEnt.m_pos.m_x >= xMapMax
+					{ pEnt.m_pos.m_x -= xMapMax }
+
+				if pEnt.m_pos.m_y < 0
+					{ pEnt.m_pos.m_y += yMapMax }
+				if pEnt.m_pos.m_y >= yMapMax
+					{ pEnt.m_pos.m_y -= yMapMax }
+
 				gStep = 0
 			}
 			else
@@ -200,7 +182,7 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: 
 				}
 				else
 				{
-					ivecCellNew := IvecCellAdvance(pActPuck.m_ivecGoal, pActPuck.m_vAfter)
+					ivecCellNew := IvecCellAdvance(pActPuck.m_ivecGoal, pActPuck.m_vAfter, pMapdim)
 
 					if FIsCellBlocked(aChMap, pMapdim, ivecCellNew.m_x, ivecCellNew.m_y)	
 					{
@@ -211,6 +193,7 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: 
 					{
 						pActPuck.m_ivecGoal = ivecCellNew
 					}
+					//pActPuck.m_v = pActPuck.m_vAfter
 				}
 			}
 		}
@@ -218,7 +201,7 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: 
 		//DrawCellDebug(pActPuck.m_ivecGoal, ColCreate(220, 10, 10, 200))
 	}
 
-	IvecCellAdvance proc (ivec: SIntVector2, vecDir: SVector2) -> SIntVector2
+	IvecCellAdvance proc (ivec: SIntVector2, vecDir: SVector2, pMapdim: & SMapDimensions) -> SIntVector2
 	{
 		ivecRet: SIntVector2
 
@@ -235,198 +218,11 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32, aChMap: 
 			{ ivecRet.m_y = ivec.m_y - 1 }
 		else
 			{ ivecRet.m_y = ivec.m_y }
+
+		ivecRet.m_x = (ivecRet.m_x + pMapdim.m_dXMax) % pMapdim.m_dXMax
+		ivecRet.m_y = (ivecRet.m_y + pMapdim.m_dYMax) % pMapdim.m_dYMax
+
 		return ivecRet
-	}
-
-	UpdatePuckMovement proc (pActPuck: & SActor, dT: f32, aChMap: & u8, pMapdim: & SMapDimensions, pPlayinp: & SPlayerInput)
-	{
-		pEnt := pActPuck.m_pEnt
-
-		dXY := VecMul(pActPuck.m_v, dT)
-
-		//dXYGraceTurn :: 5
-		xCell, yCell: int
-		//xCell = NRound(pVec2.m_x - g_dXCellHalf)
-		//yCell = NRound(pVec2.m_y - g_dYCellHalf)
-
-		dXYGrace :: 20
-		// find next cell
-		vecCellOffs: SVector2
-		if pActPuck.m_v.m_x > 0
-			{ vecCellOffs.m_x = (g_dXCell - dXYGrace)}
-		else if pActPuck.m_v.m_x < 0
-			{ vecCellOffs.m_x = -(g_dXCell - dXYGrace) }
-
-		if pActPuck.m_v.m_y > 0
-			{ vecCellOffs.m_y = (g_dYCell - dXYGrace) }
-		else if pActPuck.m_v.m_y < 0
-			{ vecCellOffs.m_y = -(g_dYCell - dXYGrace) }
-
-		xCell = NRound((pEnt.m_pos.m_x - g_dXCellHalf + vecCellOffs.m_x) / g_dXCell)
-		yCell = NRound((pEnt.m_pos.m_y - g_dYCellHalf + vecCellOffs.m_y) / g_dYCell)
-
-		pActPuck.m_ivecNext.m_x = xCell
-		pActPuck.m_ivecNext.m_y = yCell
-
-		//if pActPuck.m_fHasGoal
-		{
-			// check 'next' cell, if blocked use the current cell
-			if FIsCellBlocked(aChMap, pMapdim, pActPuck.m_ivecNext.m_x, pActPuck.m_ivecNext.m_y)	
-			{
-				//use current cell
-				pActPuck.m_ivecNext.m_x = NRound(pEnt.m_pos.m_x - g_dXCellHalf)
-				pActPuck.m_ivecNext.m_y = NRound(pEnt.m_pos.m_y - g_dYCellHalf)
-
-				//pActPuck.m_fHasGoal
-			}
-
-			xMin := cast (f32) xCell * g_dXCell
-			yMin := cast (f32) yCell * g_dYCell
-			colvec := ColvecFromCol(ColCreate(220, 220, 10, 180))
-			AppendTile (xMin, yMin, xMin+g_dXCell, yMin+g_dXCell, &colvec, &g_tilbuf)
-		}
-
-		// examine input to check for new dest cell	
-
-		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
-		{ 
-			pActPuck.m_ivecGoal = IvecCreate(xCell+1, yCell)
-			pActPuck.m_fHasGoal = true
-		}
-		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
-		{
-			pActPuck.m_ivecGoal = IvecCreate(xCell-1, yCell) 
-			pActPuck.m_fHasGoal = true
-		}
-
-		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
-		{ 
-			pActPuck.m_ivecGoal = IvecCreate(xCell, yCell+1) 
-			pActPuck.m_fHasGoal = true
-		}
-		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Press
-		{ 
-			pActPuck.m_ivecGoal = IvecCreate(xCell, yCell-1)
-			pActPuck.m_fHasGoal = true
-		}
-
-		if FIsCellBlocked(aChMap, pMapdim, pActPuck.m_ivecGoal.m_x, pActPuck.m_ivecGoal.m_y)	
-		{
-			pActPuck.m_ivecGoal	= pActPuck.m_ivecNext
-			//pActPuck.m_ivecGoal.m_x = NRound(pVec2.m_x - g_dXCellHalf)
-			//pActPuck.m_ivecGoal.m_y = NRound(pVec2.m_y - g_dYCellHalf)
-		}
-
-		// draw goal
-		xMin := cast (f32) pActPuck.m_ivecGoal.m_x * g_dXCell
-		yMin := cast (f32) pActPuck.m_ivecGoal.m_y * g_dYCell
-		colvec := ColvecFromCol(ColCreate(50, 50, 220, 180))
-		AppendTile (xMin, yMin, xMin+g_dXCell, yMin+g_dXCell, &colvec, &g_tilbuf)
-
-		// update velocity to head towards dest cell
-		//dPosStep := VecMul(pActPuck.m_v, dT)
-		//gStep := GLength(dPosStep)
-
-		dXyPuckSpeed :: 100
-		gStep: f32 = dXyPuckSpeed * dT
-
-		vecZero := Vec2Create(0, 0)
-		//if gStep > gEpsilon
-		{
-			posNext	:= PosFromCell(pActPuck.m_ivecNext)
-			vecToCell := VecSub(pEnt.m_pos, posNext)
-			dPosToCell: f32 = GLength(vecToCell)
-			//vecDir := VecNormalizeAndLength(vecToCell, &dPosToCell)
-
-			if dPosToCell <= gStep
-			{
-				gStep -= dPosToCell
-				pEnt.m_pos = posNext	
-
-				if gStep > 0 && pActPuck.m_fHasGoal
-				{
-					posDest	:= PosFromCell(pActPuck.m_ivecGoal)
-					vecToCell = VecSub(posDest, posNext)
-
-					vecToCell = VecNormalizeElse(vecToCell, vecZero)
-					pActPuck.m_v = VecMul(vecToCell, cast (f32)dXyPuckSpeed)
-					pActPuck.m_fHasGoal = false
-				}
-			}
-
-			vecDir := VecNormalizeElse(pActPuck.m_v, vecZero)
-			pEnt.m_pos = VecAdd(pEnt.m_pos, VecMul(vecDir, gStep))
-		}
-
-		//pEnt.m_pos = VecAdd(pEnt.m_pos, dXY)
-
-		//expend velocity heading towards 'next' cell
-		// if we get there
-		//{
-			// head towards dest cell and set velocity in that direction
-			// if no dest cell set velocity to zero (?)  only if truncated 'next'?
-		//}
-
-/*
-		if (pAct.m_fHasGoal)
-		{
-			posCellNext := VecCreate(pAct.m_ivecGoal.m_x * g_dXCell + g_dXCellHalf, pAct.m_ivecGoal.m_y * g_dYCell + g_dYCellHalf);
-			dPos := VecSub(posCellNext, pEnt.m_pos)
-
-			gStep := GLength(dPosStep)
-			gDistToCell: f32;	
-			vecDir := VecNormalizeAndLength(dPos, &gDistToCell)
-			if gDistToCell < gStep
-			{
-				// position at cell center
-				gStep - gDistToCell
-				pAct.m_fHasGoal = false
-			}
-		}
-		*/
-
-
-
-
-		//FindNearestCell(&pEnt.m_pos, &xCell, &yCell)
-
-		// BB - handle starting in collision case 
-
-		/*
-
-		rRadius :: 0.5
-		posIntersect: SVector2
-		gRadius := g_dXCell * rRadius
-		if (FFindRayCastWall(aChMap, pMapdim, &pEnt.m_pos, &dXY, gRadius, &posIntersect))
-		{
-			printf("wall contact\n")
-			dXY = VecSub(posIntersect, pEnt.m_pos)
-		}
-		*/
-
-		/*
-		pEnt.m_pos = VecAdd(pEnt.m_pos, dXY)
-		pV := &pActPuck.m_v
-		//if GAbs(pV.x) > 0.0
-		if pV.x > 0
-		{
-			x := NTrunc(pEnt.m_pos.m_x) + 1
-
-			float xCollis
-			fBlocked := false
-			while x < pMapdim.m_dXMax
-			{
-				if FIsCellBlocked(aChMap, pMapdims, x, yCell)	
-				{
-					fBlocked := true
-					xBlocked = cast (float) x - 0.5
-					break
-				}
-			}
-
-			if (xBlocked
-		}
-		*/
 	}
 }
 
@@ -468,15 +264,13 @@ SActor struct // tag = act
 	m_pEnt: & SEntity
 	m_fIsAllocated: bool
 
-	m_ivecNext: SIntVector2
 	m_ivecGoal: SIntVector2
-	m_fHasGoal: bool
-
-	m_ivecCur: SIntVector2
 	m_vAfter: SVector2
 
 	m_vInput: SVector2
 	m_gInputWindow: f32		// hold the input for some distance to allow tweaking the turn-input threshold
+
+	m_nPoints: int
 }
 
 BUTK enum // button kind
@@ -700,6 +494,27 @@ AddMapEntities proc (pChzMap: & u8, aEnt: [] SEntity, aAct: [] SActor)
 				pEntPuck.m_pos = Vec2Create(x, y)
 				pActPuck.m_ivecGoal = IvecCreate(xCell, yCell)
 				g_pActPuck = pActPuck
+			}
+		}
+	}
+}
+
+UpdateEntities proc (aEnt: [] SEntity)
+{
+	for iEnt := 0; iEnt < aEnt.count; ++iEnt	
+	{
+		pEnt := &aEnt[iEnt]
+		if !pEnt.m_fIsAllocated
+			{ continue }
+
+		if pEnt.m_entk == ENTK.Coin
+		{
+			vecToPuck := VecSub(g_pActPuck.m_pEnt.m_pos, pEnt.m_pos)
+			if GAbs(vecToPuck.m_x) < pEnt.m_dX && GAbs(vecToPuck.m_y) < pEnt.m_dY
+			{
+				g_pActPuck.m_nPoints += 10
+				FreeEntity(pEnt)	
+				continue
 			}
 		}
 	}
@@ -970,6 +785,7 @@ main proc () -> int
         UpdateWindowEvents()
 
 		UpdatePuck(g_pActPuck, &playinp, dTGame, aChMap, &mapdim)
+		UpdateEntities(aEnt)
 
 // 		if !s_fIsPaused
 	    {
@@ -1002,6 +818,9 @@ main proc () -> int
 	    nHzActual := 1 / dTFrameActual
 	    snprintf(aChStatus, aChStatus.count, "%0.1f / %0.1f, %0.2f ms", nHzActual, nHzTarget, dTFrameActual * 1000)
 		DrawText(pDrac, Vec2Create(20, g_dYWindow - 35), aChStatus)
+
+	    snprintf(aChStatus, aChStatus.count, "%d points", g_pActPuck.m_nPoints) 
+		DrawText(pDrac, Vec2Create(400, g_dYWindow - 35), aChStatus)
 
 		dTGame = dTFrameActual
 	}
