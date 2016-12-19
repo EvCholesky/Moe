@@ -315,6 +315,19 @@ enum NCMPPRED
 
 
 
+enum FCOMPILE
+{
+	FCOMPILE_PrintIR	= 0x1,
+	FCOMPILE_FastIsel	= 0x2,
+
+	FCOMPILE_None		= 0x0,
+	FCOMPILE_All		= 0x3,
+};
+
+EWC_DEFINE_GRF(GRFCOMPILE, FCOMPILE, u32);
+
+
+
 struct SJumpTargets // tag = jumpt
 {
 					SJumpTargets()
@@ -335,7 +348,8 @@ public:
 						CIRBuilder(
 							CWorkspace * pWork,
 							EWC::CDynAry<CIRValue *> *	parypValManaged,
-							const char * pChzFilename
+							const char * pChzFilename,
+							GRFCOMPILE grfcompile
 							);
 						~CIRBuilder();
 	
@@ -408,15 +422,5 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 void InitLLVM();
 void ShutdownLLVM();
-
-enum FCOMPILE
-{
-	FCOMPILE_PrintIR	= 0x1,
-
-	FCOMPILE_None		= 0x0,
-	FCOMPILE_All		= 0x1
-};
-
-EWC_DEFINE_GRF(GRFCOMPILE, FCOMPILE, u32);
 
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn);

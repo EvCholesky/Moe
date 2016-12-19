@@ -31,6 +31,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Target/TargetMachine.h"
 #pragma warning ( push )
 
 using namespace llvm;
@@ -89,7 +90,16 @@ inline Metadata ** PPMetadataUnwrap(LLVMValueRef * ppLval, unsigned cLval)
 	return apMetadata;
 }
 
+static llvm::TargetMachine *unwrap(LLVMOpaqueTargetMachine * pLtmachine) 
+{
+  return reinterpret_cast<llvm::TargetMachine *>(pLtmachine);
+}
 
+void SetUseFastIsel(LLVMOpaqueTargetMachine * pLtmachine)
+{
+	unwrap(pLtmachine)->setFastISel(true);
+	unwrap(pLtmachine)->setO0WantsFastISel(true);
+}
 
 LLVMDIBuilderRef LLVMCreateDIBuilder(LLVMModuleRef pMod)
 {

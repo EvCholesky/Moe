@@ -96,6 +96,7 @@ void PrintCommandLineOptions()
 {
 	printf("moe [options] [filename]\n");
 	printf("  options:\n");
+	printf("	-fast     : faster compilation, worse codegen\n");
 	printf("	-help     : Print this message\n");
 	printf("	-nolink   : skip the linker step\n");
 	printf("	-printIR  : Print llvm's intermediate representation\n");
@@ -128,6 +129,11 @@ int main(int cpChzArg, const char * apChzArg[])
 	if (comline.FHasCommand("-printIR"))
 	{
 		grfcompile.AddFlags(FCOMPILE_PrintIR);
+	}
+
+	if (comline.FHasCommand("-fast"))
+	{
+		grfcompile.AddFlags(FCOMPILE_FastIsel);
 	}
 
 	static const int s_cBHeap = 1000 * 1024;

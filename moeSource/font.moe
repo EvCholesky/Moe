@@ -378,7 +378,7 @@ SFontManager struct // tag=fontman
 {
 	m_aFont: [FONTK.max] SFont
 	m_aShhand: [FONTSHK.max] SHHAND
-	m_mpFontshkIParamTex: [FONTSHK.max] int
+	m_mpFontshkIParamTex: [FONTSHK.max] s32
 }
 
 SFontVertex struct // tag=fvert
@@ -707,7 +707,7 @@ PTexLoad proc (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
     glBindTexture(GL_TEXTURE_2D, pTex.m_driId)
  	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, pTex.m_cTexmip - 1)
 
-    iTexmip: u32
+    iTexmip: s32
     texmipEnd := &pTex.m_aTexmip[pTex.m_cTexmip]
     texmipIt : &STextureMip = pTex.m_aTexmip
     //for(TextureMip * texmipIt = pTex.m_aTexmip; texmipIt != texmipEnd; ++texmipIt, ++iTexmip)
@@ -973,18 +973,18 @@ FlushVerts proc (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 	pTex := pFontman.m_aFont[fontk].m_pTex
 	SetShaderParam(pFontman.m_mpFontshkIParamTex[iShhand], pTex, 0)
 
-	glVertexPointer(3, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_x)
+	glVertexPointer(3, GL_FLOAT, cast (s32) sizeof(SFontVertex), &aFvert[0].m_x)
 	glEnableClientState(GL_VERTEX_ARRAY)
 			
-	glColorPointer(4, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_r)
+	glColorPointer(4, GL_FLOAT, cast (s32) sizeof(SFontVertex), &aFvert[0].m_r)
 	glEnableClientState(GL_COLOR_ARRAY)
 
 	glClientActiveTexture(GL_TEXTURE0)
-	glTexCoordPointer(2, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_u)
+	glTexCoordPointer(2, GL_FLOAT, cast (s32) sizeof(SFontVertex), &aFvert[0].m_u)
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
 	glClientActiveTexture(GL_TEXTURE1)
-	glTexCoordPointer(4, GL_FLOAT, sizeof(SFontVertex), &aFvert[0].m_uMin)
+	glTexCoordPointer(4, GL_FLOAT, cast (s32) sizeof(SFontVertex), &aFvert[0].m_uMin)
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
 	glDrawArrays(GL_QUADS, 0, cast (s32) pFvbuf.m_cFvert)

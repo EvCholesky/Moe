@@ -1960,6 +1960,7 @@ bool FIsType(CSTNode * pStnod)
 	auto pSym = pStnod->m_pSym;
 	if (!pSym)
 	{
+		// BB - The only current exception to his is spoofed array members
 		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
 		return false;
 	}
@@ -2017,7 +2018,6 @@ STypeInfo * PTinFromTypeSpecification(
 				auto strIdent = StrFromIdentifier(pStnodIt);
 				auto pSym = pSymtab->PSymLookup(strIdent, pStnodIt->m_lexloc, grfsymlook);
 
-				//if (!FIsType(pStnodIt))
 				if (!pSym->m_grfsym.FIsSet(FSYM_IsType))
 				{
 					EmitError(pTcwork, pStnodIt, "Expected type specification but encounted '%s'", strIdent.PCoz());
@@ -2191,14 +2191,143 @@ STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString 
 	return nullptr;
 }
 
-bool FVerifyIsInstance(STypeCheckWorkspace * pTcwork, CSTNode * pStnod)
+enum IVALK // Instance VALue flags
 {
-	if (FIsType(pStnod))
+	IVALK_Error,	
+	IVALK_Type,		// not an expression value: either a type or Type.m_nonConstantMember
+	IVALK_RValue,	// has a value, but does not correspond to a memory location
+	IVALK_LValue,	// has an assignable value
+
+	EWC_MAX_MIN_NIL(IVALK)
+};
+
+const char * PChzFromIvalk(IVALK ivalk)
+{
+	static const char * s_mpIvalkPChz[] =
 	{
-		CString strLhs = StrFromTypeInfo(pStnod->m_pTin);
-		EmitError(pTcwork, pStnod, "Invalid use of type '%s' as an instance type", strLhs.PCoz());
+		"Error",
+		"Type",
+		"R-Value",
+		"L-Value",
+	};
+	EWC_CASSERT(EWC_DIM(s_mpIvalkPChz) == IVALK_Max, "missing IVALK string");
+	if (ivalk == IVALK_Nil)
+		return "Nil";
+
+	if ((ivalk < IVALK_Nil) | (ivalk >= IVALK_Max))
+		return "Unknown IVALK";
+
+	return s_mpIvalkPChz[ivalk];
+}
+
+IVALK IvalkCompute(CSTNode * pStnod)
+{
+	if (pStnod->m_park == PARK_MemberLookup)
+	{
+		// if the lhs is a type this is not an lvalue, check for constant rvalues
+		bool fLhsIsType = false;
+		CSTNode * pStnodLhs = pStnod->PStnodChildSafe(0);
+		CSTNode * pStnodRhs = pStnod->PStnodChildSafe(1);
+		if (!EWC_FVERIFY((pStnodLhs != nullptr) & (pStnodRhs != nullptr), "invalid member lookup"))
+			return IVALK_Error;
+
+		// BB - we should have symbol tables for arrays and this should work like any other symbol
+		STypeInfo * pTinLhs = pStnodLhs->m_pTin;
+		if (pTinLhs && pTinLhs->m_tink == TINK_Array)
+		{
+			auto strArymemb = StrFromIdentifier(pStnodRhs);
+			auto arymemb = ArymembLookup(strArymemb.PCoz());
+			return (arymemb == ARYMEMB_Count) ? IVALK_RValue : IVALK_LValue;
+		}
+
+		// We currently allow using lvalues to specify an R-Value as it gets tricky to specify array R-Values otherwise
+		// ie. SType.m_inst.kConstant is the same as SType.SInstType.kConstant, so we can say SType.m_aN.count
+		auto ivalkLhs = IvalkCompute(pStnodLhs);
+		auto ivalkRhs = IvalkCompute(pStnodRhs);
+		if ((ivalkLhs == IVALK_Type && ivalkRhs == IVALK_LValue) ||
+			ivalkLhs == IVALK_Error && ivalkRhs != IVALK_RValue)
+		{
+			// (type, (inst, m_val)) -> IVALK_Error
+			return IVALK_Error;
+		}
+		return ivalkRhs;
+	}
+
+	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
+		return IVALK_RValue;
+
+	auto pSym = pStnod->m_pSym;
+	if (!pSym)
+	{
+		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
+		return IVALK_LValue;
+	}
+	else if (pSym->m_grfsym.FIsSet(FSYM_IsType))
+	{
+		return IVALK_Type;
+	}
+	else if (pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested))
+	{
+		return IVALK_RValue;
+	}
+
+	return IVALK_LValue;
+}
+
+
+CString StrFromStnod(CAlloc * pAlloc, CSTNode * pStnod)
+{
+	switch (pStnod->m_park)
+	{
+	case PARK_MemberLookup:
+		{
+			EWC::SStringEditBuffer seb(pAlloc);
+			CSTNode * pStnodLhs = pStnod->PStnodChildSafe(0);
+			CSTNode * pStnodRhs = pStnod->PStnodChildSafe(1);
+			seb.AppendCoz(StrFromStnod(pAlloc, pStnodLhs).PCoz());
+			seb.AppendCoz(".");
+			seb.AppendCoz(StrFromIdentifier(pStnodRhs).PCoz());
+			return CString(seb.PCoz());
+		}
+	case PARK_Identifier:
+		return StrFromIdentifier(pStnod);
+	case PARK_ProcedureCall:
+		{
+			EWC::SStringEditBuffer seb(pAlloc);
+			seb.AppendCoz("Procedure Call");
+			CSTNode * pStnodName = pStnod->PStnodChildSafe(0);
+			if (pStnodName && pStnodName->m_park == PARK_Identifier)
+			{
+				seb.AppendCoz(" '");
+				seb.AppendCoz(StrFromIdentifier(pStnodName).PCoz());
+				seb.AppendCoz("'");
+			}
+			return CString(seb.PCoz());
+		}
+
+	}
+
+	if (pStnod->m_pTin)
+	{
+		return StrFromTypeInfo(pStnod->m_pTin);
+	}
+	return CString("???");
+}
+
+
+bool FVerifyIvalk(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, IVALK ivalkExpected)
+{
+	auto ivalkActual = IvalkCompute(pStnod);
+	if (ivalkActual < ivalkExpected)
+	{
+		const char * pChzIvalk = PChzFromIvalk(ivalkExpected);
+		CString strLhs = StrFromStnod(pTcwork->m_pAlloc, pStnod);
+		EmitError(pTcwork, pStnod, "%s is not a valid %s", strLhs.PCoz(), pChzIvalk);
+
+		auto ivalkRedux = IvalkCompute(pStnod);
 		return false;
 	}
+
 	return true;
 }
 
@@ -2449,6 +2578,7 @@ PROCMATCH ProcmatchCheckArguments(
 					strTinParam.PCoz());
 			}
 			procmatch = PROCMATCH_None;
+			break;
 		}
 
 	}
@@ -2990,7 +3120,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							pStnod->ReplaceChild(pStnodArg, pStnodCast);
 
-							if (!FVerifyIsInstance(pTcwork, pStnodArg))
+							if (!FVerifyIvalk(pTcwork, pStnodArg, IVALK_RValue))
 								return TCRET_StoppingError;
 
 							if (EWC_FVERIFY(pStnodArg->m_strees == STREES_TypeChecked, "expected arg to be type checked"))
@@ -3317,7 +3447,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (pTcsentTop->m_nState == 0)
 				{
 					pStnod->m_strees = STREES_SignatureTypeChecked;
-					if (pStnod->CStnodChild() >= 1)
+					if (pStnod->CStnodChild() > 1)
 					{
 						CSTNode * pStnodMembers = pStnod->PStnodChild(1);
 						PushTcsent(pTcfram, &pTcsentTop, pStnodMembers);
@@ -3973,7 +4103,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 						STypeInfo * pTinRhs = pStnodRhs->m_pTin;
 
-						if (!FVerifyIsInstance(pTcwork, pStnodLhs) || !FVerifyIsInstance(pTcwork, pStnodRhs))
+						if (!FVerifyIvalk(pTcwork, pStnodLhs, IVALK_LValue) || !FVerifyIvalk(pTcwork, pStnodRhs, IVALK_RValue))
 							return TCRET_StoppingError;
 
 						TINK tinkLhs = TINK_Nil;
@@ -4585,7 +4715,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 						STypeInfo * pTinRhs = pStnodRhs->m_pTin;
 
-						if (!FVerifyIsInstance(pTcwork, pStnodLhs) || !FVerifyIsInstance(pTcwork, pStnodRhs))
+						if (!FVerifyIvalk(pTcwork, pStnodLhs, IVALK_RValue) || !FVerifyIvalk(pTcwork, pStnodRhs, IVALK_RValue))
 							return TCRET_StoppingError;
 
 						if (EWC_FVERIFY((pTinLhs != nullptr) & (pTinRhs != nullptr), "unknown type in binary operation"))
@@ -4685,7 +4815,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						AllocateOptype(pStnod);
 						*pStnod->m_pOptype = SOpTypes(pTinOperand, pTinOperand, pTinOperand);
 
-						if (!FVerifyIsInstance(pTcwork, pStnodOperand))
+						if (!FVerifyIvalk(pTcwork, pStnodOperand, IVALK_RValue))
 							return TCRET_StoppingError;
 
 						if (EWC_FVERIFY(pTinOperand != nullptr, "unknown type in unary operation"))
@@ -5055,10 +5185,12 @@ void PerformTypeCheck(
 		while (SUnknownType * pUntype = iter.Next(&ppSym))
 		{
 			EWC_ASSERT(pUntype->m_aryiTcframDependent.C() > 0, "unknown type not cleaned up (empty dependent array)");
-			for (size_t iTcfram = 0; iTcfram < pUntype->m_aryiTcframDependent.C(); ++iTcfram)
+
+			int cTcframDependent = (s32)pUntype->m_aryiTcframDependent.C();
+			for (size_t iTcfram = 0; iTcfram < cTcframDependent; ++iTcfram)
 			{
 				// Note: we're assuming the top thing on the stack is the thing we're waiting for.
-				const STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
+				STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
 				const STypeCheckStackEntry * pTcsent = tcfram.m_aryTcsent.PLast();
 
 				EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type '%s' reference found here", (*ppSym)->m_strName.PCoz());

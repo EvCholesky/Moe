@@ -383,11 +383,12 @@ EWC::CString StrFromIdentifier(CSTNode * pStnod);
 
 enum FSYM		// SYMbol flags
 {
-	FSYM_None			= 0x0,
-	FSYM_IsBuiltIn		= 0x1,
-	FSYM_IsType			= 0x2,	// this is a type declaration (if not set this is a named instance)
+	FSYM_None				= 0x0,
+	FSYM_IsBuiltIn			= 0x1,
+	FSYM_IsType				= 0x2,	// this is a type declaration (if not set this is a named instance)
+	FSYM_VisibleWhenNested	= 0x4,	// types, constants and procedures that are visible in a more deeply nested symbol table
 
-	FSYM_All			= 0x3,
+	FSYM_All				= 0x7,
 };
 EWC_DEFINE_GRF(GRFSYM, FSYM, u32);
 
@@ -417,18 +418,6 @@ struct SSymbol	// tag = sym
 	SSymbol *		m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
 };
 
-enum FSYMTAB	// SYMbol LOOKup flags
-{
-	FSYMTAB_Ordered			= 0x1, // symbols cannot be referenced before their lexical position
-
-	FSYMTAB_None			= 0x0,
-	FSYMTAB_All				= 0x1,
-	FSYMTAB_HasDebugInfo	= 0x2,
-	FSYMTAB_Default			= FSYMTAB_Ordered,
-};
-
-EWC_DEFINE_GRF(GRFSYMTAB, FSYMTAB, u8);
-
 enum FSHADOW
 {
 	FSHADOW_NoShadowing,
@@ -456,7 +445,7 @@ protected:
 							,m_pUnsetTin(pUnsetTin)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
-							,m_grfsymtab(FSYMTAB_Default)
+							,m_iNestingDepth(0)
 								{ ; }
 
 public:
@@ -540,10 +529,9 @@ public:
 								m_mpLitkArypTinlit[LITK_Max];
 
 	CSymbolTable *				m_pSymtabParent;
-	SLexerLocation				m_lexlocParent;		// position that this table was defined relative to it's parent 
 
 	CSymbolTable *				m_pSymtabNextManaged;	// next table in the global list
-	GRFSYMTAB					m_grfsymtab;
+	s32							m_iNestingDepth;					
 };
 
 

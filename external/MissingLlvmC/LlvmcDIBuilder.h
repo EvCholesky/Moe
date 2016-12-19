@@ -35,6 +35,9 @@ enum DIFlags
 
 typedef struct LLVMOpaqueDIBuilder * LLVMDIBuilderRef;
 
+struct LLVMOpaqueTargetMachine;
+void SetUseFastIsel(LLVMOpaqueTargetMachine * pLtmachine);
+
 LLVMDIBuilderRef LLVMCreateDIBuilder(LLVMModuleRef pMod);
 void LLVMDisposeDIBuilder(LLVMDIBuilderRef pDib);
 void LLVMDIBuilderFinalize(LLVMDIBuilderRef pDib);

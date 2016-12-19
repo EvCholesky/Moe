@@ -1685,6 +1685,7 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymb
 	SLexerLocation lexloc(pLex);
 	if (pSymtabProc)
 	{
+		pSymtabProc->m_iNestingDepth = pParctx->m_pSymtab->m_iNestingDepth + 1;
 		PushSymbolTable(pParctx, pSymtabProc, lexloc);
 	}
 
@@ -1747,7 +1748,7 @@ CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation 
 	pStnodIdent->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
 	pStdecl->m_iStnodIdentifier = pStnodConstant->IAppendChild(pStnodIdent);
 
-	pStnodConstant->m_pSym = pParctx->m_pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, strIdent, pStnodConstant);
+	pStnodConstant->m_pSym = pParctx->m_pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, strIdent, pStnodConstant, FSYM_VisibleWhenNested);
 	return pStnodConstant;
 }
 
@@ -1780,7 +1781,7 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SLexer * pLex)
 		EmitError(pErrman, &pStnodConstant->m_lexloc, "Enum constant name '%s' has already been defined at (%d, %d)", strIdent.PCoz(), iLine, iCol);
 	}
 
-	pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConstant);
+	pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConstant, FSYM_VisibleWhenNested);
 	pStnodConstant->m_pSym = pSym;
 
 	if (FConsumeToken(pLex, TOK(':')))
@@ -2053,7 +2054,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				}
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				SSymbol * pSymProc = pSymtabParent->PSymEnsure( pErrman, StrFromIdentifier(pStnodIdent), pStnodProc);
+				SSymbol * pSymProc = pSymtabParent->PSymEnsure( pErrman, StrFromIdentifier(pStnodIdent), pStnodProc, FSYM_VisibleWhenNested);
 				pSymProc->m_pTin = pTinproc;
 				pStnodProc->m_pSym = pSymProc;
 
@@ -2079,11 +2080,12 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSTNode * pStnodConstantList = nullptr;
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				(void) pSymtabEnum->PSymEnsure(pErrman, "loose", pStnodEnum, FSYM_IsType);
-				(void) pSymtabEnum->PSymEnsure(pErrman, "strict", pStnodEnum, FSYM_IsType);
+				(void) pSymtabEnum->PSymEnsure(pErrman, "loose", pStnodEnum, FSYM_IsType | FSYM_VisibleWhenNested);
+				(void) pSymtabEnum->PSymEnsure(pErrman, "strict", pStnodEnum, FSYM_IsType | FSYM_VisibleWhenNested);
 
 				Expect(pParctx, pLex, TOK('{'));
 
+				pSymtabEnum->m_iNestingDepth = pParctx->m_pSymtab->m_iNestingDepth + 1;
 				PushSymbolTable(pParctx, pSymtabEnum, lexloc);
 				pStnodEnum->m_pSymtab = pSymtabEnum;
 
@@ -2136,8 +2138,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					}
 				}
 
-				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, FSYM_IsType, FSHADOW_NoShadowing);
-				pSymEnum->m_grfsym.AddFlags(FSYM_IsType);
+				GRFSYM grfsym(FSYM_IsType | FSYM_VisibleWhenNested);
+				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, grfsym, FSHADOW_NoShadowing);
 				pSymEnum->m_pTin = pTinenum;
 
 				pStnodEnum->m_pSym = pSymEnum;
@@ -2160,9 +2162,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew(strIdent, pSymtabParent->m_pUnsetTin);
 
 				// NOTE: struct symbol tables at the global scope should be unordered.
-				if (!pParctx->m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered))
-					pSymtabStruct->m_grfsymtab.Clear(FSYMTAB_Ordered);
+//				if (!pParctx->m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered))
+//					pSymtabStruct->m_grfsymtab.Clear(FSYMTAB_Ordered);
 
+				pSymtabStruct->m_iNestingDepth = pParctx->m_pSymtab->m_iNestingDepth + 1;
 				PushSymbolTable(pParctx, pSymtabStruct, lexlocChild);
 				pStnodStruct->m_pSymtab = pSymtabStruct;
 
@@ -2262,7 +2265,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				}
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodStruct, FSYM_IsType, FSHADOW_NoShadowing);
+				GRFSYM grfsym(FSYM_IsType | FSYM_VisibleWhenNested);
+				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodStruct, grfsym, FSHADOW_NoShadowing);
 				pStnodStruct->m_pSym = pSymStruct;
 				pSymStruct->m_pTin = pTinstruct;
 				pStnodStruct->m_pTin = pTinstruct;
@@ -2294,7 +2298,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSymbolTable * pSymtab = pParctx->m_pSymtab;
 				auto pErrman = pParctx->m_pWork->m_pErrman;
 
-				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef, FSYM_IsType, FSHADOW_NoShadowing);
+				GRFSYM grfsym(FSYM_IsType | FSYM_VisibleWhenNested);
+				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef, grfsym, FSHADOW_NoShadowing);
 				pStnodTypedef->m_pSym = pSym;
 
 
@@ -2327,7 +2332,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				CSymbolTable * pSymtab = pParctx->m_pSymtab;
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				pStnodIdent->m_pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst);
+				pStnodIdent->m_pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst, FSYM_VisibleWhenNested);
 
 				return pStnodConst;
 			}
@@ -2838,6 +2843,27 @@ CSymbolTable::CSymbolIterator::CSymbolIterator(
 	m_pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook, &m_pSymtab);
 }
 
+// Symbol lookup rules are as follows 
+// Types symbols are unordered and visible anywhere within the symbol table parent hierarchy
+// Instances are ordered and only visible within the current nesting level or the global one
+
+enum TABVIS
+{
+	TABVIS_Unordered,		// all symbols are visible
+	TABVIS_Ordered,			// instances are visible, if they come later lexically
+	TABVIS_NoInstances,		// no instances, only types are visible
+};
+
+static inline TABVIS TabvisCompute(CSymbolTable * pSymtabCur, s32 iNestingDepthQuery, GRFSYMLOOK grfsymlook)
+{
+	if ((pSymtabCur->m_iNestingDepth == 0) | (grfsymlook.FIsSet(FSYMLOOK_IgnoreOrder)))
+		return TABVIS_Unordered;
+
+	if (pSymtabCur->m_iNestingDepth < iNestingDepthQuery)
+		return TABVIS_NoInstances;
+	return TABVIS_Ordered;
+}
+
 SSymbol * CSymbolTable::CSymbolIterator::PSymNext()
 {
 	if (!m_pSym)
@@ -2846,13 +2872,14 @@ SSymbol * CSymbolTable::CSymbolIterator::PSymNext()
 	SSymbol * apSym[3] = {nullptr, nullptr, nullptr}; // cur, next, buffer
 	int ipSym = 0;
 
-	bool fIsOrdered = m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered) && !m_grfsymlook.FIsSet(FSYMLOOK_IgnoreOrder);
+	auto tabvis = TabvisCompute(m_pSymtab, m_pSymtab->m_iNestingDepth, m_grfsymlook);
 	auto pSymIt = m_pSym;
 	SSymbol * pSymReturn = nullptr;
 	while (pSymIt)
 	{
 		SLexerLocation lexlocSym = (pSymIt->m_pStnodDefinition) ? pSymIt->m_pStnodDefinition->m_lexloc : SLexerLocation();
-		if ((fIsOrdered == false) | (lexlocSym <= m_lexloc))
+		bool fVisibleWhenNested = pSymIt->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
+		if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= m_lexloc)))
 		{
 			apSym[ipSym++] = pSymIt;
 			if (pSymIt->m_pSymPrev)
@@ -2875,12 +2902,13 @@ SSymbol * CSymbolTable::CSymbolIterator::PSymNext()
 
 		if (ppSym)
 		{
-			bool fIsOrdered = pSymtabIt->m_grfsymtab.FIsSet(FSYMTAB_Ordered);
+			tabvis = TabvisCompute(pSymtabIt, m_pSymtab->m_iNestingDepth, m_grfsymlook);
 			pSymIt = *ppSym;
 			while (pSymIt)
 			{
 				SLexerLocation lexlocSym = (pSymIt->m_pStnodDefinition) ? pSymIt->m_pStnodDefinition->m_lexloc : SLexerLocation();
-				if ((fIsOrdered == false) | (lexlocSym <= m_lexloc))
+				bool fVisibleWhenNested = pSymIt->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
+				if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= m_lexloc)))
 				{
 					apSym[ipSym++] = pSymIt;
 					if (pSymIt->m_pSymPrev)
@@ -2908,7 +2936,6 @@ SSymbol * CSymbolTable::CSymbolIterator::PSymNext()
 void PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab, const SLexerLocation & lexloc)
 {
 	pSymtab->m_pSymtabParent = pParctx->m_pSymtab;
-	pSymtab->m_lexlocParent = lexloc;
 	pParctx->m_pSymtab = pSymtab;
 }
 
@@ -3188,13 +3215,14 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 		SSymbol ** ppSym = m_hashHvPSym.Lookup(str.Hv()); 
 		if (ppSym)
 		{
-			bool fIsOrdered = m_grfsymtab.FIsSet(FSYMTAB_Ordered) && !grfsymlook.FIsSet(FSYMLOOK_IgnoreOrder);
+			auto tabvis = TabvisCompute(this, m_iNestingDepth, grfsymlook);
 			SSymbol * pSym = *ppSym;
 
 			while (pSym)
 			{
 				SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
-				if ((fIsOrdered == false) | (lexlocSym <= lexloc))
+				bool fVisibleWhenNested = pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
+				if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= lexloc)))
 				{
 					return pSym;
 				}
@@ -3211,12 +3239,13 @@ SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & l
 
 		if (ppSym)
 		{
+			auto tabvis = TabvisCompute(pSymtab, m_iNestingDepth, grfsymlook);
 			SSymbol * pSym = *ppSym;
-			bool fIsOrdered = pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered);
 			while (pSym)
 			{
 				SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
-				if ((fIsOrdered == false) | (lexlocSym <= lexlocChild))
+				bool fVisibleWhenNested = pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
+				if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= lexloc)))
 				{
 					if (ppSymtabOut)
 						*ppSymtabOut = pSymtab;
@@ -3417,7 +3446,7 @@ void CSymbolTable::AddManagedSymtab(CSymbolTable * pSymtab)
 void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin)
 {
 	// NOTE: This function is for built-in types without a lexical order, so we shouldn't be calling it on an ordered table
-	EWC_ASSERT(!m_grfsymtab.FIsSet(FSYMTAB_Ordered), "Cannot add built-in types to ordered symbol table.");
+	EWC_ASSERT(m_iNestingDepth == 0, "Cannot add built-in types to ordered symbol table.");
 
 	m_arypTinManaged.Append(pTin);
 	const CString & strName = pTin->m_strName;
@@ -3432,7 +3461,7 @@ void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeI
 	{
 		*ppTinValue = pTin;
 
-		auto pSym = PSymEnsure(pErrman, strName, nullptr, FSYM_IsBuiltIn | FSYM_IsType);
+		auto pSym = PSymEnsure(pErrman, strName, nullptr, FSYM_IsBuiltIn | FSYM_IsType | FSYM_VisibleWhenNested);
 		pSym->m_pTin = pTin;
 	}
 	else

@@ -358,7 +358,6 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_unsetTin.Clear(0);
 
 	pWork->m_pSymtab = pWork->PSymtabNew("global", &pWork->m_unsetTin);
-	pWork->m_pSymtab->m_grfsymtab.Clear(FSYMTAB_Ordered);
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork);
 }
 

@@ -915,7 +915,7 @@ void TokenizeTripleString(char * pChzTripleCopy, char ** ppChzArch, char ** ppCh
 
 
 // Builder class Methods
-CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValManaged, const char * pChzFilename)
+CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValManaged, const char * pChzFilename, GRFCOMPILE grfcompile)
 :m_pBerrctx(nullptr)
 ,m_pLmoduleCur(nullptr)
 ,m_pLbuild(nullptr)
@@ -994,6 +994,10 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValMa
 	const char * pChzFeatures = "";
 
 	m_pLtmachine = LLVMCreateTargetMachine(pLtarget, pChzTriple, pChzCPU, pChzFeatures, loptlevel, lrelocmode, lcodemodel);
+	if (grfcompile.FIsSet(FCOMPILE_FastIsel))
+	{
+		SetUseFastIsel(m_pLtmachine);
+	}
 
 	m_pLbuild = LLVMCreateBuilder();
 	m_pLmoduleCur = LLVMModuleCreateWithName("MoeModule");
@@ -5112,7 +5116,7 @@ void TestUniqueNames(CAlloc * pAlloc)
 		SErrorManager errman;
 		CWorkspace work(pAlloc, &errman);
 
-		CIRBuilder build(&work, nullptr, "");
+		CIRBuilder build(&work, nullptr, "", FCOMPILE_None);
 
 		const char * pChzIn;
 		char aCh[128];
@@ -5219,10 +5223,10 @@ void InitLLVM()
 
 	LLVMPassRegistryRef lpassregistry = LLVMGetGlobalPassRegistry();
 	LLVMInitializeCore(lpassregistry);
-	//LLVMInitializeCodeGen(*Registry);
-	//LLVMInitializeLoopStrengthReducePass(*Registry);
-	//LLVMInitializeLowerIntrinsicsPass(*Registry);
-	//LLVMInitializeUnreachableBlockElimPass(*Registry);
+	//LLVMInitializeCodeGen(*lpassregistry);
+	//LLVMInitializeLoopStrengthReducePass(*lpassregistry);
+	//LLVMInitializeLowerIntrinsicsPass(*lpassregistry);
+	//LLVMInitializeUnreachableBlockElimPass(*lpassregistry);
 }
 
 void ShutdownLLVM()
@@ -5280,13 +5284,13 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 #else
 			printf("Code Generation (x86):\n");
 #endif
-			CIRBuilder build(pWork, &pWork->m_arypValManaged, pChzFilenameIn);
+			CIRBuilder build(pWork, &pWork->m_arypValManaged, pChzFilenameIn, grfcompile);
 			
-
 			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 
 			CompileToObjectFile(pWork, &build, pChzFilenameIn);
 
+			
 			if (grfcompile.FIsSet(FCOMPILE_PrintIR))
 			{
 				build.PrintDump();
@@ -5346,7 +5350,7 @@ void AssertTestCodeGen(
 
 	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	{
-		CIRBuilder build(pWork, &pWork->m_arypValManaged, "");
+		CIRBuilder build(pWork, &pWork->m_arypValManaged, "", FCOMPILE_None);
 		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
 	}
 
