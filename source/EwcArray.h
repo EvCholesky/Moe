@@ -338,7 +338,10 @@ public:
 							m_a = (T *)m_pAlloc->EWC_ALLOC_BK(cB, EWC_ALIGN_OF(T), m_bk);
 
 							if (aOld)
-								CopyAB(aOld, m_a, cB);
+							{
+								auto cMin = (m_cMax < cNewMax) ? m_cMax : cNewMax;
+								CopyAB(aOld, m_a, sizeof(T) * cMin);
+							}
 						}
 						else
 						{

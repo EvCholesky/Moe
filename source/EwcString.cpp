@@ -97,6 +97,7 @@ public:
 							return;
 						}
 						--pEntry->m_cRef;
+
 						if (pEntry->m_cRef <= 0)
 						{
 							m_pAlloc->EWC_FREE(pEntry->m_pCoz);
@@ -107,7 +108,7 @@ public:
 	struct Entry
 	{
 		char *	m_pCoz;
-		u16		m_cRef;
+		u32		m_cRef;
 	};
 
 	CAlloc * 			m_pAlloc;
