@@ -134,6 +134,7 @@ EWC_ENUM_UTILS(VALK);
 		OP(Store), \
 		OP(GEP), \
 		OP(PtrDiff), \
+		OP(Memcpy), \
 		OP_RANGE(MemoryOp, LogicOpMax) \
 		\
 		OP(NTrunc), \
@@ -420,7 +421,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 
 
-void InitLLVM();
+void InitLLVM(EWC::CAry<const char*> * paryPCozArgs);
 void ShutdownLLVM();
 
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn);

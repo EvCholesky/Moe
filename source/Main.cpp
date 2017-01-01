@@ -38,8 +38,8 @@ class CCommandLine // tag = comline
 public:
 	struct SCommand // tag = com
 	{
-		HV		m_hvName;
-		HV		m_hvValue;
+		HV				m_hvName;
+		const char *	m_pCozValue;
 	};
 
 	CCommandLine()
@@ -49,6 +49,8 @@ public:
 
 	void Parse(int cpChzArg, const char * apChzArg[])
 	{
+		HV hvLlvm = HvFromPCoz("-llvm");
+
 		const char * pChzFilename = nullptr;
 		for (int ipChz = 1; ipChz < cpChzArg; ++ipChz)
 		{
@@ -63,6 +65,20 @@ public:
 				{
 					SCommand * pCom = m_aryCom.AppendNew();
 					pCom->m_hvName = HvFromPCoz(pChzArg);
+
+					if (pCom->m_hvName == hvLlvm)
+					{
+						if (ipChz + 1 >= cpChzArg)
+						{
+							printf("expected argument after -llvm\n");
+						}
+						else
+						{
+
+							++ipChz;
+							pCom->m_pCozValue = apChzArg[ipChz];
+						}
+					}
 				}
 			}
 			else
@@ -74,6 +90,19 @@ public:
 			}
 		}
 		m_pChzFilename = pChzFilename;
+	}
+
+	void AppendCommandValues(const char * pChzCommand, CAry<const char *> * paryPCozValues)
+	{
+		HV hvCommand = HvFromPCoz(pChzCommand);
+
+		for (size_t iCom = 0; iCom < m_aryCom.C(); ++iCom)
+		{
+			if (m_aryCom[iCom].m_hvName == hvCommand)
+			{
+				paryPCozValues->Append(m_aryCom[iCom].m_pCozValue);
+			}
+		}
 	}
 
 	bool FHasCommand(const char * pChzCommand)
@@ -88,8 +117,9 @@ public:
 		return false;
 	}
 
-	CFixAry<SCommand, 32>	m_aryCom;
-	const char *			m_pChzFilename;
+	static const int s_cComMax = 50;
+	CFixAry<SCommand, s_cComMax>	m_aryCom;
+	const char *					m_pChzFilename;
 };
 
 void PrintCommandLineOptions()
@@ -103,6 +133,7 @@ void PrintCommandLineOptions()
 	printf("    -release  : Generate optimized code and link against optimized local libraries\n");
 	printf("    -test     : Run compiler unit tests\n");
 	printf("    -useLLD   : Use llvm linker (rather than linke.exe) use this to emit DWARF debug data.\n");
+	printf("    -llvm cmd : run an llvm command line\n");
 }
 
 int main(int cpChzArg, const char * apChzArg[])
@@ -119,6 +150,10 @@ int main(int cpChzArg, const char * apChzArg[])
 
 	CCommandLine comline;
 	comline.Parse(cpChzArg, apChzArg);
+
+	CFixAry<const char *, CCommandLine::s_cComMax+1> aryPCozLlvm;
+	aryPCozLlvm.Append("moe");
+	comline.AppendCommandValues("-llvm", &aryPCozLlvm);
 
 	if (comline.FHasCommand("-help"))
 	{
@@ -139,7 +174,7 @@ int main(int cpChzArg, const char * apChzArg[])
 	static const int s_cBHeap = 1000 * 1024;
 	u8 * aB = nullptr;
 
-	InitLLVM();
+	InitLLVM(&aryPCozLlvm);
 
 	if (comline.m_pChzFilename)
 	{

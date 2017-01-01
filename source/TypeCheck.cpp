@@ -2191,16 +2191,6 @@ STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString 
 	return nullptr;
 }
 
-enum IVALK // Instance VALue flags
-{
-	IVALK_Error,	
-	IVALK_Type,		// not an expression value: either a type or Type.m_nonConstantMember
-	IVALK_RValue,	// has a value, but does not correspond to a memory location
-	IVALK_LValue,	// has an assignable value
-
-	EWC_MAX_MIN_NIL(IVALK)
-};
-
 const char * PChzFromIvalk(IVALK ivalk)
 {
 	static const char * s_mpIvalkPChz[] =

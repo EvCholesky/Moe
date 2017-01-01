@@ -24,16 +24,27 @@ using namespace EWC;
 
 #pragma warning ( push )
 #pragma warning(disable : 4141)
+#pragma warning(disable : 4146)
+#pragma warning(disable : 4267)
+#pragma warning(disable : 4800)
 #include "llvm-c/Analysis.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/Target.h"
 #include "llvm-c/TargetMachine.h"
-#include "llvm/Support/Dwarf.h"
 #include "llvm/IR/CallingConv.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Dwarf.h"
 #pragma warning ( pop )
 
 #include "MissingLlvmC/llvmcDIBuilder.h"
 #include <stdio.h>
+
+#define USE_OP_NAMES 1
+#if USE_OP_NAMES
+static constexpr const char * OPNAME(const char * pChz) { return pChz; }
+#else
+static constexpr const char * OPNAME(const char * pChz) { return ""; }
+#endif
 
 struct SReflectGlobalTable;
 extern bool FIsDirectCall(CSTNode * pStnodCall);
@@ -201,6 +212,15 @@ CIRBuilderErrorContext::~CIRBuilderErrorContext()
 }
 
 
+/* WIP for oversized return/arg pass by reference support.
+static inline bool FCanReturnByValue(CIRBuilder * pBuild, LLVMOpaqueType * pLtype)
+{
+	// In C++ this would be required to be a POD type, but we don't have constructors, destrctors, etc...
+	u64 cBitSize;
+	u64 cBitAlign;
+	CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
+	return cBitSize < 64;
+}*/
 
 static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement = nullptr)
 {
@@ -1123,7 +1143,7 @@ CIRInstruction * CIRBuilder::PInstCreatePhi(LLVMOpaqueType * pLtype, const char 
 	if (pInst->FIsError())
 		return pInst;
 
-	pInst->m_pLval = LLVMBuildPhi(m_pLbuild, pLtype, pChzName);
+	pInst->m_pLval = LLVMBuildPhi(m_pLbuild, pLtype, OPNAME(pChzName));
 	return pInst;
 }
 
@@ -1139,7 +1159,7 @@ CIRInstruction * CIRBuilder::PInstCreatePtrToInt(CIRValue * pValOperand, STypeIn
 		return pInst;
 
 	auto pLtypeDst = PLtypeFromPTin(pTinint);
-	pInst->m_pLval = LLVMBuildPtrToInt(m_pLbuild, pValOperand->m_pLval, pLtypeDst, pChzName);
+	pInst->m_pLval = LLVMBuildPtrToInt(m_pLbuild, pValOperand->m_pLval, pLtypeDst, OPNAME(pChzName));
 	return pInst;
 }
 
@@ -1158,10 +1178,10 @@ CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValOperand, cons
 		else				pInst->m_pLval = LLVMBuildRetVoid(m_pLbuild);
 	} break;
 
-	case IROP_NNeg:		pInst->m_pLval = LLVMBuildNeg(m_pLbuild, pValOperand->m_pLval, pChzName); break;
-	case IROP_GNeg:		pInst->m_pLval = LLVMBuildFNeg(m_pLbuild, pValOperand->m_pLval, pChzName); break;
-	case IROP_Not:		pInst->m_pLval = LLVMBuildNot(m_pLbuild, pValOperand->m_pLval, pChzName); break;
-	case IROP_Load:		pInst->m_pLval = LLVMBuildLoad(m_pLbuild, pValOperand->m_pLval, pChzName); break;
+	case IROP_NNeg:		pInst->m_pLval = LLVMBuildNeg(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
+	case IROP_GNeg:		pInst->m_pLval = LLVMBuildFNeg(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
+	case IROP_Not:		pInst->m_pLval = LLVMBuildNot(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
+	case IROP_Load:		pInst->m_pLval = LLVMBuildLoad(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
 	default: EWC_ASSERT(false, "%s is not a unary opcode supported by PInstCreate", PChzFromIrop(irop)); break;
 	}
 
@@ -1177,24 +1197,24 @@ CIRInstruction * CIRBuilder::PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue
 
 	switch (irop)
 	{
-	case IROP_NAdd:		pInst->m_pLval = LLVMBuildAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_GAdd:		pInst->m_pLval = LLVMBuildFAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_NSub:		pInst->m_pLval = LLVMBuildSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_GSub:		pInst->m_pLval = LLVMBuildFSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_NMul:		pInst->m_pLval = LLVMBuildMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_GMul:		pInst->m_pLval = LLVMBuildFMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_SDiv:		pInst->m_pLval = LLVMBuildSDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_UDiv:		pInst->m_pLval = LLVMBuildUDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_GDiv:		pInst->m_pLval = LLVMBuildFDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_SRem:		pInst->m_pLval = LLVMBuildSRem(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_URem:		pInst->m_pLval = LLVMBuildURem(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_GRem:		pInst->m_pLval = LLVMBuildFRem(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_Shl:		pInst->m_pLval = LLVMBuildShl(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_AShr:		pInst->m_pLval = LLVMBuildAShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_LShr:		pInst->m_pLval = LLVMBuildLShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_And:		pInst->m_pLval = LLVMBuildAnd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName); break;
-	case IROP_Or:		pInst->m_pLval = LLVMBuildOr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);	break;
-	case IROP_Xor:		pInst->m_pLval = LLVMBuildXor(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);	break;
+	case IROP_NAdd:		pInst->m_pLval = LLVMBuildAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_GAdd:		pInst->m_pLval = LLVMBuildFAdd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_NSub:		pInst->m_pLval = LLVMBuildSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_GSub:		pInst->m_pLval = LLVMBuildFSub(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_NMul:		pInst->m_pLval = LLVMBuildMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_GMul:		pInst->m_pLval = LLVMBuildFMul(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_SDiv:		pInst->m_pLval = LLVMBuildSDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_UDiv:		pInst->m_pLval = LLVMBuildUDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_GDiv:		pInst->m_pLval = LLVMBuildFDiv(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_SRem:		pInst->m_pLval = LLVMBuildSRem(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_URem:		pInst->m_pLval = LLVMBuildURem(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_GRem:		pInst->m_pLval = LLVMBuildFRem(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_Shl:		pInst->m_pLval = LLVMBuildShl(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_AShr:		pInst->m_pLval = LLVMBuildAShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_LShr:		pInst->m_pLval = LLVMBuildLShr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_And:		pInst->m_pLval = LLVMBuildAnd(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName)); break;
+	case IROP_Or:		pInst->m_pLval = LLVMBuildOr(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName));	break;
+	case IROP_Xor:		pInst->m_pLval = LLVMBuildXor(m_pLbuild, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName));	break;
 	default: EWC_ASSERT(false, "%s is not a binary opcode supported by PInstCreate", PChzFromIrop(irop)); break;
 	}
 
@@ -1211,16 +1231,16 @@ CIRInstruction * CIRBuilder::PInstCreateCast(IROP irop, CIRValue * pValLhs, STyp
 
 	switch (irop)
 	{
-	case IROP_NTrunc:		pInst->m_pLval = LLVMBuildTrunc(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_SignExt:		pInst->m_pLval = LLVMBuildSExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_ZeroExt:		pInst->m_pLval = LLVMBuildZExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_GToS:			pInst->m_pLval = LLVMBuildFPToSI(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_GToU:			pInst->m_pLval = LLVMBuildFPToUI(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_SToG:			pInst->m_pLval = LLVMBuildSIToFP(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_UToG:			pInst->m_pLval = LLVMBuildUIToFP(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_GTrunc:		pInst->m_pLval = LLVMBuildFPTrunc(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_GExtend:		pInst->m_pLval = LLVMBuildFPExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
-	case IROP_Bitcast:		pInst->m_pLval = LLVMBuildBitCast(m_pLbuild, pValLhs->m_pLval, pLtypeDst, pChzName); break;
+	case IROP_NTrunc:		pInst->m_pLval = LLVMBuildTrunc(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_SignExt:		pInst->m_pLval = LLVMBuildSExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_ZeroExt:		pInst->m_pLval = LLVMBuildZExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_GToS:			pInst->m_pLval = LLVMBuildFPToSI(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_GToU:			pInst->m_pLval = LLVMBuildFPToUI(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_SToG:			pInst->m_pLval = LLVMBuildSIToFP(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_UToG:			pInst->m_pLval = LLVMBuildUIToFP(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_GTrunc:		pInst->m_pLval = LLVMBuildFPTrunc(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_GExtend:		pInst->m_pLval = LLVMBuildFPExt(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
+	case IROP_Bitcast:		pInst->m_pLval = LLVMBuildBitCast(m_pLbuild, pValLhs->m_pLval, pLtypeDst, OPNAME(pChzName)); break;
 	default: EWC_ASSERT(false, "IROP not supported by PInstCreateCast"); break;
 	}
 
@@ -1267,7 +1287,7 @@ CIRInstruction * CIRBuilder::PInstCreateNCmp(
 	if (pInst->FIsError())
 		return pInst;
 
-	pInst->m_pLval = LLVMBuildICmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	pInst->m_pLval = LLVMBuildICmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName));
 	return pInst;
 }
 
@@ -1292,7 +1312,7 @@ CIRInstruction * CIRBuilder::PInstCreateGCmp(
 	if (pInst->FIsError())
 		return pInst;
 
-	pInst->m_pLval = LLVMBuildFCmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, pChzName);
+	pInst->m_pLval = LLVMBuildFCmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName));
 	return pInst;
 }
 
@@ -1324,11 +1344,11 @@ CIRInstruction * CIRBuilder::PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cEle
 	if (cElement > 1)
 	{
 		auto pLvalCElement = LLVMConstInt(LLVMInt64Type(), cElement, false);
-		pInst->m_pLval = LLVMBuildArrayAlloca(m_pLbuild, pLtype, pLvalCElement, pChzName);
+		pInst->m_pLval = LLVMBuildArrayAlloca(m_pLbuild, pLtype, pLvalCElement, OPNAME(pChzName));
 	}
 	else
 	{
-		pInst->m_pLval = LLVMBuildAlloca(m_pLbuild, pLtype, pChzName);
+		pInst->m_pLval = LLVMBuildAlloca(m_pLbuild, pLtype, OPNAME(pChzName));
 	}
 
 	return pInst;
@@ -1344,7 +1364,7 @@ CIRInstruction * CIRBuilder::PInstCreateGEP(
 	if (pInst->FIsError())
 		return pInst;
 
-	pInst->m_pLval = LLVMBuildGEP(m_pLbuild, pValLhs->m_pLval, apLvalIndices, cpIndices, pChzName);
+	pInst->m_pLval = LLVMBuildGEP(m_pLbuild, pValLhs->m_pLval, apLvalIndices, cpIndices, OPNAME(pChzName));
 	return pInst;
 }
 
@@ -2731,6 +2751,48 @@ static inline CIRValue * PValGenerateRefCast(CWorkspace * pWork, CIRBuilder * pB
 	return pVal;
 }
 
+CIRInstruction * PInstGenerateMemcpy(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	STypeInfo * pTin,
+	CIRValue * pValLhs,
+	CIRValue * pValRhsRef)
+{
+	static LLVMOpaqueValue * s_pLvalFunction = nullptr;
+
+	auto pLtypePInt8 = LLVMPointerType(LLVMInt8Type(), 0);
+	auto pLtypeInt64 = LLVMInt64Type();
+	if (!s_pLvalFunction)
+	{
+		// BB - This static pointer thing is pretty gross, should live in the irBuilder?
+		LLVMTypeRef apLtypeArgs[] = { pLtypePInt8, pLtypePInt8, pLtypeInt64, LLVMInt32Type(), LLVMInt1Type() };
+		LLVMTypeRef pLtypeFunction = LLVMFunctionType(LLVMVoidType(), apLtypeArgs, EWC_DIM(apLtypeArgs), false);
+		s_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, "llvm.memcpy.p0i8.p0i8.i64", pLtypeFunction);
+	}
+
+	u64 cBitSize;
+	u64 cBitAlign;
+
+	auto pLtype = PLtypeFromPTin(pTin);
+	CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
+
+	LLVMOpaqueValue * apLvalArgs[5];
+	apLvalArgs[0] = LLVMBuildBitCast(pBuild->m_pLbuild, pValLhs->m_pLval, pLtypePInt8, OPNAME("memDst")); // dest
+	apLvalArgs[1] = LLVMBuildBitCast(pBuild->m_pLbuild, pValRhsRef->m_pLval, pLtypePInt8, OPNAME("memSrc")); // source
+	apLvalArgs[2] =	LLVMConstInt(LLVMInt64Type(), cBitSize / 8, false);		// cB
+	apLvalArgs[3] =	LLVMConstInt(LLVMInt32Type(), cBitAlign / 8, false);	// cBAlign
+	apLvalArgs[4] = LLVMConstInt(LLVMInt1Type(), false, false);	// fIsVolitile
+
+	CIRInstruction * pInstMemcpy = pBuild->PInstCreateRaw(IROP_Memcpy, nullptr, nullptr, "memcpy");
+	pInstMemcpy->m_pLval = LLVMBuildCall(
+							pBuild->m_pLbuild,
+							s_pLvalFunction,
+							apLvalArgs,
+							EWC_DIM(apLvalArgs),
+							"");
+	return pInstMemcpy;
+}
+
 CIRInstruction * PInstGenerateAssignmentFromRef(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild,
@@ -2859,22 +2921,7 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTinLhs;
 
-			LLVMOpaqueValue * apLvalIndex[2] = {};
-			apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
-
-			CIRInstruction * pInstReturn = nullptr;
-			int cTypemembField = (int)pTinstruct->m_aryTypemembField.C();
-			for (int iTypememb = 0; iTypememb < cTypemembField; ++iTypememb)
-			{
-				auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
-				apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), iTypememb, false);
-
-				auto pInstLhs = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, 2, "gepLhs");
-				auto pInstRhs = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, 2, "gepRhs");
-
-				auto pTin = pTypememb->m_pTin;
-				pInstReturn = PInstGenerateAssignmentFromRef(pWork, pBuild, pTin, pTin, pInstLhs, pInstRhs);
-			}
+			return PInstGenerateMemcpy(pWork, pBuild, pTinstruct, pValLhs, pValRhsRef);
 		} break;
 		default:
 		{
@@ -2928,14 +2975,22 @@ CIRInstruction * PInstGenerateAssignment(
 		} break;
 	case TINK_Struct:
 		{
-			CIRValue * pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
+			auto ivalkRhs = IvalkCompute(pStnodRhs);
+			if (ivalkRhs < IVALK_LValue)
+			{
+				u64 cElement;
+				auto pLtypeLhs = PLtypeFromPTin(pTinLhs, &cElement);
+				if (!EWC_FVERIFY(pLtypeLhs, "couldn't find llvm type for declaration"))
+					return nullptr;
 
-			u64 cElement;
-			auto pLtypeLhs = PLtypeFromPTin(pTinLhs, &cElement);
-			if (!EWC_FVERIFY(pLtypeLhs, "couldn't find llvm type for declaration"))
-				return nullptr;
+				CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Instance);
+				return pBuild->PInstCreateStore(pValLhs, pValRhs);
+			}
 
-			pBuild->PInstCreateStore(pValLhs, pValRhsRef);
+			auto pTinstruct = (STypeInfoStruct *)pTinLhs;
+
+			CIRValue * pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
+			return PInstGenerateMemcpy(pWork, pBuild, pTinstruct, pValLhs, pValRhsRef);
 		} break;
 	default: 
 		{
@@ -5208,8 +5263,10 @@ void CompileToObjectFile(CWorkspace * pWork, CIRBuilder * pBuild, const char * p
 	pChzTriple = nullptr;
 }
 
-void InitLLVM()
+void InitLLVM(EWC::CAry<const char*> * paryPCozArgs)
 {
+	llvm::cl::ParseCommandLineOptions(S32Coerce(paryPCozArgs->C()), paryPCozArgs->A());
+
 	// Initialize targets first, so that --version shows registered targets.
 	LLVMInitializeNativeTarget();
 	LLVMInitializeX86TargetInfo();
