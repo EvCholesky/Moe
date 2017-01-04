@@ -3139,18 +3139,6 @@ SSymbol * CSymbolTable::PSymEnsure(
 			pSymPrev = pSym;
 			pSym = nullptr;
 
-			/* Need to check for collisions, but allow overloading... but types aren't resolved yet.
-			PARK parkPrev = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_park : PARK_Nil;
-			PARK park = (pStnodDefinition) ? pStnodDefinition->m_park : PARK_Nil;
-
-			bool fFoundCollision = true;
-			if (park == PARK_ProcedureDefinition && parkPrev == PARK_ProcedureDefinition)
-			{
-			}
-
-			EmitError(pErrman, &lexloc, "Shadowing symbol '%s' in unordered symbol table", strName.PCoz());
-			*/
-
 			 if (fshadow != FShadow_ShadowingAllowed)
 			 {
 				s32 iLine = 0;
@@ -3176,6 +3164,9 @@ SSymbol * CSymbolTable::PSymEnsure(
 	{
 		pSym = EWC_NEW(m_pAlloc, SSymbol) SSymbol;
 		(void) m_hashHvPSym.FinsEnsureKeyAndValue(strName.Hv(), pSym);
+
+		pSym->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
+		pSym->m_symdep = SYMDEP_Nil;
 	}
 
 	pSym->m_strName = strName;
@@ -3184,23 +3175,6 @@ SSymbol * CSymbolTable::PSymEnsure(
 	pSym->m_pTin = nullptr;
 	pSym->m_pVal = nullptr;
 	pSym->m_pSymPrev = pSymPrev;
-
-	/* This is trying to check to ensure previous symbols are in reverse lexical order, but once they
-	    have a different file scope the lexloc comparisons are meaningless
-
-	while (pSymPrev)
-	{
-		if (pSymPrev->m_pStnodDefinition)
-		{
-			SLexerLocation lexlocPrev =  pSymPrev->m_pStnodDefinition->m_lexloc;
-			EWC_ASSERT(lexlocPrev <= lexloc, "expected previous symbols sorted in reverse lexical order");
-
-			lexloc = lexlocPrev;
-		}
-
-		pSymPrev = pSymPrev->m_pSymPrev;
-	}
-	*/
 
 	return pSym;
 }

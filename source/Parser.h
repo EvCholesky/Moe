@@ -405,17 +405,30 @@ enum FSYMLOOK	// SYMbol LOOKup flags
 
 EWC_DEFINE_GRF(GRFSYMLOOK, FSYMLOOK, u32);
 
+
+enum SYMDEP		// SYMbol DEPendency 
+{
+						// NIL = Haven't determined if used
+	SYMDEP_Unused,		// Symbol is not referenced by any live code - no need to codeGen
+	SYMDEP_Used,		// Referenced by live code 
+
+	EWC_MAX_MIN_NIL(SYMDEP)
+};
+
 struct SSymbol	// tag = sym
 {
-	EWC::CString	m_strName;
+	EWC::CString			m_strName;
 
-	CSTNode *		m_pStnodDefinition;
-	GRFSYM			m_grfsym;
+	CSTNode *				m_pStnodDefinition;
+	GRFSYM					m_grfsym;
+	SYMDEP					m_symdep;
 
-	STypeInfo *		m_pTin;
-	CIRValue *		m_pVal;
+	STypeInfo *				m_pTin;
+	CIRValue *				m_pVal;
 
-	SSymbol *		m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
+	SSymbol *				m_pSymPrev;				// list of shadowed symbols in reverse lexical order. 
+
+	EWC::CDynAry<SSymbol *>	m_aryPSymReferencedBy;
 };
 
 enum FSHADOW

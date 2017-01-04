@@ -287,7 +287,7 @@ public:
 						if(m_c < cResize)
 							Resize(cResize);
 					}
-	void		RemoveFastByI(int iT)
+	void		RemoveFastByI(size_t iT)
 					{
 						if (EWC_FVERIFY((iT >= 0) & (iT < m_c), "bad element index" ))
 						{
@@ -296,7 +296,7 @@ public:
 							if (iT != m_c)
 								m_a[iT] = m_a[m_c];
 
-							s32 cResize = (m_c < 8) ? 0 : m_cMax / 2;
+							size_t cResize = (m_c < 8) ? 0 : m_cMax / 2;
 							if(m_c <= cResize)
 								Resize(cResize);
 						}

@@ -37,6 +37,7 @@ struct STypeCheckStackEntry // tag = tcsent
 	CSymbolTable *	m_pSymtab;			// BB - Could omit this pointer with careful handling of stack pops?
 										//  maybe swap out for fPushedStack?
 	CSTNode *		m_pStnodProcedure;	// definition node for current procedure
+	SSymbol	*		m_pSymContext;		// Procedure or struct 
 	GRFSYMLOOK		m_grfsymlook;
 	bool			m_fAllowForwardDecl;
 	TCCTX			m_tcctx;
@@ -2591,6 +2592,24 @@ bool FIsDirectCall(CSTNode * pStnodCall)
 	return false;
 }
 
+void AddSymbolReference(SSymbol * pSymContext, SSymbol * pSymTarget)
+{
+	if (pSymContext == pSymTarget)
+		return;
+
+	SSymbol ** ppSymMac = pSymTarget->m_aryPSymReferencedBy.PMac();
+	for (SSymbol ** ppSymIt = pSymTarget->m_aryPSymReferencedBy.A(); ppSymIt != ppSymMac; ++ppSymIt)
+	{
+		if (*ppSymIt == pSymContext)
+			return;
+	}
+
+	if (EWC_FVERIFY(pSymContext, "missing symbol context for %s", pSymTarget->m_strName.PCoz()))
+	{
+		pSymTarget->m_aryPSymReferencedBy.Append(pSymContext);
+	}
+}
+
 TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
@@ -2615,6 +2634,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 				case 0:
 					{	
+						EWC_ASSERT(pStnod->m_pSym, "expected procedure symbol");
+						pTcsentTop->m_pSymContext = pStnod->m_pSym;
+
 						// push the parameter list
 						if (pStproc->m_iStnodParameterList >= 0)
 						{
@@ -2984,6 +3006,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							return TCRET_StoppingError;
 
 						SSymbol * pSymProc = pSysmatch->m_pSym;
+						AddSymbolReference(pTcsentTop->m_pSymContext, pSymProc);
+
 						pStnod->m_pSym = pSymProc;
 
 						// Note: The callee's sym and pTin are set by type checking the identifier, this may pick the wrong
@@ -3139,6 +3163,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (pTcsentTop->m_nState == 1)
 				{
 					++pTcsentTop->m_nState;
+
+					EWC_ASSERT(pStnod->m_pSym, "expected enum symbol");
+					pTcsentTop->m_pSymContext = pStnod->m_pSym;
 
 					// type spec
 					if (pStenum->m_iStnodType >= 0)
@@ -3416,6 +3443,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				if (EWC_FVERIFY(pSymIdent && pSymIdent->m_pStnodDefinition == pStnod, "symbol lookup failed for '%s'", strIdent.PCoz()))
 				{
+					AddSymbolReference(pTcsentTop->m_pSymContext, pSymIdent);
+
 					pStnod->m_pSym = pSymIdent;
 					if (pSymIdent->m_pTin == nullptr)
 					{
@@ -3436,6 +3465,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				// Note: struct layout is just children[identifierName, DeclList]
 				if (pTcsentTop->m_nState == 0)
 				{
+					EWC_ASSERT(pStnod->m_pSym, "expected struct symbol");
+					pTcsentTop->m_pSymContext = pStnod->m_pSym;
+
 					pStnod->m_strees = STREES_SignatureTypeChecked;
 					if (pStnod->CStnodChild() > 1)
 					{
@@ -3512,6 +3544,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
 								pStnod->m_pTin = pStnodDefinition->m_pTin;
 								pStnod->m_pSym = pSym;
+
+								AddSymbolReference(pTcsentTop->m_pSymContext, pSym);
 
 								if (pStnod->m_pTin && 
 									(pStnod->m_pTin->m_tink == TINK_Literal || pStnod->m_pTin->m_tink == TINK_Enum) &&
@@ -3598,10 +3632,19 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			} break;
 			case PARK_ConstantDecl:
 			{
+				auto * pStdecl = pStnod->m_pStdecl;
 				if (pTcsentTop->m_nState < 1)
+				{
 					pTcsentTop->m_nState = 1;	// skip the identifier
 
-				auto * pStdecl = pStnod->m_pStdecl;
+					auto pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
+					if (EWC_FVERIFY(pStnodIdent, "constant missing identifier"))
+					{
+						EWC_ASSERT(pStnodIdent->m_pSym, "expected symbol for declaration");
+						pTcsentTop->m_pSymContext = pStnodIdent->m_pSym;
+					}
+				}
+
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
 					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
@@ -3702,6 +3745,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					PushTcsent(pTcfram, &pTcsentTop, pStnodType);
 					STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+
+					EWC_ASSERT(pStnod->m_pSym, "expected typedef symbol");
+					pTcsentPushed->m_pSymContext = pStnod->m_pSym;
+
 					pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
 					
 					++pTcsentTop->m_nState;
@@ -3841,6 +3888,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto * pStdecl = pStnod->m_pStdecl;
 				EWC_ASSERT(pStdecl, "missing decl parse data");
 
+				auto pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
+				if (pStnodIdent && pTcsentTop->m_pSymContext == nullptr)
+				{
+					EWC_ASSERT(pStnodIdent->m_pSym, "expected symbol for declaration");
+					pTcsentTop->m_pSymContext = pStnodIdent->m_pSym;
+				}
+
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
 					if (pTcsentTop->m_nState != pStdecl->m_iStnodIdentifier)
@@ -3954,8 +4008,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 
 					// would this be better if there was a PARK_CompoundDecl?
-					bool fIsCompoundDecl = pStdecl->m_iStnodChildMin == -1;
-					if (fIsCompoundDecl)
+					bool fIsCompoundDecl = pStdecl->m_iStnodChildMin != -1;
+					if (!fIsCompoundDecl)
 					{
 						if (pStnod->m_pTin == nullptr)
 						{
@@ -4231,6 +4285,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								return TCRET_StoppingError;
 							}
 
+							AddSymbolReference(pTcsentTop->m_pSymContext, pSymMember);
 							EWC_ASSERT(pSymMember->m_pTin, "expected symbol to have type");
 							pTinMember = pSymMember->m_pTin;
 
@@ -5094,6 +5149,75 @@ PARK ParkDefinition(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	return PARK_Nil;
 }
 
+void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbolTable * pSymtabRoot)
+{
+	CDynAry<SSymbol *> arypSym(pAlloc, BK_Dependency, 1024);
+
+	SLexerLocation lexloc;
+	auto pSym = pSymtabRoot->PSymLookup("main", lexloc);
+	if (!pSym)
+	{
+		EmitError(pErrman, &lexloc, "Failed to find global 'main' procedure");
+		return;
+	}
+
+	pSym->m_symdep = SYMDEP_Used;
+
+	CSymbolTable * pSymtabIt = pSymtabRoot;
+	while (pSymtabIt)
+	{
+		EWC::CHash<HV, SSymbol *>::CIterator iterSym(&pSymtabIt->m_hashHvPSym);
+		pSymtabIt = pSymtabIt->m_pSymtabNextManaged;
+
+		SSymbol ** ppSym;
+		while (ppSym = iterSym.Next())
+		{
+			if ((*ppSym)->m_symdep != SYMDEP_Nil)
+				continue;
+
+			arypSym.Append(*ppSym);
+			while (arypSym.C())
+			{
+				SSymbol * pSym = arypSym.Last();
+				size_t ipSym = arypSym.C() - 1;
+
+				bool fAllResolved = true;
+				int cSymdepNil = 0;
+				int cSymdepUsed = 0;
+				if (pSym->m_symdep == SYMDEP_Nil)
+				{
+					SSymbol ** ppSymMac = pSym->m_aryPSymReferencedBy.PMac();
+					for (SSymbol ** ppSymIt = pSym->m_aryPSymReferencedBy.A(); ppSymIt != ppSymMac; ++ppSymIt)
+					{
+						SSymbol * pSymRef = *ppSymIt;
+
+						switch (pSymRef->m_symdep)
+						{
+							case SYMDEP_Nil:	
+							{
+								arypSym.Append(pSymRef);
+								++cSymdepNil;
+								
+							} break;
+							case SYMDEP_Used:
+							{
+								++cSymdepUsed;
+							} break;
+						}
+					}
+
+					if (cSymdepUsed == 0 && cSymdepNil != 0)
+						break;
+
+					pSym->m_symdep = (cSymdepUsed > 0) ? SYMDEP_Used: SYMDEP_Unused;
+				}
+
+				arypSym.RemoveFastByI(ipSym);
+			}
+		}
+	}
+}
+
 void PerformTypeCheck(
 	CAlloc * pAlloc,
 	SErrorManager * pErrman,
@@ -5117,6 +5241,7 @@ void PerformTypeCheck(
 		pTcsent->m_pStnod = pEntry->m_pStnod;
 		pTcsent->m_pSymtab = pEntry->m_pSymtab;
 		pTcsent->m_pStnodProcedure = nullptr;
+		pTcsent->m_pSymContext = nullptr;
 		pTcsent->m_grfsymlook = FSYMLOOK_Default;
 		pTcsent->m_fAllowForwardDecl = false;
 		pTcsent->m_tcctx = TCCTX_Normal;
@@ -5235,6 +5360,9 @@ void PerformTypeCheck(
 			}
 		}
 	}
+	
+	ComputeSymbolDependencies(pAlloc, pErrman, pSymtabTop);
+
 
 	pAlloc->EWC_DELETE(pTcwork);
 }

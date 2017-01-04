@@ -4124,6 +4124,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
 					return nullptr;
 
+				EWC_ASSERT(pStnod->m_pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused");
 
 				PProcTryEnsure(pWork, pBuild, pSym);
 
@@ -5123,6 +5124,17 @@ void CodeGenEntryPoint(
 		}
 		else
 		{
+			if (pStnod->m_park == PARK_ProcedureDefinition && pStnod->m_pSym->m_symdep != SYMDEP_Used)
+			{
+				EWC_ASSERT(
+					pStnod->m_pSym->m_symdep == SYMDEP_Unused,
+					"unexpected symbol dependency type (%s)",
+					pStnod->m_pSym->m_symdep);
+
+				//printf("Skipping dead code %s\n", pStnod->m_pSym->m_strName.PCoz());
+				continue;
+			}
+
 			PValGenerate(pWork, pBuild, pStnod, VALGENK_Instance);
 
 			if (pStnod->m_park == PARK_ProcedureDefinition)
