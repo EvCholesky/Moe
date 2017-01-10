@@ -273,12 +273,14 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 									STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
 									:STypeInfo(strName, strUnique, s_tink)
+									,m_pGlobInit(nullptr)
 									,m_pLvalInitMethod(nullptr)
 									,m_pLtype(nullptr)
 									,m_pStnodStruct(nullptr)
 									,m_aryTypemembField()
 										{ ; }
 	
+	CIRGlobal *						m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
 	LLVMOpaqueValue *				m_pLvalInitMethod;
 	LLVMOpaqueType *				m_pLtype;			// llvm type reference, here to avoid infinite recursion in
 														//  self referential member pointers
