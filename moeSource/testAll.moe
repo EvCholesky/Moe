@@ -89,8 +89,7 @@ TestNestedMethod proc (n : s32)
 		g = g + NestedMethod(n)
 		++i
 	}
-
-	printf("return = %f\n", g)
+	printf("return = %f(6.6)\n", g)
 }
 
 FPrint proc (pChz : & u8, fArg : bool) -> bool
@@ -497,11 +496,11 @@ TestCasting proc ()
 	g := 12.5
 	n := cast(int) g
 	g2 := cast(float) n
-	printf("%d(12) -> %f(12.0)\n", g, n, g2)
+	printf("%f: %d(12) -> %f(12.0)\n", g, n, g2)
 
 	n = 256 + 22
 	n2 : s8 = cast(s8) n
-	printf("%d(22)\n", n, n2)
+	printf("%d -> %d(22)\n", n, n2)
 
 	foo : SFoo
 	foo.m_a = 1234

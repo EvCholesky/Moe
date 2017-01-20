@@ -2226,9 +2226,7 @@ IVALK IvalkCompute(CSTNode * pStnod)
 		STypeInfo * pTinLhs = pStnodLhs->m_pTin;
 		if (pTinLhs && pTinLhs->m_tink == TINK_Array)
 		{
-			auto strArymemb = StrFromIdentifier(pStnodRhs);
-			auto arymemb = ArymembLookup(strArymemb.PCoz());
-			return (arymemb == ARYMEMB_Count) ? IVALK_RValue : IVALK_LValue;
+			return IVALK_RValue;
 		}
 
 		// We currently allow using lvalues to specify an R-Value as it gets tricky to specify array R-Values otherwise
@@ -2243,6 +2241,22 @@ IVALK IvalkCompute(CSTNode * pStnod)
 		}
 		return ivalkRhs;
 	}
+	else if (pStnod->m_park == PARK_Cast)
+	{
+		if (!pStnod->m_pTin || pStnod->m_pTin->m_tink != TINK_Pointer)
+		{
+			return IVALK_RValue;
+		}
+	}
+	else if (pStnod->m_park == PARK_ArrayElement)
+	{
+		auto pStnodArray = pStnod->PStnodChild(0);
+		return (pStnodArray->m_pTin->m_tink == TINK_Literal) ? IVALK_RValue : IVALK_LValue;
+	}
+	else if (pStnod->m_park == PARK_UnaryOp && pStnod->m_tok == TOK_Dereference)
+	{
+		return IVALK_LValue;
+	}
 
 	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 		return IVALK_RValue;
@@ -2251,7 +2265,7 @@ IVALK IvalkCompute(CSTNode * pStnod)
 	if (!pSym)
 	{
 		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
-		return IVALK_LValue;
+		return IVALK_RValue;
 	}
 	else if (pSym->m_grfsym.FIsSet(FSYM_IsType))
 	{
