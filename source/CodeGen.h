@@ -271,7 +271,7 @@ public:
 #define NCMPPRED_LIST \
 	MOE_PRED(NCmpEQ)  LLVM_PRED(LLVMIntEQ) \
 	MOE_PRED(NCmpNE)  LLVM_PRED(LLVMIntNE) \
-	MOE_PRED(NCmpUGT) LLVM_PRED(LLVMIntUGE) \
+	MOE_PRED(NCmpUGT) LLVM_PRED(LLVMIntUGT) \
 	MOE_PRED(NCmpUGE) LLVM_PRED(LLVMIntUGE) \
 	MOE_PRED(NCmpULT) LLVM_PRED(LLVMIntULT) \
 	MOE_PRED(NCmpULE) LLVM_PRED(LLVMIntULE) \
@@ -341,6 +341,13 @@ struct SJumpTargets // tag = jumpt
 	EWC::CString	m_strLabel;
 };
 
+enum INTFUNK // INTrinsic FUNction Kind
+{
+	INTFUNK_Memset,
+	INTFUNK_Memcpy,
+
+	EWC_MAX_MIN_NIL(INTFUNK)
+};
 
 
 class CIRBuilder		// tag = build
@@ -390,6 +397,8 @@ public:
 
 	LLVMOpaqueTargetMachine *			m_pLtmachine;
 	LLVMOpaqueTargetData *				m_pTargd;
+
+	LLVMOpaqueValue *					m_mpIntfunkPLval[INTFUNK_Max];		// map from intrinsic function kind to llvm function
 
 	// Debug info
 	LLVMOpaqueDIBuilder *				m_pDib;				// Debug info builder

@@ -1014,6 +1014,10 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValMa
 	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile);
 
 
+	for (int intfunk = 0; intfunk < INTFUNK_Max; ++intfunk)
+	{
+		m_mpIntfunkPLval[intfunk] = nullptr;
+	}
 
 	LLVMTarget * pLtarget = nullptr;
 	//const char * pChzTriple = "x86_64-pc-windows-msvc"; //LLVMGetTarget(pLmodule);
@@ -2477,16 +2481,13 @@ CIRInstruction * PInstCreateMemcpy(
 	CIRValue * pValLhs,
 	CIRValue * pValRhsRef)
 {
-	static LLVMOpaqueValue * s_pLvalFunction = nullptr;
-
 	auto pLtypePInt8 = LLVMPointerType(LLVMInt8Type(), 0);
 	auto pLtypeInt64 = LLVMInt64Type();
-	if (!s_pLvalFunction)
+	if (!pBuild->m_mpIntfunkPLval[INTFUNK_Memcpy])
 	{
-		// BB - This static pointer thing is pretty gross, should live in the irBuilder?
 		LLVMTypeRef apLtypeArgs[] = { pLtypePInt8, pLtypePInt8, pLtypeInt64, LLVMInt32Type(), LLVMInt1Type() };
 		LLVMTypeRef pLtypeFunction = LLVMFunctionType(LLVMVoidType(), apLtypeArgs, EWC_DIM(apLtypeArgs), false);
-		s_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, "llvm.memcpy.p0i8.p0i8.i64", pLtypeFunction);
+		pBuild->m_mpIntfunkPLval[INTFUNK_Memcpy] = LLVMAddFunction(pBuild->m_pLmoduleCur, "llvm.memcpy.p0i8.p0i8.i64", pLtypeFunction);
 	}
 
 	u64 cBitSize;
@@ -2507,7 +2508,7 @@ CIRInstruction * PInstCreateMemcpy(
 	CIRInstruction * pInstMemcpy = pBuild->PInstCreateRaw(IROP_Memcpy, nullptr, nullptr, "memcpy");
 	pInstMemcpy->m_pLval = LLVMBuildCall(
 							pBuild->m_pLbuild,
-							s_pLvalFunction,
+							pBuild->m_mpIntfunkPLval[INTFUNK_Memcpy],
 							apLvalArgs,
 							EWC_DIM(apLvalArgs),
 							"");
@@ -2522,16 +2523,13 @@ CIRInstruction * PInstCreateMemset(
 	s32 cBAlign,
 	u8 bFill)
 {
-	static LLVMOpaqueValue * s_pLvalFunction = nullptr;
-
 	auto pLtypePInt8 = LLVMPointerType(LLVMInt8Type(), 0);
 	auto pLtypeInt64 = LLVMInt64Type();
-	if (!s_pLvalFunction)
+	if (!pBuild->m_mpIntfunkPLval[INTFUNK_Memset])
 	{
-		// BB - This static pointer thing is pretty gross, should live in the irBuilder?
 		LLVMTypeRef apLtypeArgs[] = { pLtypePInt8, LLVMInt8Type(), LLVMInt64Type(), LLVMInt32Type(), LLVMInt1Type() };
 		LLVMTypeRef pLtypeFunction = LLVMFunctionType(LLVMVoidType(), apLtypeArgs, EWC_DIM(apLtypeArgs), false);
-		s_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, "llvm.memset.p0i8.i64", pLtypeFunction);
+		pBuild->m_mpIntfunkPLval[INTFUNK_Memset] = LLVMAddFunction(pBuild->m_pLmoduleCur, "llvm.memset.p0i8.i64", pLtypeFunction);
 	}
 
 	LLVMOpaqueValue * apLvalArgs[5];
@@ -2544,7 +2542,7 @@ CIRInstruction * PInstCreateMemset(
 	CIRInstruction * pInstMemcpy = pBuild->PInstCreateRaw(IROP_Memcpy, nullptr, nullptr, "memcpy");
 	pInstMemcpy->m_pLval = LLVMBuildCall(
 							pBuild->m_pLbuild,
-							s_pLvalFunction,
+							pBuild->m_mpIntfunkPLval[INTFUNK_Memset],
 							apLvalArgs,
 							EWC_DIM(apLvalArgs),
 							"");
@@ -2591,7 +2589,7 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CIRBuilder *
 
 			if (!pLvalMember)
 			{
-				pLvalMember = PLvalZeroInType(pBuild, pTypememb->m_pTin);
+				pLvalMember = PLvalBuildConstantInitializer(pWork, pBuild, pTypememb->m_pTin, nullptr);
 			}
 			apLvalMember[iTypememb] = pLvalMember;
 		}
@@ -2930,15 +2928,17 @@ CIRValue * PValFromArrayMember(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue
 
 	if (pTinary->m_aryk == ARYK_Fixed)
 	{
+		EWC_ASSERT(valgenk == VALGENK_Instance);
 		if (arymemb == ARYMEMB_Count)
 		{
-			EWC_ASSERT(valgenk == VALGENK_Instance); // do we need to create a global here?
 			return PValConstantInt(pBuild, 64, true, pTinary->m_c);
 		}
 
+		// the type of aN.data is &N so a reference would need to be a &&N which we don't have
 		EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
-		EWC_ASSERT(valgenk == VALGENK_Instance);
-		return pValAryRef;
+
+		auto pTinptr = pWork->m_pSymtab->PTinptrAllocReference(pTinary->m_pTin);
+		return pBuild->PInstCreateCast(IROP_Bitcast, pValAryRef, pTinptr, "Bitcast");
 	}
 
 	LLVMOpaqueValue * apLvalIndex[2] = {};
@@ -3485,6 +3485,10 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
 					pOpinfo->m_fNegateFirst = true;
 				} break;
+			case TOK_EqualEqual:
+				CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); 
+				break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 			}
 		}
 		else if (tinkMin == TINK_Integer && tinkMax == TINK_Array)
@@ -5074,6 +5078,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 	FormatCoz(&strbufName, "_%s_INIT", strPunyName.PCoz());
 
 	LLVMOpaqueValue * pLvalFunc = LLVMAddFunction(pBuild->m_pLmoduleCur, aChName, pLtypeFunction);
+	LLVMSetLinkage(pLvalFunc, LLVMPrivateLinkage);
 	pTinstruct->m_pLvalInitMethod = pLvalFunc;
 
 	CAlloc * pAlloc = pBuild->m_pAlloc;
@@ -5244,6 +5249,11 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 
 	auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, arypLtype.A(), (u32)arypLtype.C(), fHasVarArgs);
 	pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, pChzMangled, pLtypeFunction);
+	if (!pStproc->m_fIsForeign && !pStproc->m_fUseUnmangledName)
+	{
+		LLVMSetLinkage(pProc->m_pLvalFunction, LLVMPrivateLinkage);
+	}
+
 	pProc->m_pLval = pProc->m_pLvalFunction; // why is this redundant?
 
 	if (pTinproc->m_callconv != CALLCONV_Nil)
@@ -5658,7 +5668,13 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 	if (pWork->m_pErrman->m_cError == 0)
 	{
 		printf("Type Check:\n");
-		PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+		PerformTypeCheck(
+			pWork->m_pAlloc,
+			pWork->m_pErrman,
+			pWork->m_pSymtab,
+			&pWork->m_aryEntry,
+			&pWork->m_aryiEntryChecked,
+			pWork->m_globmod);
 
 		if (pWork->m_pErrman->m_cError == 0)
 		{
@@ -5732,7 +5748,13 @@ void AssertTestCodeGen(
 
 	EndParse(pWork, &lex);
 
-	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+	PerformTypeCheck(
+		pWork->m_pAlloc,
+		pWork->m_pErrman,
+		pWork->m_pSymtab,
+		&pWork->m_aryEntry,
+		&pWork->m_aryiEntryChecked,
+		pWork->m_globmod);
 	{
 		CIRBuilder build(pWork, &pWork->m_arypValManaged, "", FCOMPILE_None);
 		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);

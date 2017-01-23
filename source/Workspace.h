@@ -225,5 +225,6 @@ void PerformTypeCheck(
 	SErrorManager * pErrman, 
 	CSymbolTable * pSymtabTop,
 	EWC::CAry<CWorkspace::SEntry> * paryEntry,
-	EWC::CAry<int> * paryiEntryChecked);
+	EWC::CAry<int> * paryiEntryChecked,
+	GLOBMOD globmod);
 

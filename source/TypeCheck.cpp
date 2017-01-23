@@ -936,6 +936,8 @@ inline bool FComputeBinaryOpOnLiterals(
 		case TOK_NotEqual:     f = gLhs != gRhs; break;
 		case TOK_LessEqual:    f = gLhs <= gRhs; break;
 		case TOK_GreaterEqual:	f = gLhs >= gRhs; break;
+		case TOK_AndAnd:		f = (gLhs != 0.0f) && (gRhs != 0.0f); break;
+		case TOK_OrOr:			f = (gLhs != 0.0f) || (gRhs != 0.0f); break;
 		default: return false;
 		}
 
@@ -964,8 +966,8 @@ inline bool FComputeBinaryOpOnLiterals(
 	} 
 	else // both LITK_Integer
 	{
-		EWC_ASSERT(littyLhs.m_cBit == -1, "expected unsized literal here");
-		EWC_ASSERT(littyRhs.m_cBit == -1, "expected unsized literal here");
+		// may not be unsized literal in compound expressions, ie a == b == c
+		// turns into (a == b) == c which ends up being bool == unsized comparison
 
 		SBigInt bintLhs(BintFromStval(pStvalLhs));
 		SBigInt bintRhs(BintFromStval(pStvalRhs));
@@ -990,6 +992,11 @@ inline bool FComputeBinaryOpOnLiterals(
 		case TOK_NotEqual:     f = bintLhs != bintRhs; break;
 		case TOK_LessEqual:    f = bintLhs <= bintRhs; break;
 		case TOK_GreaterEqual:	f = bintLhs >= bintRhs; break;
+		case TOK_AndAnd:	
+		{
+			f = bintLhs.m_nAbs && bintRhs.m_nAbs; 
+		}	break;
+		case TOK_OrOr:			f = bintLhs.m_nAbs || bintRhs.m_nAbs; break;
 		default: return false;
 		}
 
@@ -1681,7 +1688,8 @@ SOpTypes OptypeFromPark(
 			bool fIsOneTypeVoid = (pTinRefMin->m_tink == TINK_Void) | (pTinRefMax->m_tink == TINK_Void);
 			if (parkOperator == PARK_EqualityOp && (fAreRefTypesSame | fIsOneTypeVoid))
 			{
-				return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin("bool"));
+				// cast the array to a pointer before comparing
+				return SOpTypes(pTinMin, pTinMin, pSymtab->PTinBuiltin("bool"));
 			}
 
 			if (parkOperator == PARK_AdditiveOp)
@@ -2224,7 +2232,14 @@ IVALK IvalkCompute(CSTNode * pStnod)
 
 		// BB - we should have symbol tables for arrays and this should work like any other symbol
 		STypeInfo * pTinLhs = pStnodLhs->m_pTin;
-		if (pTinLhs && pTinLhs->m_tink == TINK_Array)
+
+		bool lhsIsArray = pTinLhs && pTinLhs->m_tink == TINK_Array;
+		if (auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pTinLhs))
+		{
+			lhsIsArray = pTinlit->m_litty.m_litk == LITK_Array;
+		}
+
+		if (lhsIsArray)
 		{
 			return IVALK_RValue;
 		}
@@ -5163,6 +5178,19 @@ PARK ParkDefinition(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	return PARK_Nil;
 }
 
+
+void MarkAllSymbolsUsed(CSymbolTable * pSymtab)
+{
+	EWC::CHash<HV, SSymbol *>::CIterator iterSym(&pSymtab->m_hashHvPSym);
+
+	SSymbol ** ppSym;
+	while (ppSym = iterSym.Next())
+	{
+		if (ppSym)
+			(*ppSym)->m_symdep = SYMDEP_Used;
+	}
+}
+
 void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbolTable * pSymtabRoot)
 {
 	CDynAry<SSymbol *> arypSym(pAlloc, BK_Dependency, 1024);
@@ -5237,9 +5265,17 @@ void PerformTypeCheck(
 	SErrorManager * pErrman,
 	CSymbolTable * pSymtabTop,
 	CAry<CWorkspace::SEntry> * paryEntry,
-	CAry<int> * paryiEntryChecked)
+	CAry<int> * paryiEntryChecked, 
+	GLOBMOD globmod)
 {
 	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, (s32)paryEntry->C());
+
+	SSymbol * pSymRoot = nullptr;
+	// if we're in a unit test we spoof a top level implicit function symbol
+	if (globmod == GLOBMOD_UnitTest)
+	{
+		pSymRoot = pSymtabTop->PSymEnsure(pErrman, "__ImplicitMethod", nullptr);
+	}
 
 	CWorkspace::SEntry * pEntryMax = paryEntry->PMac();
 	int ipTcfram = 0;
@@ -5255,7 +5291,7 @@ void PerformTypeCheck(
 		pTcsent->m_pStnod = pEntry->m_pStnod;
 		pTcsent->m_pSymtab = pEntry->m_pSymtab;
 		pTcsent->m_pStnodProcedure = nullptr;
-		pTcsent->m_pSymContext = nullptr;
+		pTcsent->m_pSymContext = pSymRoot;
 		pTcsent->m_grfsymlook = FSYMLOOK_Default;
 		pTcsent->m_fAllowForwardDecl = false;
 		pTcsent->m_tcctx = TCCTX_Normal;
@@ -5375,8 +5411,14 @@ void PerformTypeCheck(
 		}
 	}
 	
-	ComputeSymbolDependencies(pAlloc, pErrman, pSymtabTop);
-
+	if (globmod == GLOBMOD_UnitTest)
+	{
+		MarkAllSymbolsUsed(pSymtabTop);
+	}
+	else
+	{
+		ComputeSymbolDependencies(pAlloc, pErrman, pSymtabTop);
+	}
 
 	pAlloc->EWC_DELETE(pTcwork);
 }
@@ -5494,6 +5536,7 @@ void AssertTestTypeCheck(
 {
 	SLexer lex;
 	BeginWorkspace(pWork);
+	pWork->m_globmod = GLOBMOD_UnitTest;
 	BeginParse(pWork, &lex, pCozIn);
 
 	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
@@ -5504,7 +5547,7 @@ void AssertTestTypeCheck(
 
 	EndParse(pWork, &lex);
 
-	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+	PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked, pWork->m_globmod);
 
 	char aCh[1024];
 	char * pCh = aCh;
@@ -5833,12 +5876,12 @@ void TestTypeCheck()
 	pCozOut		= "(NoReturn(int)->void $NoReturn (Params (int $a int)) void ({} (int $n int) (void))) (void NoReturn(int)->void Literal:Int##)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
-	pCozIn		= "{ ovr:=2; { nNest:= ovr; ovr:float=2.2; g:=ovr } n:=ovr }"; 
-	pCozOut		= "({} (int $ovr Literal:Int##) ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float)) (int $n int))";
+	pCozIn		= "{ ovr:=2; { ovr:float=2.2; g:=ovr } n:=ovr }"; 
+	pCozOut		= "({} (int $ovr Literal:Int##) ({} (float $ovr float Literal:Float32) (float $g float)) (int $n int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 	
-	pCozIn		= " { ovr:=2; Foo proc () { nNest:= ovr; ovr:float=2.2; g:=ovr } n:=ovr }"; 
-	pCozOut		=	"(Foo()->void $Foo void ({} (int $nNest int) (float $ovr float Literal:Float32) (float $g float) (void)))"
+	pCozIn		= "{ ovr:=2; Foo proc () { ovr:float=2.2; g:=ovr } n:=ovr }"; 
+	pCozOut		=	"(Foo()->void $Foo void ({} (float $ovr float Literal:Float32) (float $g float) (void)))"
 					" ({} (int $ovr Literal:Int##) (int $n int))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 

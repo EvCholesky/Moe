@@ -1065,37 +1065,12 @@ CSTNode * PStnodParseRelationalExpression(CParseContext * pParctx, SLexer * pLex
 	}
 }
 
-CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SLexer * pLex)
-{
-	CSTNode * pStnod = PStnodParseRelationalExpression(pParctx, pLex);
-	if (!pStnod)
-		return nullptr;
-
-	while (1)
-	{
-		switch (pLex->m_tok)
-		{
-		case TOK_EqualEqual:
-		case TOK_NotEqual:
-			{
-				SLexerLocation lexloc(pLex);
-				TOK tokPrev = TOK(pLex->m_tok);	
-				TokNext(pLex); // consume operator
-
-				CSTNode * pStnodExp = PStnodParseRelationalExpression(pParctx, pLex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_EqualityOp, pStnod, pStnodExp);
-			} break;
-		default: return pStnod;
-		}
-	}
-}
-
 CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SLexer * pLex)
 {
 	// BB - This is a little different than ISO C precedence rules, we're treating all bitwise operators the same
 	//  rather than inclusiveOr < exclusiveOr < bitwiseAnd
 
-	CSTNode * pStnod = PStnodParseEqualityExpression(pParctx, pLex);
+	CSTNode * pStnod = PStnodParseRelationalExpression(pParctx, pLex);
 	if (!pStnod)
 		return nullptr;
 
@@ -1111,8 +1086,33 @@ CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SLexer * pL
 				TOK tokPrev = TOK(pLex->m_tok);	
 				TokNext(pLex); // consume operator
 
-				CSTNode * pStnodExp = PStnodParseEqualityExpression(pParctx, pLex);
+				CSTNode * pStnodExp = PStnodParseRelationalExpression(pParctx, pLex);
 				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_BitwiseAndOrOp, pStnod, pStnodExp);
+			} break;
+		default: return pStnod;
+		}
+	}
+}
+
+CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SLexer * pLex)
+{
+	CSTNode * pStnod = PStnodParseBitwiseAndOrExpression(pParctx, pLex);
+	if (!pStnod)
+		return nullptr;
+
+	while (1)
+	{
+		switch (pLex->m_tok)
+		{
+		case TOK_EqualEqual:
+		case TOK_NotEqual:
+			{
+				SLexerLocation lexloc(pLex);
+				TOK tokPrev = TOK(pLex->m_tok);	
+				TokNext(pLex); // consume operator
+
+				CSTNode * pStnodExp = PStnodParseBitwiseAndOrExpression(pParctx, pLex);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_EqualityOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
@@ -1121,7 +1121,7 @@ CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SLexer * pL
 
 CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pLex)
 {
-	CSTNode * pStnod = PStnodParseBitwiseAndOrExpression(pParctx, pLex);
+	CSTNode * pStnod = PStnodParseEqualityExpression(pParctx, pLex);
 	if (!pStnod)
 		return nullptr;
 
@@ -1136,7 +1136,7 @@ CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pL
 				TOK tokPrev = TOK(pLex->m_tok);	
 				TokNext(pLex); // consume operator
 
-				CSTNode * pStnodExp = PStnodParseBitwiseAndOrExpression(pParctx, pLex);
+				CSTNode * pStnodExp = PStnodParseEqualityExpression(pParctx, pLex);
 				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_LogicalAndOrOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;

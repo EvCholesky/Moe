@@ -1,52 +1,61 @@
 #import "Basic"
+#import "String"
 
 
 TestOperators proc ()
 {
-	printf("\nOperators:\n")
+	printf("Operators:\n")
 
 	nPre : s32
 	nPost : s32
-
 	while nPre < 5
 	{
-		printf("pre = %d, post = %d\n", ++nPre, nPost++)
+		assert(++nPre == nPost++ + 1, "pre/post increment tests", #file, #line)
 	}
 
 	fTrue := true
-	printf("true = %d, !true = %d, !!true = %d\n", fTrue, !fTrue, !!fTrue)
+	assert(fTrue && !fTrue == false && !!fTrue == true, "basic boolean tests", #file, #line)
+	assert((6|9 == 15) && (6&2 == 2), "bad bitwise operators", #file, #line)
 
-	printf("6 | 9 = %d, 6 & 2 = %d\n", 6 | 9, 6 & 2)
 
 	n64 := 64
-	printf("64>>2=%d, 64<<2=%d\n", n64>>2, n64<<2)
+	assert((n64>>2 == 16) && (n64<<2 == 256), "bad shift operators", #file, #line)
+
+	assert(
+		(true || true) == true &&  
+		(true || false) == true &&
+		(false || true) == true &&
+		(false || false) == false, "bad constant literal logical ops", #file, #line)
+
+	assert(
+		(true && true) == true &&  
+		(true && false) == false &&
+		(false && true) == false &&
+		(false && false) == false, "bad constant literal logical ops", #file, #line)
 }
 
 TestPointers proc ()
 {
-	printf("\nPointers:\n")
+	printf("Pointers:\n")
 
 	n : s64 = 456
 	pN := &n
 	ppN := &pN
-	printf("@pN = %lld, n = %lld\n", @pN, n)
+	assert(@pN == 456, "pointer dereference failure", #file, #line)
 
 	n = 123
-	printf("@pN = %lld, n = %lld\n", @pN, n)
+	assert(@pN == 123, "pointer dereference failure", #file, #line)
 
 	@pN = 600
-	printf("@pN = %lld, n = %lld\n", @pN, n)
+	assert(@pN == 600, "pointer dereference failure", #file, #line)
 
 	@@ppN = 890
-	printf("@pN = %lld, n = %lld\n", @pN, n)
+	assert(@pN == 890, "ppN pointer dereference failure", #file, #line)
 
 	pB : & u8 = null
 	fIsNull := (pB == null)
 	fNotPtr := !pB
-	printf("%p == null, fIsNull=%d, fNotPtr=%d\n", pB, fIsNull, fNotPtr)
-
-	pChz := "test string"
-	printf("test string = %s\n", pChz)
+	assert(pB == null && fIsNull == true && fNotPtr == true, "pointer null failure", #file, #line)
 
 	PointStruct struct
 	{
@@ -57,7 +66,10 @@ TestPointers proc ()
 	pPointstruct : & PointStruct = &pointstruct
 
 	pointstruct.m_n = 1234
-	printf("pointstruct.m_n = %d, pPointstruct.m_n = %d\n", pointstruct.m_n, pPointstruct.m_n)
+	assert(pPointstruct.m_n == 1234, "member dereference failure", #file, #line)
+
+	pPointstruct.m_n = 4567
+	assert(pointstruct.m_n == 4567, "member dereference failure", #file, #line)
 
 	// void pointers
 	
@@ -65,142 +77,194 @@ TestPointers proc ()
 	pN := &n
 	pV : & void = pN
 
-	printf("%p == %p\n", pN, pV)
+	assert(pN == pV, "bad null pointer assignment", #file, #line)
 
 	aN := {1,2,3}
 	pN = aN
 	pV = aN
-	printf("%p == %p\n", pN, pV)
+	assert(pN == pV && pN == aN, "bad null pointer array assignment", #file, #line)
 }
 
-TestNestedMethod proc (n : s32)
+TestNestedMethod proc ()
 {
-	NestedMethod proc (n : s32) -> f32
+	NestedMethod proc (n : s32) -> s32
 	{
-		printf("nested method = %d\n", n)
-		return 2.2
+		assert(n == 20, "bad nested method call", #file, #line)
+		return 2 * n
 	}
 
-	printf("\nNested Method: (should print = %d)\n", n)
 	i := 0
-	g : f32
+	nSum := 0
 	while i < 3
 	{
-		g = g + NestedMethod(n)
+		nSum += NestedMethod(20)
 		++i
 	}
-	printf("return = %f(6.6)\n", g)
+	assert(nSum == 120, "bad nested method call", #file, #line)
 }
 
-FPrint proc (pChz : & u8, fArg : bool) -> bool
+FAppend proc (ppCh: && u8, pChz: &u8, fArg: bool) -> bool
 {
-	printf(pChz)
+	@@ppCh = pChz[0]
+	@ppCh = @ppCh + 1
 	return fArg
 }
 
 TestIfElse proc ()
 {
-	printf("\nIf/Else:\n")
+	printf("If/Else:\n")
 
-	CLoop :: 4
-	n := 0
-	while n < CLoop
+	cLoop :: 4
+	aN: [cLoop] int
+	for i:= 0; i < cLoop; ++i
 	{
-		if n == 0
-			{ printf("(if) %d == 0\n",n) }
-		else if n < 2
-			{ printf("(else if) %d < 2\n",n) }
+		if i == 0
+			{ aN[i] = 0 }
+		else if i < 2
+			{ aN[i] = 1 }
 		else
-			{ printf("(else) %d\n",n) }
-		++n
+			{ aN[i] = 2 }
 	}
+	assert(aN[0] == 0 && aN[1] == 1 && aN[2] == 2 && aN[3] == 2, "bad else if", #file, #line)
 
-	printf("short circuit: ABCDE = ")
-	if (FPrint("A", false) && FPrint("X", false)) && FPrint("X", true)
+	aCh: [16] u8
+	pCh: & u8 = aCh
+	if (FAppend(&pCh, "A", false) && FAppend(&pCh, "X", false)) && FAppend(&pCh, "X", true)
 	{
-		printf("ERROR!")
+		assert(false, "else/if failed", #file, #line)
 	}
-	else if FPrint("B", false) || (FPrint("C", true) && FPrint("D", true))
+	else if FAppend(&pCh, "B", false) || (FAppend(&pCh, "C", true) && FAppend(&pCh, "D", true))
 	{
-		printf("E")
+		FAppend(&pCh, "E", false)
 	}
 
 	if false
 	{
 		assert(false, "should never fire", #file, #line)
 	}
+	@pCh = '\0'
+	assert(FAreCozEqual(aCh, "ABCDE"), "Short circuit test failed", #file, #line)
 
-	printf("\nshort circuit: AB0-AB1-AB2-AB = ")
-	n = 0
-	while (FPrint("A", false) || FPrint("B", true) && n < 3)
+	pChzNums := "012345"
+	pCh = aCh
+	n: int = 0
+	while FAppend(&pCh, "A", false) || FAppend(&pCh, "B", true) && n < 3
 	{
-		printf("%d-",n)
+		FAppend(&pCh, pChzNums + n, true)
+		FAppend(&pCh, "-", true)
 		++n
 	}
-	printf("\n")
+	@pCh = '\0'
+	assert(FAreCozEqual(aCh, "AB0-AB1-AB2-AB"), "Short circuit test failed", #file, #line)
 
 	fT1 := true
 	fT2 := true
 	fF1 := false
-	printf("short-circuit %d(0), %d(1)\n",fT1 && fT2 && fF1, fF1 || fT1)
+	assert((fT1 && fT2 && fF1) == false, "bad short circuit", #file, #line)
+	assert((fF1 || fT1) == true, "bad short circuit", #file, #line)
+
 }
 
 TestInitializers proc ()
 {
-	printf("\nInitializers:\n")
+	printf("Initializers:\n")
 
-	cNest :: 3
-	SNestedConst struct // tag=nest
+	// simple types  
+	nZero : int
+	nInit := 21
+	nInst := nInit
+
+	assert(nZero == 0, "bad init", #file, #line)
+	assert(nZero == 0, "bad init", #file, #line)
+	assert(nInit == 21, "bad init", #file, #line)
+	assert(nInst == 21, "bad init", #file, #line)
+
+	// local arrays
+	aNZero : [5] int	
+	aNInit := {:int: 1, 2, 3, 4, 5}
+
+	assert(aNZero[0] == 0 && aNZero[1] == 0 && aNZero[2] == 0 && aNZero[3] == 0 && aNZero[4] == 0, "bad init", #file, #line)
+	assert(aNInit[0] == 1 && aNInit[1] == 2 && aNInit[2] == 3 && aNInit[3] == 4 && aNInit[4] == 5, "bad init", #file, #line)
+
+	aNCopy := aNInit
+	assert(aNCopy[0] == 1 && aNCopy[1] == 2 && aNCopy[2] == 3 && aNCopy[3] == 4 && aNCopy[4] == 5, "bad init", #file, #line)
+
+	aNRef: [] int		
+	assert(aNRef.data == null && aNRef.count == 0, "bad array ref init", #file, #line)
+	aNRef : [] int = aNCopy
+
+	aNRef2: [] int = {2,4,6,8,10}
+	assert(aNRef2[0] == 2 && aNRef2[1] == 4 && aNRef2[2] == 6 && aNRef2[3] == 8 && aNRef2[4] == 10, "bad init", #file, #line)
+
+
+	// local struct instance 
+	SNested struct
 	{
-		m_n : s8 = 123
+		m_nA := 1234
+		m_nB := 4567
 	}
 
-	SInitConst struct // tag=init
+	SSimpleInit struct // simp
 	{
-		m_n : s8 = 7
-		m_g := 2.2
-	    m_aNest : [cNest] SNestedConst
-		m_pInit : & SInitConst
+		m_n0: int = 1
+		m_n1: int = 2
+		m_n2: int = 4
+		m_nest: SNested
 	}
 
-	SNested struct // tag=nest
+	simp : SSimpleInit
+	assert(simp.m_n0 == 1 && simp.m_n1 == 2 && simp.m_n2 == 4, "bad struct init", #file, #line)
+	assert(simp.m_nest.m_nA == 1234 && simp.m_nest.m_nB == 4567, "bad nested struct init", #file, #line)
+
+	simp.m_n0 = 13
+	simpCopy := simp
+	assert(simpCopy.m_n0 == 13 && simpCopy.m_n1 == 2 && simpCopy.m_n2 == 4, "bad struct init", #file, #line)
+	assert(simpCopy.m_nest.m_nA == 1234 && simpCopy.m_nest.m_nB == 4567, "bad nested struct init", #file, #line)
+
+	// struct with array member
+	SBarZero struct
 	{
-		m_n : s8 = 123
-		m_uninit : s8 = ---
+		m_aN: [6] int
 	}
 
-	SInit struct // tag=init
+	SBarInit struct
 	{
-		m_n : s8 = 7
-		m_g := 2.2
-	    m_aNest : [cNest] SNested
-		m_pInit : & SInit
+		m_aN := {:int: 1, 2, 3, 4, 5}
 	}
 
-	initc : SInitConst
-	init : SInit
+	barzero: SBarZero
+	barinit: SBarInit
 
-	// perfect test case for nested function!
-	iInit : s32= 0
-	printf("initc.m_n = %d, initc.m_g = %f, initc.m_pInit=%p\n", initc.m_n, initc.m_g, initc.m_pInit)
-	while iInit < cNest
-	{
-		printf("initc.m_aNest[%d].m_n = %d (123)\n", iInit, initc.m_aNest[iInit].m_n)
-		++iInit
-	}
+	assert(barzero.m_aN[0] == 0 && barzero.m_aN[1] == 0 && barzero.m_aN[2] == 0 && barzero.m_aN[3] == 0 && barzero.m_aN[4] == 0, "bad init", #file, #line)
+	assert(barinit.m_aN[0] == 1 && barinit.m_aN[1] == 2 && barinit.m_aN[2] == 3 && barinit.m_aN[3] == 4 && barinit.m_aN[4] == 5, "bad init", #file, #line)
 
-	iInit = 0
-	printf("init.m_n = %d, init.m_g = %f, init.m_pInit=%p\n", init.m_n, init.m_g, init.m_pInit)
-	while iInit < cNest
+	barinit.m_aN[0] = 13
+	barinitCopy := barinit
+	assert(barinitCopy.m_aN[0] == 13 && barinitCopy.m_aN[1] == 2 && barinitCopy.m_aN[2] == 3 && barinitCopy.m_aN[3] == 4 && barinitCopy.m_aN[4] == 5, "bad init", #file, #line)
+
+	aBarzero: [5] SBarZero
+	aBarinit: [5] SBarInit
+
+	abarinitRef: [] SBarInit = aBarinit // failed
+
+	for iBarzero := 0; iBarzero < aBarzero.count; ++iBarzero
 	{
-		printf("init.m_aNest[%d].m_n = %d (123)\n", iInit, init.m_aNest[iInit].m_n)
-		++iInit
+		assert(aBarzero[iBarzero].m_aN[0] == 0 && 
+				aBarzero[iBarzero].m_aN[1] == 0 && 
+				aBarzero[iBarzero].m_aN[2] == 0 && 
+				aBarzero[iBarzero].m_aN[3] == 0 && 
+				aBarzero[iBarzero].m_aN[4] == 0, "bad init", #file, #line)
+
+		pBarinit := &aBarinit[iBarzero]
+		assert(pBarinit.m_aN[0] == 1 && pBarinit.m_aN[1] == 2 && pBarinit.m_aN[2] == 3 && pBarinit.m_aN[3] == 4 && pBarinit.m_aN[4] == 5, "bad init", #file, #line)
+
+		assert(pBarinit.m_aN[0] == 1 && pBarinit.m_aN[1] == 2 && pBarinit.m_aN[2] == 3 && pBarinit.m_aN[3] == 4 && pBarinit.m_aN[4] == 5, "bad init", #file, #line)
 	}
 }
 
 TestStructures proc ()
 {
-	printf("\nStructures:\n")
+	printf("Structures:\n")
 
 	SChild struct
 	{
@@ -220,8 +284,8 @@ TestStructures proc ()
 
 	root.m_child.m_n = 1234
 
-	printf("%d = %d\n", root.m_child.m_n, root.m_pRootSelf.m_pRootSelf.m_child.m_pChildSelf.m_pChildSelf.m_n)
-
+	assert(root.m_child.m_n == root.m_pRootSelf.m_pRootSelf.m_child.m_pChildSelf.m_pChildSelf.m_n,
+			"member pointer dereference fail", #file, #line)
 
 	SOuter struct
 	{
@@ -234,14 +298,12 @@ TestStructures proc ()
 	 	}
 	}
 
-	printf("aNest count = %d\n", SOuter.SNested.NestedCount)
-	aNest : [SOuter.SNested.NestedCount] SOuter.SNested
+	assert(SOuter.SNested.NestedCount == 3, "bad nested constant", #file, #line)
 
-	iNest := 0
-	while iNest < SOuter.SNested.NestedCount
+	aNest : [SOuter.SNested.NestedCount] SOuter.SNested
+	for iNest := 0; iNest < SOuter.SNested.NestedCount; ++iNest
 	{
-		printf("aNest[%d] = %d\n", iNest, aNest[iNest].m_nNested)
-		++iNest
+		assert(aNest[iNest].m_nNested == 17, "nested initializer fail", #file, #line)
 	}
 
 	SShallowCopy struct
@@ -259,28 +321,19 @@ TestStructures proc ()
 	shallowSrc.m_aN[1] = 555
 	shallowSrc.m_outer.m_n = 127
 
-	printf("ShallowSrc = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
-		shallowSrc.m_f,
-		shallowSrc.m_n,
-		shallowSrc.m_aN[0],
-		shallowSrc.m_aN[1],
-		shallowSrc.m_outer.m_n)
-
 	shallowDst : SShallowCopy
 	shallowDst = shallowSrc
 
-	printf("ShallowDst = %d(true), %d(123), [0]=%d(444), [1]=%d(555), %d(127)\n", 
-		shallowDst.m_f,
-		shallowDst.m_n,
-		shallowDst.m_aN[0],
-		shallowDst.m_aN[1],
-		shallowDst.m_outer.m_n)
-
+	assert(shallowDst.m_f == true, "shallow copy failed", #file, #line)
+	assert(shallowDst.m_n == 123, "shallow copy failed", #file, #line)
+	assert(shallowDst.m_aN[0] == 444, "shallow copy failed", #file, #line)
+	assert(shallowDst.m_aN[1] == 555, "shallow copy failed", #file, #line)
+	assert(shallowDst.m_outer.m_n == 127, "shallow copy failed", #file, #line)
 }
 
 TestRecursion proc ()
 {
-	printf("\nRecursion:\n")
+	printf("Recursion:\n")
 
 	NFactorial proc (n : int) -> int
 	{
@@ -291,38 +344,41 @@ TestRecursion proc ()
 		return 1
 	}
 
-	printf("4! = %d (24)\n", NFactorial(4))
+	assert(NFactorial(4) == 24, "recursion test failed", #file, #line)
 
-	MethodA proc (n : int)
+	aN: [5] int
+	pN := aN.data
+
+	MethodA proc (n : int, ppN: && int)
 	{
 		if (n > 0)	
 		{
-			MethodB(n-1)
+			MethodB(n-1, ppN)
 		}
 	}
 
-	MethodB proc (n : int)
+	MethodB proc (n : int, ppN: && int)
 	{
-		printf("MethodB = %d\n", n)
-		MethodA(n)
+
+		@@ppN = n
+		++(@ppN)
+		MethodA(n, ppN)
 	}
 
-	MethodA(5)
+	MethodA(5, &pN)
+	iExpected := 4
+	for i := 0; i < aN.count; ++i
+	{
+		assert(aN[i] == iExpected, "recursion test failure", #file, #line)
+		--iExpected
+	}
 }
 
 TestTypedefs proc ()
 {
-	printf("\nTypedefs:\n")
+	printf("Typedefs:\n")
 
-	n : SLater.IntAlias = 2
-	aN : SLater.QuadArray
-
-	n := 0
-	while n < SLater.ConstFour
-	{
-		printf("aN[%d] = %d\n", aN[n], n)
-		++n
-	}
+	// BB - no typedef tests?
 }
 
 PrintStringArray proc (pChzLabel : & u8, aPchz : [] & u8)
@@ -341,25 +397,18 @@ PrintStringArray proc (pChzLabel : & u8, aPchz : [] & u8)
 	printf("}\n")
 }
 
-PrintIntArray proc (pChzLabel : & u8, aN : [] int)
+CopyIntArray proc (aN : [] int, ppN: && int)
 {
-	printf("%s[%d] = {", pChzLabel, aN.count)
-	n : int
-	while n < aN.count
+	for iN := 0; iN < aN.count; ++iN
 	{
-		printf("%d", aN[n])
-		++n
-		if n < aN.count
-		{
-			printf(", ")
-		}
+		@@ppN = aN[iN]
+		(@ppN)++
 	}
-	printf("}\n")
 }
 
 TestEnums proc ()
 {
-	printf("\nEnumerations:\n")
+	printf("Enumerations:\n")
 
 	ENUMK enum int
 	{
@@ -375,68 +424,86 @@ TestEnums proc ()
 	//enumkTest = 2					// should not work
 	//enumkTest = SOuter.MEMB.Two 	// should not work
 
-	printf("SLater.MEMB.One = %d\n", SLater.MEMB.One)
-	printf("SLater.MEMB.Two = %d\n", SLater.MEMB.Two)
-	printf("SLater.MEMB.Three = %d\n", SLater.MEMB.Three)
+	assert(SLater.MEMB.One == 1, "enum value test failed", #file, #line)
+	assert(SLater.MEMB.Two == 2, "enum value test failed", #file, #line)
+	assert(SLater.MEMB.Three == 3, "enum value test failed", #file, #line)
 
-	printf("Ack = %d (0)\n", ENUMK.Ack)
-	printf("Bah = %d (1)\n", ENUMK.Bah)
-	printf("Ugh = %d (2)\n", ENUMK.Ugh)
-	printf("Guh = %d (3)\n", ENUMK.Guh)
-	printf("Four = %d (4)\n", ENUMK.Four)
-	printf("Final = %d (5)\n", ENUMK.Final)
-	printf("(nil) = %d\n", ENUMK.nil)
-	printf("(min) = %d\n", ENUMK.min)
-	printf("(last) = %d\n", ENUMK.last)
-	printf("(max) = %d\n", ENUMK.max)
+	assert(ENUMK.Ack == 0, "enum value test failed", #file, #line)
+	assert(ENUMK.Bah == 1, "enum value test failed", #file, #line)
+	assert(ENUMK.Ugh == 2, "enum value test failed", #file, #line)
+	assert(ENUMK.Guh == 3, "enum value test failed", #file, #line)
+	assert(ENUMK.Four == 4, "enum value test failed", #file, #line)
+	assert(ENUMK.Final == 5, "enum value test failed", #file, #line)
+	assert(ENUMK.nil == -1, "enum value test failed", #file, #line)
+	assert(ENUMK.min == 0, "enum value test failed", #file, #line)
+	assert(ENUMK.last == 5, "enum value test failed", #file, #line)
+	assert(ENUMK.max == 6, "enum value test failed", #file, #line)
 
-	nBah : s32 = -ENUMK.Bah
-	printf("nBah = %d\n", nBah)
-
-	enumkAck := ENUMK.Ack
-	printf("enumkAck = %d\n", enumkAck)
-
-	printf("ENUMK.names: count=%d data=0x%p\n", ENUMK.names.count, ENUMK.names.data)
-	PrintStringArray("ENUMK.names", ENUMK.names)
-	PrintIntArray("ENUMK.values", ENUMK.values)
+	aPchzNames := {"Ack", "Bah", "Ugh", "Guh", "Four", "Final"}
+	assert(ENUMK.names.count == 6, "bad array name count", #file, #line)
+	for ipChzNames := 0; ipChzNames < ENUMK.names.count; ++ipChzNames
+	{
+		assert(ENUMK.values[ipChzNames] == ipChzNames, "bad enum value", #file, #line)	
+		assert(FAreCozEqual(ENUMK.names[ipChzNames], aPchzNames[ipChzNames]), "bad enum value", #file, #line)	
+	}
 }
 
 TestArrays proc () 
 {
-	printf("\nArrays:\n")
+	printf("Arrays:\n")
 
 	aN : [5] int
-
-	PrintIntArray("aN(allZeros)", aN)
-
-	n : int
-	while n < aN.count
+	for iN := 0; iN < aN.count; ++iN
 	{
-		aN[n] = n * 2
-		++n
+		assert(aN[iN] == 0, "array init fail (allZeros)", #file, #line)
 	}
-
-	PrintIntArray("aN(post)", aN)
 
 	aNRef : [] int = aN
 
-	PrintIntArray("aNRef", aNRef)
+	for iN := 0; iN < aN.count; ++iN
+	{
+		aN[iN] = iN * 2
+	}
 
-	printf("aN.data = %p, aNRef.data = %p\n", aN.data, aNRef.data)
+	for iN := 0; iN < aN.count; ++iN
+	{
+		assert(aN[iN] == iN * 2, "array init fail (values)", #file, #line)
+		assert(aNRef[iN] == iN * 2, "array init fail (anRef)", #file, #line)
+	}
+
+	assert(aN.data == aNRef.data, "array with bad data member", #file, #line)
 
 	ConstAry :: { 1, 2, 3, 4}
-	PrintIntArray("ConstAry", ConstAry)
+	for iN := 0; iN < ConstAry.count; ++iN
+	{
+		ConstAry[iN] == iN + 1
+	}
 
 	aNExplicit : [] int = {:int: 2, 4, 5}
-	PrintIntArray("ANExplicit", aNExplicit)
+	for iN := 0; iN < aNExplicit.count; ++iN
+	{
+		aNExplicit[iN] == iN + 2
+	}
 
 	aNInferred : [] int = {2, 4, 5}
-	PrintIntArray("ANInferred", aNInferred)
+	for iN := 0; iN < aNInferred.count; ++iN
+	{
+		aNInferred[iN] == iN + 2
+	}
 
 	aNTerse := {2, 4, 5}
-	PrintIntArray("ANTerse", aNTerse)
+	for iN := 0; iN < aNTerse.count; ++iN
+	{
+		aNTerse[iN] == iN + 2
+	}
 
-	PrintIntArray("AnArgs", {3,4,4567, 2})
+	aNBuffer: [10] int
+	pN : & int = aNBuffer
+	CopyIntArray({3,4,4567, 2}, &pN)
+	for iN := 0; iN < aNTerse.count; ++iN
+	{
+		aNTerse[iN] == aNBuffer[iN]
+	}
 
 
 	kN :: {1, 2, 3, 4}
@@ -483,9 +550,15 @@ TestArrays proc ()
 	}
 	
 }
+
+FIsNear proc (gA: float, gB: float) -> bool
+{
+	return GAbs(gA - gB) < 0.00001
+}
+
 TestCasting proc () 
 {
-	printf("\nExplicit Casts:\n")
+	printf("Explicit Casts:\n")
 
 	SFoo struct
 	{
@@ -496,71 +569,63 @@ TestCasting proc ()
 	g := 12.5
 	n := cast(int) g
 	g2 := cast(float) n
-	printf("%f: %d(12) -> %f(12.0)\n", g, n, g2)
+	assert(FIsNear(g, 12.5) && n == 12 && FIsNear(g2, 12), "numeric casting failed", #file, #line)
 
 	n = 256 + 22
 	n2 : s8 = cast(s8) n
-	printf("%d -> %d(22)\n", n, n2)
+	assert(n2 == 22, "overflow cast", #file, #line)
 
 	foo : SFoo
 	foo.m_a = 1234
 	foo.m_b = 5678
 
 	pN := cast(&int) &foo
-	printf("%d(1234), %d(5678)\n", pN[0], pN[1])
-
-	printf("%d(1234), %d(5678)\n", (cast (&SFoo)pN).m_a,  (cast (&SFoo)pN).m_b)
+	assert(pN[0] == 1234 && pN[1] == 5678, "cast failed", #file, #line)
+	assert((cast (&SFoo)pN).m_a == 1234 && (cast (&SFoo)pN).m_b == 5678, "cast failed", #file, #line)
 
 	pFoo := cast(&SFoo) pN
-	printf("%d(1234), %d(5678)\n", pFoo.m_a, pFoo.m_b)
+	assert(pFoo.m_a == 1234 && pFoo.m_b == 5678, "cast faled", #file, #line)
 
 	gAcast : f32 = acast acast n
 	nAcast : int = acast acast g
-	printf("acast (278.0f, 12) %f %d\n", gAcast, nAcast)
+	assert(FIsNear(gAcast, 278) && nAcast == 12, "acast failed", #file, #line)
+}
+
+OVERK enum
+{
+	Int32,
+	Int16,
+	Float,
+	String,
 }
 
 TestOverloading proc ()
 {
-	printf("\nOverloading:\n")
+	printf("Overloading:\n")
 
 	n: s16 = 5
-	OverloadedPrint(n)
-	OverloadedPrint(2)
-	OverloadedPrint(2.2)
-
-	OverloadedPrint("test")
+	assert(OverkTest(n) == OVERK.Int16, "Overload resolution failed", #file, #line)
+	assert(OverkTest(2) == OVERK.Int32, "Overload resolution failed", #file, #line)
+	assert(OverkTest(2.2) == OVERK.Float, "Overload resolution failed", #file, #line)
+	assert(OverkTest("test") == OVERK.String, "Overload resolution failed", #file, #line)
 }
 
-OverloadedPrint proc (n: int)
-{
-	printf("Overloaded integer %d\n", n)
-}
-
-OverloadedPrint proc (n: s16)
-{
-	printf("Overloaded s16 %d\n", n)
-}
-
-OverloadedPrint proc (pChz: & u8)
-{
-	printf("Overloaded & char %s\n", pChz)
-}
-
-OverloadedPrint proc (g: float)
-{
-	printf("Overloaded float %f\n", g)
-}
+OverkTest proc (n: s16) -> OVERK 			{return OVERK.Int16 }
+OverkTest proc (n: int) -> OVERK 			{return OVERK.Int32 }
+OverkTest proc (g: float) -> OVERK 			{return OVERK.Float }
+OverkTest proc (pChz: & u8) -> OVERK 		{return OVERK.String }
 
 TestGlobals proc ()
 {
-	printf("\nGlobal initialization:\n")
-	printf("g_n: %d (15)\n",g_n)
+	printf("Global initialization:\n")
+	assert(g_n == 15, "global init failed", #file, #line)
+	assert(g_aN[0] == 2 && g_aN[1] == 4 && g_aN[2] == 5, "global init failed", #file, #line)
 
-	printf("g_aN: %d, %d, %d (2, 4, 5)\n", g_aN[0], g_aN[1], g_aN[2])
-
-	printf("g_glob = {%d, %d, %d} ({2, 0, 456})\n", g_glob.m_n, g_glob.m_nUninit, g_glob.m_n2)
-	printf("g_aGlob[1] = {%d, %d, %d} ({2, 0, 456})\n", g_aGlob[1].m_n, g_aGlob[1].m_nUninit, g_aGlob[1].m_n2)
-	printf("g_aGlob[2] = {%d, %d, %d} ({2, 0, 456})\n", g_aGlob[2].m_n, g_aGlob[2].m_nUninit, g_aGlob[2].m_n2)
+	assert(g_glob.m_n == 2 && g_glob.m_nUninit == 0 && g_glob.m_n2 == 456, "global init failed", #file, #line)
+	for iGlob := 0; iGlob < g_aGlob.count; ++iGlob
+	{
+		assert(g_aGlob[iGlob].m_n == 2 && g_aGlob[iGlob].m_nUninit == 0 && g_aGlob[iGlob].m_n2 == 456, "global init failed", #file, #line)
+	}
 }
 
 g_n : s32 =15
@@ -577,72 +642,68 @@ g_glob : SGlobal // struct globals
 
 g_aGlob : [4] SGlobal // array of struct globals
 
-CallByReference proc (pChz: & u8)
+CallByReference proc (n: int) -> int
 {
 	pFnSelfTest := CallByReference // test pointer to self procedure
 
-	printf("(ProcRef) %s\n", pChz)
+	return n
 }
 
-CallByReferenceMultiple proc (pChzA: & u8, pChzB: & u8)
+CallByReferenceMultiple proc (nA: int, nB: int) -> int
 {
-	printf("(ProcRef) %s .. %s\n", pChzA, pChzB)
+	return nA * 2 + nB
 }
 
-PassedMethod proc (pFn: (pChz: & u8)->void, pChz: & u8)
+PassedMethod proc (pFn: (n: int)->int, n: int) -> int
 {
-	pFn(pChz)
+	return pFn(n) * 10
 }
 
 SProcRefStruct struct
 {
-	m_pFn: (pChz: & u8)->void
+	m_pFn: (n: int)->int
 }
 
-TestFunc typedef (pChz: & u8)
+TestFunc typedef (n: int)->int
 
 TestProcedureRef proc () -> int 
 {
-	printf("\nProcedureRef:\n")
+	printf("ProcedureRef:\n")
 
 	{ // Test name collisions being fixed by the procedure overload resolution
-		CallByReference: (pChzA: &u8, pChzB: &u8) = CallByReferenceMultiple
-		CallByReference("This Should have", "Two parts.")
-
-		CallByReference("This Should have one part.")
+		CallByReference: (nA: int, nB: int)->int = CallByReferenceMultiple
+		assert(CallByReference(100, 25) == 225, "Call by function overload resolution fail", #file, #line)
+		assert(CallByReference(1234) == 1234, "Call by function fail", #file, #line)
 	}
 
 	pFnPrintf := printf
 	pFnPrintf("Varargs by reference %s\n", "and it works")
 
-	pFn: (pChz: & u8)->void
+	pFn: (n: int)->int
 	pFn = CallByReference
-	pFn("pFn")
+	assert(pFn(1111) == 1111, "Call by function fail (pFn)", #file, #line)
 
-	ppFn: & (pChz: & u8)->void
+	ppFn: & (n: int)->int
 
 	//ppFn = &(CallByReference) // Error: Can't take the address of constant proc address
 	ppFn = &pFn
-	(@ppFn)("ppFn")
+	assert((@ppFn)(2222) == 2222, "Call by function fail (ppFn)", #file, #line)
 	//@ppFn("Error: Procedure call precedencce is higher than dereference")
 
-	apFn: [2] (pChz: & u8)
+	apFn: [2] (n: int)->int
 	apFn[1] = CallByReference
-	apFn[1]("apFn")
+	assert(apFn[1](3333) == 3333, "Call by function fail (apFn)", #file, #line)
 
 	prs: SProcRefStruct
 	prs.m_pFn = CallByReference
-	prs.m_pFn("prs.m_pFn")
+	assert(prs.m_pFn(4444) == 4444, "Call by function fail (prs.m_pFn)", #file, #line)
 
-	PassedMethod(CallByReference, "PassedMethod direct")
-	PassedMethod(pFn, "PassedMethod pFn")
+	assert(PassedMethod(CallByReference, 123) == 1230, "Passed method fail (direct)", #file, #line)
+	assert(PassedMethod(pFn, 456) == 4560, "Passed method fail (pFn)", #file, #line)
 
 	pFn2: TestFunc = CallByReference
 
-	if pFn == pFn2
-	{
-		printf("Procedure reference comparisons work.\n")
-	}
+	assert(pFn == pFn2, "procedure reference comparison fail", #file, #line)
 	return 1
 }
 
@@ -655,26 +716,28 @@ END
 
 TestHereStrings proc ()
 {
-	printf("\nHere Strings:\n")
+	printf("Here Strings:\n")
 
-	printf(g_pChzHere)
+	pChzNotHere: & u8 = "This is a string\nthat should just work\neven though it's several lines\nand \"contains quotes\"\n"
+	assert(FAreCozEqual(g_pChzHere, pChzNotHere), "here string failure", #file, #line)
 
 	pChzTest := #string HERE
 this HERE is a HERE
 string inlined
 HERE
-
-	printf("\n%s\n", pChzTest)
+	
+	pChzNotHere2: & u8 = "this HERE is a HERE\nstring inlined\n"
+	assert(FAreCozEqual(pChzTest, pChzNotHere2), "here string failure", #file, #line)
 }
 
 TestLoops proc ()
 {
-	printf("\nFor Loops:\n")
+	printf("For Loops:\n")
 
-	printf ("Expect 1,2,3,4,5:  ")
-	for i:=1; i<6; ++i
+	aNExpected := {1, 2, 3, 4, 5 }
+	for iN := 1; iN < 1+aNExpected.count; ++iN
 	{
-		printf("%d,", i)
+		assert(iN == aNExpected[iN-1], "for loop fail", #file, #line)
 	}
 
 	while true
@@ -682,60 +745,63 @@ TestLoops proc ()
 		break
 	}
 
-	for i:=1; true;  ++i
+	for i:=1; true; ++i
 	{
 		break	
 	}
 
-	printf ("\nExpect 2,3,4:  ")
+	i := 2
 	iter: SIntIterator
 	for_each iter = iterMake(2,5)
 	{
-		printf("%d,", iter.m_i)
+		assert(i == iter.m_i, "iterator fail", #file, #line)
+		++i	
 	}
 
-	printf ("\nExpect 0,1,2,3:  ")
+	i = 0
 	iter2:= iterMake(0, 4)
 	for_each iter2
 	{
-		printf("%d,", iter2.m_i)
+		assert(i == iter2.m_i, "iterator fail", #file, #line)
+		++i
 	}
-	printf("\n")
 
+	i = 0
+	aCh: [5] char = {'T', 'e', 's', 't', 0 }
 	for_each pCoz := "Test"
 	{
-		printf("'%c',", @pCoz)
+		assert(aCh[i] == @pCoz, "iterator fail (char)", #file, #line)
+		++i
 	}
-	printf("\n")
+
+	i = 0
+	apCoz: [6] & u8 = {"😁Test✂", "Test✂", "est✂", "st✂", "t✂", "✂" }
 	for_each pCoz := "😁Test✂"
 	{
-		printf("%s\n", pCoz)
+		assert(FAreCozEqual(apCoz[i], pCoz), "iterator fail (pCoz)" , #file, #line)
+		++i
 	}
-	printf("\n expect'' :'")
-	for_each pCoz := ""
-	{
-		printf("'%c',", @pCoz)
-	}
-	printf("'\n")
 }
 
 TestBreakContinue proc ()
 {
-	printf("\nBreak & Continue:\n")
+	printf("Break & Continue:\n")
 
+	aNExpected := {0, 1, 2, 5, 6}
+	pN := aNExpected.data
 	for_each iter := iterMake(0, 10)
 	{
 		if (iter.m_i == 3 || iter.m_i == 4)
 			{ continue }
 
-		printf("i=%d, ", iter.m_i)
+		assert(@pN++ == iter.m_i, "break/continue test fail", #file, #line)
 
 		if (iter.m_i == 6)
 			{ break }
 	}
 
-	printf("\n")
 	i: int
+	pN := aNExpected.data
 	while i < 10
 	{
 		iPrev:= i
@@ -743,35 +809,27 @@ TestBreakContinue proc ()
 		if iPrev == 3 || iPrev == 4
 			{ continue }
 
-		printf("i=%d, ", iPrev)
+		assert(@pN++ == iPrev, "break/continue test fail", #file, #line)
 
 		if (iPrev == 6)
 			{ break }
 	}
-	printf("\n")
 
 	// labels
 	#label Outer
 	for y:=0; y<10; ++y
 	{
-		printf("\n")
 		for x:=0; x<10; ++x
 		{
 			if x == 4
-			{ 
-				printf("continue.")
-				continue Outer
-			}
+				{ continue Outer }
 
-			printf("(%d,%d), ", x, y)
+			assert(x < 4 && y < 5, "break/continue fail", #file, #line)
 
 			if x == 3 && y == 4
-			{ 
-				printf("break.")
-				break Outer 
-			}
+				{ break Outer }
 		}
-		printf("Never print\n")
+		assert(false, "break/continue fail", #file, #line)
 	}
 }
 
@@ -781,7 +839,7 @@ main proc () -> int
 	TestOperators()
 	TestPointers()
 	TestIfElse()
-	TestNestedMethod(20)
+	TestNestedMethod()
 	TestInitializers()
 	TestStructures()
 	TestRecursion()

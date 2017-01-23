@@ -116,3 +116,37 @@ FTryConvertUcs4ToUtf8 proc (pWchzIn: & u32, pCozOut: & u8, pCozOutMax: & u8) -> 
 	return true
 }
 
+NCmpCoz proc (pCozA: & u8, pCozB: & u8) -> int
+{
+	if (pCozA == null) | (pCozB == null)
+	{
+		if pCozA == pCozB
+			{ return 0 }
+		
+		if (pCozA == null) 
+			{ return -1 }
+		return 1
+	}
+
+	while (@pCozA != '\0') | (@pCozB != '\0')
+	{
+		chA := @pCozA
+		chB := @pCozB
+
+		if chA < chB
+			{ return -1 }
+		else if chA > chB
+			{ return 1 }
+
+		++pCozA
+		++pCozB
+	}
+	return 0
+}
+
+FAreCozEqual proc (pChzA: & u8, pChzB: & u8) -> bool
+{
+	return NCmpCoz(pChzA, pChzB) == 0
+}
+
+		
