@@ -136,6 +136,7 @@ enum PARK // PARse Kind
 	PARK_ExpressionList,	// list of expressions, used by array literals - doesn't error on rhs only values.
 	PARK_If,
 	PARK_Else,
+	PARK_Switch,
 
 	PARK_ArrayDecl,
 	PARK_ReferenceDecl,		// used in type specification, not used for the unary address-of operator

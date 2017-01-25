@@ -4651,6 +4651,143 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;
+					case RWORD_Case:
+					case RWORD_Default:
+						{
+							if (pTcsentTop->m_nState < pStnod->CStnodChild())
+							{
+								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								break;
+							}
+
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+						} break;
+					case RWORD_Switch:
+						{
+							if (pTcsentTop->m_nState < pStnod->CStnodChild())
+							{
+								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
+								break;
+							}
+
+							auto pStnodExp = pStnod->PStnodChildSafe(0);
+							if (!pStnod)
+							{
+								EmitError(pTcwork, pStnod, "switch missing expression");
+								return TCRET_StoppingError;
+							}
+
+							auto pTinExp = pStnodExp->m_pTin;
+
+							STypeInfo * pTinExpPromoted = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodExp);
+							if (pTinExpPromoted->m_tink != TINK_Integer && 
+								pTinExpPromoted->m_tink != TINK_Bool && 
+								pTinExpPromoted->m_tink != TINK_Enum)
+							{
+								EmitError(pTcwork, pStnod, "switch expression must evaluate to an integer type");
+								return TCRET_StoppingError;
+							}
+
+							EWC::CDynAry<int> aryIStnod(pTcwork->m_pAlloc, BK_TypeCheck, pStnod->CStnodChild());
+							EWC::CDynAry<SBigInt> aryBint(pTcwork->m_pAlloc, BK_TypeCheck, pStnod->CStnodChild());
+
+							int iStnodDefault = -1;
+							for (int iStnodIt = 1; iStnodIt < pStnod->CStnodChild(); ++iStnodIt)
+							{
+								auto pStnodIt = pStnod->PStnodChild(iStnodIt);
+			
+								if (!EWC_FVERIFY(pStnodIt->m_park == PARK_ReservedWord, "expected switch case"))
+									continue;
+
+								RWORD rword = pStnodIt->m_pStval->m_rword;
+								if (rword == RWORD_Default)
+								{
+									if (iStnodDefault >= 0)
+									{
+										auto pStnodPrev = pStnod->PStnodChild(iStnodDefault);
+										auto pLexloc = &pStnodPrev->m_lexloc;
+										s32 iLine;
+										s32 iCol;
+										CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexloc, &iLine, &iCol);
+
+										EmitError(
+											pTcwork, pStnodIt,
+											"switch statement default case already defined. %s (%d,%d). ",
+											pLexloc->m_strFilename.PCoz(),
+											iLine,
+											iCol);
+										continue;
+									}
+									iStnodDefault = iStnodIt;
+								}
+								else
+								{
+									auto pStnodLit = pStnodIt->PStnodChildSafe(0);
+									if (!EWC_FVERIFY(pStnodLit, "missing case literal"))
+										continue;
+
+									STypeInfo * pTinCase = PTinPromoteUntypedTightest(
+																pTcwork,
+																pTcsentTop->m_pSymtab,
+																pStnodLit,
+																pTinExpPromoted);
+
+									if (!FCanImplicitCast(pTinCase, pTinExpPromoted))
+									{
+										CString strTinCase = StrFromTypeInfo(pTinCase);
+										CString strTinExp = StrFromTypeInfo(pTinExpPromoted);
+										EmitError(pTcwork, pStnod, "No conversion between %s and %s", strTinCase.PCoz(), strTinExp.PCoz());
+									}
+
+									FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinExpPromoted, pStnodLit);
+
+									auto pTinLit = pStnodLit->m_pTin;
+									if (!pTinLit || pTinLit->m_tink != TINK_Literal)
+									{
+										EmitError(pTcwork, pStnod, "case literal does not evaluate to a constant");
+										continue;
+									}
+
+									if (!EWC_FVERIFY(pStnodLit->m_pStval, "case literal missing value"))
+										continue;
+
+									SBigInt bint = BintFromStval(pStnodLit->m_pStval);
+									aryIStnod.Append(iStnodIt);
+									aryBint.Append(bint);
+								}
+							}
+
+							for (int iBintLhs = 0; iBintLhs < aryBint.C(); ++iBintLhs)
+							{
+								SBigInt bintLhs = aryBint[iBintLhs];
+								for (int iBintRhs = iBintLhs+1; iBintRhs < aryBint.C(); ++iBintRhs)
+								{
+									if (FAreEqual(bintLhs, aryBint[iBintRhs]))
+									{
+										auto pStnodLhs = pStnod->PStnodChild(aryIStnod[iBintLhs]);
+										auto pStnodRhs = pStnod->PStnodChild(aryIStnod[iBintLhs]);
+
+										auto pLexlocLhs = &pStnodLhs->m_lexloc;
+										s32 iLineLhs;
+										s32 iColLhs;
+										CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocLhs, &iLineLhs, &iColLhs);
+
+										EmitError(
+											pTcwork, pStnodRhs,
+											"case value %s%lld already used. %s(%d, %d):",
+											(bintLhs.m_fIsNegative) ? "-" : "",
+											bintLhs.m_nAbs,
+											pLexlocLhs->m_strFilename.PCoz(),
+											iLineLhs,
+											iColLhs);
+									}
+								}
+							}
+
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+						} break;
 					case RWORD_While:
 					case RWORD_If:
 						{
@@ -5425,10 +5562,7 @@ void PerformTypeCheck(
 
 void AssertEquals(const SBigInt & bintLhs, const SBigInt & bintRhs)
 {
-	bool fIsAbsSame = bintLhs.m_nAbs == bintRhs.m_nAbs;
-	bool fIsSignSame = bintLhs.m_fIsNegative == bintRhs.m_fIsNegative;
-	fIsSignSame |= (fIsAbsSame & (bintLhs.m_nAbs == 0));
-	EWC_ASSERT(fIsAbsSame & fIsSignSame, 
+	EWC_ASSERT(FAreEqual(bintLhs, bintRhs),
 		"expected %s%llu but calculated %s%llu",
 		(bintLhs.m_fIsNegative) ? "-" : "", bintLhs.m_nAbs,
 		(bintRhs.m_fIsNegative) ? "-" : "", bintRhs.m_nAbs);
@@ -5605,6 +5739,11 @@ void TestTypeCheck()
 	//pCozOut = "([2]int $aN ([2]int Literal:Int64 int)) (int $n int) (bool (int [2]int Literal:Int64) int)";
 	//AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
+	pCozIn = "n:= 2; switch n {case 1: ++n; case 2: --n; default: }";
+	pCozOut = "(int $n Literal:Int64) "
+			  "(switch int (case Literal:Int64 ({} (int int))) (case Literal:Int64 ({} (int int))) (default ({})))";
+	AssertTestTypeCheck(&work, pCozIn, pCozOut);
+
 	pCozIn = "pN: &s16; cB := pN - pN; pN = pN + 2; pN += 1";
 	pCozOut = "(&s16 $pN (&s16 s16)) (sSize $cB (sSize &s16 &s16)) (= &s16 (&s16 &s16 Literal:Int8)) (= &s16 Literal:Int64)";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
@@ -5616,7 +5755,7 @@ void TestTypeCheck()
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
 				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
 				"(iterNext(&u8)->void $iterNext (Params (&u8 $pN (&u8 u8))) void ({} (void))) "
-				"(u8 $it u8) (??? u8 (u8 iterMake(u8)->u8 Literal:Int8) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
+				"(u8 $it u8) (for_each u8 (u8 iterMake(u8)->u8 Literal:Int8) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn = "iterMake proc (n: u8) -> u8 { return n } "
@@ -5626,7 +5765,7 @@ void TestTypeCheck()
 	pCozOut = "(iterMake(u8)->u8 $iterMake (Params (u8 $n u8)) u8 ({} (u8 u8))) "
 				"(iterIsDone(&u8)->bool $iterIsDone (Params (&u8 $pN (&u8 u8))) bool ({} (bool Literal:Bool8))) "
 				"(iterNext(&u8)->void $iterNext (Params (&u8 $pN (&u8 u8))) void ({} (void))) "
-				"(??? (u8 $it (u8 iterMake(u8)->u8 Literal:Int8)) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
+				"(for_each (u8 $it (u8 iterMake(u8)->u8 Literal:Int8)) (bool iterIsDone(&u8)->bool (&u8 u8)) (void iterNext(&u8)->void (&u8 u8)) ({}))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn = "SFunc proc () { { n:=5; n=2 } }";
@@ -5848,7 +5987,7 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn =	"{ n:s64; if n == 2 {n = 5 } else {n = 6}}";
-	pCozOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) ({} (= s64 Literal:Int64)) (??? ({} (= s64 Literal:Int64)))))";
+	pCozOut = "({} (s64 $n s64) (bool (bool s64 Literal:Int64) ({} (= s64 Literal:Int64)) (else ({} (= s64 Literal:Int64)))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn =	"{ n:s64 = 5; while n > 0 { --n } }";
@@ -5860,7 +5999,7 @@ void TestTypeCheck()
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn =	"{ n:s64; if n {n = 5} else {n = 6}}";
-	pCozOut = "({} (s64 $n s64) (bool s64 ({} (= s64 Literal:Int64)) (??? ({} (= s64 Literal:Int64)))))";
+	pCozOut = "({} (s64 $n s64) (bool s64 ({} (= s64 Literal:Int64)) (else ({} (= s64 Literal:Int64)))))";
 	AssertTestTypeCheck(&work, pCozIn, pCozOut);
 
 	pCozIn		= "AddNums proc (a : int, b := 1)->int { return a + b} n := AddNums(2,3)";

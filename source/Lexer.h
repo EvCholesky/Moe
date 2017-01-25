@@ -67,6 +67,9 @@ enum TOK
 		RW(If) STR(if),	\
 		RW(Else) STR(else), \
 		RW(Switch) STR(switch), \
+		RW(Case) STR(case), \
+		RW(Default) STR(default), \
+		RW(Fallthrough) STR(fallthrough), \
 		RW(Break) STR(break), \
 		RW(Continue) STR(continue), \
 		RW(Return) STR(return), \

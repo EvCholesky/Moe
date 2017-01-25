@@ -74,6 +74,7 @@ const char * PChzFromPark(PARK park)
 		"Expression List",
 		"If",
 		"Else",
+		"Switch",
 		"Array Decl",
 		"Reference Decl",
 		"Procedure Reference Decl",
@@ -668,7 +669,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 				CSTNode * pStnodValues = PStnodParseExpressionList(pParctx, pLex);
 				pStdecl->m_iStnodInit = pStnodLit->IAppendChild(pStnodValues);
 
-				Expect(pParctx, pLex, TOK('}'));
+				Expect(pParctx, pLex, TOK('}'), "while parsing array literal");
 				return pStnodLit;
 			} break;
 		case '(':	// ( Expression )
@@ -2424,6 +2425,116 @@ CSTNode * PStnodExpectCompoundStatement(CParseContext * pParctx, SLexer * pLex, 
 	return PStnodParseCompoundStatement(pParctx, pLex, nullptr);
 }
 
+void CreateSwitchList(CParseContext * pParctx, SLexer * pLex, CSTNode ** ppStnodList)
+{
+	auto pStnodList = *ppStnodList;
+	if (pStnodList)
+	{
+		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+		EWC_ASSERT(pStnodList->m_pSymtab == pSymtabPop, "CSymbol table push/pop mismatch (list)");
+	}
+
+	SLexerLocation lexloc(pLex);
+
+	pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+	pStnodList->m_tok = TOK('{');
+	pStnodList->m_park = PARK_List;
+	pStnodList->m_pSymtab = pParctx->m_pWork->PSymtabNew("case", &pParctx->m_pWork->m_unsetTin);
+	PushSymbolTable(pParctx, pStnodList->m_pSymtab, lexloc);
+	*ppStnodList = pStnodList;
+}
+
+CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
+{
+	CSTNode * pStnodSwitch = PStnodParseReservedWord(pParctx, pLex, RWORD_Switch);
+	CSTNode * pStnodExp = PStnodParseExpression(pParctx, pLex);
+
+	if (!pStnodExp)
+	{
+		ParseError(pParctx, pLex, "switch statement missing expression");
+
+		pParctx->m_pAlloc->EWC_DELETE(pStnodSwitch);
+		return nullptr;
+	}
+
+	pStnodSwitch->IAppendChild(pStnodExp);
+
+	if (!FConsumeToken(pLex, TOK('{')))
+	{
+		ParseError(pParctx, pLex, "Expected '{' for case statements'");
+
+		pParctx->m_pAlloc->EWC_DELETE(pStnodSwitch); // pStnodExp will be deleted in dtor
+		return nullptr;
+	}
+
+	CSTNode * pStnodList = nullptr;
+	while (pLex->m_tok != TOK('}'))
+	{
+		RWORD rword = RwordLookup(pLex);
+		switch(rword)
+		{
+			case RWORD_Case:
+			{
+				CSTNode * pStnodCase = PStnodParseReservedWord(pParctx, pLex, RWORD_Case);
+				pStnodSwitch->IAppendChild(pStnodCase);
+
+				auto pStnodValue = PStnodParseExpression(pParctx, pLex);
+				if (!pStnodValue)
+				{
+					ParseError(pParctx, pLex, "case statement missing it's label");
+				}
+
+				Expect(pParctx, pLex, TOK(':'));
+				CreateSwitchList(pParctx, pLex, &pStnodList);
+
+				pStnodCase->IAppendChild(pStnodValue);
+				pStnodCase->IAppendChild(pStnodList);
+
+			} break;
+			case RWORD_Default:
+			{
+				CSTNode * pStnodDefault = PStnodParseReservedWord(pParctx, pLex, RWORD_Default);
+				pStnodSwitch->IAppendChild(pStnodDefault);
+
+				Expect(pParctx, pLex, TOK(':'));
+				CreateSwitchList(pParctx, pLex, &pStnodList);
+
+				pStnodDefault->IAppendChild(pStnodList);
+
+			} break;
+			default:
+			{
+				CSTNode * pStnod = PStnodParseStatement(pParctx, pLex);
+				if (!pStnodList)
+				{
+					ParseError(pParctx, pLex, "missing 'case' or 'default' label");
+				}
+				else
+				{
+					pStnodList->IAppendChild(pStnod);
+				}
+			}
+		}
+	}
+
+	if (pStnodList)
+	{
+		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+		EWC_ASSERT(pStnodList->m_pSymtab == pSymtabPop, "CSymbol table push/pop mismatch (list)");
+	}
+
+	Expect(pParctx, pLex, TOK('}'));
+
+	if (pStnodSwitch->CStnodChild() < 2)
+	{
+		ParseError(pParctx, pLex, "switch statement contains no 'case' or 'default' labels");
+		pParctx->m_pAlloc->EWC_DELETE(pStnodSwitch); // pStnodExp will be deleted in dtor
+		return nullptr;
+	}
+
+	return pStnodSwitch;
+}
+
 CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SLexer * pLex)
 {
 	RWORD rword = RwordLookup(pLex);
@@ -2522,8 +2633,8 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pLex)
 	}
 	if (rword == RWORD_Switch)
 	{
-		//switch ( expression ) statement
-		EWC_ASSERT(false, "switch statements are not supported yet");
+		return PStnodParseSwitchStatement(pParctx, pLex);
+
 	}
 	return nullptr;
 }
@@ -3786,7 +3897,7 @@ void PrintStnod(SStringBuffer * pStrbuf, CSTNode * pStnod, GRFDBGSTR grfdbgstr)
 
 	if (grfdbgstr.FIsSet(FDBGSTR_Type))
 	{
-		if (pStnod->m_park == PARK_Identifier && pStnod->m_pTin == nullptr)
+		if (pStnod->m_pTin == nullptr && (pStnod->m_park == PARK_Identifier || pStnod->m_park == PARK_ReservedWord))
 		{
 			PrintStnodName(pStrbuf, pStnod);
 		}
@@ -3991,6 +4102,14 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pCozIn = "switch (i) { case 1: foo(); default: foo() }";
+		pCozOut = "(switch $i (case 1 ({} (procCall $foo))) (default ({} (procCall $foo))))";
+		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+
+		pCozIn = "switch (i) { case 1: { foo(); bar() } default: foo() }";
+		pCozOut = "(switch $i (case 1 ({} ({} (procCall $foo) (procCall $bar)))) (default ({} (procCall $foo))))";
+		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "ick[2] == ack";
 		pCozOut = "(== (elem $ick 2) $ack)";

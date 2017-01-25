@@ -56,6 +56,21 @@ static constexpr const char * OPNAME(const char * pChz) { return ""; }
 		 } } while(0)
 
 
+#define FVERIFY_STNOD(PWORK, PSTNOD, PREDICATE, ... )\
+(\
+  ( ( PREDICATE ) ? \
+	true :\
+	(\
+		EWC::AssertHandler( __FILE__, __LINE__, #PREDICATE, __VA_ARGS__ ),\
+		s32 iLine, iCol; \
+		CalculateLinePosition(PWORK->m_pErrman->m_pWork, &PSTNOD->m_lexloc, &iLine, &iCol); \
+		printf("compiling: %s:%u\n", PSTNOD->m_lexloc.m_strFilename.PCoz(), iLine); \
+		EWC_DEBUG_BREAK(), \
+		false\
+	)\
+  )\
+)
+
 
 struct SReflectGlobalTable;
 extern bool FIsDirectCall(CSTNode * pStnodCall);
@@ -4072,6 +4087,82 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					pGlob->m_pLval = LLVMConstPointerCast(pStnodChild->m_pTin->m_pLvalReflectGlobal, pLtypePTin);
 					return pGlob;
+				} break;
+			case RWORD_Switch:
+				{
+					auto pValExp = PValGenerate(pWork, pBuild, pStnod->PStnodChild(0), VALGENK_Instance);
+
+					CIRProcedure * pProc = pBuild->m_pProcCur;
+					auto pBlockPost = pBuild->PBlockCreate(pProc, "PostSw");
+					auto pBlockDefault = pBlockPost;
+
+					bool fHasDefault = false;
+					u32 cStnodCase = 0;
+					for (int iStnodChild = 1; iStnodChild < pStnod->CStnodChild(); ++iStnodChild)
+					{
+						auto pStnodCase = pStnod->PStnodChild(iStnodChild);
+						if (!EWC_FVERIFY(pStnod->m_park == PARK_ReservedWord && pStnod->m_pStval, "bad case statement"))
+							continue;
+
+						switch(pStnodCase->m_pStval->m_rword)
+						{
+							case RWORD_Case:
+								++cStnodCase;		
+								break;
+							case RWORD_Default:	
+								pBlockDefault = pBuild->PBlockCreate(pProc, "Default");
+								break;
+						}
+					}
+
+					auto pLvalSw = LLVMBuildSwitch(pBuild->m_pLbuild, pValExp->m_pLval, pBlockDefault->m_pLblock, cStnodCase);
+
+					CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
+					CDynAry<LLVMOpaqueBasicBlock *> arypLblock(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
+
+					for (int iStnodChild = 1; iStnodChild < pStnod->CStnodChild(); ++iStnodChild)
+					{
+						auto pStnodCase = pStnod->PStnodChild(iStnodChild);
+						if (!EWC_FVERIFY(pStnod->m_park == PARK_ReservedWord && pStnod->m_pStval, "bad case statement"))
+							continue;
+
+						RWORD rword = pStnodCase->m_pStval->m_rword;
+						switch (rword)
+						{
+							case RWORD_Case:
+							{
+								if (!EWC_FVERIFY(pStnodCase->CStnodChild() == 2, "expected case (literal, body)"))
+									break;	
+								auto pBlockCase = pBuild->PBlockCreate(pProc, "Case");
+								auto pValLit = PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(0), VALGENK_Instance);
+								arypLblock.Append(pBlockCase->m_pLblock);
+								arypLval.Append(pValLit->m_pLval);
+
+								pBuild->ActivateBlock(pBlockCase);
+								(void) PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(1), VALGENK_Instance);
+								(void) pBuild->PInstCreateBranch(pBlockPost);	
+								
+							} break;
+							case RWORD_Default:
+							{
+								if (!EWC_FVERIFY(pStnodCase->CStnodChild() == 1, "expected default case to have one child (body)"))
+									break;
+
+								pBuild->ActivateBlock(pBlockDefault);
+								(void) PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(0), VALGENK_Instance);
+								(void) pBuild->PInstCreateBranch(pBlockPost);	
+							} break;
+							default:
+								EWC_ASSERT(false, "unexpected reserved word during case statement code gen (%s)", PCozFromRword(rword));
+						}
+					}
+
+					for (int ipLval = 0; ipLval < arypLval.C(); ++ipLval)
+					{
+						LLVMAddCase(pLvalSw, arypLval[ipLval], arypLblock[ipLval]);
+					}
+
+					pBuild->ActivateBlock(pBlockPost);
 				} break;
 			case RWORD_If:
 				{

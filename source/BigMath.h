@@ -61,6 +61,15 @@ inline SBigInt BintFromUint(u64 nUnsigned, bool fIsNegative = false)
 	return bint;
 }
 
+inline bool FAreEqual(const SBigInt & bintLhs, const SBigInt & bintRhs)
+{
+	bool fIsAbsSame = bintLhs.m_nAbs == bintRhs.m_nAbs;
+	bool fIsSignSame = bintLhs.m_fIsNegative == bintRhs.m_fIsNegative;
+	fIsSignSame |= (fIsAbsSame & (bintLhs.m_nAbs == 0));
+	return fIsAbsSame & fIsSignSame;
+}
+
+
 
 
 // NOTE: I'm opting away from operator overloading for Signed65 because I want it to be apparent something
