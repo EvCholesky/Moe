@@ -4107,8 +4107,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						switch(pStnodCase->m_pStval->m_rword)
 						{
 							case RWORD_Case:
-								++cStnodCase;		
-								break;
+							{
+								auto pStnodCase = pStnod->PStnodChild(iStnodChild);
+								cStnodCase += pStnodCase->CStnodChild()-1; // all but the last child are comma separated cases
+							} break;
 							case RWORD_Default:	
 								pBlockDefault = pBuild->PBlockCreate(pProc, "Default");
 								break;
@@ -4131,15 +4133,20 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						{
 							case RWORD_Case:
 							{
-								if (!EWC_FVERIFY(pStnodCase->CStnodChild() == 2, "expected case (literal, body)"))
+								if (!EWC_FVERIFY(pStnodCase->CStnodChild() >= 2, "expected case (literal, (opt literals...), body)"))
 									break;	
 								auto pBlockCase = pBuild->PBlockCreate(pProc, "Case");
-								auto pValLit = PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(0), VALGENK_Instance);
-								arypLblock.Append(pBlockCase->m_pLblock);
-								arypLval.Append(pValLit->m_pLval);
+
+								int cStnodLit = pStnodCase->CStnodChild()-1;
+								for (int iStnodLit = 0; iStnodLit < cStnodLit; ++iStnodLit)
+								{
+									auto pValLit = PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(iStnodLit), VALGENK_Instance);
+									arypLblock.Append(pBlockCase->m_pLblock);
+									arypLval.Append(pValLit->m_pLval);
+								}
 
 								pBuild->ActivateBlock(pBlockCase);
-								(void) PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(1), VALGENK_Instance);
+								(void) PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(cStnodLit), VALGENK_Instance);
 								(void) pBuild->PInstCreateBranch(pBlockPost);	
 								
 							} break;

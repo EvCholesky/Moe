@@ -4689,7 +4689,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								return TCRET_StoppingError;
 							}
 
-							EWC::CDynAry<int> aryIStnod(pTcwork->m_pAlloc, BK_TypeCheck, pStnod->CStnodChild());
+							EWC::CDynAry<CSTNode *> aryPStnod(pTcwork->m_pAlloc, BK_TypeCheck, pStnod->CStnodChild());
 							EWC::CDynAry<SBigInt> aryBint(pTcwork->m_pAlloc, BK_TypeCheck, pStnod->CStnodChild());
 
 							int iStnodDefault = -1;
@@ -4723,38 +4723,42 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 								else
 								{
-									auto pStnodLit = pStnodIt->PStnodChildSafe(0);
-									if (!EWC_FVERIFY(pStnodLit, "missing case literal"))
-										continue;
-
-									STypeInfo * pTinCase = PTinPromoteUntypedTightest(
-																pTcwork,
-																pTcsentTop->m_pSymtab,
-																pStnodLit,
-																pTinExpPromoted);
-
-									if (!FCanImplicitCast(pTinCase, pTinExpPromoted))
+									int cStnodLit = pStnodIt->CStnodChild()-1;
+									for (int iStnodLit = 0; iStnodLit < cStnodLit; ++iStnodLit)
 									{
-										CString strTinCase = StrFromTypeInfo(pTinCase);
-										CString strTinExp = StrFromTypeInfo(pTinExpPromoted);
-										EmitError(pTcwork, pStnod, "No conversion between %s and %s", strTinCase.PCoz(), strTinExp.PCoz());
+										auto pStnodLit = pStnodIt->PStnodChildSafe(iStnodLit);
+										if (!EWC_FVERIFY(pStnodLit, "missing case literal"))
+											continue;
+
+										STypeInfo * pTinCase = PTinPromoteUntypedTightest(
+																	pTcwork,
+																	pTcsentTop->m_pSymtab,
+																	pStnodLit,
+																	pTinExpPromoted);
+
+										if (!FCanImplicitCast(pTinCase, pTinExpPromoted))
+										{
+											CString strTinCase = StrFromTypeInfo(pTinCase);
+											CString strTinExp = StrFromTypeInfo(pTinExpPromoted);
+											EmitError(pTcwork, pStnod, "No conversion between %s and %s", strTinCase.PCoz(), strTinExp.PCoz());
+										}
+
+										FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinExpPromoted, pStnodLit);
+
+										auto pTinLit = pStnodLit->m_pTin;
+										if (!pTinLit || pTinLit->m_tink != TINK_Literal)
+										{
+											EmitError(pTcwork, pStnod, "case literal does not evaluate to a constant");
+											continue;
+										}
+
+										if (!EWC_FVERIFY(pStnodLit->m_pStval, "case literal missing value"))
+											continue;
+
+										SBigInt bint = BintFromStval(pStnodLit->m_pStval);
+										aryPStnod.Append(pStnodLit);
+										aryBint.Append(bint);
 									}
-
-									FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinExpPromoted, pStnodLit);
-
-									auto pTinLit = pStnodLit->m_pTin;
-									if (!pTinLit || pTinLit->m_tink != TINK_Literal)
-									{
-										EmitError(pTcwork, pStnod, "case literal does not evaluate to a constant");
-										continue;
-									}
-
-									if (!EWC_FVERIFY(pStnodLit->m_pStval, "case literal missing value"))
-										continue;
-
-									SBigInt bint = BintFromStval(pStnodLit->m_pStval);
-									aryIStnod.Append(iStnodIt);
-									aryBint.Append(bint);
 								}
 							}
 
@@ -4765,8 +4769,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								{
 									if (FAreEqual(bintLhs, aryBint[iBintRhs]))
 									{
-										auto pStnodLhs = pStnod->PStnodChild(aryIStnod[iBintLhs]);
-										auto pStnodRhs = pStnod->PStnodChild(aryIStnod[iBintLhs]);
+										auto pStnodLhs = aryPStnod[iBintLhs];
+										auto pStnodRhs = aryPStnod[iBintLhs];
 
 										auto pLexlocLhs = &pStnodLhs->m_lexloc;
 										s32 iLineLhs;

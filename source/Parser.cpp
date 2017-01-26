@@ -74,7 +74,6 @@ const char * PChzFromPark(PARK park)
 		"Expression List",
 		"If",
 		"Else",
-		"Switch",
 		"Array Decl",
 		"Reference Decl",
 		"Procedure Reference Decl",
@@ -2478,16 +2477,25 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 				CSTNode * pStnodCase = PStnodParseReservedWord(pParctx, pLex, RWORD_Case);
 				pStnodSwitch->IAppendChild(pStnodCase);
 
-				auto pStnodValue = PStnodParseExpression(pParctx, pLex);
-				if (!pStnodValue)
+				while (1)
 				{
-					ParseError(pParctx, pLex, "case statement missing it's label");
+					auto pStnodValue = PStnodParseExpression(pParctx, pLex);
+					if (!pStnodValue)
+					{
+						ParseError(pParctx, pLex, "case statement missing it's label");
+					}
+
+					pStnodCase->IAppendChild(pStnodValue);
+
+					if (pLex->m_tok != TOK(','))
+						break;
+
+					TokNext(pLex);
 				}
 
 				Expect(pParctx, pLex, TOK(':'));
 				CreateSwitchList(pParctx, pLex, &pStnodList);
 
-				pStnodCase->IAppendChild(pStnodValue);
 				pStnodCase->IAppendChild(pStnodList);
 
 			} break;
@@ -4103,8 +4111,8 @@ void TestParse()
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
 
-		pCozIn = "switch (i) { case 1: foo(); default: foo() }";
-		pCozOut = "(switch $i (case 1 ({} (procCall $foo))) (default ({} (procCall $foo))))";
+		pCozIn = "switch (i) { case 1, 2: foo(); default: foo() }";
+		pCozOut = "(switch $i (case 1 2 ({} (procCall $foo))) (default ({} (procCall $foo))))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "switch (i) { case 1: { foo(); bar() } default: foo() }";
