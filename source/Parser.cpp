@@ -2467,7 +2467,8 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 	}
 
 	CSTNode * pStnodList = nullptr;
-	while (pLex->m_tok != TOK('}'))
+	bool fInvalidSwitch = false;
+	while (pLex->m_tok != TOK('}') && !fInvalidSwitch)
 	{
 		RWORD rword = RwordLookup(pLex);
 		switch(rword)
@@ -2513,9 +2514,10 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 			default:
 			{
 				CSTNode * pStnod = PStnodParseStatement(pParctx, pLex);
-				if (!pStnodList)
+				if (!pStnod)
 				{
 					ParseError(pParctx, pLex, "missing 'case' or 'default' label");
+					fInvalidSwitch = true;
 				}
 				else
 				{
@@ -2550,6 +2552,7 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SLexer * pLex)
 	{
 	case RWORD_Continue:
 	case RWORD_Break:
+	case RWORD_Fallthrough:
 		{
 			CSTNode * pStnod = PStnodParseReservedWord(pParctx, pLex, rword);
 			if (pLex->m_tok == TOK_Identifier)
@@ -2584,7 +2587,7 @@ CSTNode * PStnodParseJumpStatement(CParseContext * pParctx, SLexer * pLex)
 	}
 }
 
-CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pLex, CSTIdentifier ** ppStidentLabel)
 {
 	RWORD rword = RwordLookup(pLex);
 	if (rword == RWORD_If)
@@ -2623,7 +2626,7 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pLex)
 
 			RWORD rwordNext = RwordLookup(pLex);
 			CSTNode * pStnodStatement = (rwordNext == RWORD_If) ? 
-											PStnodParseSelectionStatement(pParctx, pLex) :
+											PStnodParseSelectionStatement(pParctx, pLex, nullptr) :
 											PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
 
 			if (pStnodStatement->m_grfstnod.FIsSet(FSTNOD_EntryPoint))
@@ -2641,40 +2644,36 @@ CSTNode * PStnodParseSelectionStatement(CParseContext * pParctx, SLexer * pLex)
 	}
 	if (rword == RWORD_Switch)
 	{
-		return PStnodParseSwitchStatement(pParctx, pLex);
+		auto pStnodSw = PStnodParseSwitchStatement(pParctx, pLex);
+
+		if (ppStidentLabel)
+		{
+			EWC_ASSERT(!pStnodSw->m_pStident, "expected null identifier");
+			pStnodSw->m_pStident = *ppStidentLabel;
+			*ppStidentLabel = nullptr;
+		}
+
+		return pStnodSw;
 
 	}
 	return nullptr;
 }
 
-CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, CSTIdentifier ** ppStidentLabel)
 {
-	CSTIdentifier * pStidentLabel = nullptr;
 	RWORD rword = RwordLookup(pLex);
-	if (rword == RWORD_LabelDirective)
-	{
-		TokNext(pLex);
-
-		if (pLex->m_tok != TOK_Identifier)
-		{
-			ParseError(pParctx, pLex, "Encountered Label directive without label string");
-		}
-		else
-		{
-			pStidentLabel = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
-			pStidentLabel->m_str = pLex->m_str;
-			TokNext(pLex);
-		}
-	}
-
-	rword = RwordLookup(pLex);
 	if (rword == RWORD_For)
 	{
 		CSTNode * pStnodFor = PStnodParseReservedWord(pParctx, pLex, RWORD_For);
 
 		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
 		pStnodFor->m_pStfor = pStfor;
-		pStnodFor->m_pStident = pStidentLabel;
+
+		if (ppStidentLabel)
+		{
+			pStnodFor->m_pStident = *ppStidentLabel;
+			*ppStidentLabel = nullptr;
+		}
 
 		SLexerLocation lexloc(pLex);
 		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for", &pParctx->m_pWork->m_unsetTin);
@@ -2726,7 +2725,12 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 		
 		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
 		pStnodFor->m_pStfor = pStfor;
-		pStnodFor->m_pStident = pStidentLabel;
+
+		if (ppStidentLabel)
+		{
+			pStnodFor->m_pStident = *ppStidentLabel;
+			*ppStidentLabel = nullptr;
+		}
 
 		SLexerLocation lexloc(pLex);
 		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for", &pParctx->m_pWork->m_unsetTin);
@@ -2821,19 +2825,18 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex)
 		CSTNode * pStnodWhile = PStnodParseReservedWord(pParctx, pLex, RWORD_While);
 		CSTNode * pStnodExp = PStnodParseExpression(pParctx, pLex);
 		pStnodWhile->IAppendChild(pStnodExp);
-		pStnodWhile->m_pStident = pStidentLabel;
+		
+		if (ppStidentLabel)
+		{
+			pStnodWhile->m_pStident = *ppStidentLabel;
+			*ppStidentLabel = nullptr;
+		}
 		
 		CSTNode * pStnodStatement = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
 		pStnodWhile->IAppendChild(pStnodStatement);
 		return pStnodWhile;
 	}
 
-
-	if (pStidentLabel)
-	{
-		ParseError(pParctx, pLex, "Label directive should precede 'while' or 'for' loop.");
-		pParctx->m_pAlloc->EWC_FREE(pStidentLabel);
-	}
 	return nullptr;
 }
 
@@ -2855,17 +2858,44 @@ CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex)
 	if (pStnod)
 		return pStnod;
 
-	//TODO:labeled-statement
 
 	pStnod = PStnodParseExpressionStatement(pParctx, pLex);
 	if (pStnod)
 		return pStnod;
 
-	pStnod = PStnodParseSelectionStatement(pParctx, pLex);
-	if (pStnod)
-		return pStnod;
+	// handle label for switches or loops
 
-	pStnod = PStnodParseIterationStatement(pParctx, pLex);
+	CSTIdentifier * pStidentLabel = nullptr;
+	RWORD rword = RwordLookup(pLex);
+	if (rword == RWORD_LabelDirective)
+	{
+		TokNext(pLex);
+
+		if (pLex->m_tok != TOK_Identifier)
+		{
+			ParseError(pParctx, pLex, "Encountered Label directive without label string");
+		}
+		else
+		{
+			pStidentLabel = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+			pStidentLabel->m_str = pLex->m_str;
+			TokNext(pLex);
+		}
+	}
+
+	pStnod = PStnodParseSelectionStatement(pParctx, pLex, &pStidentLabel);
+	
+	if (!pStnod)
+	{
+		pStnod = PStnodParseIterationStatement(pParctx, pLex, &pStidentLabel);
+	}
+
+	if (pStidentLabel)
+	{
+		ParseError(pParctx, pLex, "Label directive should precede loop or switch statement.");
+		pParctx->m_pAlloc->EWC_FREE(pStidentLabel);
+	}
+
 	if (pStnod)
 		return pStnod;
 

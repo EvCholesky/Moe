@@ -4088,6 +4088,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					pGlob->m_pLval = LLVMConstPointerCast(pStnodChild->m_pTin->m_pLvalReflectGlobal, pLtypePTin);
 					return pGlob;
 				} break;
+			case RWORD_Fallthrough:
+				break;
 			case RWORD_Switch:
 				{
 					auto pValExp = PValGenerate(pWork, pBuild, pStnod->PStnodChild(0), VALGENK_Instance);
@@ -4095,6 +4097,18 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					CIRProcedure * pProc = pBuild->m_pProcCur;
 					auto pBlockPost = pBuild->PBlockCreate(pProc, "PostSw");
 					auto pBlockDefault = pBlockPost;
+
+					auto pJumpt = pBuild->m_aryJumptStack.AppendNew();
+					pJumpt->m_pBlockBreak = pBlockPost;
+					pJumpt->m_pBlockContinue = nullptr;
+
+					if (pStnod->m_pStident)
+					{
+						pJumpt->m_strLabel = pStnod->m_pStident->m_str;
+					}
+
+					CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
+					CDynAry<CIRBasicBlock *> arypBlock(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
 
 					bool fHasDefault = false;
 					u32 cStnodCase = 0;
@@ -4109,7 +4123,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 							case RWORD_Case:
 							{
 								auto pStnodCase = pStnod->PStnodChild(iStnodChild);
-								cStnodCase += pStnodCase->CStnodChild()-1; // all but the last child are comma separated cases
+
+								int cStnodLit = pStnodCase->CStnodChild()-1; // The last child is the case body (not a literal)
+								cStnodCase += cStnodLit;
+
 							} break;
 							case RWORD_Default:	
 								pBlockDefault = pBuild->PBlockCreate(pProc, "Default");
@@ -4119,9 +4136,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					auto pLvalSw = LLVMBuildSwitch(pBuild->m_pLbuild, pValExp->m_pLval, pBlockDefault->m_pLblock, cStnodCase);
 
-					CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
-					CDynAry<LLVMOpaqueBasicBlock *> arypLblock(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
-
+					bool fPrevCaseFallsThrough = false;
 					for (int iStnodChild = 1; iStnodChild < pStnod->CStnodChild(); ++iStnodChild)
 					{
 						auto pStnodCase = pStnod->PStnodChild(iStnodChild);
@@ -4129,46 +4144,63 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 							continue;
 
 						RWORD rword = pStnodCase->m_pStval->m_rword;
+
+						CIRBasicBlock * pBlockBody = nullptr;
+						CSTNode * pStnodBody = nullptr;
 						switch (rword)
 						{
 							case RWORD_Case:
 							{
 								if (!EWC_FVERIFY(pStnodCase->CStnodChild() >= 2, "expected case (literal, (opt literals...), body)"))
 									break;	
-								auto pBlockCase = pBuild->PBlockCreate(pProc, "Case");
 
-								int cStnodLit = pStnodCase->CStnodChild()-1;
+								auto pBlockCase = pBuild->PBlockCreate(pProc, "Case");
+								int cStnodLit = pStnodCase->CStnodChild()-1; // The last child is the case body (not a literal)
 								for (int iStnodLit = 0; iStnodLit < cStnodLit; ++iStnodLit)
 								{
 									auto pValLit = PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(iStnodLit), VALGENK_Instance);
-									arypLblock.Append(pBlockCase->m_pLblock);
+									arypBlock.Append(pBlockCase);
 									arypLval.Append(pValLit->m_pLval);
 								}
 
-								pBuild->ActivateBlock(pBlockCase);
-								(void) PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(cStnodLit), VALGENK_Instance);
-								(void) pBuild->PInstCreateBranch(pBlockPost);	
-								
+								pBlockBody = pBlockCase;
+								pStnodBody = pStnodCase->PStnodChild(cStnodLit);
 							} break;
 							case RWORD_Default:
 							{
 								if (!EWC_FVERIFY(pStnodCase->CStnodChild() == 1, "expected default case to have one child (body)"))
 									break;
 
-								pBuild->ActivateBlock(pBlockDefault);
-								(void) PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(0), VALGENK_Instance);
-								(void) pBuild->PInstCreateBranch(pBlockPost);	
+								pBlockBody = pBlockDefault;
+								pStnodBody = pStnodCase->PStnodChild(0);
 							} break;
 							default:
 								EWC_ASSERT(false, "unexpected reserved word during case statement code gen (%s)", PCozFromRword(rword));
+						}
+						
+						if (fPrevCaseFallsThrough)
+						{
+							(void) pBuild->PInstCreateBranch(pBlockBody);	
+						}
+						fPrevCaseFallsThrough = pStnodCase->m_grfstnod.FIsSet(FSTNOD_Fallthrough);
+
+						pBuild->ActivateBlock(pBlockBody);
+						(void) PValGenerate(pWork, pBuild, pStnodBody, VALGENK_Instance);
+
+						bool fIsLastCase = iStnodChild+1 == pStnod->CStnodChild();
+						if (!fPrevCaseFallsThrough || fIsLastCase)
+
+						{
+							(void) pBuild->PInstCreateBranch(pBlockPost);	
 						}
 					}
 
 					for (int ipLval = 0; ipLval < arypLval.C(); ++ipLval)
 					{
-						LLVMAddCase(pLvalSw, arypLval[ipLval], arypLblock[ipLval]);
+						LLVMAddCase(pLvalSw, arypLval[ipLval], arypBlock[ipLval]->m_pLblock);
 					}
-
+					
+					pBuild->m_aryJumptStack.PopLast();
 					pBuild->ActivateBlock(pBlockPost);
 				} break;
 			case RWORD_If:
@@ -4484,7 +4516,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					if (rword == RWORD_Break)
 					{
-						for (size_t iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
+						for (int iJumpt = (int)pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
 						{
 							auto pJumpt = &pBuild->m_aryJumptStack[iJumpt];
 							if (pJumpt->m_pBlockBreak && (pString == nullptr || pJumpt->m_strLabel == *pString))
@@ -4499,7 +4531,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						for (size_t iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
 						{
 							auto pJumpt = &pBuild->m_aryJumptStack[iJumpt];
-							if (pJumpt->m_pBlockBreak && (pString == nullptr || pJumpt->m_strLabel == *pString))
+							if (pJumpt->m_pBlockContinue && (pString == nullptr || pJumpt->m_strLabel == *pString))
 							{
 								pBlock = pJumpt->m_pBlockContinue;
 								break;
@@ -4514,14 +4546,14 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					else
 					{
 						if (pString)
-							EmitError(pWork, &pStnod->m_lexloc, "Could not loop with %s label matching '%s'", PCozFromRword(rword), *pString);
+							EmitError(pWork, &pStnod->m_lexloc, "Could not %s to label matching '%s'", PCozFromRword(rword), pString->PCoz());
 						else
 							EmitError(pWork, &pStnod->m_lexloc, "Encountered %s statement outside of a loop or switch", PCozFromRword(rword));
 					}
 
 				} break;
 			default:
-				EWC_ASSERT(false, "Unhandled reserved word in code gen");
+				EWC_ASSERT(false, "Unhandled reserved word in code gen %s", PCozFromRword(rword));
 				break;
 			}
 		} break;

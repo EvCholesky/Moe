@@ -833,6 +833,61 @@ TestBreakContinue proc ()
 	}
 }
 
+TestSwitch proc ()
+{
+	VerifyArray proc (aNExpected: [] int, aNValue: [] int)
+	{
+		for iN := 0; iN < aNExpected.count; ++iN
+		{
+			assert(aNExpected[iN] == aNValue[iN], "bad array value", #file, #line)	
+		}
+	}
+
+	printf("Switch:\n")
+
+	pChz := "HelloThere"
+	aCh: [32] u8
+	for iCh := 0; iCh < strlen(pChz); ++iCh
+	{
+		switch pChz[iCh]
+		{
+			case 'e': aCh[iCh] = '3'
+			case 'l': aCh[iCh] = '1'
+			default: aCh[iCh] = pChz[iCh]
+		}
+	}
+
+	assert(FAreCozEqual(aCh, "H311oTh3r3"), "bad string switch", #file, #line)
+
+	aNOutput: [32] int
+	pN: & int = aNOutput
+
+	for i := 0; i < 4; ++i
+	{
+		#label SwitchLabel
+		switch i
+		{
+			case 1,2,3:
+			{
+				@pN++ = i
+				if i > 1
+				{ 
+					while (1)
+					{
+						break SwitchLabel
+					}
+				}
+
+				@pN++ = i+10
+			} fallthrough 
+			case -1:
+				@pN++ = -1
+		}
+	}
+
+	VerifyArray({1,11,-1,2,3}, aNOutput)
+}
+
 main proc () -> int 
 {
 
@@ -853,6 +908,7 @@ main proc () -> int
 	TestHereStrings()
 	TestLoops()
 	TestBreakContinue()
+	TestSwitch()
 
 	return 1
 }

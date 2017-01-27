@@ -4459,12 +4459,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					RWORD rword = pStnod->m_pStval->m_rword;
 					switch (rword)
 					{
-					case RWORD_Continue:
-					case RWORD_Break:
-						{
-							pStnod->m_strees = STREES_TypeChecked;
-							PopTcsent(pTcfram, &pTcsentTop, pStnod);
-						} break;
 					case RWORD_Sizeof:
 					case RWORD_Alignof:
 					case RWORD_Typeinfo:
@@ -4648,6 +4642,52 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 							}
 
+							pStnod->m_strees = STREES_TypeChecked;
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+						} break;
+					case RWORD_Fallthrough:
+						{
+							EWC_ASSERT(pTcfram->m_aryTcsent.PLast()->m_pStnod == pStnod, "expected this node");
+							CSTNode * pStnodChild = pStnod;
+							for (int iTcsent = (int)pTcfram->m_aryTcsent.C()-2; iTcsent >= 0; --iTcsent)
+							{
+								auto pStnodIt = pTcfram->m_aryTcsent[iTcsent].m_pStnod;
+								bool fIsValidPosition = false;
+								switch (pStnodIt->m_park)
+								{
+									case PARK_List:
+									{
+										if (pStnodIt->PStnodChildSafe(pStnodIt->CStnodChild()-1) == pStnodChild)
+										{
+											fIsValidPosition = true;
+										}
+									} break;
+									case PARK_ReservedWord:
+									{
+										if (!EWC_FVERIFY(pStnodIt->m_pStval, "bad reserved word."))
+											break;
+										RWORD rword = pStnodIt->m_pStval->m_rword;
+										if ((rword == RWORD_Case) | (rword == RWORD_Default))
+										{
+											pStnodIt->m_grfstnod.AddFlags(FSTNOD_Fallthrough);
+											fIsValidPosition = true;
+											iTcsent = -1;
+										}
+									}break;
+								}
+
+								if (!fIsValidPosition)
+								{
+									EmitError(pTcwork, pStnod, "fallthrough keyword should always be the last statement in a switch case");
+								}
+								pStnodChild = pStnodIt;
+							}
+
+						} // fallthrough
+					case RWORD_Continue:
+					case RWORD_Break:
+						{
+							EWC_ASSERT(pStnod->CStnodChild() == 0, "did not expect child nodes");
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;

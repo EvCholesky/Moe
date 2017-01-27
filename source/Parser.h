@@ -285,9 +285,10 @@ enum FSTNOD
 {
 	FSTNOD_EntryPoint	= 0x1,		// this should be inserted as a top level entry point, not in place (local function)
 	FSTNOD_ImplicitMember = 0x2,	// this node was created as an implicit member, did not come directly from the source
+	FSTNOD_Fallthrough = 0x4,		// this node (should be a case/default statement) falls through - BB, need a better place to store this
 
 	FSTNOD_None			= 0x0,
-	FSTNOD_All			= 0x3,
+	FSTNOD_All			= 0x7,
 };
 EWC_DEFINE_GRF(GRFSTNOD, FSTNOD, u8);
 
