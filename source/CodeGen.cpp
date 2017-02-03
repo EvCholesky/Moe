@@ -3468,6 +3468,14 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 			default:			tink = TINK_Nil;
 			}
 		}
+		else if (tink == TINK_Enum)
+		{
+			auto pTinenum = (STypeInfoEnum*)apTin[iOperand];
+			if (EWC_FVERIFY(pTinenum->m_pTinLoose && pTinenum->m_pTinLoose->m_tink == TINK_Integer, "expected integer loose type"))
+			{
+				fIsSigned = ((STypeInfoInteger *)pTinenum->m_pTinLoose)->m_fIsSigned;
+			}
+		}
 		else if (tink == TINK_Integer)
 		{
 			fIsSigned = ((STypeInfoInteger *)apTin[iOperand])->m_fIsSigned;
@@ -3543,6 +3551,16 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					CreateOpinfo(IROP_GEP, "ptrSub", pOpinfo);
 					pOpinfo->m_fNegateFirst = true;
 				} break;
+			}
+		}
+		else if (tinkMin == TINK_Integer && tinkMax == TINK_Enum)
+		{
+			bool fIsSigned = (aTink[0] == tinkMax) ? aFIsSigned[0] : aFIsSigned[1];
+			switch (tok)
+			{
+				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
+										CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
+				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
 			}
 		}
 
@@ -3682,6 +3700,25 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
 				case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
 				case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
+				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
+										CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
+				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
+				case TOK_LessEqual:
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSLE, "CmpSLE", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_NCmpULE, "NCmpULE", pOpinfo);
+					break;
+				case TOK_GreaterEqual:
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSGE, "NCmpSGE", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_NCmpUGE, "NCmpUGE", pOpinfo);
+					break;
+				case '<':
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSLT, "NCmpSLT", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_NCmpULT, "NCmpULT", pOpinfo);
+					break;
+				case '>':
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSGT, "NCmpSGT", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_NCmpUGT, "NCmpUGT", pOpinfo);
+					break;
 			}
 		} break;
 	default: 

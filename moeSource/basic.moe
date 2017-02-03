@@ -54,9 +54,9 @@ cos64  proc (theta: f64) -> f64 #foreign cos
 sin64  proc (theta: f64) -> f64 #foreign sin
 sqrt64 proc (theta: f64) -> f64 #foreign sqrt
 
-GSign proc (g: float) -> float #foreign
 GAbs proc (g: float) -> float #foreign
 GSqrt proc (g: float) -> float #foreign
+GSquare proc (g: float) -> float { return g*g }
 GMod proc (x: float, y: float) -> float #foreign
 NTrunc proc (g: float) -> s32 #foreign
 NCeil proc (g: float) -> s32 #foreign

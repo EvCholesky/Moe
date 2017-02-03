@@ -1785,6 +1785,12 @@ SOpTypes OptypeFromPark(
 		{
 			return SOpTypes(pTinEnum, pTinEnum, pTinEnum);
 		}
+		else if (parkOperator == PARK_ShiftOp && pTinOther->m_tink == TINK_Integer)
+		{
+
+			EWC_ASSERT(pTinEnum->m_tink == TINK_Enum && ((STypeInfoEnum*)pTinEnum)->m_pTinLoose, "expected loose type");
+			return SOpTypes(pTinLhs, pTinRhs, ((STypeInfoEnum*)pTinEnum)->m_pTinLoose);
+		}
 	}
 
 	if (pTinLhs->m_tink == TINK_Bool || pTinRhs->m_tink == TINK_Integer)
