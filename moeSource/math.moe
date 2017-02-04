@@ -9,20 +9,20 @@ F64_MAX :: 1.7976931348623158e+308
 F64_MIN :: 2.2250738585072014e-308
 
 
-SVector2 struct
+f32x2 struct
 {
 	m_x: float
 	m_y: float
 }
 
-SVector3 struct
+f32x3 struct
 {
 	m_x: float
 	m_y: float
 	m_z: float
 }
 
-SVector4 struct
+f32x4 struct
 {
 	m_x: float
 	m_y: float
@@ -30,26 +30,26 @@ SVector4 struct
 	m_w: float
 }
 
-Vec2Create proc (x: float, y: float) -> SVector2
+F32x2Create proc (x: float, y: float) -> f32x2
 {
-	vec : SVector2
+	vec : f32x2
 	vec.m_x = x
 	vec.m_y = y
 	return vec
 }
 
-Vec3Create proc (x: float, y: float, z: float) -> SVector3
+F32x3Create proc (x: float, y: float, z: float) -> f32x3
 {
-	vec : SVector3
+	vec : f32x3
 	vec.m_x = x
 	vec.m_y = y
 	vec.m_z = z
 	return vec
 }
 
-Vec4Create proc (x: float, y: float, z: float, w: float) -> SVector4
+F32x4Create proc (x: float, y: float, z: float, w: float) -> f32x4
 {
-	vec : SVector4
+	vec : f32x4
 	vec.m_x = x
 	vec.m_y = y
 	vec.m_z = z
@@ -57,7 +57,7 @@ Vec4Create proc (x: float, y: float, z: float, w: float) -> SVector4
 	return vec
 }
 
-VecRotate proc (gRadians: float, vec: SVector2) -> SVector2
+VecRotate proc (gRadians: float, vec: f32x2) -> f32x2
 {
 	gSin := sin(gRadians)
 	gCos := cos(gRadians)
@@ -65,74 +65,125 @@ VecRotate proc (gRadians: float, vec: SVector2) -> SVector2
 	//[c -s][ x ]   [ cx - sy ]
 	//[s  c][ y ] = [ cy + sx ]
 
-	return Vec2Create(gCos * vec.m_x - gSin * vec.m_y, gCos * vec.m_y + gSin * vec.m_x)
+	return F32x2Create(gCos * vec.m_x - gSin * vec.m_y, gCos * vec.m_y + gSin * vec.m_x)
 }
 
-VecAdd proc (vecLhs: SVector2, vecRhs: SVector2) -> SVector2 inline
+VecAdd proc (vecLhs: f32x2, vecRhs: f32x2) -> f32x2 inline
 {
-	return Vec2Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y)
+	return F32x2Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y)
 }
 
-VecSub proc (vecLhs: SVector2, vecRhs: SVector2) -> SVector2 inline
+VecSub proc (vecLhs: f32x2, vecRhs: f32x2) -> f32x2 inline
 {
-	return Vec2Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y)
+	return F32x2Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y)
 }
 
-VecMul proc (vec: SVector2, r: f32) -> SVector2 inline
+VecMul proc (vec: f32x2, r: f32) -> f32x2 inline
 {
-	return Vec2Create(vec.m_x * r, vec.m_y * r)
+	return F32x2Create(vec.m_x * r, vec.m_y * r)
 }
 
-VecAdd proc (vecLhs: SVector3, vecRhs: SVector3) -> SVector3 inline
+VecAdd proc (vecLhs: f32x3, vecRhs: f32x3) -> f32x3 inline
 {
-	return Vec3Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y, vecLhs.m_z + vecRhs.m_z)
+	return F32x3Create(vecLhs.m_x + vecRhs.m_x, vecLhs.m_y + vecRhs.m_y, vecLhs.m_z + vecRhs.m_z)
 }
 
-VecSub proc (vecLhs: SVector3, vecRhs: SVector3) -> SVector3 inline
+VecSub proc (vecLhs: f32x3, vecRhs: f32x3) -> f32x3 inline
 {
-	return Vec3Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y, vecLhs.m_z - vecRhs.m_z)
+	return F32x3Create(vecLhs.m_x - vecRhs.m_x, vecLhs.m_y - vecRhs.m_y, vecLhs.m_z - vecRhs.m_z)
 }
 
-VecMul proc (vec: SVector3, r: f32) -> SVector3 inline
+VecMul proc (vec: f32x3, r: f32) -> f32x3 inline
 {
-	return Vec3Create(vec.m_x * r, vec.m_y * r, vec.m_z * r)
+	return F32x3Create(vec.m_x * r, vec.m_y * r, vec.m_z * r)
 }
 
-VecAdd proc (vecLhs: SVector4, vecRhs: SVector4) -> SVector4 inline
+VecAdd proc (vecLhs: f32x4, vecRhs: f32x4) -> f32x4 inline
 {
-	return Vec4Create(
+	return F32x4Create(
 			vecLhs.m_x + vecRhs.m_x,
 			vecLhs.m_y + vecRhs.m_y,
 			vecLhs.m_z + vecRhs.m_z,
 			vecLhs.m_w + vecRhs.m_w)
 }
 
-VecSub proc (vecLhs: SVector4, vecRhs: SVector4) -> SVector4 inline
+VecSub proc (vecLhs: f32x4, vecRhs: f32x4) -> f32x4 inline
 {
-	return Vec4Create(
+	return F32x4Create(
 			vecLhs.m_x - vecRhs.m_x,
 			vecLhs.m_y - vecRhs.m_y,
 			vecLhs.m_z - vecRhs.m_z,
 			vecLhs.m_w - vecRhs.m_w)
 }
 
-VecMul proc (vec: SVector4, r: f32) -> SVector4 inline
+VecMul proc (vec: f32x4, r: f32) -> f32x4 inline
 {
-	return Vec4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r)
+	return F32x4Create(vec.m_x * r, vec.m_y * r, vec.m_z * r, vec.m_w * r)
+	}
+
+s32x2 struct // tag = ivec
+{
+	m_x: s32	
+	m_y: s32
 }
+
+S32x2Create proc (x: s32, y: s32) -> s32x2
+{
+	ivec: s32x2
+	ivec.m_x = x
+	ivec.m_y = y
+	return ivec
+}
+
+VecAdd proc (vecLhs: s32x2, vecRhs: s32x2) -> s32x2
+{
+	vecLhs.m_x += vecRhs.m_x	
+	vecLhs.m_y += vecRhs.m_y
+	return vecLhs
+}
+
+VecSub proc (vecLhs: s32x2, vecRhs: s32x2) -> s32x2
+{
+	vecLhs.m_x -= vecRhs.m_x	
+	vecLhs.m_y -= vecRhs.m_y
+	return vecLhs
+}
+
+VecMul proc (vecLhs: s32x2, r: s32) -> s32x2
+{
+	vecLhs.m_x *= r
+	vecLhs.m_y *= r
+	return vecLhs
+}
+
+VecSign proc (vec: f32x2) -> s32x2
+{
+	vecReturn: s32x2
+	if vec.m_x < -gEpsilon
+		{ vecReturn.m_x = -1 }
+	else if vec.m_x > gEpsilon
+		{ vecReturn.m_x = 1 }
+
+	if vec.m_y < -gEpsilon
+		{ vecReturn.m_y = -1 }
+	else if vec.m_y > gEpsilon
+		{ vecReturn.m_y = 1 }
+	return vecReturn
+}
+
 
 gEpsilon :: 0.0001
 gEpsilonNormalize :: 0.00001
-GLengthSqr proc (vec: SVector2) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y) }
-GLengthSqr proc (vec: SVector3) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y + vec.m_z * vec.m_z) }
+GLengthSqr proc (vec: f32x2) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y) }
+GLengthSqr proc (vec: f32x3) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y + vec.m_z * vec.m_z) }
 
-GLength proc (vec: SVector2) -> f32 inline 						{return GSqrt(vec.m_x * vec.m_x + vec.m_y * vec.m_y) }
-GLength proc (vec: SVector3) -> f32 inline 						{return GSqrt(vec.m_x * vec.m_x + vec.m_y * vec.m_y  + vec.m_z * vec.m_z) }
+GLength proc (vec: f32x2) -> f32 inline 					{return GSqrt(vec.m_x * vec.m_x + vec.m_y * vec.m_y) }
+GLength proc (vec: f32x3) -> f32 inline 					{return GSqrt(vec.m_x * vec.m_x + vec.m_y * vec.m_y  + vec.m_z * vec.m_z) }
 
-VecNormalize proc (vec: SVector2) -> SVector2 inline 			{ return VecMul(vec, 1 / GLength(vec)) }
-VecNormalize proc (vec: SVector3) -> SVector3 inline 			{ return VecMul(vec, 1 / GLength(vec)) }
+VecNormalize proc (vec: f32x2) -> f32x2 inline 				{ return VecMul(vec, 1 / GLength(vec)) }
+VecNormalize proc (vec: f32x3) -> f32x3 inline 				{ return VecMul(vec, 1 / GLength(vec)) }
 
-VecNormalizeElse proc (vec: SVector2, vecElse: SVector2) -> SVector2 inline
+VecNormalizeElse proc (vec: f32x2, vecElse: f32x2) -> f32x2 inline
 { 
 	gLength := GLength(vec)
 	if gLength < gEpsilonNormalize
@@ -142,7 +193,7 @@ VecNormalizeElse proc (vec: SVector2, vecElse: SVector2) -> SVector2 inline
 	return VecMul(vec, 1 / gLength) 
 }
 
-VecNormalizeElse proc (vec: SVector3, vecElse: SVector3) -> SVector3 inline
+VecNormalizeElse proc (vec: f32x3, vecElse: f32x3) -> f32x3 inline
 { 
 	gLength := GLength(vec)
 	if gLength < gEpsilonNormalize
@@ -152,14 +203,14 @@ VecNormalizeElse proc (vec: SVector3, vecElse: SVector3) -> SVector3 inline
 	return VecMul(vec, 1 / gLength) 
 }
 
-VecNormalizeAndLength proc (vec: SVector2, pLength: & f32) -> SVector2 inline 
+VecNormalizeAndLength proc (vec: f32x2, pLength: & f32) -> f32x2 inline 
 {
 	gLength := GLength(vec)
 	@pLength = gLength
 	return VecMul(vec, 1 / gLength)
 }
-
-VecNormalizeAndLength proc (vec: SVector3, pLength: & f32) -> SVector3 inline
+	
+VecNormalizeAndLength proc (vec: f32x3, pLength: & f32) -> f32x3 inline
 {
 	gLength := GLength(vec)
 	@pLength = gLength

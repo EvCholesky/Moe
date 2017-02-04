@@ -74,9 +74,9 @@ SystCur proc () -> Syst
 
 SMapDimensions struct // tag = mapdim
 {
-	m_dXCellMax: int
-	m_dYCellMax: int
-	m_dXStride: int
+	m_dXCellMax: s32
+	m_dYCellMax: s32
+	m_dXStride: s32
 }	
 
 SMapInfo struct // mapinfo
@@ -87,9 +87,9 @@ SMapInfo struct // mapinfo
 
 g_mapinfo: SMapInfo
 
-PosFromCell proc (iVecCell: SIntVector2) -> SVector2
+PosFromCell proc (posCell: s32x2) -> f32x2
 {
-	return Vec2Create(cast (f32) iVecCell.m_x * g_dXCell + g_dXCellHalf, cast (f32) iVecCell.m_y * g_dYCell + g_dYCellHalf)
+	return F32x2Create(cast (f32) posCell.m_x * g_dXCell + g_dXCellHalf, cast (f32) posCell.m_y * g_dYCell + g_dYCellHalf)
 }
 
 FIsCellBlocked proc (xCell: int, yCell: int) -> bool
@@ -104,20 +104,20 @@ FIsCellBlocked proc (xCell: int, yCell: int) -> bool
 	return ch == 'W'
 }
 
-GrfdirOpenCells proc(ivec: SIntVector2) -> GRFDIR
+GrfdirOpenCells proc(posCell: s32x2) -> GRFDIR
 {
 	dXCellMax := g_mapinfo.m_mapdim.m_dXCellMax
 	dYCellMax := g_mapinfo.m_mapdim.m_dYCellMax
 
 	grfdir: GRFDIR
-	if !FIsCellBlocked(ivec.m_x - 1, ivec.m_y) || (ivec.m_x == 0 && !FIsCellBlocked(dXCellMax-1, ivec.m_y))
+	if !FIsCellBlocked(posCell.m_x - 1, posCell.m_y) || (posCell.m_x == 0 && !FIsCellBlocked(dXCellMax-1, posCell.m_y))
 		{ grfdir |= FDIR.Left }
-	if !FIsCellBlocked(ivec.m_x + 1, ivec.m_y) || (ivec.m_x == dXCellMax-1 && !FIsCellBlocked(0, ivec.m_y))
+	if !FIsCellBlocked(posCell.m_x + 1, posCell.m_y) || (posCell.m_x == dXCellMax-1 && !FIsCellBlocked(0, posCell.m_y))
 		{ grfdir |= FDIR.Right }
 
-	if !FIsCellBlocked(ivec.m_x, ivec.m_y + 1) || (ivec.m_y == dYCellMax-1 && !FIsCellBlocked(ivec.m_x, 0))
+	if !FIsCellBlocked(posCell.m_x, posCell.m_y + 1) || (posCell.m_y == dYCellMax-1 && !FIsCellBlocked(posCell.m_x, 0))
 		{ grfdir |= FDIR.Up }
-	if !FIsCellBlocked(ivec.m_x, ivec.m_y - 1) || (ivec.m_y == 0 && !FIsCellBlocked(ivec.m_x, dYCellMax-1))
+	if !FIsCellBlocked(posCell.m_x, posCell.m_y - 1) || (posCell.m_y == 0 && !FIsCellBlocked(posCell.m_x, dYCellMax-1))
 		{ grfdir |= FDIR.Down }
 
 	return grfdir
@@ -148,7 +148,7 @@ DirRandom proc (grfdir: GRFDIR) -> DIR
 	return DIR.min
 }
 
-DirFromVec proc (vec: SVector2) -> DIR
+DirFromVec proc (vec: f32x2) -> DIR
 {
 	if GAbs(vec.m_x) > GAbs(vec.m_y)
 	{
@@ -162,7 +162,7 @@ DirFromVec proc (vec: SVector2) -> DIR
 	return DIR.Down
 }
 
-VecFromDir proc(dir: DIR) -> SVector2
+VecFromDir proc(dir: DIR) -> f32x2
 {
 	mpDirXy :=
 	{:float:
@@ -173,16 +173,16 @@ VecFromDir proc(dir: DIR) -> SVector2
 	}
 
 	iXy := cast(int)dir * 2
-	return Vec2Create(mpDirXy[iXy], mpDirXy[iXy+1])
+	return F32x2Create(mpDirXy[iXy], mpDirXy[iXy+1])
 }
 
-FTryFindCellNearest proc (ivecCur: SIntVector2, posTarget: SVector2, grfdir: GRFDIR, pIvecNearest: & SIntVector2) -> bool
+FTryFindCellNearest proc (posCellCur: s32x2, posTarget: f32x2, grfdir: GRFDIR, pPosCellNearest: & s32x2) -> bool
 {
-	SetNearest proc (ivecCur: SIntVector2, ivecDelta: SIntVector2, posTarget: SVector2, pGNearest:& f32, pIvecNearest: & SIntVector2)
+	SetNearest proc (posCellCur: s32x2, dPosCell: s32x2, posTarget: f32x2, pGNearest:& f32, pPosCellNearest : & s32x2)
 	{
-		ivecCur = IvecAdd(ivecCur, ivecDelta)
+		posCellCur = VecAdd(posCellCur, dPosCell)
 
-		posA := PosFromCell(ivecCur)
+		posA := PosFromCell(posCellCur)
 		dPos := VecSub(posTarget, posA)
 		dXMax := cast(f32)g_mapinfo.m_mapdim.m_dXCellMax * g_dXCell
 		dYMax := cast(f32)g_mapinfo.m_mapdim.m_dYCellMax * g_dYCell
@@ -196,34 +196,34 @@ FTryFindCellNearest proc (ivecCur: SIntVector2, posTarget: SVector2, grfdir: GRF
 		if gDist < @pGNearest
 		{
 			@pGNearest = gDist
-			@pIvecNearest = ivecCur
+			@pPosCellNearest = posCellCur
 		}
 	}
 
 	gNearest: f32 = F32_MAX
-	ivecNearest: SIntVector2 = ---
+	posCellNearest: s32x2 = ---
 
 	if grfdir & FDIR.Left
 	{
-		SetNearest(ivecCur, IvecCreate(-1, 0), posTarget, &gNearest, &ivecNearest)
+		SetNearest(posCellCur, S32x2Create(-1, 0), posTarget, &gNearest, &posCellNearest)
 	}
 	if grfdir & FDIR.Right
 	{
-		SetNearest(ivecCur, IvecCreate(1, 0), posTarget, &gNearest, &ivecNearest)
+		SetNearest(posCellCur, S32x2Create(1, 0), posTarget, &gNearest, &posCellNearest)
 	}
 
 	if grfdir & FDIR.Up
 	{
-		SetNearest(ivecCur, IvecCreate(0, 1), posTarget, &gNearest, &ivecNearest)
+		SetNearest(posCellCur, S32x2Create(0, 1), posTarget, &gNearest, &posCellNearest)
 	}
 	if grfdir & FDIR.Down
 	{
-		SetNearest(ivecCur, IvecCreate(0, -1), posTarget, &gNearest, &ivecNearest)
+		SetNearest(posCellCur, S32x2Create(0, -1), posTarget, &gNearest, &posCellNearest)
 	}
 
 	if (gNearest < F32_MAX)
 	{
-		@pIvecNearest = ivecNearest
+		@pPosCellNearest = posCellNearest
 		return true
 	}
 	return false
@@ -246,12 +246,12 @@ SetGhosts proc (pAct: & SActor, ghostsNew: GHOSTS)
 
 			// we're headed back towards the cell we just left, let the update code decide what to do there
 
-			ivecCellCur: SIntVector2
-			ivecCellNext: SIntVector2
-			FindPrevNextCell(pAct.m_pEnt.m_pos, pAct.m_vAfter, &ivecCellCur, &ivecCellNext)
+			posCellCur: s32x2
+			posCellNext: s32x2
+			FindPrevNextCell(pAct.m_pEnt.m_pos, pAct.m_vAfter, &posCellCur, &posCellNext)
 
-			pAct.m_ivecGoal = ivecCellCur
-			pAct.m_ivecGoal = IvecCellWrap(pAct.m_ivecGoal)
+			pAct.m_posCellGoal = posCellCur
+			pAct.m_posCellGoal = PosCellWrap(pAct.m_posCellGoal)
 			
 
 			pAct.m_vAfter = VecMul(pAct.m_vAfter, -1)
@@ -265,7 +265,7 @@ SetPucks proc (pAct: & SActor, pucksNew: PUCKS)
 	pAct.m_systState = SystCur()
 }
 
-VecShortestWrappingDPos proc (posSrc: SVector2, posDst: SVector2) -> SVector2
+VecShortestWrappingDPos proc (posSrc: f32x2, posDst: f32x2) -> f32x2
 {
 	dXMap:= cast(f32)g_mapinfo.m_mapdim.m_dXCellMax * g_dXCell
 	dYMap:= cast(f32)g_mapinfo.m_mapdim.m_dYCellMax * g_dYCell
@@ -301,7 +301,7 @@ VecShortestWrappingDPos proc (posSrc: SVector2, posDst: SVector2) -> SVector2
 	return dPosFull
 }
 
-PosWrap proc (pos: SVector2) -> SVector2
+PosWrap proc (pos: f32x2) -> f32x2
 {
 	dXMap:= cast(f32)g_mapinfo.m_mapdim.m_dXCellMax * g_dXCell
 	dYMap:= cast(f32)g_mapinfo.m_mapdim.m_dYCellMax * g_dYCell
@@ -319,22 +319,22 @@ PosWrap proc (pos: SVector2) -> SVector2
 	return pos
 }
 
-IvecCellWrap proc (ivecCell: SIntVector2) -> SIntVector2
+PosCellWrap proc (posCell: s32x2) -> s32x2
 {
 	dXCellMax := g_mapinfo.m_mapdim.m_dXCellMax
 	dYCellMax := g_mapinfo.m_mapdim.m_dYCellMax
 
 	// mirror position if outside bounds
-	if ivecCell.m_x < 0
-		{ ivecCell.m_x += dXCellMax}
-	if ivecCell.m_x >= dXCellMax
-		{ ivecCell.m_x -= dXCellMax }
+	if posCell.m_x < 0
+		{ posCell.m_x += dXCellMax}
+	if posCell.m_x >= dXCellMax
+		{ posCell.m_x -= dXCellMax }
 
-	if ivecCell.m_y < 0
-		{ ivecCell.m_y += dYCellMax }
-	if ivecCell.m_y >= dYCellMax
-		{ ivecCell.m_y -= dYCellMax }
-	return ivecCell
+	if posCell.m_y < 0
+		{ posCell.m_y += dYCellMax }
+	if posCell.m_y >= dYCellMax
+		{ posCell.m_y -= dYCellMax }
+	return posCell
 }
 
 UpdateGhosts proc (pActGhost: & SActor, dT: float)
@@ -372,36 +372,36 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 		switch pActGhost.m_ghostk
 		{
 			case GHOSTK.Blinky:
-				pActGhost.m_ivecBrain = g_pActPuck.m_ivecGoal
+				pActGhost.m_posCellBrain = g_pActPuck.m_posCellGoal
 			case GHOSTK.Pinky:
-				ivecNext := IvecMul(IvecSign(g_pActPuck.m_vAfter), 4)
-				pActGhost.m_ivecBrain = IvecAdd(g_pActPuck.m_ivecGoal, ivecNext)
+				dPosCell := VecMul(VecSign(g_pActPuck.m_vAfter), 4)
+				pActGhost.m_posCellBrain = VecAdd(g_pActPuck.m_posCellGoal, dPosCell)
 			case GHOSTK.Inky:
-				ivecNext := IvecMul(IvecSign(g_pActPuck.m_vAfter), 2)
-				ivecLead := IvecAdd(g_pActPuck.m_ivecGoal, ivecNext)
+				dPosCell := VecMul(VecSign(g_pActPuck.m_vAfter), 2)
+				posCellLead := VecAdd(g_pActPuck.m_posCellGoal, dPosCell)
 
-				ivecCross := pActGhost.m_ivecGoal
+				posCellCross := pActGhost.m_posCellGoal
 				if (g_pActBlinky)
 				{
-					ivecCross = g_pActBlinky.m_ivecGoal
+					posCellCross = g_pActBlinky.m_posCellGoal
 				}
 
-				vecToLead := IvecSub(ivecLead, ivecCross)
-				pActGhost.m_ivecBrain = IvecAdd(ivecLead, vecToLead)
+				vecToLead := VecSub(posCellLead, posCellCross)
+				pActGhost.m_posCellBrain = VecAdd(posCellLead, vecToLead)
 			case GHOSTK.Clyde:
-				vecToPuck := IvecSub(g_pActPuck.m_ivecGoal, pActGhost.m_ivecGoal)
+				vecToPuck := VecSub(g_pActPuck.m_posCellGoal, pActGhost.m_posCellGoal)
 				nLengthSqr := vecToPuck.m_x * vecToPuck.m_x + vecToPuck.m_y * vecToPuck.m_y
 				if nLengthSqr > 64
 				{
-					pActGhost.m_ivecBrain = g_pActPuck.m_ivecGoal
+					pActGhost.m_posCellBrain = g_pActPuck.m_posCellGoal
 				}
 				else
 				{
-					pActGhost.m_ivecBrain = IvecCreate(0, 0)
+					pActGhost.m_posCellBrain = S32x2Create(0, 0)
 				}
 		}
 
-		DrawCellDebug(pActGhost.m_ivecBrain, pActGhost.m_pEnt.m_col)
+		//DrawCellDebug(pActGhost.m_posCellBrain, pActGhost.m_pEnt.m_col)
 
 		UpdateActorMovement(pActGhost, dT)
 	}
@@ -420,13 +420,13 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 
 		while gStep > gEpsilon
 		{
-			pIvecGoal := &pActGhost.m_ivecGoal
-			assert( pIvecGoal.m_x >= 0 && pIvecGoal.m_x < g_mapinfo.m_mapdim.m_dXCellMax &&
-					pIvecGoal.m_y >= 0 && pIvecGoal.m_y < g_mapinfo.m_mapdim.m_dYCellMax, "bad cell position", #file, #line)
+			pPosCellGoal := &pActGhost.m_posCellGoal
+			assert( pPosCellGoal.m_x >= 0 && pPosCellGoal.m_x < g_mapinfo.m_mapdim.m_dXCellMax &&
+					pPosCellGoal.m_y >= 0 && pPosCellGoal.m_y < g_mapinfo.m_mapdim.m_dYCellMax, "bad cell position", #file, #line)
 
-			//DrawCellDebug(@pIvecGoal, ColCreate(255,150, 0,200))
+			//DrawCellDebug(@pPosCellGoal, ColCreate(255,150, 0,200))
 
-			posCell := PosFromCell(@pIvecGoal)	
+			posCell := PosFromCell(@pPosCellGoal)	
 			vecToCell := VecShortestWrappingDPos(pEnt.m_pos, posCell)
 			//vecToCell := VecSub(posCell, pEnt.m_pos)
 			sToCell := GLength(vecToCell)
@@ -444,12 +444,11 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 				pEnt.m_pos = posCell
 				gStep -= sToCell
 
-				ivecTemp := pIvecGoal
-				assert(!FIsCellBlocked(pIvecGoal.m_x, pIvecGoal.m_y), "bad cur cell", #file, #line)
-				assert( pIvecGoal.m_x >= 0 && pIvecGoal.m_x < g_mapinfo.m_mapdim.m_dXCellMax &&
-						pIvecGoal.m_y >= 0 && pIvecGoal.m_y < g_mapinfo.m_mapdim.m_dYCellMax, "bad cell position", #file, #line)
+				assert(!FIsCellBlocked(pPosCellGoal.m_x, pPosCellGoal.m_y), "bad cur cell", #file, #line)
+				assert( pPosCellGoal.m_x >= 0 && pPosCellGoal.m_x < g_mapinfo.m_mapdim.m_dXCellMax &&
+						pPosCellGoal.m_y >= 0 && pPosCellGoal.m_y < g_mapinfo.m_mapdim.m_dYCellMax, "bad cell position", #file, #line)
 
-				grfdir := GrfdirOpenCells(pActGhost.m_ivecGoal)
+				grfdir := GrfdirOpenCells(pActGhost.m_posCellGoal)
 				grfdirTemp := grfdir
 
 				dirIncoming := DirFromVec(VecMul(pActGhost.m_vAfter, -1))
@@ -463,11 +462,11 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 
 				vdir := VecFromDir(dir)
 
-				pIvecGoal.m_x += cast (int)vdir.m_x
-				pIvecGoal.m_y += cast (int)vdir.m_y
-				@pIvecGoal = IvecCellWrap(@pIvecGoal)
-				assert( pIvecGoal.m_x >= 0 && pIvecGoal.m_x < g_mapinfo.m_mapdim.m_dXCellMax &&
-						pIvecGoal.m_y >= 0 && pIvecGoal.m_y < g_mapinfo.m_mapdim.m_dYCellMax, "bad cell position", #file, #line)
+				pPosCellGoal.m_x += cast(s32)vdir.m_x
+				pPosCellGoal.m_y += cast(s32)vdir.m_y
+				@pPosCellGoal = PosCellWrap(@pPosCellGoal)
+				assert( pPosCellGoal.m_x >= 0 && pPosCellGoal.m_x < g_mapinfo.m_mapdim.m_dXCellMax &&
+						pPosCellGoal.m_y >= 0 && pPosCellGoal.m_y < g_mapinfo.m_mapdim.m_dYCellMax, "bad cell position", #file, #line)
 
 				pActGhost.m_vAfter = VecMul(vdir, g_dXyPuckSpeed)
 			}
@@ -476,15 +475,7 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 	}
 }
 
-
-IvecCell proc (pos: SVector2) -> SIntVector2
-{
-	iX := NRound((pos.m_x - g_dXCellHalf) / g_dXCell)
-	iY := NRound((pos.m_y - g_dYCellHalf) / g_dYCell)
-	return IvecCreate(iX, iY)
-}
-
-FindPrevNextCell proc (pos: SVector2, vel: SVector2, pIvecCur: & SIntVector2, pIvecNext: & SIntVector2)
+FindPrevNextCell proc (pos: f32x2, vel: f32x2, pPosCellCur: & s32x2, pPosCellNext: & s32x2)
 {
 	if GAbs(vel.m_x) > GAbs(vel.m_y)
 	{
@@ -493,13 +484,13 @@ FindPrevNextCell proc (pos: SVector2, vel: SVector2, pIvecCur: & SIntVector2, pI
 		iXLower := NTrunc((pos.m_x + gEpsilon - g_dXCellHalf) / g_dXCell)
 		if vel.m_x < 0
 		{
-			@pIvecNext = IvecCreate(iXLower, iY)
-			@pIvecCur = IvecCreate(iXLower + 1, iY)
+			@pPosCellNext = S32x2Create(iXLower, iY)
+			@pPosCellCur = S32x2Create(iXLower + 1, iY)
 		}
 		else
 		{
-			@pIvecCur = IvecCreate(iXLower, iY)
-			@pIvecNext = IvecCreate(iXLower + 1, iY)
+			@pPosCellCur = S32x2Create(iXLower, iY)
+			@pPosCellNext = S32x2Create(iXLower + 1, iY)
 		}
 	}
 	else
@@ -508,31 +499,15 @@ FindPrevNextCell proc (pos: SVector2, vel: SVector2, pIvecCur: & SIntVector2, pI
 		iX := NRound((pos.m_x - g_dXCellHalf) / g_dXCell)
 		if vel.m_y < 0
 		{
-			@pIvecNext = IvecCreate(iX, iYLower)
-			@pIvecCur = IvecCreate(iX, iYLower + 1)
+			@pPosCellNext = S32x2Create(iX, iYLower)
+			@pPosCellCur = S32x2Create(iX, iYLower + 1)
 		}
 		else
 		{
-			@pIvecCur = IvecCreate(iX, iYLower)
-			@pIvecNext = IvecCreate(iX, iYLower + 1)
+			@pPosCellCur = S32x2Create(iX, iYLower)
+			@pPosCellNext = S32x2Create(iX, iYLower + 1)
 		}
 	}
-}
-
-IvecCellProjectVelocity proc (pos: SVector2, vel: SVector2) -> SIntVector2
-{
-	iX := NRound((pos.m_x - g_dXCellHalf) / g_dXCell)
-	iY := NRound((pos.m_y - g_dYCellHalf) / g_dYCell)
-
-	// based on a position and velocity snap to the nearest connection between cell centers
-	if GAbs(vel.m_x) > GAbs(vel.m_y)
-	{
-		// moving in the x direction, snap to y
-		return IvecCreate(iX + cast(int)GSign(vel.m_x), iY)
-	}
-
-	// moving in the y direction, snap to x
-	return IvecCreate(iX, iY + cast(int)GSign(vel.m_y))
 }
 
 SetGhostColor proc (pAct: & SActor)
@@ -581,11 +556,11 @@ UpdateActors proc (aAct: [] SActor, pPlayinp: & SPlayerInput, dT: f32)
 
 }
 
-DrawCellDebug proc (ivecCell: SIntVector2, col: SColor)
+DrawCellDebug proc (posCell: s32x2, col: SColor)
 {
 	// draw goal
-	xMin := cast (f32) ivecCell.m_x * g_dXCell
-	yMin := cast (f32) ivecCell.m_y * g_dYCell
+	xMin := cast (f32) posCell.m_x * g_dXCell
+	yMin := cast (f32) posCell.m_y * g_dYCell
 	colvec := ColvecFromCol(col)
 	AppendTile (xMin, yMin, xMin+g_dXCell, yMin+g_dXCell, &colvec, &g_tilbuf)
 }
@@ -615,33 +590,33 @@ UpdatePuck proc (pActPuck: & SActor, pPlayinp: & SPlayerInput, dT: f32)
 	{
 		if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
 		{ 
-			pActPuck.m_vInput = Vec2Create(g_dXyPuckSpeed, 0)
+			pActPuck.m_vInput = F32x2Create(g_dXyPuckSpeed, 0)
 			pActPuck.m_gInputWindow = g_gInputWindow
 		}
 		if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
 		{
-			pActPuck.m_vInput = Vec2Create(-g_dXyPuckSpeed, 0)
+			pActPuck.m_vInput = F32x2Create(-g_dXyPuckSpeed, 0)
 			pActPuck.m_gInputWindow = g_gInputWindow
 		}
 
 		if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
 		{ 
-			pActPuck.m_vInput = Vec2Create(0, g_dXyPuckSpeed)
+			pActPuck.m_vInput = F32x2Create(0, g_dXyPuckSpeed)
 			pActPuck.m_gInputWindow = g_gInputWindow
 		}
 		if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Press
 		{ 
-			pActPuck.m_vInput = Vec2Create(0, -g_dXyPuckSpeed)
+			pActPuck.m_vInput = F32x2Create(0, -g_dXyPuckSpeed)
 			pActPuck.m_gInputWindow = g_gInputWindow
 		}
 
 		if pActPuck.m_gInputWindow > 0
 		{
-			ivecCellInput := IvecCellAdvance(pActPuck.m_ivecGoal, pActPuck.m_vInput)
-			if !FIsCellBlocked(ivecCellInput.m_x, ivecCellInput.m_y)	
+			posCellInput := PosCellAdvance(pActPuck.m_posCellGoal, pActPuck.m_vInput)
+			if !FIsCellBlocked(posCellInput.m_x, posCellInput.m_y)	
 			{
 				pActPuck.m_vAfter = pActPuck.m_vInput
-				pActPuck.m_vInput = Vec2Create(0, 0)
+				pActPuck.m_vInput = F32x2Create(0, 0)
 				pActPuck.m_gInputWindow = 0
 			}
 		}
@@ -664,24 +639,24 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 
 	while gStep > gEpsilon
 	{
-		posTarget	:= PosFromCell(pAct.m_ivecGoal)
+		posTarget	:= PosFromCell(pAct.m_posCellGoal)
 		vecToTarget := VecSub(posTarget, pEnt.m_pos)
 		gDistToTarget := GLength(vecToTarget)
 
 		// check for dist to mirrored cell
 		pMapdim := &g_mapinfo.m_mapdim
-		ivecMirror := pAct.m_ivecGoal
-		if ivecMirror.m_x == 0
-			{ ivecMirror.m_x = pMapdim.m_dXCellMax }
-		if ivecMirror.m_x == pMapdim.m_dXCellMax-1
-			{ ivecMirror.m_x = -1 }
+		posCellMirror := pAct.m_posCellGoal
+		if posCellMirror.m_x == 0
+			{ posCellMirror.m_x = pMapdim.m_dXCellMax }
+		if posCellMirror.m_x == pMapdim.m_dXCellMax-1
+			{ posCellMirror.m_x = -1 }
 
-		if ivecMirror.m_y == 0
-			{ ivecMirror.m_y = pMapdim.m_dYCellMax }
-		if ivecMirror.m_y == pMapdim.m_dYCellMax-1
-			{ ivecMirror.m_y = -1 }
+		if posCellMirror.m_y == 0
+			{ posCellMirror.m_y = pMapdim.m_dYCellMax }
+		if posCellMirror.m_y == pMapdim.m_dYCellMax-1
+			{ posCellMirror.m_y = -1 }
 
-		posMirror	:= PosFromCell(ivecMirror)
+		posMirror	:= PosFromCell(posCellMirror)
 		vecToMirror := VecSub(posMirror, pEnt.m_pos)
 		gDistToMirror := GLength(vecToMirror)
 		if (gDistToTarget > gDistToMirror)
@@ -704,27 +679,25 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 			if pAct.m_fHasBrain
 			{
 				// is there a choice to make?
-				grfdir := GrfdirOpenCells(pAct.m_ivecGoal)
+				grfdir := GrfdirOpenCells(pAct.m_posCellGoal)
 
 				// remove incoming dir
 				dirIncoming := DirFromVec(VecMul(pAct.m_vAfter, -1))
 				grfdir &= FDIR.all ^ (0x1 << dirIncoming)
 
 				// pick cell closest to the brain target (ignoring blocked cells)
-				ivecNearest: SIntVector2
-				posBrain := PosFromCell(pAct.m_ivecBrain)
-				if FTryFindCellNearest(pAct.m_ivecGoal, posBrain, grfdir, &ivecNearest)
+				posCellNearest: s32x2
+				posBrain := PosFromCell(pAct.m_posCellBrain)
+				if FTryFindCellNearest(pAct.m_posCellGoal, posBrain, grfdir, &posCellNearest)
 				{
-					DrawCellDebug(ivecNearest, ColCreate(220, 220, 220, 200))
-
-					posGoal := PosFromCell(pAct.m_ivecGoal)	
-					posNearest := PosFromCell(ivecNearest)	
+					posGoal := PosFromCell(pAct.m_posCellGoal)	
+					posNearest := PosFromCell(posCellNearest)	
 					vecToNearest := VecSub(posNearest, posGoal)
 					pAct.m_vAfter = VecMul(VecNormalize(vecToNearest), cast (f32) g_dXyPuckSpeed)
 				}
 				else
 				{
-					pAct.m_vAfter = Vec2Create(0, 0)
+					pAct.m_vAfter = F32x2Create(0, 0)
 				}
 			}
 
@@ -734,96 +707,46 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 			}
 			else
 			{
-				ivecCellNew := IvecCellAdvance(pAct.m_ivecGoal, pAct.m_vAfter)
+				posCellNew := PosCellAdvance(pAct.m_posCellGoal, pAct.m_vAfter)
 
-				if FIsCellBlocked(ivecCellNew.m_x, ivecCellNew.m_y)	
+				if FIsCellBlocked(posCellNew.m_x, posCellNew.m_y)	
 				{
-					pAct.m_vAfter = Vec2Create(0, 0)
+					pAct.m_vAfter = F32x2Create(0, 0)
 					gStep = 0
 				}
 				else
 				{
-					pAct.m_ivecGoal = ivecCellNew
+					pAct.m_posCellGoal = posCellNew
 				}
 			}
 		}
 	}
 
-	//DrawCellDebug(pActPuck.m_ivecGoal, ColCreate(220, 10, 10, 200))
+	//DrawCellDebug(pActPuck.m_posCellGoal, ColCreate(220, 10, 10, 200))
 }
 
-IvecCellAdvance proc (ivec: SIntVector2, vecDir: SVector2) -> SIntVector2
+PosCellAdvance proc (posCell: s32x2, vecDir: f32x2) -> s32x2
 {
-	ivecRet: SIntVector2
+	posCellRet: s32x2
 
 	if vecDir.m_x > gEpsilon
-		{ ivecRet.m_x = ivec.m_x + 1 }
+		{ posCellRet.m_x = posCell.m_x + 1 }
 	else if vecDir.m_x < -gEpsilon
-		{ ivecRet.m_x = ivec.m_x - 1 }
+		{ posCellRet.m_x = posCell.m_x - 1 }
 	else
-		{ ivecRet.m_x = ivec.m_x }
+		{ posCellRet.m_x = posCell.m_x }
 
 	if vecDir.m_y > gEpsilon
-		{ ivecRet.m_y = ivec.m_y + 1 }
+		{ posCellRet.m_y = posCell.m_y + 1 }
 	else if vecDir.m_y < -gEpsilon
-		{ ivecRet.m_y = ivec.m_y - 1 }
+		{ posCellRet.m_y = posCell.m_y - 1 }
 	else
-		{ ivecRet.m_y = ivec.m_y }
+		{ posCellRet.m_y = posCell.m_y }
 
-	ivecRet.m_x = (ivecRet.m_x + g_mapinfo.m_mapdim.m_dXCellMax) % g_mapinfo.m_mapdim.m_dXCellMax
-	ivecRet.m_y = (ivecRet.m_y + g_mapinfo.m_mapdim.m_dYCellMax) % g_mapinfo.m_mapdim.m_dYCellMax
+	posCellRet.m_x = (posCellRet.m_x + g_mapinfo.m_mapdim.m_dXCellMax) % g_mapinfo.m_mapdim.m_dXCellMax
+	posCellRet.m_y = (posCellRet.m_y + g_mapinfo.m_mapdim.m_dYCellMax) % g_mapinfo.m_mapdim.m_dYCellMax
 
-	return ivecRet
-}
-
-SIntVector2 struct // tag = ivec
-{
-	m_x: int	
-	m_y: int
-}
-
-IvecCreate proc (x: int, y: int) -> SIntVector2
-{
-	ivec: SIntVector2
-	ivec.m_x = x
-	ivec.m_y = y
-	return ivec
-}
-
-IvecAdd proc (ivecLhs: SIntVector2, ivecRhs: SIntVector2) -> SIntVector2
-{
-	ivecLhs.m_x += ivecRhs.m_x	
-	ivecLhs.m_y += ivecRhs.m_y
-	return ivecLhs
-}
-
-IvecSub proc (ivecLhs: SIntVector2, ivecRhs: SIntVector2) -> SIntVector2
-{
-	ivecLhs.m_x -= ivecRhs.m_x	
-	ivecLhs.m_y -= ivecRhs.m_y
-	return ivecLhs
-}
-
-IvecMul proc (ivecLhs: SIntVector2, r: int) -> SIntVector2
-{
-	ivecLhs.m_x *= r
-	ivecLhs.m_y *= r
-	return ivecLhs
-}
-
-IvecSign proc (vec: SVector2) -> SIntVector2
-{
-	ivec: SIntVector2
-	if vec.m_x < -gEpsilon
-		{ ivec.m_x = -1 }
-	else if vec.m_x > gEpsilon
-		{ ivec.m_x = 1 }
-
-	if vec.m_y < -gEpsilon
-		{ ivec.m_y = -1 }
-	else if vec.m_y > gEpsilon
-		{ ivec.m_y = 1 }
-	return ivec
+	return posCellRet
 }
 
 ENTK enum // Entity kind
@@ -860,7 +783,7 @@ PUCKS enum u8
 
 SEntity struct // tag = ent
 {
-	m_pos: SVector2		// center position
+	m_pos: f32x2		// center position
 	m_col: SColor
 	m_dX: f32
 	m_dY: f32
@@ -870,23 +793,23 @@ SEntity struct // tag = ent
 
 SActor struct // tag = act
 {
-	m_v: SVector2
+	m_v: f32x2
 	m_pEnt: & SEntity
 	m_fIsAllocated: bool
 
-	m_ivecGoal: SIntVector2
-	m_vAfter: SVector2
+	m_posCellGoal: s32x2
+	m_vAfter: f32x2
 	m_systState: Syst		// time that we entered this PUCKS or GHOSTS
 
 	// ghost only values
-	m_ivecBrain: SIntVector2
+	m_posCellBrain: s32x2
 	m_fHasBrain: bool
 	m_ghostk: GHOSTK = GHOSTK.nil
 	m_ghosts: GHOSTS = GHOSTS.Wait
 	m_cCoinWait: int
 
 	// puck only values
-	m_vInput: SVector2
+	m_vInput: f32x2
 	m_gInputWindow: f32		// hold the input for some distance to allow tweaking the turn-input threshold
 	m_pucks: PUCKS = PUCKS.Normal
 
@@ -1087,11 +1010,11 @@ FreeEntity proc (pEnt: & SEntity)
 AddMapEntities proc (pChzMap: & u8, aEnt: [] SEntity, aAct: [] SActor)
 {
 	dXStride := g_dXMapCell
-	for yCell := 0; yCell < g_dYMapCell; ++yCell
+	for yCell:s32 = 0; yCell < g_dYMapCell; ++yCell
 	{
 		y := (cast (f32)yCell + 0.5) * g_dYCell
 
-		for xCell := 0; xCell < g_dXMapCell; ++xCell
+		for xCell:s32 = 0; xCell < g_dXMapCell; ++xCell
 		{
 			x := (cast (f32)xCell + 0.5) * g_dXCell
 
@@ -1103,7 +1026,7 @@ AddMapEntities proc (pChzMap: & u8, aEnt: [] SEntity, aAct: [] SActor)
 					{ return }
 
 				pEnt.m_entk = ENTK.Coin
-				pEnt.m_pos = Vec2Create(x, y)
+				pEnt.m_pos = F32x2Create(x, y)
 				pEnt.m_col = ColCreate(117, 139, 150, 255)
 				pEnt.m_dX = 10
 				pEnt.m_dY = 10
@@ -1115,7 +1038,7 @@ AddMapEntities proc (pChzMap: & u8, aEnt: [] SEntity, aAct: [] SActor)
 					{ return }
 
 				pEnt.m_entk = ENTK.Powerup
-				pEnt.m_pos = Vec2Create(x, y)
+				pEnt.m_pos = F32x2Create(x, y)
 				pEnt.m_col = ColCreate(203, 86, 98, 255)
 				pEnt.m_dX = 20
 				pEnt.m_dY = 20
@@ -1128,8 +1051,8 @@ AddMapEntities proc (pChzMap: & u8, aEnt: [] SEntity, aAct: [] SActor)
 				pEnt := pActGhost.m_pEnt
 				pEnt.m_dX = 25
 				pEnt.m_dY = 25
-				pEnt.m_pos = Vec2Create(x, y)
-				pActGhost.m_ivecGoal = IvecCreate(xCell, yCell)
+				pEnt.m_pos = F32x2Create(x, y)
+				pActGhost.m_posCellGoal = S32x2Create(xCell, yCell)
 				pActGhost.m_ghostk = g_ghostkNext
 				g_ghostkNext = cast (GHOSTK) ((cast (GHOSTK.loose)g_ghostkNext + 1) % cast (GHOSTK.loose) GHOSTK.max) // BB, shouldn't need these casts
 
@@ -1148,8 +1071,8 @@ AddMapEntities proc (pChzMap: & u8, aEnt: [] SEntity, aAct: [] SActor)
 				pEntPuck.m_col = ColCreate(238, 227, 191, 255)
 				pEntPuck.m_dX = 25
 				pEntPuck.m_dY = 25
-				pEntPuck.m_pos = Vec2Create(x, y)
-				pActPuck.m_ivecGoal = IvecCreate(xCell, yCell)
+				pEntPuck.m_pos = F32x2Create(x, y)
+				pActPuck.m_posCellGoal = S32x2Create(xCell, yCell)
 				g_pActPuck = pActPuck
 			}
 		}
@@ -1358,8 +1281,8 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 DrawTestTriangle proc (gRadians:float)
 {
 	dRad :: g_Pi * 2.0 / 3.0
-	vecCenter := Vec2Create(g_dXWindow / 2.0, g_dYWindow / 2.0)
-	vecRadius := Vec2Create(300, 0)
+	vecCenter := F32x2Create(g_dXWindow / 2.0, g_dYWindow / 2.0)
+	vecRadius := F32x2Create(300, 0)
 	vecA := VecRotate(gRadians, vecRadius)
 	vecB := VecRotate(gRadians + dRad, vecRadius)
 	vecC := VecRotate(gRadians + (2.0 * dRad), vecRadius)
@@ -1496,10 +1419,10 @@ main proc () -> int
 
 	    nHzActual := 1 / dTFrameActual
 	    snprintf(aChStatus, aChStatus.count, "%0.1f / %0.1f, %0.2f ms", nHzActual, nHzTarget, dTFrameActual * 1000)
-		DrawText(pDrac, Vec2Create(20, g_dYWindow - 35), aChStatus)
+		DrawText(pDrac, F32x2Create(20, g_dYWindow - 35), aChStatus)
 
 	    snprintf(aChStatus, aChStatus.count, "%d points", g_pActPuck.m_nPoints) 
-		DrawText(pDrac, Vec2Create(400, g_dYWindow - 35), aChStatus)
+		DrawText(pDrac, F32x2Create(400, g_dYWindow - 35), aChStatus)
 
 		dTGame = dTFrameActual
 		g_systCur += dTGame

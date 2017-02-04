@@ -15,7 +15,7 @@
 
 #import "Math"
 
-SColorVec typedef SVector4
+SColorVec typedef f32x4
 
 SColor struct
 {
@@ -53,13 +53,13 @@ ColScaleAlpha proc (col: SColor, rScale: f32) -> SColor inline
 ColvecFromCol proc (col: SColor) -> SColorVec inline
 {
 	return VecMul(
-				Vec4Create(cast(f32)col.m_r, cast(f32)col.m_g, cast(f32)col.m_b, cast(f32)col.m_a), 
+				F32x4Create(cast(f32)col.m_r, cast(f32)col.m_g, cast(f32)col.m_b, cast(f32)col.m_a), 
 				1.0/255.0)
 }
 
 ColvecLerp proc (colvecA: SColorVec, colvecB: SColorVec, uLerp: f32) -> SColorVec inline
 {
-	vec := Vec4Create(	GClamp(GLerp(colvecA.m_x, colvecB.m_x, uLerp), 0, 1),
+	vec := F32x4Create(	GClamp(GLerp(colvecA.m_x, colvecB.m_x, uLerp), 0, 1),
 						GClamp(GLerp(colvecA.m_y, colvecB.m_y, uLerp), 0, 1),
 						GClamp(GLerp(colvecA.m_z, colvecB.m_z, uLerp), 0, 1),
 						GClamp(GLerp(colvecA.m_w, colvecB.m_w, uLerp), 0, 1))

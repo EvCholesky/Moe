@@ -1744,21 +1744,39 @@ SOpTypes OptypeFromPark(
 		{
 		case TINK_Float:
 			{
-				STypeInfoFloat * pTinfloatA = (STypeInfoFloat *)pTinLhs;
-				STypeInfoFloat * pTinfloatB = (STypeInfoFloat *)pTinRhs;
+				STypeInfoFloat * pTinfloatLhs = (STypeInfoFloat *)pTinLhs;
+				STypeInfoFloat * pTinfloatRhs = (STypeInfoFloat *)pTinRhs;
 
-				auto pTinOp = (pTinfloatA->m_cBit >= pTinfloatB->m_cBit) ? pTinLhs : pTinRhs;
+				auto pTinOp = pTinLhs;
+				if (pTinfloatLhs->m_cBit < pTinfloatRhs->m_cBit)
+				{
+					if (parkOperator == PARK_AssignmentOp)
+					{
+						return SOpTypes();
+					}
+					pTinOp = pTinRhs;
+				}
+
 				return SOpTypes(pTinOp, pTinOp, PTinResult(parkOperator, pSymtab, pTinOp));
 			}
 		case TINK_Integer:
 			{
-				STypeInfoInteger * pTinintA = (STypeInfoInteger *)pTinLhs;
-				STypeInfoInteger * pTinintB = (STypeInfoInteger *)pTinRhs;
+				STypeInfoInteger * pTinintLhs = (STypeInfoInteger *)pTinLhs;
+				STypeInfoInteger * pTinintRhs = (STypeInfoInteger *)pTinRhs;
 
-				if (pTinintA->m_fIsSigned != pTinintB->m_fIsSigned)
+				if (pTinintRhs->m_fIsSigned != pTinintRhs->m_fIsSigned)
 					return SOpTypes();
+
+				auto pTinOp = pTinLhs;
+				if (pTinintLhs->m_cBit < pTinintRhs->m_cBit)
+				{
+					if (parkOperator == PARK_AssignmentOp)
+					{
+						return SOpTypes();
+					}
+					pTinOp = pTinRhs;
+				}
 			
-				auto pTinOp = (pTinintA->m_cBit >= pTinintB->m_cBit) ? pTinLhs : pTinRhs;
 				return SOpTypes(pTinOp, pTinOp, PTinResult(parkOperator, pSymtab, pTinOp));
 			}
 		case TINK_Array:
