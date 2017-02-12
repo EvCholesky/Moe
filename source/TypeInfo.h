@@ -191,6 +191,16 @@ enum INLINEK
 };
 const char * PChzFromInlinek(INLINEK inlinek);
 
+enum FPARMQ	// Flags for ARGument Qualifiers
+{
+	FPARMQ_ImplicitRef	= 0x1,		// convert LValue argument and pass into procedure's pointer argument
+
+	FPARMQ_None			= 0x0,
+	FPARMQ_All			= 0x1,
+};
+
+EWC_DEFINE_GRF(GRFPARMQ, FPARMQ, u8);
+
 struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
@@ -201,6 +211,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 						,m_pStnodDefinition(nullptr)
 						,m_arypTinParams()
 						,m_arypTinReturns()
+						,m_mpIptinGrfparmq()
 						,m_fHasVarArgs(false)
 						,m_inlinek(INLINEK_Nil)
 						,m_callconv(CALLCONV_Nil)
@@ -210,6 +221,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 	CSTNode *				m_pStnodDefinition;
 	EWC::CAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;
+	EWC::CAry<GRFPARMQ>		m_mpIptinGrfparmq;
 	bool					m_fHasVarArgs;
 	INLINEK					m_inlinek;
 	CALLCONV				m_callconv;

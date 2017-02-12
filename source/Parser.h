@@ -572,6 +572,10 @@ void			PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab, const SL
 CSymbolTable *	PSymtabPop(CParseContext * pParctx);
 CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
+STypeInfoProcedure * PTinprocAlloc(CSymbolTable * pSymtab, size_t cParam, size_t cReturn, const char * pCozName);
+
+const char * PCozOverloadNameFromTok(TOK tok);
+bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc);
 
 void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntries = false);
 

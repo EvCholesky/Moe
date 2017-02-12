@@ -1238,19 +1238,8 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		int cStnodParams;
 		CSTNode ** ppStnodParams = PPStnodChildFromPark(pStnodParams, &cStnodParams, PARK_ParameterList);
 
-		size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
-		cBAlloc = cBAlloc +	(cStnodParams + cStnodReturns) * sizeof(STypeInfo *);
-
-		u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
-
-		STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure("", "");
-		STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), 
-																EWC_ALIGN_OF(STypeInfo *));
-		// allocate room for pTins here, but types won't be resolved until type check
-		pTinproc->m_arypTinParams.SetArray(ppTin, 0, cStnodParams);
+		auto pTinproc =  PTinprocAlloc(pParctx->m_pSymtab, cStnodParams, cStnodReturns, "");
 		pTinproc->m_arypTinParams.AppendFill(cStnodParams, nullptr);
-
-		pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
 		pTinproc->m_arypTinReturns.AppendFill(cStnodReturns, nullptr);
 
 		pTinproc->m_pStnodDefinition = pStnodProc;
@@ -1293,8 +1282,6 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		}
 		pTinproc->m_callconv = callconv;
 		pTinproc->m_inlinek = inlinek;
-
-		pParctx->m_pSymtab->AddManagedTin(pTinproc);
 
 		pStnodProc->m_pTin = pTinproc;
 
@@ -1837,14 +1824,166 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SLexer * pLex)
 	return pStnodList;
 }
 
+struct SOverloadInfo // tag = ovinf
+{
+	const char *	m_pCoz;
+	TOK				m_tok;
+	PARK			m_aPark[2];
+};
+
+static const SOverloadInfo s_aOvinf[] = {
+	{ "operator+", TOK('+'),			{ PARK_AdditiveOp, PARK_UnaryOp} },
+	{ "operator-", TOK('-'),			{ PARK_AdditiveOp, PARK_UnaryOp} },
+	{ "operator*", TOK('*'),			{ PARK_MultiplicativeOp, PARK_Nil} },
+	{ "operator/", TOK('/'),			{ PARK_MultiplicativeOp, PARK_Nil} },
+	{ "operator%", TOK('%'),			{ PARK_MultiplicativeOp, PARK_Nil} },
+	{ "operator+=", TOK_PlusEqual,		{ PARK_AssignmentOp, PARK_Nil} },
+	{ "operator-=", TOK_MinusEqual,		{ PARK_AssignmentOp, PARK_Nil} },
+	{ "operator*=", TOK_MulEqual,		{ PARK_AssignmentOp, PARK_Nil} },
+	{ "operator/=", TOK_DivEqual,		{ PARK_AssignmentOp, PARK_Nil} },
+	{ "operator=", TOK('='),			{ PARK_AssignmentOp, PARK_Nil} },
+	{ "operator++", TOK_PlusPlus,		{ PARK_PostfixUnaryOp, PARK_Nil} },
+	{ "operator--", TOK_MinusMinus,		{ PARK_PostfixUnaryOp, PARK_Nil} },
+	{ "operator@", TOK_Dereference,		{ PARK_UnaryOp, PARK_Nil} },
+	{ "operator&", TOK_Reference,		{ PARK_UnaryOp, PARK_Nil} },
+	{ "operator~", TOK('~'),			{ PARK_UnaryOp, PARK_Nil} },
+	{ "operator!", TOK('!'),			{ PARK_UnaryOp, PARK_Nil} },
+};
+
+struct SOverloadSignature // tag=ovsig
+{
+	PARK			m_park;
+	int				m_cParam;
+	int				m_cReturn;
+	bool			m_fMustTakeReference;
+	const char *	m_pChzDescription;
+};
+
+SOverloadSignature s_aOvsig[] =
+{
+	{ PARK_AdditiveOp,			2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
+	{ PARK_MultiplicativeOp,	2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
+	{ PARK_AssignmentOp,		2, 0,	true,	"(Lhs: &B, Rhs: A)" },
+	{ PARK_PostfixUnaryOp,		1, 1,	true,	"(lHs: &A)->B" },
+	{ PARK_UnaryOp,				1, 1,	false,	"(a: A)->B" },
+};
+
+const char * PChzOverloadSignature(PARK park)
+{
+	auto pOvsigMax = EWC_PMAC(s_aOvsig);
+	for (SOverloadSignature * pOvsig = s_aOvsig; pOvsig != pOvsigMax; ++pOvsig)
+	{
+		if (pOvsig->m_park == park)
+			return pOvsig->m_pChzDescription;
+	}
+	return "Unknown";
+}
+
+bool FCheckOverloadSignature(PARK park, STypeInfoProcedure * pTinproc)
+{
+	size_t cReturn = pTinproc->m_arypTinReturns.C();
+	if (cReturn == 1 && pTinproc->m_arypTinReturns[0]->m_tink == TINK_Void)
+	{
+		cReturn = 0;
+	}
+
+	auto pOvsigMax = EWC_PMAC(s_aOvsig);
+	for (SOverloadSignature * pOvsig = s_aOvsig; pOvsig != pOvsigMax; ++pOvsig)
+	{
+		if (pOvsig->m_park == park)
+		{
+			if (pTinproc->m_arypTinParams.C() != pOvsig->m_cParam || cReturn != pOvsig->m_cReturn)
+				return false;
+			return pOvsig->m_fMustTakeReference == false || pTinproc->m_arypTinParams[0]->m_tink == TINK_Pointer;
+		}
+	}
+	return false;
+}
+
+const char * PCozOverloadNameFromTok(TOK tok)
+{
+	auto pOvinfMax = EWC_PMAC(s_aOvinf);
+	for (auto pOvinf = s_aOvinf; pOvinf != pOvinfMax; ++pOvinf)
+	{
+		if (pOvinf->m_tok == tok)
+		{
+			return pOvinf->m_pCoz;
+		}
+	}
+	return nullptr;
+}
+
+static bool FOperatorOverloadMustTakeReference(TOK tok)
+{
+	auto pOvinfMax = EWC_PMAC(s_aOvinf);
+	for (auto pOvinf = s_aOvinf; pOvinf != pOvinfMax; ++pOvinf)
+	{
+		if (pOvinf->m_tok != tok)
+			continue;
+
+		int acBool[2] = {0,0};
+		auto pOvsigMax = EWC_PMAC(s_aOvsig);
+		for (int iPark = 0; iPark < EWC_DIM(pOvinf->m_aPark); ++iPark)
+		{
+			for (SOverloadSignature * pOvsig = s_aOvsig; pOvsig != pOvsigMax; ++pOvsig)
+			{
+				if (pOvsig->m_park == pOvinf->m_aPark[iPark])
+				{
+					++acBool[pOvsig->m_fMustTakeReference];
+				}
+			}
+			EWC_ASSERT(acBool[0] == 0 || acBool[1] == 0, "conflicting results for diferrent operators");
+		}
+		return acBool[true] != 0;
+	}
+	return false;
+}
+
+bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc)
+{
+	auto pOvinfMax = EWC_PMAC(s_aOvinf);
+	for (auto pOvinf = s_aOvinf; pOvinf != pOvinfMax; ++pOvinf)
+	{
+		if (pOvinf->m_tok != tok)
+			continue;
+
+		for (int iPark = 0; iPark < EWC_DIM(pOvinf->m_aPark); ++iPark)
+		{
+			PARK park = pOvinf->m_aPark[iPark];
+			if (park != PARK_Nil && FCheckOverloadSignature(park, pTinproc))
+				return true;
+		}
+
+		SError error(pErrman);
+		PrintErrorLine(&error, "Error:", pLexloc, "Incorrect signature for overloading operator '%s'. Options are:", PCozFromTok(tok));
+
+		for (int iPark = 0; iPark < EWC_DIM(pOvinf->m_aPark); ++iPark)
+		{
+			PARK park = pOvinf->m_aPark[iPark];
+			if (park != PARK_Nil)
+			{
+				PrintErrorLine(&error, "", pLexloc, "\toperator%s%s'", PCozFromTok(tok), PChzOverloadSignature(park));
+			}
+		}
+		return false;
+	}
+
+	EWC_ASSERT(false, "unknown overload signature");
+	return false;
+}
+
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 {
-	if (pLex->m_tok == TOK_Identifier)
+	RWORD rword = RwordLookup(pLex);
+	if (pLex->m_tok == TOK_Identifier || rword == RWORD_Operator)
 	{
 		SLexer lexPeek = *pLex;
 		TokNext(&lexPeek);
 
-		RWORD rword = RwordLookup(&lexPeek);
+		if (rword == RWORD_Nil)
+		{
+			rword = RwordLookup(&lexPeek);
+		}
 
 		bool fIsConstantDecl = lexPeek.m_tok == TOK_ColonColon;
 		bool fIsDefinition = fIsConstantDecl;
@@ -1854,6 +1993,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 		case RWORD_Struct:
 		case RWORD_Enum:
 		case RWORD_Typedef:
+		case RWORD_Operator:
 			fIsDefinition = true;
 			break;
 		}
@@ -1861,13 +2001,34 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 		if (fIsDefinition)
 		{
 			SLexerLocation lexloc(pLex);
-			CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+			CSTNode * pStnodIdent;
+
+			if (rword == RWORD_Operator)
+			{
+				TokNext(pLex);
+
+				const char * pCozOverloadName = PCozOverloadNameFromTok((TOK)pLex->m_tok);
+				if (!pCozOverloadName)
+				{
+					ParseError(pParctx, pLex, "Cannot overload operator '%s'", PCozFromTok((TOK)pLex->m_tok));
+					pCozOverloadName = "OverloadError";
+				}
+
+				CString strIdent(pCozOverloadName);
+				pStnodIdent = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
+				pStnodIdent->m_tok = TOK(pLex->m_tok);
+			}
+			else
+			{
+				pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+				pStnodIdent->m_tok = TOK_Identifier;
+			}
 
 			*pLex = lexPeek;
 			TokNext(pLex);
 			
 			// function definition
-			if (rword == RWORD_Proc)
+			if (rword == RWORD_Proc || rword == RWORD_Operator)
 			{
 				Expect(pParctx, pLex, TOK('('));
 
@@ -1970,20 +2131,12 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSTNode ** ppStnodReturn = &pStnodReturns;
 				int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
 
-				size_t cBAlloc = CBAlign(sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
-				cBAlloc = cBAlloc +	(cStnodParams + cStnodReturns) * sizeof(STypeInfo *);
+				auto pTinproc =  PTinprocAlloc(pSymtabParent, cStnodParams, cStnodReturns, strName.PCoz());
 
-				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc,8);
-
-				STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName, StrUniqueName(
-																						pSymtabParent->m_pUnsetTin,
-																						strName));
-				STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), 
-																		EWC_ALIGN_OF(STypeInfo *));
-
-				// allocate room for type pointers here, but the types won't be resolved until typeCheck
-				pTinproc->m_arypTinParams.SetArray(ppTin, 0, cStnodParams);
-				pTinproc->m_arypTinReturns.SetArray(&ppTin[cStnodParams], 0, cStnodReturns);
+				if (rword == RWORD_Operator && FOperatorOverloadMustTakeReference(pStnodIdent->m_tok))
+				{
+					pTinproc->m_mpIptinGrfparmq[0].AddFlags(FPARMQ_ImplicitRef);
+				}
 
 				pTinproc->m_pStnodDefinition = pStnodProc;
 				pTinproc->m_callconv = callconv;
@@ -2009,7 +2162,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					pTinproc->m_arypTinReturns.Append((*ppStnodReturn)->m_pTin);
 				}
 
-				pSymtabParent->AddManagedTin(pTinproc);
 				pStnodProc->m_pTin = pTinproc;
 
 				if (pStproc->m_iStnodBody >= 0)
@@ -2963,7 +3115,7 @@ void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntri
 		if (!fAllowIllegalEntries)
 		{
 			bool fIsDecl = pStnod->m_park == PARK_Decl;
-			bool fIsDefinition = (pStnod->m_park == PARK_ProcedureDefinition) | 
+			bool fIsDefinition = (pStnod->m_park ==PARK_ProcedureDefinition) | 
 								(pStnod->m_park == PARK_EnumDefinition) | 
 								(pStnod->m_park == PARK_StructDefinition);
 			if (!fIsDecl | fIsDefinition)
@@ -3777,7 +3929,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 				AppendCoz(pStrbuf, " ");
 			}
 			
-			AppendCoz(pStrbuf, "literal");
+			AppendCoz(pStrbuf, "Literal");
 			return;
 		}
     case TINK_Procedure:
@@ -4147,6 +4299,10 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pCozIn = "operator * (lhs: SFoo, nRhs: int) -> int { return lhs.m_n + nRhs }";
+		pCozOut = "(func $operator* (params (decl $lhs $SFoo) (decl $nRhs $int)) $int ({} (return (+ (member $lhs $m_n) $nRhs))))";
+		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "switch (i) { case 1, 2: foo(); default: foo() }";
 		pCozOut = "(switch $i (case 1 2 ({} (procCall $foo))) (default ({} (procCall $foo))))";
