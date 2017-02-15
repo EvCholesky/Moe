@@ -615,6 +615,93 @@ OverkTest proc (n: int) -> OVERK 			{return OVERK.Int32 }
 OverkTest proc (g: float) -> OVERK 			{return OVERK.Float }
 OverkTest proc (pChz: & u8) -> OVERK 		{return OVERK.String }
 
+SOverload struct // tag ovr
+{
+	m_n: int
+	m_cAssignment: int 
+}
+
+operator + (ovrLhs: SOverload, ovrRhs: SOverload) -> SOverload
+{
+	ovrRet := ovrLhs 
+	ovrRet.m_n += ovrRhs.m_n
+	return ovrRet
+}
+
+operator * (ovrLhs: SOverload, n: int) -> SOverload
+{
+	ovrRet := ovrLhs
+	ovrRet.m_n *= n
+	return ovrRet
+}
+
+operator = (pOvrLhs: & SOverload, ovrRhs: SOverload) 
+{
+	pOvrLhs.m_cAssignment = ovrRhs.m_cAssignment + 1
+	pOvrLhs.m_n = ovrRhs.m_n
+}
+
+operator ++ (pOvr: & SOverload)->SOverload
+{
+	ovrRet := @pOvr
+	++pOvr.m_n	
+	return ovrRet
+}
+
+operator -(ovr: SOverload) -> SOverload 
+{
+	ovr.m_n = -ovr.m_n
+	return ovr
+}
+
+operator @(ovr: SOverload) -> int
+{
+	return 22
+}
+
+operator !(ovr: SOverload) -> bool
+{
+	return false
+}
+
+TestOperatorOverloading proc ()
+{
+	printf("Operator Overloading:\n")
+
+	ovrA, ovrB: SOverload
+	ovrA.m_n = 5
+	ovrB.m_n = 90	
+	ovr := ovrA + ovrB
+	assert(ovr.m_n == 95, "operator overload failure", #file, #line)
+
+	// NOTE: decl init doesn't call the assignment operator 
+	assert(ovr.m_cAssignment == 0, "decl init doesn't call the assignment operator", #file, #line)
+
+	ovr = ovr * 10
+	assert(ovr.m_n == 950 , "operator overload failure", #file, #line)
+
+	gA := 2.2
+	gB := 4.2
+	gR := ovrA.m_n + ovrB.m_n
+
+	//ovr *= ovr
+	//assert(ovr.m_n == 950 && ovr.m_cAssignment == 2, "operator overload failure", #file, #line)
+
+	ovrPost := ovr++
+	assert(ovrPost.m_n == 950 && ovrPost.m_cAssignment == 1, "operator overload failure", #file, #line)
+	assert(ovr.m_n == 951 && ovr.m_cAssignment == 1, "operator overload failure", #file, #line)
+
+	ovrNeg := -ovr
+	assert(ovrNeg.m_n == -951 && ovrNeg.m_cAssignment == 1, "operator overload failure", #file, #line)
+
+	// Don't do this! Why would you do this?
+	nDeref: int = @ovr
+	assert(nDeref == 22, "expected 22", #file, #line)
+
+	fFalse: bool = !ovr
+	assert(fFalse == false, "expected false", #file, #line)
+}
+
 TestGlobals proc ()
 {
 	printf("Global initialization:\n")
@@ -888,6 +975,7 @@ TestSwitch proc ()
 	VerifyArray({1,11,-1,2,3}, aNOutput)
 }
 
+
 main proc () -> int 
 {
 
@@ -903,6 +991,7 @@ main proc () -> int
 	TestArrays()
 	TestCasting()
 	TestOverloading()
+	TestOperatorOverloading()
 	TestGlobals()
 	TestProcedureRef()
 	TestHereStrings()

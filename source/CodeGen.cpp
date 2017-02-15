@@ -3966,109 +3966,107 @@ CIRValue * PValGenerateCall(
 	STypeInfoProcedure * pTinproc, 
 	VALGENK valgenk)
 {
-				auto pSym = pStnod->m_pSym;
-				if (fIsDirectCall)
-				{
-					if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
-						return nullptr;
+	auto pSym = pStnod->m_pSym;
+	if (fIsDirectCall)
+	{
+		if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
+			return nullptr;
 
-					EWC_ASSERT(pStnod->m_pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused");
+		EWC_ASSERT(pStnod->m_pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused");
 
-					PProcTryEnsure(pWork, pBuild, pSym);
+		PProcTryEnsure(pWork, pBuild, pSym);
 
-					if (!pSym->m_pVal)
-						return nullptr;
-				}
-
-
-				EmitLocation(pWork, pBuild, pStnod->m_lexloc);
-
-				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
-				for (size_t ipStnodChild = 0; ipStnodChild < cpStnodArg; ++ipStnodChild)
-				{
-					//CSTNode * pStnodArg = pStnod->PStnodChild((int)ipStnodChild + 1);
-					CSTNode * pStnodArg = ppStnodArg[ipStnodChild];
-
-					STypeInfo * pTinParam = pStnodArg->m_pTin;
-					if (ipStnodChild < pTinproc->m_arypTinParams.C())
-					{
-						pTinParam = pTinproc->m_arypTinParams[ipStnodChild];
-					}
-
-					CIRValue * pValRhsCast = nullptr;
-					if (ipStnodChild < pTinproc->m_mpIptinGrfparmq.C() && 
-						pTinproc->m_mpIptinGrfparmq[ipStnodChild].FIsSet(FPARMQ_ImplicitRef))
-					{
-						auto pTinptr = PTinRtiCast<STypeInfoPointer*>(pTinproc->m_arypTinParams[ipStnodChild]);
-						EWC_ASSERT(pTinptr, "exected pointer type for implicit reference");
-
-						//pValRhsCast = PValGenerateCast(pWork, pBuild, VALGENK_Reference, pStnodArg, pTinptr->m_pTinPointedTo);
-						pValRhsCast = PValGenerate(pWork, pBuild, pStnodArg, VALGENK_Reference);
-					}
-					else
-					{
-						pValRhsCast = PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnodArg, pTinParam);
-					}
-
-					arypLvalArgs.Append(pValRhsCast->m_pLval);
-					if (!EWC_FVERIFY(*arypLvalArgs.PLast(), "missing argument value"))
-						return nullptr;
-				}
-
-				EWC_ASSERT(valgenk != VALGENK_Reference, "cannot return reference value for procedure call");
-
-				CIRInstruction * pInst = pBuild->PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
-				if (pInst->FIsError())
-					return pInst;
-
-				if (fIsDirectCall)
-				{
-					CIRProcedure * pProc = (CIRProcedure *)pSym->m_pVal;
-					auto pLvalFunction = pProc->m_pLvalFunction;
-					if (LLVMCountParams(pLvalFunction) != cpStnodArg)
-					{
-						if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
-							return nullptr;
-					}
-
-					s32 iLine;
-					s32 iCol;
-					CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLine, &iCol);
-
-					pInst->m_pLval = LLVMBuildCall(
-										pBuild->m_pLbuild,
-										pProc->m_pLvalFunction,
-										arypLvalArgs.A(),
-										(u32)arypLvalArgs.C(),
-										"");
+		if (!pSym->m_pVal)
+			return nullptr;
+	}
 
 
-					if (pTinproc->m_callconv != CALLCONV_Nil)
-					{
-						LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
-					}
-					return pInst;
-				}
-				else
-				{
-					CSTNode * pStnodProcref = pStnod->PStnodChildSafe(0);
-					if (!EWC_FVERIFY(pStnodProcref, "expected procedure reference"))
-						return nullptr;
+	EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 
-					auto pValProcref = PValGenerate(pWork, pBuild, pStnodProcref, VALGENK_Instance);
+	CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
+	for (size_t ipStnodChild = 0; ipStnodChild < cpStnodArg; ++ipStnodChild)
+	{
+		CSTNode * pStnodArg = ppStnodArg[ipStnodChild];
 
-					pInst->m_pLval = LLVMBuildCall(
-										pBuild->m_pLbuild,
-										pValProcref->m_pLval,
-										arypLvalArgs.A(),
-										(u32)arypLvalArgs.C(),
-										"");
-					if (pTinproc->m_callconv != CALLCONV_Nil)
-					{
-						LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
-					}
-					return pInst;
-				}
+		STypeInfo * pTinParam = pStnodArg->m_pTin;
+		if (ipStnodChild < pTinproc->m_arypTinParams.C())
+		{
+			pTinParam = pTinproc->m_arypTinParams[ipStnodChild];
+		}
+
+		CIRValue * pValRhsCast = nullptr;
+		if (ipStnodChild < pTinproc->m_mpIptinGrfparmq.C() && 
+			pTinproc->m_mpIptinGrfparmq[ipStnodChild].FIsSet(FPARMQ_ImplicitRef))
+		{
+			auto pTinptr = PTinRtiCast<STypeInfoPointer*>(pTinproc->m_arypTinParams[ipStnodChild]);
+			EWC_ASSERT(pTinptr, "exected pointer type for implicit reference");
+
+			pValRhsCast = PValGenerate(pWork, pBuild, pStnodArg, VALGENK_Reference);
+		}
+		else
+		{
+			pValRhsCast = PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnodArg, pTinParam);
+		}
+
+		arypLvalArgs.Append(pValRhsCast->m_pLval);
+		if (!EWC_FVERIFY(*arypLvalArgs.PLast(), "missing argument value"))
+			return nullptr;
+	}
+
+	EWC_ASSERT(valgenk != VALGENK_Reference, "cannot return reference value for procedure call");
+
+	CIRInstruction * pInst = pBuild->PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
+	if (pInst->FIsError())
+		return pInst;
+
+	if (fIsDirectCall)
+	{
+		CIRProcedure * pProc = (CIRProcedure *)pSym->m_pVal;
+		auto pLvalFunction = pProc->m_pLvalFunction;
+		if (LLVMCountParams(pLvalFunction) != cpStnodArg)
+		{
+			if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
+				return nullptr;
+		}
+
+		s32 iLine;
+		s32 iCol;
+		CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLine, &iCol);
+
+		pInst->m_pLval = LLVMBuildCall(
+							pBuild->m_pLbuild,
+							pProc->m_pLvalFunction,
+							arypLvalArgs.A(),
+							(u32)arypLvalArgs.C(),
+							"");
+
+
+		if (pTinproc->m_callconv != CALLCONV_Nil)
+		{
+			LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
+		}
+		return pInst;
+	}
+	else
+	{
+		CSTNode * pStnodProcref = pStnod->PStnodChildSafe(0);
+		if (!EWC_FVERIFY(pStnodProcref, "expected procedure reference"))
+			return nullptr;
+
+		auto pValProcref = PValGenerate(pWork, pBuild, pStnodProcref, VALGENK_Instance);
+
+		pInst->m_pLval = LLVMBuildCall(
+							pBuild->m_pLbuild,
+							pValProcref->m_pLval,
+							arypLvalArgs.A(),
+							(u32)arypLvalArgs.C(),
+							"");
+		if (pTinproc->m_callconv != CALLCONV_Nil)
+		{
+			LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
+		}
+		return pInst;
+	}
 }
 
 static inline bool FIsOverloadedOp(CSTNode * pStnod)
