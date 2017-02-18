@@ -1837,11 +1837,23 @@ static const SOverloadInfo s_aOvinf[] = {
 	{ "operator*", TOK('*'),			{ PARK_MultiplicativeOp, PARK_Nil} },
 	{ "operator/", TOK('/'),			{ PARK_MultiplicativeOp, PARK_Nil} },
 	{ "operator%", TOK('%'),			{ PARK_MultiplicativeOp, PARK_Nil} },
+	{ "operator|", TOK('|'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
+	{ "operator|", TOK('&'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
+	{ "operator|", TOK('^'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
+	{ "operator<<", TOK_ShiftLeft,		{ PARK_ShiftOp, PARK_Nil} },
+	{ "operator>>", TOK_ShiftRight,		{ PARK_ShiftOp, PARK_Nil} },
+	{ "operator>", TOK('>'),			{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator>", TOK('<'),			{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator>", TOK_LessEqual,		{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator>", TOK_GreaterEqual,	{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator==", TOK_EqualEqual,		{ PARK_EqualityOp, PARK_Nil} },
+	{ "operator!=", TOK_NotEqual,		{ PARK_EqualityOp, PARK_Nil} },
 	{ "operator+=", TOK_PlusEqual,		{ PARK_AssignmentOp, PARK_Nil} },
 	{ "operator-=", TOK_MinusEqual,		{ PARK_AssignmentOp, PARK_Nil} },
 	{ "operator*=", TOK_MulEqual,		{ PARK_AssignmentOp, PARK_Nil} },
 	{ "operator/=", TOK_DivEqual,		{ PARK_AssignmentOp, PARK_Nil} },
 	{ "operator=", TOK('='),			{ PARK_AssignmentOp, PARK_Nil} },
+	{ "operator:=", TOK_ColonEqual,		{ PARK_Decl, PARK_Nil} },
 	{ "operator++", TOK_PlusPlus,		{ PARK_PostfixUnaryOp, PARK_Nil} },
 	{ "operator--", TOK_MinusMinus,		{ PARK_PostfixUnaryOp, PARK_Nil} },
 	{ "operator@", TOK_Dereference,		{ PARK_UnaryOp, PARK_Nil} },
@@ -1850,12 +1862,22 @@ static const SOverloadInfo s_aOvinf[] = {
 	{ "operator!", TOK('!'),			{ PARK_UnaryOp, PARK_Nil} },
 };
 
+enum FOVSIG
+{
+	FOVSIG_MustTakeReference	= 0x1,
+	FOVSIG_ReturnBool			= 0x2,
+
+	FOVSIG_None			= 0x0,
+	FOVSIG_All			= 0x3,
+};
+EWC_DEFINE_GRF(GRFOVSIG, FOVSIG, u32);
+
 struct SOverloadSignature // tag=ovsig
 {
 	PARK			m_park;
 	int				m_cParam;
 	int				m_cReturn;
-	bool			m_fMustTakeReference;
+	GRFOVSIG		m_grfovsig;
 	const char *	m_pChzDescription;
 };
 
@@ -1863,8 +1885,13 @@ SOverloadSignature s_aOvsig[] =
 {
 	{ PARK_AdditiveOp,			2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
 	{ PARK_MultiplicativeOp,	2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
-	{ PARK_AssignmentOp,		2, 0,	true,	"(Lhs: &B, Rhs: A)" },
-	{ PARK_PostfixUnaryOp,		1, 1,	true,	"(lHs: &A)->B" },
+	{ PARK_BitwiseAndOrOp,		2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
+	{ PARK_ShiftOp,				2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
+	{ PARK_RelationalOp,		2, 1,	FOVSIG_ReturnBool,	"(Lhs: A, Rhs: B)->bool" },
+	{ PARK_EqualityOp,			2, 1,	FOVSIG_ReturnBool,	"(Lhs: A, Rhs: B)->bool" },
+	{ PARK_AssignmentOp,		2, 0,	FOVSIG_MustTakeReference,	"(Lhs: &B, Rhs: A)" },
+	{ PARK_Decl,				2, 0,	FOVSIG_MustTakeReference,	"(Lhs: &B, Rhs: A)" },
+	{ PARK_PostfixUnaryOp,		1, 1,	FOVSIG_MustTakeReference,	"(lHs: &A)->B" },
 	{ PARK_UnaryOp,				1, 1,	false,	"(a: A)->B" },
 };
 
@@ -1894,7 +1921,10 @@ bool FCheckOverloadSignature(PARK park, STypeInfoProcedure * pTinproc)
 		{
 			if (pTinproc->m_arypTinParams.C() != pOvsig->m_cParam || cReturn != pOvsig->m_cReturn)
 				return false;
-			return pOvsig->m_fMustTakeReference == false || pTinproc->m_arypTinParams[0]->m_tink == TINK_Pointer;
+			if (pOvsig->m_grfovsig.FIsSet(FOVSIG_ReturnBool) && pTinproc->m_arypTinReturns[0]->m_tink != TINK_Bool)
+				return false;
+
+			return !pOvsig->m_grfovsig.FIsSet(FOVSIG_MustTakeReference) || pTinproc->m_arypTinParams[0]->m_tink == TINK_Pointer;
 		}
 	}
 	return false;
@@ -1929,7 +1959,7 @@ static bool FOperatorOverloadMustTakeReference(TOK tok)
 			{
 				if (pOvsig->m_park == pOvinf->m_aPark[iPark])
 				{
-					++acBool[pOvsig->m_fMustTakeReference];
+					++acBool[pOvsig->m_grfovsig.FIsSet(FOVSIG_MustTakeReference)];
 				}
 			}
 			EWC_ASSERT(acBool[0] == 0 || acBool[1] == 0, "conflicting results for diferrent operators");

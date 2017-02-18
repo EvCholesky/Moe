@@ -380,18 +380,21 @@ struct SOpTypes // tag = optype
 				:m_pTinLhs(nullptr)
 				,m_pTinRhs(nullptr)
 				,m_pTinResult(nullptr)
+				,m_pTinprocOverload(nullptr)
 					{ ; }
 
 				SOpTypes(STypeInfo * pTinLhs, STypeInfo * pTinRhs, STypeInfo * pTinResult)
 				:m_pTinLhs(pTinLhs)
 				,m_pTinRhs(pTinRhs)
 				,m_pTinResult(pTinResult)
+				,m_pTinprocOverload(nullptr)
 					{ ; }
 
 				bool FIsValid() const
 					{ return m_pTinResult != nullptr; }
 
-	STypeInfo * m_pTinLhs;
-	STypeInfo * m_pTinRhs;
-	STypeInfo * m_pTinResult;
+	STypeInfo *				m_pTinLhs;
+	STypeInfo *				m_pTinRhs;
+	STypeInfo *				m_pTinResult;
+	STypeInfoProcedure *	m_pTinprocOverload;
 };

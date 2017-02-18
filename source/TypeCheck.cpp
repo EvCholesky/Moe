@@ -2911,8 +2911,6 @@ SOverloadCheck OvcheckTryCheckOverload(
 		return SOverloadCheck(nullptr);
 	}
 
-	pStnod->m_pSym = pSymProc;
-
 	if (pTinproc)
 	{
 		CSTNode * pStnodDefinition = pSymProc->m_pStnodDefinition;
@@ -2922,9 +2920,6 @@ SOverloadCheck OvcheckTryCheckOverload(
 	}
 
 	EWC_ASSERT(pStnod->m_pTin == nullptr, "assignment op has no 'return' value");
-
-	pStnod->m_strees = STREES_TypeChecked;
-	PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
 	return SOverloadCheck(pTinproc, TCRET_Complete);
 }
@@ -4156,70 +4151,85 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					{
 						CSTNode * pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
 
-						/* Starting work on getting decl init to call the assignment operator
-						// I'm not sure it should, the waters get pretty muddy:
+						STypeInfo * pTinDecl = pStnod->m_pTin;
+						if (!pTinDecl)
+						{
+							// BB - This won't allow an override of operator:= to return a different type
+							// I'm planning on coming back to it when I handle return types values as regular LValues
+							pTinDecl = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodInit);
+
+							EWC_ASSERT(pTinDecl);
+						}
+
+						EWC_ASSERT(pStnodIdent->m_pTin == nullptr, "expected null identifier type");
+						pStnodIdent->m_pTin = pTinDecl;
+
+						// Check for overloads on the ':=' operator
 						//   What happens with constant init?
 						//   What about globals?
 
-						EWC_ASSERT(pStnod->m_tok == TOK_Nil, "expected nil");
-						pStnod->m_tok = TOK('=');
-						// need to explicitly pass children
+						pStnod->m_tok = TOK_ColonEqual;
 
+						CSTNode * apStnod[2];
+						apStnod[0] = pStnodIdent;
+						apStnod[1] = pStnodInit;
+						
 						SProcMatchParam pmparam;
 						pmparam.m_pLexloc = &pStnod->m_lexloc;
 						pmparam.m_cpStnodCall = 2;
-						pmparam.m_ppStnodCall = (pmparam.m_cpStnodCall) ? &pStnod->m_arypStnodChild[0] : nullptr;
+						pmparam.m_ppStnodCall = apStnod;
 
 						SOverloadCheck ovcheck = OvcheckTryCheckOverload(pTcwork, pTcfram, pStnod, &pmparam);
+						pStnodIdent->m_pTin = nullptr;
+
 						if (ovcheck.m_pTinproc)
 						{
+							if (ovcheck.m_tcret != TCRET_Complete)
+								return ovcheck.m_tcret;
+
 							auto pTinproc = ovcheck.m_pTinproc;
 							EWC_ASSERT(pTinproc->m_arypTinParams.C() == 2 && pTinproc->m_arypTinReturns.C() == 1, "bad operator overload signature");
-
-							if (ovcheck.m_tcret == TCRET_WaitingForSymbolDefinition)
-								return ovcheck.m_tcret;
 
 							AllocateOptype(pStnod);
 							pStnod->m_pOptype->m_pTinLhs = pTinproc->m_arypTinParams[0];
 							pStnod->m_pOptype->m_pTinRhs = pTinproc->m_arypTinParams[1];
 							pStnod->m_pOptype->m_pTinResult = pTinproc->m_arypTinReturns[0];
+							pStnod->m_pOptype->m_pTinprocOverload = pTinproc;
 
-							FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodRhs);
-							break;
+							pStnod->m_pTin = pTinDecl;
+							FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodInit);
 						}
-						*/
-
-
-						if (pStnod->m_pTin && pStnodInit->m_park != PARK_Uninitializer)
+						else
 						{
-							// just make sure the init type fits the specified one
-							STypeInfo * pTinInit = pStnodInit->m_pTin;
-							pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodInit, pStnod->m_pTin);
-							if (FCanImplicitCast(pTinInit, pStnod->m_pTin))
+							if (pStnod->m_pTin && pStnodInit->m_park != PARK_Uninitializer)
 							{
-								FinalizeLiteralType(pSymtab, pStnod->m_pTin, pStnodInit);
-								pTinInit = pStnod->m_pTin;
+								// just make sure the init type fits the specified one
+								STypeInfo * pTinInit = pStnodInit->m_pTin;
+								pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodInit, pStnod->m_pTin);
+								if (FCanImplicitCast(pTinInit, pStnod->m_pTin))
+								{
+									FinalizeLiteralType(pSymtab, pStnod->m_pTin, pStnodInit);
+									pTinInit = pStnod->m_pTin;
+								}
+								else
+								{
+									EmitError(pTcwork, pStnod, "Cannot initialize variable of type '%s' with '%s'",
+										StrFromTypeInfo(pStnod->m_pTin).PCoz(),
+										StrFromTypeInfo(pTinInit).PCoz());
+								}
 							}
-							else
+							else if (pStnodInit->m_pTin)
 							{
-								EmitError(pTcwork, pStnod, "Cannot initialize variable of type '%s' with '%s'",
-									StrFromTypeInfo(pStnod->m_pTin).PCoz(),
-									StrFromTypeInfo(pTinInit).PCoz());
-							}
-						}
-						else if (pStnodInit->m_pTin)
-						{
-							pStnod->m_pTin = PTinPromoteUntypedDefault(
-													pTcwork,
-													pTcsentTop->m_pSymtab,
-													pStnodInit);
+								pStnod->m_pTin = PTinPromoteUntypedDefault(
+														pTcwork,
+														pTcsentTop->m_pSymtab,
+														pStnodInit);
 
-							EWC_ASSERT(pStnod->m_pTin);
-							FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pTin, pStnodInit);
+								EWC_ASSERT(pStnod->m_pTin);
+								FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pTin, pStnodInit);
+							}
 						}
 					}
-
-					CSTNode * pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 
 					// would this be better if there was a PARK_CompoundDecl?
 					bool fIsCompoundDecl = pStdecl->m_iStnodChildMin != -1;
@@ -4377,15 +4387,19 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						auto pTinproc = ovcheck.m_pTinproc;
 						EWC_ASSERT(pTinproc->m_arypTinParams.C() == 2 && pTinproc->m_arypTinReturns.C() == 1, "bad operator overload signature");
 
-						if (ovcheck.m_tcret == TCRET_WaitingForSymbolDefinition)
+						if (ovcheck.m_tcret != TCRET_Complete)
 							return ovcheck.m_tcret;
 
 						AllocateOptype(pStnod);
 						pStnod->m_pOptype->m_pTinLhs = pTinproc->m_arypTinParams[0];
 						pStnod->m_pOptype->m_pTinRhs = pTinproc->m_arypTinParams[1];
 						pStnod->m_pOptype->m_pTinResult = pTinproc->m_arypTinReturns[0];
+						pStnod->m_pOptype->m_pTinprocOverload = pTinproc;
 
 						FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodRhs);
+
+						pStnod->m_strees = STREES_TypeChecked;
+						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						break;
 					}
 
@@ -5230,57 +5244,36 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 					else
 					{
-						SOpTypes optypeOverload;
-						const char * pCozOverload = PCozOverloadNameFromTok(pStnod->m_tok);
-						if (pCozOverload)
+						SProcMatchParam pmparam;
+						pmparam.m_pLexloc = &pStnod->m_lexloc;
+						pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C();
+						pmparam.m_ppStnodCall = (pmparam.m_cpStnodCall) ? &pStnod->m_arypStnodChild[0] : nullptr;
+
+						SOverloadCheck ovcheck = OvcheckTryCheckOverload(pTcwork, pTcfram, pStnod, &pmparam);
+						if (ovcheck.m_pTinproc)
 						{
-							SProcMatchParam pmparam;
-							pmparam.m_pLexloc = &pStnod->m_lexloc;
-							pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C();
-							pmparam.m_ppStnodCall = (pmparam.m_cpStnodCall) ? &pStnod->m_arypStnodChild[0] : nullptr;
+							if (ovcheck.m_tcret != TCRET_Complete)
+								return ovcheck.m_tcret;
 
-							CString strProcName(pCozOverload);
-							SSymbol * pSymProc = nullptr;
-							TCRET tcret = TcretTryFindMatchingProcedureCall(
-											pTcwork, pTcfram, strProcName, pSymtab, &pmparam, &pSymProc, pTcsentTop->m_grfsymlook);
+							AllocateOptype(pStnod);
 
-							if (tcret == TCRET_WaitingForSymbolDefinition)
+							STypeInfoProcedure * pTinproc = ovcheck.m_pTinproc;
+							if (EWC_FVERIFY(pTinproc->m_arypTinParams.C() == 2 && pTinproc->m_arypTinReturns.C() == 1,
+										"bad operator overload signature"))
 							{
-								// wait for this procedure's signature to be type checked.
-								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymProc);
-								pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
-								return tcret;
+								pStnod->m_pOptype->m_pTinLhs = pTinproc->m_arypTinParams[0];
+								pStnod->m_pOptype->m_pTinRhs = pTinproc->m_arypTinParams[1];
+								pStnod->m_pOptype->m_pTinResult = pTinproc->m_arypTinReturns[0];
 							}
-							else if (tcret == TCRET_Complete)
-							{
-								pStnod->m_pSym = pSymProc;
-								auto pTinproc = (pSymProc) ? PTinRtiCast<STypeInfoProcedure*>(pSymProc->m_pTin) : nullptr;
 
-								if (pTinproc)
-								{
-									if (EWC_FVERIFY(pTinproc->m_arypTinParams.C() == 2 && pTinproc->m_arypTinReturns.C() == 1,
-												"bad operator overload signature"))
-									{
-										optypeOverload.m_pTinLhs = pTinproc->m_arypTinParams[0];
-										optypeOverload.m_pTinRhs = pTinproc->m_arypTinParams[1];
-										optypeOverload.m_pTinResult = pTinproc->m_arypTinReturns[0];
-									}
-
-									CSTNode * pStnodDefinition = pSymProc->m_pStnodDefinition;
-
-									EWC_ASSERT(pStnodDefinition->m_strees >= STREES_SignatureTypeChecked, "expected definition to be type checked");
-									EWC_ASSERT(pStnodDefinition->m_pTin == pTinproc, "tin mismatch");
-								}
-							}
+							pStnod->m_pOptype->m_pTinprocOverload = ovcheck.m_pTinproc;
+							pStnod->m_pTin = pStnod->m_pOptype->m_pTinResult;
 						}
 
-						AllocateOptype(pStnod);
-						if (optypeOverload.FIsValid())
+						if (!pStnod->m_pOptype)
 						{
-							*pStnod->m_pOptype = optypeOverload;
-						}
-						else
-						{
+							AllocateOptype(pStnod);
+
 							PARK park = pStnod->m_park;
 							STypeInfo * pTinUpcastLhs = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodLhs, pTinRhs);
 							STypeInfo * pTinUpcastRhs = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodRhs, pTinLhs);
@@ -5336,7 +5329,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					SOverloadCheck ovcheck = OvcheckTryCheckOverload(pTcwork, pTcfram, pStnod, &pmparam);
 					if (ovcheck.m_pTinproc)
 					{
-						if (ovcheck.m_tcret == TCRET_WaitingForSymbolDefinition)
+						if (ovcheck.m_tcret != TCRET_Complete)
 							return ovcheck.m_tcret;
 
 						AllocateOptype(pStnod);
@@ -5348,7 +5341,11 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							*pStnod->m_pOptype = SOpTypes(pTinOperand, pTinOperand, pTinproc->m_arypTinReturns[0]);
 						}
 
+						pStnod->m_pOptype->m_pTinprocOverload = ovcheck.m_pTinproc;
 						pStnod->m_pTin = pStnod->m_pOptype->m_pTinResult;
+
+						pStnod->m_strees = STREES_TypeChecked;
+						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						break;
 					}
 

@@ -101,6 +101,15 @@ static inline CIRValue * PValGenerateCast(
 	CSTNode * pStnodRhs,
 	STypeInfo * pTinOut);
 
+CIRValue * PValGenerateCall(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	CSTNode * pStnod,
+	CDynAry<LLVMValueRef> * parypLvalArgs,
+	bool fIsDirectCall,
+	STypeInfoProcedure * pTinproc, 
+	VALGENK valgenk);
+
 CIRInstruction * PInstGenerateAssignment(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild,
@@ -3800,6 +3809,11 @@ static inline CIRInstruction * PInstGenerateOperator(
 	return pInstOp;
 }
 
+static inline bool FIsOverloadedOp(CSTNode * pStnod)
+{
+	return pStnod->m_pOptype && pStnod->m_pOptype->m_pTinprocOverload;
+}
+
 CIRValue * PValGenerateDecl(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild,
@@ -3853,6 +3867,8 @@ CIRValue * PValGenerateDecl(
 
 			// Not supporting globals that require some runtime init
 			//return PValInitialize(pWork, pBuild, pStnod->m_pTin, pGlob, pStnodInit);
+
+			// Also - not handling globals that need to call an overloaded := operator
 		}
 
 		// yuck, we're doing this check for every global variable?!?
@@ -3901,6 +3917,25 @@ CIRValue * PValGenerateDecl(
 				iLine, 
 				iCol, 
 				pBuild->m_pBlockCur->m_pLblock);
+
+		if (FIsOverloadedOp(pStnod))
+		{
+			CSTDecl * pStdecl = pStnod->m_pStdecl;
+			if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodIdentifier >= 0 && pStdecl->m_iStnodInit >= 0))
+			{
+				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
+
+				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
+				auto pTinptr = PTinRtiCast<STypeInfoPointer*>(pTinproc->m_arypTinParams[0]);
+				EWC_ASSERT(pTinptr, "exected pointer type for implicit reference");
+				arypLvalArgs.Append(PValGenerate(pWork, pBuild, pStnod->m_arypStnodChild[pStdecl->m_iStnodIdentifier], VALGENK_Reference)->m_pLval);
+
+				auto pTinRhs = pTinproc->m_arypTinParams[1];
+				arypLvalArgs.Append(PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnod->m_arypStnodChild[pStdecl->m_iStnodInit], pTinRhs)->m_pLval);
+
+				return PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
+			}
+		}
 
 		return PValInitialize(pWork, pBuild, pStnod->m_pTin, pInstAlloca, pStnodInit);
 	}
@@ -3956,34 +3991,14 @@ CIRValue * PValGenerateLiteral(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode 
 	return pConst;
 }
 
-CIRValue * PValGenerateCall(
+void GenerateArguments(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild,
-	CSTNode * pStnod,
+	STypeInfoProcedure * pTinproc, 
 	size_t cpStnodArg,
 	CSTNode ** ppStnodArg,
-	bool fIsDirectCall,
-	STypeInfoProcedure * pTinproc, 
-	VALGENK valgenk)
+	CDynAry<LLVMValueRef> * parypLvalArgs)
 {
-	auto pSym = pStnod->m_pSym;
-	if (fIsDirectCall)
-	{
-		if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
-			return nullptr;
-
-		EWC_ASSERT(pStnod->m_pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused");
-
-		PProcTryEnsure(pWork, pBuild, pSym);
-
-		if (!pSym->m_pVal)
-			return nullptr;
-	}
-
-
-	EmitLocation(pWork, pBuild, pStnod->m_lexloc);
-
-	CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 	for (size_t ipStnodChild = 0; ipStnodChild < cpStnodArg; ++ipStnodChild)
 	{
 		CSTNode * pStnodArg = ppStnodArg[ipStnodChild];
@@ -4008,11 +4023,41 @@ CIRValue * PValGenerateCall(
 			pValRhsCast = PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnodArg, pTinParam);
 		}
 
-		arypLvalArgs.Append(pValRhsCast->m_pLval);
-		if (!EWC_FVERIFY(*arypLvalArgs.PLast(), "missing argument value"))
+		parypLvalArgs->Append(pValRhsCast->m_pLval);
+		EWC_ASSERT(*parypLvalArgs->PLast(), "missing argument value");
+	}
+}
+
+CIRValue * PValGenerateCall(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild,
+	CSTNode * pStnod,
+	CDynAry<LLVMValueRef> * parypLvalArgs,
+	bool fIsDirectCall,
+	STypeInfoProcedure * pTinproc, 
+	VALGENK valgenk)
+{
+	SSymbol * pSym = nullptr;
+	if (!EWC_FVERIFY(pTinproc->m_pStnodDefinition, "procedure missing definition"))
+		return nullptr;
+
+	pSym = pTinproc->m_pStnodDefinition->m_pSym;
+
+	if (fIsDirectCall)
+	{
+		if (!EWC_FVERIFY(pSym, "calling function without generated code"))
+			return nullptr;
+
+		EWC_ASSERT(pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused '%s'", pTinproc->m_strName.PCoz());
+
+		PProcTryEnsure(pWork, pBuild, pSym);
+
+		if (!pSym->m_pVal)
 			return nullptr;
 	}
 
+
+	EmitLocation(pWork, pBuild, pStnod->m_lexloc);
 	EWC_ASSERT(valgenk != VALGENK_Reference, "cannot return reference value for procedure call");
 
 	CIRInstruction * pInst = pBuild->PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
@@ -4023,7 +4068,7 @@ CIRValue * PValGenerateCall(
 	{
 		CIRProcedure * pProc = (CIRProcedure *)pSym->m_pVal;
 		auto pLvalFunction = pProc->m_pLvalFunction;
-		if (LLVMCountParams(pLvalFunction) != cpStnodArg)
+		if (LLVMCountParams(pLvalFunction) != parypLvalArgs->C())
 		{
 			if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
 				return nullptr;
@@ -4036,8 +4081,8 @@ CIRValue * PValGenerateCall(
 		pInst->m_pLval = LLVMBuildCall(
 							pBuild->m_pLbuild,
 							pProc->m_pLvalFunction,
-							arypLvalArgs.A(),
-							(u32)arypLvalArgs.C(),
+							parypLvalArgs->A(),
+							(u32)parypLvalArgs->C(),
 							"");
 
 
@@ -4058,8 +4103,8 @@ CIRValue * PValGenerateCall(
 		pInst->m_pLval = LLVMBuildCall(
 							pBuild->m_pLbuild,
 							pValProcref->m_pLval,
-							arypLvalArgs.A(),
-							(u32)arypLvalArgs.C(),
+							parypLvalArgs->A(),
+							(u32)parypLvalArgs->C(),
 							"");
 		if (pTinproc->m_callconv != CALLCONV_Nil)
 		{
@@ -4067,12 +4112,6 @@ CIRValue * PValGenerateCall(
 		}
 		return pInst;
 	}
-}
-
-static inline bool FIsOverloadedOp(CSTNode * pStnod)
-{
-	SSymbol * pSym = pStnod->m_pSym;
-	return pSym && pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Procedure;
 }
 
 CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk)
@@ -4178,6 +4217,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			{
 				(void) PValGenerateDecl(pWork, pBuild, pStnod, pStnodInit, valgenk);
 			}
+
 		} break;
 	case PARK_Cast:
 		{
@@ -4976,6 +5016,9 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		} break;
 	case PARK_LogicalAndOrOp:
 		{
+			// BB - What is the right thing here, C++ logical op overloads don't short circuit, C# breaks
+			// it into two operators (false and &)
+
 			auto pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
 			auto pLtypeBool = PLtypeFromPTin(pTinBool);
 
@@ -5007,9 +5050,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		{
 			if (FIsOverloadedOp(pStnod))
 			{
-				SSymbol * pSym = pStnod->m_pSym;
-				auto pTinproc = PTinRtiCast<STypeInfoProcedure*>(pSym->m_pTin);
-				return PValGenerateCall(pWork, pBuild, pStnod, 2, pStnod->m_arypStnodChild.A(), true, pTinproc, valgenk);
+				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
+
+				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
+				GenerateArguments(pWork, pBuild, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
+				return PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
 			}
 
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
@@ -5106,9 +5151,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			if (FIsOverloadedOp(pStnod))
 			{
-				SSymbol * pSym = pStnod->m_pSym;
-				auto pTinproc = PTinRtiCast<STypeInfoProcedure*>(pSym->m_pTin);
-				return PValGenerateCall(pWork, pBuild, pStnod, 2, pStnod->m_arypStnodChild.A(), true, pTinproc, valgenk);
+				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
+
+				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
+				GenerateArguments(pWork, pBuild, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
+				return PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
 			}
 	
 			if (LLVMTypeOf(pValLhsCast->m_pLval) != LLVMTypeOf(pValRhsCast->m_pLval))
@@ -5131,9 +5178,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			if (FIsOverloadedOp(pStnod))
 			{
-				SSymbol * pSym = pStnod->m_pSym;
-				auto pTinproc = PTinRtiCast<STypeInfoProcedure*>(pSym->m_pTin);
-				return PValGenerateCall(pWork, pBuild, pStnod, 1, pStnod->m_arypStnodChild.A(), true, pTinproc, valgenk);
+				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
+
+				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
+				GenerateArguments(pWork, pBuild, pTinproc, 1, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
+				return PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
 			}
 
 			if (pStnod->m_tok == TOK_Reference)
