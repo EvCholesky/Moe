@@ -653,10 +653,8 @@ operator := (pOvrLhs: & SOverload, ovrRhs: SOverload) //#infer := #commutative
 
 operator ++ (pOvr: & SOverload)->SOverload
 {
-	ovrRet:= @pOvr
-	--ovrRet.m_cDecl
 	++pOvr.m_n	
-	return ovrRet
+	return @pOvr
 }
 
 operator -(ovr: SOverload) -> SOverload 
@@ -692,6 +690,7 @@ TestOperatorOverloading proc ()
 {
 	printf("Operator Overloading:\n")
 
+	//ovrA, ovrB: SOverload
 	ovrA: SOverload
 	ovrB: SOverload
 	ovrA.m_n = 5
@@ -715,20 +714,16 @@ TestOperatorOverloading proc ()
 	gB := 4.2
 	gR := ovrA.m_n + ovrB.m_n
 
-	//ovr *= ovr
-	//assert(ovr.m_n == 950 && ovr.m_cAssignment == 2, "operator overload failure", #file, #line)
-
 	ovrPost := ovr++
-	assert(ovrPost.m_n == 950 && ovrPost.m_cAssignment == 1, "operator overload failure", #file, #line)
-	assert(ovr.m_n == 951 && ovr.m_cAssignment == 1, "operator overload failure", #file, #line)
+	assert(ovrPost.m_n == 950 && ovrPost.m_cDecl == 2, "operator overload failure", #file, #line)
+	assert(ovr.m_n == 951 && ovr.m_cDecl == 1, "operator overload failure", #file, #line)
 
-	// BB - will compile pre or post operators, doesn't actually generate proper pre or post values
-	//ovrPre := ++ovr
-	//assert(ovrPost.m_n == 952 && ovrPost.m_cAssignment == 1, "operator overload failure", #file, #line)
-	//assert(ovr.m_n == 952 && ovr.m_cAssignment == 1, "operator overload failure", #file, #line)
+	ovrPre := ++ovr
+	assert(ovrPre.m_n == 952 && ovrPre.m_cDecl == 2, "operator overload failure", #file, #line)
+	assert(ovr.m_n == 952 && ovr.m_cDecl == 1, "operator overload failure", #file, #line)
 
 	ovrNeg := -ovr
-	assert(ovrNeg.m_n == -951 && ovrNeg.m_cAssignment == 1, "operator overload failure", #file, #line)
+	assert(ovrNeg.m_n == -952 && ovrNeg.m_cAssignment == 1, "operator overload failure", #file, #line)
 
 	// Don't do this! Why would you do this?
 	nDeref: int = @ovr

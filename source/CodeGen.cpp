@@ -3997,8 +3997,11 @@ void GenerateArguments(
 	STypeInfoProcedure * pTinproc, 
 	size_t cpStnodArg,
 	CSTNode ** ppStnodArg,
-	CDynAry<LLVMValueRef> * parypLvalArgs)
+	CDynAry<LLVMValueRef> * parypLvalArgs,
+	CDynAry<CIRValue *> * parypValArgs = nullptr)
 {
+	// what's with passing both a val array and a LVal array arguments? we need the LVal array for llvm, the val for postInc op overload
+
 	for (size_t ipStnodChild = 0; ipStnodChild < cpStnodArg; ++ipStnodChild)
 	{
 		CSTNode * pStnodArg = ppStnodArg[ipStnodChild];
@@ -4024,6 +4027,11 @@ void GenerateArguments(
 		}
 
 		parypLvalArgs->Append(pValRhsCast->m_pLval);
+		if (parypValArgs)
+		{
+			parypValArgs->Append(pValRhsCast);
+		}
+
 		EWC_ASSERT(*parypLvalArgs->PLast(), "missing argument value");
 	}
 }
@@ -5181,8 +5189,18 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
 
 				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
-				GenerateArguments(pWork, pBuild, pTinproc, 1, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
-				return PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
+				CDynAry<CIRValue *> arypValArgs(pBuild->m_pAlloc, EWC::BK_Stack);
+				GenerateArguments(pWork, pBuild, pTinproc, 1, pStnod->m_arypStnodChild.A(), &arypLvalArgs, &arypValArgs);
+
+				CIRValue * pValReturn = nullptr;
+				if (pStnod->m_park == PARK_PostfixUnaryOp)
+				{
+					pValReturn = pBuild->PInstCreate(IROP_Load, arypValArgs[0], "");
+				}
+
+				auto pValCall = PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
+
+				return (pValReturn) ? pValReturn : pValCall;;
 			}
 
 			if (pStnod->m_tok == TOK_Reference)
