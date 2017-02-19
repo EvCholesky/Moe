@@ -180,10 +180,10 @@ FTryFindCellNearest proc (posCellCur: s32x2, posTarget: f32x2, grfdir: GRFDIR, p
 {
 	SetNearest proc (posCellCur: s32x2, dPosCell: s32x2, posTarget: f32x2, pGNearest:& f32, pPosCellNearest : & s32x2)
 	{
-		posCellCur = VecAdd(posCellCur, dPosCell)
+		posCellCur = posCellCur + dPosCell
 
 		posA := PosFromCell(posCellCur)
-		dPos := VecSub(posTarget, posA)
+		dPos := posTarget - posA
 		dXMax := cast(f32)g_mapinfo.m_mapdim.m_dXCellMax * g_dXCell
 		dYMax := cast(f32)g_mapinfo.m_mapdim.m_dYCellMax * g_dYCell
 		if dPos.m_x > dXMax * 0.5
@@ -253,8 +253,7 @@ SetGhosts proc (pAct: & SActor, ghostsNew: GHOSTS)
 			pAct.m_posCellGoal = posCellCur
 			pAct.m_posCellGoal = PosCellWrap(pAct.m_posCellGoal)
 			
-
-			pAct.m_vAfter = VecMul(pAct.m_vAfter, -1)
+			pAct.m_vAfter = -pAct.m_vAfter
 	}
 
 }
@@ -284,10 +283,10 @@ VecShortestWrappingDPos proc (posSrc: f32x2, posDst: f32x2) -> f32x2
 	else if posWrapY.m_y > dYHalfMap
 		{ posWrapY.m_y -= dYMap }
 
-	dPosFull := VecSub(posDst, posSrc)
-	dPosWrapX := VecSub(posWrapX, posSrc)
+	dPosFull := posDst - posSrc
+	dPosWrapX := posWrapX - posSrc
 	sWrapX := GLength(dPosWrapX)
-	dPosWrapY := VecSub(posWrapY, posSrc)
+	dPosWrapY := posWrapY - posSrc
 	sWrapY := GLength(dPosWrapY)
 
 	if GLengthSqr(dPosWrapX) < GLengthSqr(dPosFull)
@@ -374,11 +373,11 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 			case GHOSTK.Blinky:
 				pActGhost.m_posCellBrain = g_pActPuck.m_posCellGoal
 			case GHOSTK.Pinky:
-				dPosCell := VecMul(VecSign(g_pActPuck.m_vAfter), 4)
-				pActGhost.m_posCellBrain = VecAdd(g_pActPuck.m_posCellGoal, dPosCell)
+				dPosCell := VecSign(g_pActPuck.m_vAfter) * 4
+				pActGhost.m_posCellBrain = g_pActPuck.m_posCellGoal + dPosCell
 			case GHOSTK.Inky:
-				dPosCell := VecMul(VecSign(g_pActPuck.m_vAfter), 2)
-				posCellLead := VecAdd(g_pActPuck.m_posCellGoal, dPosCell)
+				dPosCell := VecSign(g_pActPuck.m_vAfter) * 2
+				posCellLead := g_pActPuck.m_posCellGoal + dPosCell
 
 				posCellCross := pActGhost.m_posCellGoal
 				if (g_pActBlinky)
@@ -386,10 +385,10 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 					posCellCross = g_pActBlinky.m_posCellGoal
 				}
 
-				vecToLead := VecSub(posCellLead, posCellCross)
-				pActGhost.m_posCellBrain = VecAdd(posCellLead, vecToLead)
+				vecToLead := posCellLead - posCellCross
+				pActGhost.m_posCellBrain = posCellLead + vecToLead
 			case GHOSTK.Clyde:
-				vecToPuck := VecSub(g_pActPuck.m_posCellGoal, pActGhost.m_posCellGoal)
+				vecToPuck := g_pActPuck.m_posCellGoal - pActGhost.m_posCellGoal
 				nLengthSqr := vecToPuck.m_x * vecToPuck.m_x + vecToPuck.m_y * vecToPuck.m_y
 				if nLengthSqr > 64
 				{
@@ -428,14 +427,14 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 
 			posCell := PosFromCell(@pPosCellGoal)	
 			vecToCell := VecShortestWrappingDPos(pEnt.m_pos, posCell)
-			//vecToCell := VecSub(posCell, pEnt.m_pos)
+			//vecToCell := posCell - pEnt.m_pos
 			sToCell := GLength(vecToCell)
 
 
 			if sToCell > gStep
 			{
-				normToCell := VecMul(vecToCell, 1.0 / sToCell)
-				pEnt.m_pos = VecAdd(pEnt.m_pos, VecMul(normToCell, gStep))
+				normToCell := vecToCell * (1.0 / sToCell)
+				pEnt.m_pos = pEnt.m_pos + normToCell * gStep
 				pEnt.m_pos = PosWrap(pEnt.m_pos)
 				gStep = 0
 			}
@@ -451,7 +450,7 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 				grfdir := GrfdirOpenCells(pActGhost.m_posCellGoal)
 				grfdirTemp := grfdir
 
-				dirIncoming := DirFromVec(VecMul(pActGhost.m_vAfter, -1))
+				dirIncoming := DirFromVec(-pActGhost.m_vAfter)
 				grfdir &= FDIR.all ^ (0x1 << dirIncoming)
 
 				dir:DIR = dirIncoming
@@ -468,7 +467,7 @@ UpdateGhosts proc (pActGhost: & SActor, dT: float)
 				assert( pPosCellGoal.m_x >= 0 && pPosCellGoal.m_x < g_mapinfo.m_mapdim.m_dXCellMax &&
 						pPosCellGoal.m_y >= 0 && pPosCellGoal.m_y < g_mapinfo.m_mapdim.m_dYCellMax, "bad cell position", #file, #line)
 
-				pActGhost.m_vAfter = VecMul(vdir, g_dXyPuckSpeed)
+				pActGhost.m_vAfter = vdir * g_dXyPuckSpeed
 			}
 		}
 
@@ -640,7 +639,7 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 	while gStep > gEpsilon
 	{
 		posTarget	:= PosFromCell(pAct.m_posCellGoal)
-		vecToTarget := VecSub(posTarget, pEnt.m_pos)
+		vecToTarget := posTarget - pEnt.m_pos
 		gDistToTarget := GLength(vecToTarget)
 
 		// check for dist to mirrored cell
@@ -657,7 +656,7 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 			{ posCellMirror.m_y = -1 }
 
 		posMirror	:= PosFromCell(posCellMirror)
-		vecToMirror := VecSub(posMirror, pEnt.m_pos)
+		vecToMirror := posMirror - pEnt.m_pos
 		gDistToMirror := GLength(vecToMirror)
 		if (gDistToTarget > gDistToMirror)
 		{
@@ -668,7 +667,7 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 
 		if gDistToTarget >= gStep
 		{
-			pEnt.m_pos = VecAdd(pEnt.m_pos, VecMul(VecNormalize(vecToTarget), gStep))
+			pEnt.m_pos = pEnt.m_pos + VecNormalize(vecToTarget) * gStep
 			pEnt.m_pos = PosWrap(pEnt.m_pos)
 			gStep = 0
 		}
@@ -682,7 +681,7 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 				grfdir := GrfdirOpenCells(pAct.m_posCellGoal)
 
 				// remove incoming dir
-				dirIncoming := DirFromVec(VecMul(pAct.m_vAfter, -1))
+				dirIncoming := DirFromVec(-pAct.m_vAfter)
 				grfdir &= FDIR.all ^ (0x1 << dirIncoming)
 
 				// pick cell closest to the brain target (ignoring blocked cells)
@@ -692,8 +691,8 @@ UpdateActorMovement proc (pAct: & SActor, dT: f32)
 				{
 					posGoal := PosFromCell(pAct.m_posCellGoal)	
 					posNearest := PosFromCell(posCellNearest)	
-					vecToNearest := VecSub(posNearest, posGoal)
-					pAct.m_vAfter = VecMul(VecNormalize(vecToNearest), cast (f32) g_dXyPuckSpeed)
+					vecToNearest := posNearest - posGoal
+					pAct.m_vAfter = VecNormalize(vecToNearest) * cast (f32) g_dXyPuckSpeed
 				}
 				else
 				{
@@ -1091,7 +1090,7 @@ UpdateEntities proc (aEnt: [] SEntity)
 
 		if pEnt.m_entk == ENTK.Coin || pEnt.m_entk == ENTK.Powerup
 		{
-			vecToPuck := VecSub(g_pActPuck.m_pEnt.m_pos, pEnt.m_pos)
+			vecToPuck := g_pActPuck.m_pEnt.m_pos - pEnt.m_pos
 			if GAbs(vecToPuck.m_x) < pEnt.m_dX && GAbs(vecToPuck.m_y) < pEnt.m_dY
 			{
 				if pEnt.m_entk == ENTK.Coin
@@ -1288,9 +1287,9 @@ DrawTestTriangle proc (gRadians:float)
 	vecC := VecRotate(gRadians + (2.0 * dRad), vecRadius)
 	z := 0.0
 
-	vecA = VecAdd(vecA, vecCenter)
-	vecB = VecAdd(vecB, vecCenter)
-	vecC = VecAdd(vecC, vecCenter)
+	vecA += vecCenter
+	vecB += vecCenter
+	vecC += vecCenter
 
     glBegin(GL_TRIANGLES)
     glColor3f(1, 0, 0)

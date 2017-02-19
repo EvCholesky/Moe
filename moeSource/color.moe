@@ -52,9 +52,7 @@ ColScaleAlpha proc (col: SColor, rScale: f32) -> SColor inline
 
 ColvecFromCol proc (col: SColor) -> SColorVec inline
 {
-	return VecMul(
-				F32x4Create(cast(f32)col.m_r, cast(f32)col.m_g, cast(f32)col.m_b, cast(f32)col.m_a), 
-				1.0/255.0)
+	return F32x4Create(cast(f32)col.m_r, cast(f32)col.m_g, cast(f32)col.m_b, cast(f32)col.m_a) * (1.0/255.0)
 }
 
 ColvecLerp proc (colvecA: SColorVec, colvecB: SColorVec, uLerp: f32) -> SColorVec inline
