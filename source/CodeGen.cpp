@@ -3994,6 +3994,7 @@ CIRValue * PValGenerateLiteral(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode 
 void GenerateArguments(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild,
+	GRFSTNOD grfstnod,
 	STypeInfoProcedure * pTinproc, 
 	size_t cpStnodArg,
 	CSTNode ** ppStnodArg,
@@ -4007,9 +4008,12 @@ void GenerateArguments(
 		CSTNode * pStnodArg = ppStnodArg[ipStnodChild];
 
 		STypeInfo * pTinParam = pStnodArg->m_pTin;
-		if (ipStnodChild < pTinproc->m_arypTinParams.C())
+
+		size_t cpTinParam = pTinproc->m_arypTinParams.C();
+		if (ipStnodChild < cpTinParam)
 		{
-			pTinParam = pTinproc->m_arypTinParams[ipStnodChild];
+			size_t ipStnodChildAdj = (grfstnod.FIsSet(FSTNOD_CommutativeCall)) ? (cpTinParam - 1 - ipStnodChild) : ipStnodChild;
+			pTinParam = pTinproc->m_arypTinParams[ipStnodChildAdj];
 		}
 
 		CIRValue * pValRhsCast = nullptr;
@@ -4033,6 +4037,15 @@ void GenerateArguments(
 		}
 
 		EWC_ASSERT(*parypLvalArgs->PLast(), "missing argument value");
+	}
+
+	if (grfstnod.FIsSet(FSTNOD_CommutativeCall))
+	{
+		ReverseArray(parypLvalArgs->A(), parypLvalArgs->C());
+		if (parypValArgs)
+		{
+			ReverseArray(parypValArgs->A(), parypValArgs->C());
+		}
 	}
 }
 
@@ -5061,7 +5074,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
 
 				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
-				GenerateArguments(pWork, pBuild, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
+				GenerateArguments(pWork, pBuild, pStnod->m_grfstnod, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
 				return PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
 			}
 
@@ -5162,7 +5175,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
 
 				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
-				GenerateArguments(pWork, pBuild, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
+				GenerateArguments(pWork, pBuild, pStnod->m_grfstnod, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
 				return PValGenerateCall(pWork, pBuild, pStnod, &arypLvalArgs, true, pTinproc, valgenk);
 			}
 	
@@ -5190,7 +5203,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 				CDynAry<CIRValue *> arypValArgs(pBuild->m_pAlloc, EWC::BK_Stack);
-				GenerateArguments(pWork, pBuild, pTinproc, 1, pStnod->m_arypStnodChild.A(), &arypLvalArgs, &arypValArgs);
+				GenerateArguments(pWork, pBuild, pStnod->m_grfstnod, pTinproc, 1, pStnod->m_arypStnodChild.A(), &arypLvalArgs, &arypValArgs);
 
 				CIRValue * pValReturn = nullptr;
 				if (pStnod->m_park == PARK_PostfixUnaryOp)

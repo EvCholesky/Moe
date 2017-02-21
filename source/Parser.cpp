@@ -1866,9 +1866,11 @@ enum FOVSIG
 {
 	FOVSIG_MustTakeReference	= 0x1,
 	FOVSIG_ReturnBool			= 0x2,
+	FOVSIG_AllowCommutative		= 0x4,
+
 
 	FOVSIG_None			= 0x0,
-	FOVSIG_All			= 0x3,
+	FOVSIG_All			= 0x7,
 };
 EWC_DEFINE_GRF(GRFOVSIG, FOVSIG, u32);
 
@@ -1883,9 +1885,9 @@ struct SOverloadSignature // tag=ovsig
 
 SOverloadSignature s_aOvsig[] =
 {
-	{ PARK_AdditiveOp,			2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
-	{ PARK_MultiplicativeOp,	2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
-	{ PARK_BitwiseAndOrOp,		2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
+	{ PARK_AdditiveOp,			2, 1,	FOVSIG_AllowCommutative,	"(Lhs: A, Rhs: B)->C" },
+	{ PARK_MultiplicativeOp,	2, 1,	FOVSIG_AllowCommutative,	"(Lhs: A, Rhs: B)->C" },
+	{ PARK_BitwiseAndOrOp,		2, 1,	FOVSIG_AllowCommutative,	"(Lhs: A, Rhs: B)->C" },
 	{ PARK_ShiftOp,				2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
 	{ PARK_RelationalOp,		2, 1,	FOVSIG_ReturnBool,	"(Lhs: A, Rhs: B)->bool" },
 	{ PARK_EqualityOp,			2, 1,	FOVSIG_ReturnBool,	"(Lhs: A, Rhs: B)->bool" },
@@ -1906,26 +1908,13 @@ const char * PChzOverloadSignature(PARK park)
 	return "Unknown";
 }
 
-bool FCheckOverloadSignature(PARK park, STypeInfoProcedure * pTinproc)
+bool FAllowsCommutative(PARK park)
 {
-	size_t cReturn = pTinproc->m_arypTinReturns.C();
-	if (cReturn == 1 && pTinproc->m_arypTinReturns[0]->m_tink == TINK_Void)
-	{
-		cReturn = 0;
-	}
-
 	auto pOvsigMax = EWC_PMAC(s_aOvsig);
 	for (SOverloadSignature * pOvsig = s_aOvsig; pOvsig != pOvsigMax; ++pOvsig)
 	{
 		if (pOvsig->m_park == park)
-		{
-			if (pTinproc->m_arypTinParams.C() != pOvsig->m_cParam || cReturn != pOvsig->m_cReturn)
-				return false;
-			if (pOvsig->m_grfovsig.FIsSet(FOVSIG_ReturnBool) && pTinproc->m_arypTinReturns[0]->m_tink != TINK_Bool)
-				return false;
-
-			return !pOvsig->m_grfovsig.FIsSet(FOVSIG_MustTakeReference) || pTinproc->m_arypTinParams[0]->m_tink == TINK_Pointer;
-		}
+			return pOvsig->m_grfovsig.FIsSet(FOVSIG_AllowCommutative);
 	}
 	return false;
 }
@@ -1969,6 +1958,30 @@ static bool FOperatorOverloadMustTakeReference(TOK tok)
 	return false;
 }
 
+bool FCheckOverloadSignature(PARK park, STypeInfoProcedure * pTinproc)
+{
+	size_t cReturn = pTinproc->m_arypTinReturns.C();
+	if (cReturn == 1 && pTinproc->m_arypTinReturns[0]->m_tink == TINK_Void)
+	{
+		cReturn = 0;
+	}
+
+	auto pOvsigMax = EWC_PMAC(s_aOvsig);
+	for (SOverloadSignature * pOvsig = s_aOvsig; pOvsig != pOvsigMax; ++pOvsig)
+	{
+		if (pOvsig->m_park == park)
+		{
+			if (pTinproc->m_arypTinParams.C() != pOvsig->m_cParam || cReturn != pOvsig->m_cReturn)
+				return false;
+			if (pOvsig->m_grfovsig.FIsSet(FOVSIG_ReturnBool) && pTinproc->m_arypTinReturns[0]->m_tink != TINK_Bool)
+				return false;
+
+			return !pOvsig->m_grfovsig.FIsSet(FOVSIG_MustTakeReference) || pTinproc->m_arypTinParams[0]->m_tink == TINK_Pointer;
+		}
+	}
+	return false;
+}
+
 bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc)
 {
 	auto pOvinfMax = EWC_PMAC(s_aOvinf);
@@ -1981,7 +1994,14 @@ bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManag
 		{
 			PARK park = pOvinf->m_aPark[iPark];
 			if (park != PARK_Nil && FCheckOverloadSignature(park, pTinproc))
+			{
+				if (pTinproc->m_fIsCommutative && !FAllowsCommutative(park))
+				{
+					EmitError(pErrman, pLexloc, "'%s' is not allowed when overloading '%s'", PCozFromRword(RWORD_Commutative), PCozFromTok(tok));
+					return false;
+				}
 				return true;
+			}
 		}
 
 		SError error(pErrman);
@@ -2087,6 +2107,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				INLINEK inlinek = INLINEK_Nil;
 				CALLCONV callconv = CALLCONV_Nil;
+				bool fIsCommutative = false;
 				pStproc->m_iStnodBody = -1;
 				if (pLex->m_tok == TOK_ReservedWord)
 				{
@@ -2111,6 +2132,17 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 						case RWORD_StdCall: callconv = CALLCONV_StdcallX86;		break;
 						case RWORD_Inline:		inlinek = INLINEK_AlwaysInline;	break;
 						case RWORD_NoInline:	inlinek = INLINEK_NoInline;		break;
+						case RWORD_Commutative:
+							{
+								if (rword == RWORD_Operator)
+								{
+									fIsCommutative = true;	
+								}
+								else
+								{
+									ParseError( pParctx, pLex, "only operator overloads can be declared commutative, %s() is not an overload.\n", strName.PCoz());
+								}
+							} break;
 						default:
 							{
 								ParseError(
@@ -2166,6 +2198,16 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				if (rword == RWORD_Operator && FOperatorOverloadMustTakeReference(pStnodIdent->m_tok))
 				{
 					pTinproc->m_mpIptinGrfparmq[0].AddFlags(FPARMQ_ImplicitRef);
+				}
+
+				if (fIsCommutative)
+				{
+					if (cStnodParams != 2)
+					{
+						ParseError(pParctx, pLex, "Only operators with two arguments can be commutative ('%s' has %d)", strName.PCoz(), cStnodParams);
+						fIsCommutative = false;
+					}
+					pTinproc->m_fIsCommutative = fIsCommutative;
 				}
 
 				pTinproc->m_pStnodDefinition = pStnodProc;

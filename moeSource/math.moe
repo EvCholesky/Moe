@@ -95,12 +95,12 @@ operator-(vecLhs: f32x2) -> f32x2 inline
 	return F32x2Create(-vecLhs.m_x, -vecLhs.m_y)
 }
 
-operator*(vec: f32x2, r: f32) -> f32x2 inline
+operator*(vec: f32x2, r: f32) -> f32x2 inline #commutative
 {
 	return F32x2Create(vec.m_x * r, vec.m_y * r)
 }
 
-operator-=(pVecLhs: &f32x2, r: f32) 
+operator*=(pVecLhs: &f32x2, r: f32) 
 {
 	pVecLhs.m_x *= r
 	pVecLhs.m_y *= r
@@ -121,7 +121,7 @@ operator-(vecLhs: f32x3) -> f32x3 inline
 	return F32x3Create(-vecLhs.m_x, -vecLhs.m_y, -vecLhs.m_z)
 }
 
-operator*(vec: f32x3, r: f32) -> f32x3 inline
+operator*(vec: f32x3, r: f32) -> f32x3 inline #commutative
 {
 	return F32x3Create(vec.m_x * r, vec.m_y * r, vec.m_z * r)
 }
@@ -189,7 +189,7 @@ operator-(vecLhs: s32x2) -> s32x2
 	return vecLhs
 }
 
-operator*(vecLhs: s32x2, r: s32) -> s32x2
+operator*(vecLhs: s32x2, r: s32) -> s32x2 #commutative
 {
 	vecLhs.m_x *= r
 	vecLhs.m_y *= r

@@ -92,7 +92,7 @@ enum TOK
 		RW(Delete) STR(delete), \
 		RW(Using) STR(using), \
 		RW(Operator) STR(operator), \
-		RW(Symmetric) STR(#symmetric), \
+		RW(Commutative) STR(#commutative), \
 		RW(ImportDirective) STR(#import), \
 		RW(ForeignDirective) STR(#foreign), \
 		RW(FileDirective) STR(#file), \

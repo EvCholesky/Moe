@@ -213,6 +213,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 						,m_arypTinReturns()
 						,m_mpIptinGrfparmq()
 						,m_fHasVarArgs(false)
+						,m_fIsCommutative(false)
 						,m_inlinek(INLINEK_Nil)
 						,m_callconv(CALLCONV_Nil)
 							{ ; }
@@ -223,6 +224,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;
 	EWC::CAry<GRFPARMQ>		m_mpIptinGrfparmq;
 	bool					m_fHasVarArgs;
+	bool					m_fIsCommutative;	// two argument operator overload, arguments can be passed in either order
 	INLINEK					m_inlinek;
 	CALLCONV				m_callconv;
 

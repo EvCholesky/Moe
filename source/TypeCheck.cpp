@@ -2543,6 +2543,31 @@ enum PROCMATCH
 	PROCMATCH_Max
 };
 
+enum ERREP // ERror REPorting
+{
+	ERREP_HideErrors,
+	ERREP_ReportErrors,	
+};
+
+enum ARGORD // ARGument ORDer
+{
+	ARGORD_Normal,
+	ARGORD_Reversed,	// argument order reversed (used for checking comutative procedures)
+
+	EWC_MAX_MIN_NIL(ARGORD)
+};
+
+void AdjustArgumentOrder(ARGORD argord, CSTNode * pStnod, SOpTypes * pOptype)
+{
+	if (argord != ARGORD_Reversed)
+		return;
+
+	pStnod->m_grfstnod.AddFlags(FSTNOD_CommutativeCall);
+	auto pTin = pOptype->m_pTinLhs;
+	pOptype->m_pTinLhs = pOptype->m_pTinRhs;
+	pOptype->m_pTinRhs = pTin;
+}
+
 struct SProcMatchParam // tag = pmparam
 {
 						SProcMatchParam()
@@ -2563,12 +2588,13 @@ PROCMATCH ProcmatchCheckArguments(
 	CSymbolTable * pSymtab,
 	STypeInfoProcedure * pTinproc,
 	SProcMatchParam * pPmparam,
-	bool fPrintErrors)
+	ERREP errep,
+	ARGORD argord)
 {
 	size_t cArg = pPmparam->m_cpStnodCall;
 	if (cArg < pTinproc->m_arypTinParams.C())
 	{
-		if (fPrintErrors)
+		if (errep == ERREP_ReportErrors)
 		{
 			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "Too few arguments to procedure '%s'. Expected %d but encountered %d",
 				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PCoz(),
@@ -2580,7 +2606,7 @@ PROCMATCH ProcmatchCheckArguments(
 
 	if 	(pTinproc->m_fHasVarArgs == false && cArg > pTinproc->m_arypTinParams.C())
 	{
-		if (fPrintErrors)
+		if (errep == ERREP_ReportErrors)
 		{
 			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "Too many arguments to procedure '%s'. Expected %d but encountered %d",
 				(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PCoz(),
@@ -2593,11 +2619,12 @@ PROCMATCH ProcmatchCheckArguments(
 	PROCMATCH procmatch = PROCMATCH_Exact;
 	for (int iStnodArg = 0; iStnodArg < cArg; ++iStnodArg)
 	{
-		CSTNode * pStnodArg = pPmparam->m_ppStnodCall[iStnodArg];
+		int iStnodArgAdj = (argord == ARGORD_Reversed) ? ((int)cArg - 1 - iStnodArg) : iStnodArg;
+		CSTNode * pStnodArg = pPmparam->m_ppStnodCall[iStnodArgAdj];
 
 		if (FIsType(pStnodArg))
 		{
-			if (fPrintErrors)
+			if (errep == ERREP_ReportErrors)
 			{
 				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "Procedure argument %d, Expected an instance, but encountered a type.",
 						iStnodArg+1);
@@ -2639,7 +2666,7 @@ PROCMATCH ProcmatchCheckArguments(
 		{
 			if (!pTinproc->m_fHasVarArgs)
 			{
-				if (fPrintErrors)
+				if (errep == ERREP_ReportErrors)
 				{
 					EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "procedure '%s' expected %d arguments but encountered %d",
 						(pTinproc->m_strName.FIsEmpty()) ? "unnamed" : pTinproc->m_strName.PCoz(),
@@ -2662,7 +2689,7 @@ PROCMATCH ProcmatchCheckArguments(
 		}
 		else
 		{
-			if (fPrintErrors)
+			if (errep == ERREP_ReportErrors)
 			{
 				CString strTinCall = StrFromTypeInfo(pTinCall);
 				CString strTinParam = StrFromTypeInfo(pTinParam);
@@ -2688,6 +2715,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 	CSymbolTable * pSymtab,
 	SProcMatchParam * pPmparam,
 	SSymbol ** ppSym,
+	ARGORD * pArgord,
 	GRFSYMLOOK grfsymlook)
 {
 	CSymbolTable::CSymbolIterator symiter;
@@ -2715,6 +2743,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 	{
 		SSymbol *	m_pSym;
 		PROCMATCH 	m_procmatch;
+		ARGORD		m_argord;
 	};
 	CFixAry<SSymMatch, 32> arySymmatch;
 	int	mpProcmatchCSymmatch[PROCMATCH_Max];
@@ -2748,13 +2777,24 @@ TCRET TcretTryFindMatchingProcedureCall(
 			if (!EWC_FVERIFY(pTinprocSym, "expected type info procedure"))
 				continue;
 
-			auto procmatch = ProcmatchCheckArguments(pTcwork, pSymtab, pTinprocSym, pPmparam, false);
-			if (procmatch != PROCMATCH_None)
+			int argordMax = ARGORD_Normal+1;
+			if (pTinprocSym->m_fIsCommutative)
 			{
-				++mpProcmatchCSymmatch[procmatch];
-				auto pSymmatch = arySymmatch.AppendNew();
-				pSymmatch->m_pSym = pSymProc;
-				pSymmatch->m_procmatch = procmatch;
+				argordMax = ARGORD_Max;
+				++cSymOptions;
+			}
+
+			for (int argord = ARGORD_Min; argord < argordMax; ++argord)
+			{
+				auto procmatch = ProcmatchCheckArguments(pTcwork, pSymtab, pTinprocSym, pPmparam, ERREP_HideErrors, (ARGORD)argord);
+				if (procmatch != PROCMATCH_None)
+				{
+					++mpProcmatchCSymmatch[procmatch];
+					auto pSymmatch = arySymmatch.AppendNew();
+					pSymmatch->m_pSym = pSymProc;
+					pSymmatch->m_procmatch = procmatch;
+					pSymmatch->m_argord = (ARGORD)argord;
+				}
 			}
 		}
 	}
@@ -2782,7 +2822,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 					auto pTinprocSym = PTinRtiCast<STypeInfoProcedure  *>(pSymProc->m_pTin);
 					if (EWC_FVERIFY(pTinprocSym, "expected type info procedure"))
 					{
-						(void) ProcmatchCheckArguments( pTcwork, pSymtab, pTinprocSym, pPmparam, true);
+						(void) ProcmatchCheckArguments( pTcwork, pSymtab, pTinprocSym, pPmparam, ERREP_ReportErrors, ARGORD_Normal);
 					}
 				}
 
@@ -2810,23 +2850,24 @@ TCRET TcretTryFindMatchingProcedureCall(
 	}
 	else if (cSysmatch == 1)
 	{
-		SSymMatch * pSysmatch = nullptr;
+		SSymMatch * pSymmatch = nullptr;
 		for (size_t iSymmatch = 0; iSymmatch < arySymmatch.C(); ++iSymmatch)
 		{
 			if (arySymmatch[iSymmatch].m_procmatch == procmatchFinal)
 			{
-				pSysmatch = &arySymmatch[iSymmatch];
+				pSymmatch = &arySymmatch[iSymmatch];
 				break;
 			}
 		}
-		if (!EWC_FVERIFY(pSysmatch, "matching procedure lookup failed"))
+		if (!EWC_FVERIFY(pSymmatch, "matching procedure lookup failed"))
 			return TCRET_StoppingError;
 
-		SSymbol * pSymProc = pSysmatch->m_pSym;
+		SSymbol * pSymProc = pSymmatch->m_pSym;
 		STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
 		AddSymbolReference(pTcsentTop->m_pSymContext, pSymProc);
 
 		*ppSym = pSymProc;
+		*pArgord = pSymmatch->m_argord;
 	}
 	else // cSymmatch > 1 
 	{	
@@ -2841,11 +2882,20 @@ TCRET TcretTryFindMatchingProcedureCall(
 			auto pTinproc = PTinDerivedCast<STypeInfoProcedure  *>(pSym->m_pTin);
 			CString strProc = StrFromTypeInfo(pTinproc);
 
-			PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s", strProc.PCoz());
+			if (pSymmatch->m_argord == ARGORD_Reversed)
+			{
+				PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s (reversed)", strProc.PCoz());
+			}
+			else
+			{
+				PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s", strProc.PCoz());
+			}
 		}
 
 		// just return any one of the ambiguous symbols so it doesn't error claiming "doesn't evaluate to a procedure"
-		*ppSym = arySymmatch[0].m_pSym;
+		auto pSymmatch = &arySymmatch[0];
+		*ppSym = pSymmatch->m_pSym;
+		*pArgord = pSymmatch->m_argord;
 	}
 
 	return TCRET_Complete;
@@ -2868,13 +2918,15 @@ bool FIsDirectCall(CSTNode * pStnodCall)
 
 struct SOverloadCheck // tag ovcheck
 {
-			SOverloadCheck(STypeInfoProcedure * pTinproc, TCRET tcret = TCRET_StoppingError)
-			:m_tcret(tcret)
-			,m_pTinproc(pTinproc)
+			SOverloadCheck(STypeInfoProcedure * pTinproc, TCRET tcret = TCRET_StoppingError, ARGORD argord = ARGORD_Normal)
+			:m_pTinproc(pTinproc)
+			,m_tcret(tcret)
+			,m_argord(argord)
 				{ ; }
 
-	TCRET					m_tcret;
 	STypeInfoProcedure *	m_pTinproc;
+	TCRET					m_tcret;
+	ARGORD					m_argord;
 };
 
 
@@ -2894,8 +2946,9 @@ SOverloadCheck OvcheckTryCheckOverload(
 
 	CString strProcName(pCozOverload);
 	SSymbol * pSymProc = nullptr;
+	ARGORD argord = ARGORD_Normal;
 	TCRET tcret = TcretTryFindMatchingProcedureCall(
-					pTcwork, pTcfram, strProcName, pSymtab, pPmparam, &pSymProc, pTcsentTop->m_grfsymlook);
+					pTcwork, pTcfram, strProcName, pSymtab, pPmparam, &pSymProc, &argord, pTcsentTop->m_grfsymlook);
 
 	auto pTinproc = (pSymProc) ? PTinRtiCast<STypeInfoProcedure*>(pSymProc->m_pTin) : nullptr;
 	if (pTinproc && tcret == TCRET_WaitingForSymbolDefinition)
@@ -2904,7 +2957,7 @@ SOverloadCheck OvcheckTryCheckOverload(
 		SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymProc);
 		pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
 
-		return SOverloadCheck(pTinproc, tcret);
+		return SOverloadCheck(pTinproc, tcret, argord);
 	}
 	else if (tcret != TCRET_Complete)
 	{
@@ -2921,7 +2974,7 @@ SOverloadCheck OvcheckTryCheckOverload(
 
 	EWC_ASSERT(pStnod->m_pTin == nullptr, "assignment op has no 'return' value");
 
-	return SOverloadCheck(pTinproc, TCRET_Complete);
+	return SOverloadCheck(pTinproc, TCRET_Complete, argord);
 }
 
 TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
@@ -3207,8 +3260,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					CSTNode * pStnodIdent = pStnodCallee;
 					CString strProcName = StrFromIdentifier(pStnodIdent);
 					SSymbol * pSymProc = nullptr;
+					ARGORD argord;
 					TCRET tcret = TcretTryFindMatchingProcedureCall(
-									pTcwork, pTcfram, strProcName, pSymtab, &pmparam, &pSymProc, pTcsentTop->m_grfsymlook);
+									pTcwork, pTcfram, strProcName, pSymtab, &pmparam, &pSymProc, &argord, pTcsentTop->m_grfsymlook);
 
 					switch (tcret)
 					{
@@ -3267,7 +3321,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C() - 1;
 						pmparam.m_fMustFindMatch = true;
 
-						auto procmatch = ProcmatchCheckArguments( pTcwork, pSymtab, pTinprocSym, &pmparam, true);
+						auto procmatch = ProcmatchCheckArguments( pTcwork, pSymtab, pTinprocSym, &pmparam, ERREP_ReportErrors, ARGORD_Normal);
 						if (procmatch == PROCMATCH_None)
 							return TCRET_StoppingError;
 					}
@@ -4195,6 +4249,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pStnod->m_pOptype->m_pTinRhs = pTinproc->m_arypTinParams[1];
 							pStnod->m_pOptype->m_pTinResult = pTinproc->m_arypTinReturns[0];
 							pStnod->m_pOptype->m_pTinprocOverload = pTinproc;
+							EWC_ASSERT(ovcheck.m_argord == ARGORD_Normal, "Decl arguments cannot be commutative");
 
 							pStnod->m_pTin = pTinDecl;
 							FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodInit);
@@ -4396,6 +4451,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pStnod->m_pOptype->m_pTinResult = pTinproc->m_arypTinReturns[0];
 						pStnod->m_pOptype->m_pTinprocOverload = pTinproc;
 
+						EWC_ASSERT(ovcheck.m_argord == ARGORD_Normal, "Assignment arguments cannot be commutative");
 						FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodRhs);
 
 						pStnod->m_strees = STREES_TypeChecked;
@@ -5268,6 +5324,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							pStnod->m_pOptype->m_pTinprocOverload = ovcheck.m_pTinproc;
 							pStnod->m_pTin = pStnod->m_pOptype->m_pTinResult;
+
+							AdjustArgumentOrder(ovcheck.m_argord, pStnod, pStnod->m_pOptype);
 						}
 
 						if (!pStnod->m_pOptype)
@@ -5329,6 +5387,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					SOverloadCheck ovcheck = OvcheckTryCheckOverload(pTcwork, pTcfram, pStnod, &pmparam);
 					if (ovcheck.m_pTinproc)
 					{
+						EWC_ASSERT(ovcheck.m_argord == ARGORD_Normal, "unary arguments cannot be commutative");
 						if (ovcheck.m_tcret != TCRET_Complete)
 							return ovcheck.m_tcret;
 
