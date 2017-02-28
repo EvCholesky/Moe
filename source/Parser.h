@@ -20,6 +20,7 @@
 #include "EwcTypes.h"
 #include "EwcString.h"
 #include "Lexer.h"
+#include "TypeInfo.h"
 
 
 
@@ -31,12 +32,6 @@ class CWorkspace;
 struct SErrorManager;
 struct SOpTypes;
 struct SSymbol;
-struct STypeInfo;
-struct STypeInfoEnum;
-struct STypeInfoForwardDecl;
-struct STypeInfoLiteral;
-struct STypeInfoPointer;
-struct STypeInfoProcedure;
 struct SUniqueNameSet;
 
 namespace EWC
@@ -139,6 +134,8 @@ enum PARK // PARse Kind
 
 	PARK_ArrayDecl,
 	PARK_ReferenceDecl,		// used in type specification, not used for the unary address-of operator
+	PARK_QualifierDecl,
+
 	PARK_ProcedureReferenceDecl,
 	PARK_Decl,
 //	PARK_CompoundDecl,	// comma separated declarations - specialized AST node for future tuple return value support.
@@ -299,9 +296,10 @@ enum FDBGSTR // DeBuG STRing Flags
 	FDBGSTR_Type				= 0x2,
 	FDBGSTR_LiteralSize			= 0x4,
 	FDBGSTR_UseSizedNumerics	= 0x8, // resolve type aliasing for simple integers - should this be all type aliasing?
+	FDBGSTR_NoWhitespace		= 0x10,
 
 	FDBGSTR_None				= 0x0,
-	FDBGSTR_All					= 0xF,
+	FDBGSTR_All					= 0x1F,
 };
 EWC_DEFINE_GRF(GRFDBGSTR, FDBGSTR, u32);
 
@@ -358,6 +356,7 @@ public:
 
 CSTValue * PStvalCopy(EWC::CAlloc * pAlloc, CSTValue * pStval);
 CSTNode * PStnodCopy(EWC::CAlloc * pAlloc, CSTNode * pStnodSrc);
+CSTValue * PStvalExpected(CSTNode * pStnod);
 
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
 void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GRFDBGSTR grfdbgstr = FDBGSTR_None);
@@ -389,6 +388,8 @@ enum FSYM		// SYMbol flags
 	FSYM_IsBuiltIn			= 0x1,
 	FSYM_IsType				= 0x2,	// this is a type declaration (if not set this is a named instance)
 	FSYM_VisibleWhenNested	= 0x4,	// types, constants and procedures that are visible in a more deeply nested symbol table
+									// - ie. not an instance. Nested proceedure should be able to call peer procedure, but not
+									//   access variable from parent proc.
 
 	FSYM_All				= 0x7,
 };
@@ -509,7 +510,8 @@ public:
 	STypeInfo *				PTinBuiltin( const EWC::CString & str);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
-	STypeInfoPointer *		PTinptrAllocReference(STypeInfo * pTinPointedTo);
+	STypeInfoPointer *		PTinptrAllocate(STypeInfo * pTinPointedTo);
+	STypeInfoQualifier *	PTinqualEnsure(STypeInfo * pTinTarget, GRFQUALK grfqualk);
 
 	STypeInfo *				PTinMakeUniqueBase(STypeInfo * pTin, EWC::SStringEditBuffer * pSeb);
 
@@ -575,6 +577,9 @@ CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
 STypeInfoProcedure * PTinprocAlloc(CSymbolTable * pSymtab, size_t cParam, size_t cReturn, const char * pCozName);
 
+STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab);
+STypeInfo * PTinStripQualifiers(STypeInfo * pTin);
+
 const char * PCozOverloadNameFromTok(TOK tok);
 bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc);
 bool FAllowsCommutative(PARK park);
@@ -592,5 +597,7 @@ enum IVALK // Instance VALue flags
 
 	EWC_MAX_MIN_NIL(IVALK)
 };
+
+
 
 IVALK IvalkCompute(CSTNode * pStnod);

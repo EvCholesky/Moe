@@ -13,6 +13,7 @@ TINK enum s8
     Null:		8,		// no specialized type info
     Any:		9,		// no specialized type info
     Enum:		10,
+    Qualifier:	11,
 }
 
 STypeInfo struct // tag = pTin
@@ -60,6 +61,20 @@ STypeInfoPointer struct	// tag = tinptr
 	m_tin: STypeInfo
 	
 	m_pTinPointedTo: & STypeInfo
+}
+
+FQUALK enum u8
+{
+	Const:	0x1,		// Transitive read only value
+	InArg:	0x2,		// procedure argument, can't be modified, not transitive
+}
+
+STypeInfoQualifier struct	// tag = tinqual
+{
+	m_tin: STypeInfo
+	
+	m_pTin: & STypeInfo
+	m_grfqualk: u8 
 }
 
 INLINEK enum s8

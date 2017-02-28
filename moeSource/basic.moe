@@ -5,13 +5,13 @@ PrintInt proc (n : int) #foreign
 PrintByte proc (n : s8) #foreign
 PrintBool proc (f : bool) #foreign
 PrintPointer proc (pB : & u8) #foreign
-PrintString proc (pCh : & u8) #foreign
-printf proc (pChz : &u8, ..) -> s32 #foreign
+PrintString proc (pCh : & const u8) #foreign
+printf proc (pChz : & const u8, ..) -> s32 #foreign
 
-snprintf proc (aChz: & u8, cBMax: uSize, pCozFormat: & u8, ..) -> sSize #foreign snprintf_MOE
+snprintf proc (aChz: & const u8, cBMax: uSize, pCozFormat: & const u8, ..) -> sSize #foreign snprintf_MOE
 
 
-strlen proc (pChz: &u8) -> int #foreign
+strlen proc (pChz: & const u8) -> int #foreign
 tolower proc (ch: int) -> int #foreign
 
 HANDLE typedef int 	// This actually needs to be pointer-sized, so s32 in 32-bit, 
@@ -125,7 +125,7 @@ ALLOCK enum
     FreeAll
 }
 
-assert proc (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
+assert proc (fPredicate: bool, pChz: & const u8, pChzFile: & const u8, nLine: int)
 {
 	if (!fPredicate)	
 	{
@@ -134,7 +134,7 @@ assert proc (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int)
 	}
 }
 
-fverify proc (fPredicate: bool, pChz: & u8, pChzFile: & u8, nLine: int) -> bool
+fverify proc (fPredicate: bool, pChz: & const u8, pChzFile: & const u8, nLine: int) -> bool
 {
 	if (!fPredicate)	
 	{
@@ -172,15 +172,15 @@ iterNext proc (pIter: &SIntIterator)
 }
 
 // utf8 null terminated string iterator
-iterIsDone proc (ppCoz: &&u8) -> bool
+iterIsDone proc (ppCoz: && const u8) -> bool
 {
     return @ppCoz == null || @@ppCoz == '\0'
 }
 
-iterNext proc (ppCoz: &&u8)
+iterNext proc (ppCoz: && const u8)
 {
     pCoz := @ppCoz
-    pCozEnd : &u8
+    pCozEnd : & const u8
 
     if ((@pCoz & 0xF8) == 0xF0)         { pCozEnd = pCoz + 4 }
     else if ((@pCoz & 0xF0) == 0xE0)    { pCozEnd = pCoz + 3 }

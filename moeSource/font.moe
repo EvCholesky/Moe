@@ -460,7 +460,7 @@ PrintShaderInfoLog proc (object: gluint, pFnGetLog: (shader: gluint, bufSize: gl
 	FreeMalloc(aCh)
 }
 
-ShhandLoad proc (pShman: &SShaderManager, pChzMaterialName: &u8, pChzVertexSource: &u8, pChzFragmentSource: &u8) -> SHHAND
+ShhandLoad proc (pShman: &SShaderManager, pChzMaterialName: & const u8, pChzVertexSource: & const u8, pChzFragmentSource: & const u8) -> SHHAND
 {
 	shhand := ShhandFindUnused(pShman)
 	if(shhand == SHHAND.nil)
@@ -537,10 +537,10 @@ EndShader proc ()
 	glUseProgram(0)
 }
 
-IParamFind proc (pShman: & SShaderManager, shhand: SHHAND, pChzName: & u8) -> s32
+IParamFind proc (pShman: & SShaderManager, shhand: SHHAND, pChzName: & const u8) -> s32
 {
 	assert(shhand != SHHAND.nil, "Bad shader handle", #file, #line)
-	return glGetUniformLocation(pShman.m_aShad[shhand].m_driProgram, cast (& s8)pChzName)
+	return glGetUniformLocation(pShman.m_aShad[shhand].m_driProgram, cast (& const s8)pChzName)
 }
 
 SetShaderParam proc (iParam: s32, x: f32, y: f32, z: f32, w: f32)
@@ -609,7 +609,7 @@ PFontmanStaticInit proc (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SF
 	return &g_fontman
 }
 
-ConcatPChz proc	(pChzA: & u8, pChzB: & u8, aCh: [] u8)
+ConcatPChz proc	(pChzA: & const u8, pChzB: & const u8, aCh: [] u8)
 {
 	iCh: s32
 	cChEnd := aCh.count -1 // leave room for terminator, BB doesn't support zero size array
@@ -730,7 +730,7 @@ PTexLoad proc (pChzFilename: & u8, fFlipVertical: bool) -> & STexture
     return pTex
 }
 
-FTryLoadFont proc (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & u8, procAlloc: ProcAlloc) -> bool
+FTryLoadFont proc (pFontman: & SFontManager, fontk: FONTK, pCozFilename: & const u8, procAlloc: ProcAlloc) -> bool
 {
 	aCh: [1024] u8
 

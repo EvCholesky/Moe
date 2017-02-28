@@ -80,6 +80,7 @@ enum TOK
 		RW(Proc) STR(proc), \
 		RW(Struct) STR(struct), \
 		RW(Const) STR(const), \
+		RW(InArg) STR(inarg), \
 		RW(Typedef) STR(typedef), \
 		RW(Soa) STR(SOA), \
 		RW(Inline) STR(inline), \

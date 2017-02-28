@@ -880,7 +880,7 @@ FreeActor proc (pAct: & SActor)
 	pAct.m_fIsAllocated = false
 }
 
-FMapGridFromString proc (pChzInput: & u8, aChMap: [] u8) -> bool
+FMapGridFromString proc (pChzInput: & const u8, aChMap: [] u8) -> bool
 {
 	//printf("%s\n", pChzInput)
 

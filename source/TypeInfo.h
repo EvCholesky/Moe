@@ -68,6 +68,7 @@ enum TINK : s8
     TINK_Null		= 8,			// no specialized type info
     TINK_Any		= 9,			// no specialized type info
     TINK_Enum		= 10,
+	TINK_Qualifier	= 11,
 	TINK_ReflectedMax,
 
 	TINK_ForwardDecl= TINK_ReflectedMax,	// Type info added for resolving pointers to self during the type-check phase.
@@ -171,6 +172,50 @@ struct STypeInfoPointer : public STypeInfo	// tag = tinptr
 	STypeInfo *			m_pTinPointedTo;
 	s32					m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
 };
+
+enum QUALK
+{
+	QUALK_Const,		// Read only value, transitive ie. members of an const struct or target of a const ref are const
+						// - implies that the values will not change during program execution,
+						// - unlike c it is NOT safe to upcast to const
+						// - types infered from a const type are not const ( n := 5; '5' is const, n is not)
+
+	QUALK_InArg,		// procedure arguments, variable can't be changed, but not transitive
+						// - non arguments can currently be declared as inarg for testing, but I'm not sure I'll keep that.
+
+	EWC_MAX_MIN_NIL(QUALK)
+};
+
+const char * PChzFromQualk(QUALK qualk);
+
+enum FQUALK
+{
+	FQUALK_Const	= 0x1 << QUALK_Const,
+	FQUALK_InArg	= 0x1 << QUALK_InArg,
+
+	FQUALK_None		= 0x0,
+	FQUALK_All		= FQUALK_Const | FQUALK_InArg
+};
+
+
+EWC_DEFINE_GRF(GRFQUALK, FQUALK, u8);
+
+void AppendFlagNames(EWC::SStringBuffer * pStrbuf, GRFQUALK grfqualk, const char * pChzSpacer);
+
+struct STypeInfoQualifier : public STypeInfo // tag == tinqual
+{
+	static const TINK s_tink = TINK_Qualifier;
+
+						STypeInfoQualifier(GRFQUALK grfqualk)
+						:STypeInfo("", "", s_tink)
+						,m_grfqualk(grfqualk)
+							{ ; }
+
+	STypeInfo *			m_pTin;
+	GRFQUALK			m_grfqualk;
+};
+
+
 
 enum CALLCONV
 {

@@ -76,6 +76,7 @@ const char * PChzFromPark(PARK park)
 		"Else",
 		"Array Decl",
 		"Reference Decl",
+		"Qualifier Decl",
 		"Procedure Reference Decl",
 		"Decl",
 		"Typedef",
@@ -181,6 +182,7 @@ const char * PChzFromTink(TINK tink)
 		"null",
 		"any",
 		"enum",
+		"qualifier",
 		"forwardDecl",
 		"literal",
 	};
@@ -192,6 +194,37 @@ const char * PChzFromTink(TINK tink)
 		return "Unknown TINK";
 
 	return s_mpTinkPChz[tink];
+}
+
+const char * PChzFromQualk(QUALK qualk)
+{
+	static const char * s_mpQualkPChz[] =
+	{
+		"const",
+		"inarg",
+	};
+	EWC_CASSERT(EWC_DIM(s_mpQualkPChz) == QUALK_Max, "missing QUALK string");
+	if (qualk == QUALK_Nil)
+		return "Nil";
+
+	if ((qualk < QUALK_Nil) | (qualk >= QUALK_Max))
+		return "Unknown QUALK";
+
+	return s_mpQualkPChz[qualk];
+}
+
+void AppendFlagNames(EWC::SStringBuffer * pStrbuf, GRFQUALK grfqualk, const char * pChzSpacer)
+{
+	const char * pChzSpacerCur = "";
+	for (int qualk = QUALK_Min; qualk < QUALK_Max; ++qualk)
+	{
+		if (grfqualk.FIsSet(0x1 << qualk))
+		{
+			AppendCoz(pStrbuf, pChzSpacerCur);
+			AppendCoz(pStrbuf, PChzFromQualk((QUALK)qualk));
+			pChzSpacerCur = pChzSpacer;
+		}
+	}
 }
 
 const char * PChzFromEnumimp(ENUMIMP enumimp)
@@ -248,6 +281,14 @@ const char * PChzFromInlinek(INLINEK inlinek)
 		return "Unknown INLINEK";
 
 	return s_mpInlinekPChz[inlinek];
+}
+
+CSTValue * PStvalExpected(CSTNode * pStnod)
+{
+	if (EWC_FVERIFY(pStnod && pStnod->m_pStval, "Expected value"))
+		return pStnod->m_pStval;
+	static CSTValue stval;
+	return &stval;
 }
 
 CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
@@ -1311,6 +1352,29 @@ CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SLexer * pLex)
 	return nullptr;
 }
 
+CSTNode * PStnodParseQualifierDecl(CParseContext * pParctx, SLexer * pLex)
+{
+	RWORD rword = RwordLookup(pLex);
+	if (rword == RWORD_Const || rword == RWORD_InArg)
+	{
+		SLexerLocation lexloc(pLex);
+		TokNext(pLex);	
+
+		CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+
+		pStnod->m_tok = (TOK)pLex->m_tok;
+		pStnod->m_park = PARK_QualifierDecl;
+
+		CSTValue * pStval = EWC_NEW(pParctx->m_pAlloc, CSTValue) CSTValue();
+		pStval->m_str = pLex->m_str;
+		pStval->m_rword = rword;
+		pStnod->m_pStval = pStval;
+		return pStnod;
+	}
+
+	return nullptr;
+}
+
 CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex)
 {
 	CSTNode * pStnod = PStnodParseIdentifier(pParctx, pLex);
@@ -1341,11 +1405,14 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex)
 
 	pStnod = PStnodParseProcedureReferenceDecl(pParctx, pLex);
 	if (pStnod)
-	{
 		return pStnod;
-	}
 
 	pStnod = PStnodParsePointerDecl(pParctx, pLex);
+	if (!pStnod)
+	{
+		pStnod = PStnodParseQualifierDecl(pParctx, pLex);
+	}
+
 	if (!pStnod)
 	{
 		pStnod = PStnodParseArrayDecl(pParctx, pLex);
@@ -1356,7 +1423,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex)
 	CSTNode * pStnodChild = PStnodParseTypeSpecifier(pParctx, pLex);
 	if (!pStnodChild)
 	{
-		ParseError(pParctx, pLex, "Expected type identifier before '%s'", PCozFromTok(TOK(pLex->m_tok)));
+		ParseError(pParctx, pLex, "Expected type type name before '%s'", PCozFromTok(TOK(pLex->m_tok)));
 		// BB - Assume int to try to continue compilation? ala C?
 	}
 	else
@@ -3655,7 +3722,28 @@ STypeInfo *	CSymbolTable::PTinBuiltin(const EWC::CString & str)
 	return nullptr;
 }
 
-STypeInfoPointer * CSymbolTable::PTinptrAllocReference(STypeInfo * pTinPointedTo)
+STypeInfoQualifier * CSymbolTable::PTinqualEnsure(STypeInfo * pTinTarget, GRFQUALK grfqualk)
+{
+	// Note: I should unique'ify these
+	if (pTinTarget && pTinTarget->m_tink == TINK_Qualifier)
+	{
+		auto pTinqualPrev = (STypeInfoQualifier *)pTinTarget;
+
+		if (pTinqualPrev->m_grfqualk.FIsSet(grfqualk))
+			return pTinqualPrev;
+		grfqualk |= pTinqualPrev->m_grfqualk;
+		pTinTarget = pTinqualPrev->m_pTin;
+	}
+
+	STypeInfoQualifier * pTinqual = EWC_NEW(m_pAlloc, STypeInfoQualifier) STypeInfoQualifier(grfqualk);
+	pTinqual->m_pTin = pTinTarget;
+
+	AddManagedTin(pTinqual);
+	return pTinqual;
+}
+
+
+STypeInfoPointer * CSymbolTable::PTinptrAllocate(STypeInfo * pTinPointedTo)
 {
 	// Note: I should unique'ify these
 
@@ -3693,6 +3781,16 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 			}
 			AppendTypeDescriptor(pTinary->m_pTin, pSeb);
 		} break;
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+
+			char aCh[64];
+			SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+			AppendFlagNames(&strbuf, pTinqual->m_grfqualk, " ");
+			pSeb->AppendCoz(aCh);
+			pSeb->AppendCoz(" ");
+		}break;
 	case TINK_Pointer:
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
@@ -3970,9 +4068,18 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 
 	switch (pTin->m_tink)
 	{
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			const char * pChzSpacer = (grfdbgstr.FIsSet(FDBGSTR_NoWhitespace)) ? "_" : " ";
+			AppendFlagNames(pStrbuf, pTinqual->m_grfqualk, pChzSpacer);
+			AppendCoz(pStrbuf, pChzSpacer);
+			PrintTypeInfo(pStrbuf, pTinqual->m_pTin, park, grfdbgstr);
+			return;
+		} break;
 	case TINK_Pointer:		
 		{
-			STypeInfoPointer * pTinptr = (STypeInfoPointer*)pTin;
+			auto pTinptr = (STypeInfoPointer*)pTin;
 			AppendCoz(pStrbuf, PCozFromTok(TOK_Reference));
 			PrintTypeInfo(pStrbuf, pTinptr->m_pTinPointedTo, park, grfdbgstr);
 			return;
@@ -4086,8 +4193,10 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
     case TINK_Void:			// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
-	default:
 		AppendCoz(pStrbuf, pTin->m_strName.PCoz()); 
+		break;
+	default:
+		EWC_ASSERT(false, "unhandled TINK in PrintTypeInfo");
 		return;
 	}
 }
@@ -4135,6 +4244,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 									AppendCoz(pStrbuf, "procref");				return;
 	case PARK_Uninitializer:		AppendCoz(pStrbuf, "---");					return;
 	case PARK_ReferenceDecl:		AppendCoz(pStrbuf, "ptr");					return;
+	case PARK_QualifierDecl:		AppendCoz(pStrbuf, PCozFromRword(pStnod->m_pStval->m_rword));	return;
 	case PARK_Decl:					AppendCoz(pStrbuf, "decl");					return;
 	case PARK_Typedef:				AppendCoz(pStrbuf, "typedef");				return;
 	case PARK_ConstantDecl:			AppendCoz(pStrbuf, "const");				return;
@@ -4371,6 +4481,10 @@ void TestParse()
 	{
 		SErrorManager errman;
 		CWorkspace work(&alloc, &errman);
+
+		pCozIn = "n1: const int; pN: & const int";
+		pCozOut = "(decl $n1 (const $int)) (decl $pN (ptr (const $int)))";
+		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "operator * (lhs: SFoo, nRhs: int) -> int { return lhs.m_n + nRhs }";
 		pCozOut = "(func $operator* (params (decl $lhs $SFoo) (decl $nRhs $int)) $int ({} (return (+ (member $lhs $m_n) $nRhs))))";

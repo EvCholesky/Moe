@@ -16,7 +16,7 @@ SRect struct
     m_bottom : s32
 }
 
-CreateWindow proc (dX : s64, dY : s64, pChzName : & u8, ppVHwnd : && void) -> bool #foreign CreateWindow_MOE
+CreateWindow proc (dX : s64, dY : s64, pChzName : & const u8, ppVHwnd : && void) -> bool #foreign CreateWindow_MOE
 ClearWindow proc (uRed : float, uGreen : float, uBlue : float, uAlpha : float) -> void #foreign
 UpdateWindowEvents proc () -> void #foreign
 SwapBuffers proc (pVHwnd : & void) -> void #foreign SwapBuffers_MOE
@@ -182,7 +182,7 @@ glDeleteProgram: (program: gluint) #stdcall
 glLinkProgram: (program: gluint) #stdcall
 glCreateShader: (type: glenum) -> gluint #stdcall
 glDeleteShader: (shader: gluint) #stdcall
-glShaderSource: (shader: gluint, count: glsizei, string: &&u8, length: &glint) #stdcall
+glShaderSource: (shader: gluint, count: glsizei, string: && const u8, length: &glint) #stdcall
 glCompileShader: (handle: gluint) #stdcall
 glGetShaderiv: (shader: gluint, pname: glenum, param: &glint) #stdcall
 glGetProgramiv: (shader: gluint, pname: glenum, param: &glint) #stdcall
@@ -190,7 +190,7 @@ glGetShaderInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog
 glGetProgramInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall
 glAttachShader: (program: gluint, shader: gluint) #stdcall
 glUseProgram: (program: gluint) #stdcall
-glGetUniformLocation: (program: gluint, name: & s8) -> glint #stdcall
+glGetUniformLocation: (program: gluint, name: & const s8) -> glint #stdcall
 
 glUniform1f: (location: glint, v0: glfloat) #stdcall
 glUniform2f: (location: glint, v0: glfloat, v1: glfloat) #stdcall
@@ -265,9 +265,9 @@ SEvent struct
 }
 
 GlfwProc typedef ()->void
-PFnGlProcLookup proc (pChzName: &u8) -> GlfwProc #foreign
+PFnGlProcLookup proc (pChzName: & const u8) -> GlfwProc #foreign
 
-FTryInitExtension proc (pChzName: &u8, pfSuccess: &bool) -> GlfwProc 
+FTryInitExtension proc (pChzName: & const u8, pfSuccess: &bool) -> GlfwProc 
 {
    pFn := PFnGlProcLookup(pChzName)
    if pFn == null

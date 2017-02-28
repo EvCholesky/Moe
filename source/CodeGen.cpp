@@ -337,9 +337,14 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			return pLtypPtr;
 
 		}
+		case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			return PLtypeFromPTin(pTinqual->m_pTin);
+		}
 		case TINK_Pointer:
 		{
-			STypeInfoPointer * pTinptr = (STypeInfoPointer *)pTin;
+			auto pTinptr = (STypeInfoPointer *)pTin;
 			LLVMOpaqueType * pLtypePointedTo;
 			if (pTinptr->m_pTinPointedTo->m_tink == TINK_Void)
 			{
@@ -723,9 +728,16 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			unsigned nDwarf = llvm::dwarf::DW_ATE_boolean;
 			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), 8, 8, nDwarf);
 		} break;
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			CreateDebugInfo(pWork, pBuild, pStnodRef, pTinqual->m_pTin);
+
+			pTin->m_pLvalDIType = pTinqual->m_pTin->m_pLvalDIType;
+		} break;
     case TINK_Pointer:
 		{
-			auto pTinptr = PTinRtiCast<STypeInfoPointer *>(pTin);
+			auto pTinptr = (STypeInfoPointer *)pTin;
 
 			auto pTinPointedTo = pTinptr->m_pTinPointedTo;
 			if (pTinPointedTo->m_tink == TINK_Void)
@@ -1575,6 +1587,11 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			auto pTinenum = (STypeInfoEnum *)pTin;
 			return PLvalZeroInType(pBuild, pTinenum->m_pTinLoose);
 		} 
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			return PLvalZeroInType(pBuild, pTinqual->m_pTin);
+		}
 	case TINK_Pointer:
 	case TINK_Procedure:
 		{
@@ -1780,6 +1797,18 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 			arypLval.Append(LLVMConstInt(LLVMInt32Type(), pTinfloat->m_cBit, false));
 
 			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoFloat");
+			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
+		} break;
+	case TINK_Qualifier:
+		{ 
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));
+
+			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
+			arypLval.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTinqual->m_pTin, pReftab));
+			arypLval.Append(LLVMConstInt(LLVMInt8Type(), pTinqual->m_grfqualk.m_raw, false)); //m_grfqualk
+
+			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoQualifier");
 			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
 		} break;
 	case TINK_Pointer:
@@ -2090,6 +2119,11 @@ void EnsureReftent(SReflectGlobalTable * pReftab, STypeInfo * pTin, CDynAry<STyp
 				EnsureReftent(pReftab, pTinlit->m_pTinSource, parypTin);
 			}
 		} break;
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			EnsureReftent(pReftab, pTinqual->m_pTin, parypTin);
+		} break;
 	case TINK_Pointer:
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
@@ -2334,6 +2368,9 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 
 CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pValSrc, STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
+	pTinSrc = PTinStripQualifiers(pTinSrc);
+	pTinDst = PTinStripQualifiers(pTinDst);
+
 	u32 cBitSrc = 0;
 	u32 cBitDst;
 	bool fSignedSrc = false;
@@ -2961,7 +2998,7 @@ CIRValue * PValFromArrayMember(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue
 		// the type of aN.data is &N so a reference would need to be a &&N which we don't have
 		EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
 
-		auto pTinptr = pWork->m_pSymtab->PTinptrAllocReference(pTinary->m_pTin);
+		auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinary->m_pTin);
 		return pBuild->PInstCreateCast(IROP_Bitcast, pValAryRef, pTinptr, "Bitcast");
 	}
 
@@ -2986,6 +3023,7 @@ static inline CIRValue * PValGenerateCast(
 	STypeInfo * pTinOut)
 {
 	STypeInfo * pTinRhs = pStnodRhs->m_pTin;
+	pTinOut = PTinStripQualifiers(pTinOut);
 
 	bool rhsIsArray = false;
 	if (pTinRhs)
@@ -3453,7 +3491,7 @@ void CreateOpinfo(GCMPPRED gcmppred, const char * pChzName, SOperatorInfo * pOpi
 
 static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInfo * pOpinfo)
 {
-	STypeInfo * apTin[2] = {pOptype->m_pTinLhs, pOptype->m_pTinRhs};
+	STypeInfo * apTin[2] = {PTinStripQualifiers(pOptype->m_pTinLhs), PTinStripQualifiers(pOptype->m_pTinRhs)};
 	bool aFIsSigned[2];
 	TINK aTink[2];
 
@@ -4926,7 +4964,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				}
 			}
 			STypeInfoStruct * pTinstruct = nullptr;
-			auto pTinLhs = pStnodLhs->m_pTin;
+			auto pTinLhs = PTinStripQualifiers(pStnodLhs->m_pTin);
 
 			VALGENK valgenkLhs = VALGENK_Reference;
 			if (pTinLhs)
@@ -4988,7 +5026,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return nullptr;
 
 			LLVMOpaqueValue * apLvalIndex[2] = {};
-			TINK tinkLhs = pStnodLhs->m_pTin->m_tink;
+			TINK tinkLhs = PTinStripQualifiers(pStnodLhs->m_pTin)->m_tink;
 			int cpLvalIndex = 0;
 
 			if (tinkLhs == TINK_Literal)
@@ -5104,8 +5142,11 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		{
 			SOpTypes * pOptype = pStnod->m_pOptype;
 			EWC_ASSERT(pOptype && pOptype->m_pTinLhs && pOptype->m_pTinRhs, "missing operand types for AdditiveOp");
-			TINK tinkLhs = pOptype->m_pTinLhs->m_tink;
-			TINK tinkRhs = pOptype->m_pTinRhs->m_tink;
+
+			STypeInfo * pTinLhs = PTinStripQualifiers(pOptype->m_pTinLhs);
+			STypeInfo * pTinRhs = PTinStripQualifiers(pOptype->m_pTinRhs);
+			TINK tinkLhs = pTinLhs->m_tink;
+			TINK tinkRhs = pTinRhs->m_tink;
 			if (!FIsOverloadedOp(pStnod))
 			{
 				if (((tinkLhs == TINK_Pointer) & (tinkRhs == TINK_Integer)) | 
@@ -5121,7 +5162,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					CIRValue * pValPtr;
 					CIRValue * pValIndex;
-					if (pStnodLhs->m_pTin->m_tink == TINK_Pointer)
+					if (pTinLhs->m_tink == TINK_Pointer)
 					{
 						pValPtr = pValLhs;
 						pValIndex = pValRhs;
@@ -5231,8 +5272,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return nullptr;
 
 			EWC_ASSERT(pStnod->m_pOptype, "mising operator types in unary op");
-			STypeInfo * pTinOutput = pStnod->m_pOptype->m_pTinResult;
-			STypeInfo * pTinOperand = pStnodOperand->m_pTin;
+			STypeInfo * pTinOutput = PTinStripQualifiers(pStnod->m_pOptype->m_pTinResult);
+			STypeInfo * pTinOperand = PTinStripQualifiers(pStnodOperand->m_pTin);
 
 			if (pTinOutput->m_tink == TINK_Enum)
 			{

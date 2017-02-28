@@ -103,7 +103,7 @@ TestNestedMethod proc ()
 	assert(nSum == 120, "bad nested method call", #file, #line)
 }
 
-FAppend proc (ppCh: && u8, pChz: &u8, fArg: bool) -> bool
+FAppend proc (ppCh: && u8, pChz: & const u8, fArg: bool) -> bool
 {
 	@@ppCh = pChz[0]
 	@ppCh = @ppCh + 1
@@ -613,7 +613,7 @@ TestOverloading proc ()
 OverkTest proc (n: s16) -> OVERK 			{return OVERK.Int16 }
 OverkTest proc (n: int) -> OVERK 			{return OVERK.Int32 }
 OverkTest proc (g: float) -> OVERK 			{return OVERK.Float }
-OverkTest proc (pChz: & u8) -> OVERK 		{return OVERK.String }
+OverkTest proc (pChz: & const u8) -> OVERK 	{return OVERK.String }
 
 
 
@@ -837,7 +837,7 @@ TestHereStrings proc ()
 {
 	printf("Here Strings:\n")
 
-	pChzNotHere: & u8 = "This is a string\nthat should just work\neven though it's several lines\nand \"contains quotes\"\n"
+	pChzNotHere: & const u8 = "This is a string\nthat should just work\neven though it's several lines\nand \"contains quotes\"\n"
 	assert(FAreCozEqual(g_pChzHere, pChzNotHere), "here string failure", #file, #line)
 
 	pChzTest := #string HERE
@@ -845,7 +845,7 @@ this HERE is a HERE
 string inlined
 HERE
 	
-	pChzNotHere2: & u8 = "this HERE is a HERE\nstring inlined\n"
+	pChzNotHere2: & const u8 = "this HERE is a HERE\nstring inlined\n"
 	assert(FAreCozEqual(pChzTest, pChzNotHere2), "here string failure", #file, #line)
 }
 
@@ -894,7 +894,7 @@ TestLoops proc ()
 	}
 
 	i = 0
-	apCoz: [6] & u8 = {"😁Test✂", "Test✂", "est✂", "st✂", "t✂", "✂" }
+	apCoz: [6] & const u8 = {"😁Test✂", "Test✂", "est✂", "st✂", "t✂", "✂" }
 	for_each pCoz := "😁Test✂"
 	{
 		assert(FAreCozEqual(apCoz[i], pCoz), "iterator fail (pCoz)" , #file, #line)
