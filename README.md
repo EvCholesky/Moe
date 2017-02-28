@@ -8,10 +8,10 @@ It's current feature set is roughly comprable to C: enumerations, structures, po
   - procedure overloading is supported.
   - instances are initialized unless explicitly marked as uninitialized.
   - break and continue support breaking to a labeled outer loop.
-
-There are quite a few upcoming features that are missing from C:
   - run time type reflection
   - operator overloading (with in/out reference arguments)
+
+There are quite a few upcoming features that are missing from C:
   - optional array bounds checking
   - generics (templates)
   - compile time code execution
@@ -133,48 +133,6 @@ IntPointer typedef & s32;
 
 
 
-## Procedures
-
-```
-DoThing proc (a: int, b: int) -> int
-{
-  return a + b
-}
-```
-
-Procedure Qualifiers are placed after the return type, but before the procedure body.
-  - `inline`, `noinline`: forces the function to be inlined (or not). Not treated as a suggestion as in C.
-  - `#foreign`: Used to declare a foreign function that should be found by the linker. (This will prevent name mangling so it won't work with overloaded procedures)
-  - `#stdcall`: Used to specify the stdcall calling convention.
-
-Procedures will support default parameters and named arguments:
-
-```
-DoThing proc (nFoo: int = 10, nBar: int = 11) -> int
-{ }
-
-DoThing(.nFoo=20)
-```
-
-Procedure references are declared with the same syntax as declaring them.
-```
-pFn: (pChz: & u8)->void
-pFn(2) // calling by reference
-```
-
-Support for variadic arguments is currently limited to foreign functions (*Cough* `printf`) but it is specified with the `..` operator.
-```
-printf (pChzFormat: & u8, ..) #foreign -> s32
-```
-
-Coming soon: Structure literals with syntax like a procedure call. (including support for default values.)
-To Do: structure literal syntax is just like a procedure call - with default values as specified in the definition
-```
-foo := SFoo(.m_n = 45)
-```
-
-
-
 ## Enumerations
 ```
 SOMEENUM enum
@@ -208,15 +166,185 @@ Each enum type also defines static arrays containing the names and values of eac
 ```
 for i:=0; i<SOMEENUM.names.count; ++i
 {
-  print("%s == %d", SOMEENUM.names[i], SOMEENUM.values[i]) 
+  printf("%s == %d", SOMEENUM.names[i], SOMEENUM.values[i]) 
 }
 ```
 
 
 
+## Control Flow
+
+### If/else
+
+If statements check a condition and execute a block of code if it evaluates to true. You can chain `else if` and `else` statements to handle the case when preceding statements are false.
+
+```
+if n == 3
+{
+  DoSomething()
+}
+else if n < 0
+{
+  SomethingElse()
+}
+else
+{
+  return false
+}
+```
+  - conditional predicates are not enclosed in parentheses, but all child blocks must be enclosed in curly braces, even single lines.
+
+### Switch Statements
+
+Switch statements allow you to compare an integer value against multiple cases. 
+
+```
+switch m_foo
+{
+  case FOO.First: 
+    printf("first")
+
+  case FOO.Next,
+  case FOO.Other: 
+    printf("next")
+
+  default:
+    printf("default")
+}
+```
+
+  - Break statements are not required at the end of each case as in C, but can be used to exit the case early.
+  - The `fallthrough` keyword allows code execution to pass through to the following case.
+  - Switch statements can be labeled for breaking out of a loop nested inside a switch case.
+
+### While Loop
+  
+The simplest loop is the `while` loop that continues to loop as long as its condition evaluates to `true`
+
+```
+while FShouldKeepLooping()
+{
+  printf("woo.")
+}
+```
+
+### For Loop
+
+Moe currently supports a C-Style for loop, but I'm experimenting with various attempts at a range-based for_each loop. For loops specify three expressions separated by a semicolon:
+  - an initialization statement
+  - condition tested each iteration
+  - an increment statement run at the end of each iteration
+
+```
+for i:=0; i<15; ++i
+{
+  printf("whoop.")
+}
+```
+
+### Break, Continue
+
+The `break` keyword allows execution to exit the innermost loop or switch body.
+
+The `continue` keyword will jump to the end of the current loop body and execute the loop increment statement (if it exists) and test the loop predicate for the next iteration.
+
+Both the `break` and `continue` keywords support supplying a label for a named loop rather than exiting the innermost one.
+
+```
+#label Outer
+for y:=0; y<10; ++y
+{
+  for x:=0; x<10; ++x
+  {
+    if x == 4
+      { continue Outer }
+    
+    if y == 4
+      { break Outer }
+  }
+}
+```
+
+## Procedures
+
+```
+DoThing proc (a: int, b: int) -> int
+{
+  return a + b
+}
+```
+
+Procedure Qualifiers are placed after the return type, but before the procedure body.
+  - `inline`, `noinline`: forces the function to be inlined (or not). Not treated as a suggestion as in C.
+  - `#foreign`: Used to declare a foreign function that should be found by the linker. (This will prevent name mangling so it won't work with overloaded procedures)
+  - `#stdcall`: Used to specify the stdcall calling convention.
+
+Procedures will support default parameters and named arguments:
+
+```
+DoThing proc (nFoo: int = 10, nBar: int = 11) -> int
+{ }
+
+DoThing(.nFoo=20)
+```
+
+Procedure references are declared with the same syntax as declaring them.
+```
+pFn: (pChz: & u8) -> void
+pFn(2) // calling by reference
+```
+
+Support for variadic arguments is currently limited to foreign functions (*Cough* `printf`) but it is specified with the `..` operator.
+```
+printf (pChzFormat: & u8, ..) #foreign -> s32
+```
+
+Coming soon: Structure literals with syntax like a procedure call. (including support for default values.)
+To Do: structure literal syntax is just like a procedure call - with default values as specified in the definition
+```
+foo := SFoo(.m_n = 45)
+```
+
+
+
+## Operator Overloading
+
+Operator overload procedures are defined with the operator keyword followed by the operator itself.
+
+```
+operator + (fooLhs: SFoo, fooRhs: SFoo) -> SFoo
+{
+  ...
+}
+```
+
+The function signature expected for each operator is as follows:
+
+| Type | Operands | Signature |
+|------|----------|-----------|
+| Binary Operators | `+,-,*,/,%,|,&,>>,<<` | `operator(Lhs:LType, Rhs:RType)->RetType` |
+| Comparison Operators | `<,>,<=,>=,==,!=`|`operator(Lhs:LType, Rhs:RType)->bool` |
+| Assignment Operators | `=,:=,+=,-=,*=,/=`|`operator(pLhs:&LType, Rhs:RType)` |
+| Unary Operators | `+,-,&,@,~,!`|`operator(pLhs:LType)->RetType` |
+| Postfix Unary Operators | `++,--`|`operator(pLhs:&LType)->RetType` |
+
+- there is currently no way to differentiate preincrement/predecrement and postincrement/postdecrement when overloading.
+
+The `#commutative` keyword can be added to binary operators that have different argument types to allow the arguments to be passed in either order.
+
+```
+operator * (fooLhs: SFoo, r: float) -> SFoo #commutative
+{
+  ...
+}
+
+foo = foo * 2.2
+foo = 2.2 * foo // still ok!
+```
+
+
 ## Syntax Miscellanea
   - semicolons are optional (needed only to separate multiple statements on one line.
-  - conditional predicates are not enclosed in parentheses, but all child blocks must be enclosed in curly braces, even single lines.
 
 
 
