@@ -221,6 +221,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
   <ItemGroup>
     <ClInclude Include="source\BigMath.h" />
     <ClInclude Include="source\CodeGen.h" />
+    <ClInclude Include="source\Error.h" />
     <ClInclude Include="source\EwcArray.h" />
     <ClInclude Include="source\EwcHash.h" />
     <ClInclude Include="source\EwcString.h" />
@@ -229,6 +230,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
     <ClInclude Include="source\Parser.h" />
     <ClInclude Include="source\TypeInfo.h" />
     <ClInclude Include="source\stb_malloc.h" />
+    <ClInclude Include="source\UnitTest.h" />
     <ClInclude Include="source\Util.h" />
     <ClInclude Include="source\WindowsStub.h" />
     <ClInclude Include="source\Workspace.h" />
@@ -240,6 +242,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
     <ClCompile Include="source\Parser.cpp" />
     <ClCompile Include="source\Main.cpp" />
     <ClCompile Include="source\TypeCheck.cpp" />
+    <ClCompile Include="source\UnitTest.cpp" />
     <ClCompile Include="source\Util.cpp" />
     <ClCompile Include="source\Workspace.cpp" />
   </ItemGroup>

@@ -178,7 +178,7 @@ struct SLexer // tag = lex
    // lexer variables
    const char *		m_pChInput;
    const char *		m_pChEof;
-   const char *		m_pChParse;
+   const char *		m_pChParse;		// current parse location - points just after the current token
    char *			m_aChScratch;	// working character space - NOTE:
    u32				m_cChScratch;
 

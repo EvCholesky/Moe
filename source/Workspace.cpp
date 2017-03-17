@@ -141,7 +141,7 @@ inline void CalculateLinePositionRaw(const char * pChBegin, s32 dBLoc, s32 * piL
 
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCol)
 {
-	auto pFile = pWork->PFileLookup(pLexloc->m_strFilename.PCoz(), CWorkspace::FILEK_Source);
+	auto pFile = pWork->PFileLookup(pLexloc->m_strFilename.PCoz(), CWorkspace::FILEK_Nil);
 	if (!pFile)
 	{
 		*piLine = -1;
@@ -180,6 +180,7 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 }
 
 const char * CWorkspace::s_pCozSourceExtension = ".moe";
+const char * CWorkspace::s_pCozUnitTestExtension = ".moetest";
 
 CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 :m_pAlloc(pAlloc)
@@ -187,8 +188,6 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_aryEntry(pAlloc, EWC::BK_Workspace)
 ,m_aryiEntryChecked(pAlloc, EWC::BK_Workspace) 
 ,m_arypValManaged(pAlloc, EWC::BK_WorkspaceVal, 0)
-,m_hashHvIPFileSource(pAlloc, EWC::BK_Workspace)
-,m_hashHvIPFileLibrary(pAlloc, EWC::BK_Workspace)
 ,m_arypFile(pAlloc, EWC::BK_WorkspaceFile, 200)
 ,m_pChzObjectFilename(nullptr)
 ,m_pSymtab(nullptr)
@@ -202,15 +201,21 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_globmod(GLOBMOD_Normal)
 {
 	m_pErrman->m_pWork = this;
+
+	for (int filek = FILEK_Min; filek < FILEK_Max; ++filek)
+	{
+		m_mpFilekPHashHvIPFile[filek] = EWC_NEW(m_pAlloc, HashHvIPFile) HashHvIPFile(pAlloc, EWC::BK_Workspace);
+	}
 }
 
 void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 {
 	EWC_ASSERT(pStnod, "null entry point");
-	SEntry * pEntry = m_aryEntry.AppendNew();
+	SWorkspaceEntry * pEntry = m_aryEntry.AppendNew();
 	pEntry->m_pStnod = pStnod;
 	pEntry->m_pSymtab = pSymtab;
 	pEntry->m_pProc = nullptr;
+	pEntry->m_fHideDebugString = false;
 }
 
 CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strNamespace, SUniqueNameSet * pUnsetTin)
@@ -321,21 +326,50 @@ CWorkspace::SFile * CWorkspace::PFileEnsure(const char * pCozFile, FILEK filek)
 	return m_arypFile[*pipFile];
 }
 
+EWC::CHash<HV, int> * CWorkspace::PHashHvIPFile(FILEK filek) 
+{
+	if (!EWC_FVERIFY(filek > FILEK_Nil && filek < FILEK_Max, "bad filek"))
+		return nullptr;
+	
+	return m_mpFilekPHashHvIPFile[filek];
+}
+
 CWorkspace::SFile * CWorkspace::PFileLookup(const char * pCozFile, FILEK filek)
 {
-	int hv = EWC::HvFromPCozLowercase(pCozFile);
-	EWC::CHash<HV, int> * phashHvIPFile = PHashHvIPFile(filek);
-	int * pipFile = phashHvIPFile->Lookup(hv);
-	if (pipFile)
+	int filekMin = filek;
+	int filekMax = filek + 1;
+	if (filek == FILEK_Nil)
 	{
-		if (EWC_FVERIFY(*pipFile >= 0) & (*pipFile < (int)m_arypFile.C()), "bad file index")
+		filekMin = FILEK_Min;
+		filekMax = FILEK_Max;
+	}
+	int hv = EWC::HvFromPCozLowercase(pCozFile);
+	for (int filekIt = filekMin; filekIt < filekMax; ++filekIt)
+	{
+		EWC::CHash<HV, int> * phashHvIPFile = PHashHvIPFile((FILEK)filekIt);
+		int * pipFile = phashHvIPFile->Lookup(hv);
+		if (pipFile)
 		{
-			return m_arypFile[*pipFile];
+			if (EWC_FVERIFY(*pipFile >= 0) & (*pipFile < (int)m_arypFile.C()), "bad file index")
+			{
+				return m_arypFile[*pipFile];
+			}
 		}
 	}
 
 	return nullptr;
 }
+
+const char * PCozSkipUnicodeBOM(const char * pCozFile)
+{
+	// utf8 BOM
+	if (pCozFile[0] == 0xEF && pCozFile[1] == 0xBB && pCozFile[2] == 0xBF)
+	{
+		pCozFile += 3;
+	}
+	return pCozFile;
+}
+
 
 
 
@@ -349,8 +383,10 @@ void BeginWorkspace(CWorkspace * pWork)
 	EWC_ASSERT(pWork->m_arypValManaged.C() == 0, "Unexpected managed values in workspace");
 
 	pWork->m_arypFile.Clear();
-	pWork->m_hashHvIPFileSource.Clear(0);
-	pWork->m_hashHvIPFileLibrary.Clear(0);
+	for (int filek = CWorkspace::FILEK_Min; filek < CWorkspace::FILEK_Max; ++filek)
+	{
+		pWork->m_mpFilekPHashHvIPFile[filek]->Clear(0);
+	}
 	pWork->m_cbFreePrev = pAlloc->CB();
 
 	pWork->m_hashHvPTin.Clear(0);
@@ -411,8 +447,8 @@ void EndWorkspace(CWorkspace * pWork)
 		pWork->m_pSymtab = nullptr;
 	}
 
-	CWorkspace::SEntry * pEntryMac = pWork->m_aryEntry.PMac();
-	for (CWorkspace::SEntry * pEntry = pWork->m_aryEntry.A(); pEntry != pEntryMac; ++pEntry)
+	SWorkspaceEntry * pEntryMac = pWork->m_aryEntry.PMac();
+	for (SWorkspaceEntry * pEntry = pWork->m_aryEntry.A(); pEntry != pEntryMac; ++pEntry)
 	{
 		pAlloc->EWC_DELETE(pEntry->m_pStnod);
 		pEntry->m_pStnod = nullptr;
@@ -434,8 +470,10 @@ void EndWorkspace(CWorkspace * pWork)
 
 	pWork->m_aryEntry.Clear();
 	pWork->m_aryiEntryChecked.Clear();
-	pWork->m_hashHvIPFileSource.Clear(0);
-	pWork->m_hashHvIPFileLibrary.Clear(0);
+	for (int filek = CWorkspace::FILEK_Min; filek < CWorkspace::FILEK_Max; ++filek)
+	{
+		pWork->m_mpFilekPHashHvIPFile[filek]->Clear(0);
+	}
 
 	pWork->m_hashHvPTin.Clear(0);
 	pWork->m_unset.Clear(0);
@@ -444,6 +482,7 @@ void EndWorkspace(CWorkspace * pWork)
 	size_t cipFile = pWork->m_arypFile.C();
 	for (size_t ipFile = 0; ipFile < cipFile; ++ipFile)
 	{
+		auto pFile = pWork->m_arypFile[ipFile];
 		if (pWork->m_arypFile[ipFile])
 		{
 			pAlloc->EWC_DELETE(pWork->m_arypFile[ipFile]);
@@ -465,6 +504,21 @@ void EndWorkspace(CWorkspace * pWork)
 		printf("----------------------------------------------------------------------\n");
 		pAlloc->PrintAllocations();
 	}
+}
+
+void CWorkspace::CopyUnitTestFiles(CWorkspace * pWorkOther)
+{
+	SFile ** ppFileMax = pWorkOther->m_arypFile.PMac();
+	for (auto ppFile = pWorkOther->m_arypFile.A(); ppFile != ppFileMax; ++ppFile)
+	{
+		auto pFileOld = *ppFile;
+		if (pFileOld->m_filek != FILEK_UnitTest)
+			continue; 
+
+		auto pFileNew = PFileEnsure(pFileOld->m_strFilename.PCoz(), pFileOld->m_filek);
+		*pFileNew = *pFileOld;
+	}
+
 }
 
 void CWorkspace::SetObjectFilename(const char * pChzObjectFilename, size_t cB)

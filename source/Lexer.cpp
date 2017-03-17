@@ -323,7 +323,6 @@ int TokNext(SLexer * pLex)
 {
 	const char * pChz = pLex->m_pChParse;
 
-
 	bool fContainsNewline = false;
 	// skip whitespace and comments
 	for (;;) 
@@ -699,6 +698,8 @@ const char * PCozFromTok(TOK tok)
 const char * PCozCurrentToken(SLexer * pLex)
 {
 	TOK tok = (TOK)pLex->m_tok;
+	if (tok == TOK_Identifier)
+		return pLex->m_str.PCoz();
 	if (tok == TOK_ReservedWord)
 		return PCozFromRword(pLex->m_rword);
 

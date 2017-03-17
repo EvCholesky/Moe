@@ -54,6 +54,12 @@
     <ClInclude Include="source\Util.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="source\UnitTest.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source\Error.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\EwcString.cpp">
@@ -78,6 +84,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\Util.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\UnitTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -19,6 +19,7 @@
 #include "CodeGen.h"
 #include "Lexer.h"
 #include "Parser.h"
+#include "UnitTest.h"
 #include "Util.h"
 #include "Workspace.h"
 
@@ -176,7 +177,7 @@ int main(int cpChzArg, const char * apChzArg[])
 
 	InitLLVM(&aryPCozLlvm);
 
-	if (comline.m_pChzFilename)
+	if (comline.m_pChzFilename && !comline.FHasCommand("-test"))
 	{
 		u8 aBString[1024 * 100];
 		CAlloc allocString(aBString, sizeof(aBString));
@@ -358,12 +359,26 @@ int main(int cpChzArg, const char * apChzArg[])
 
 	if (comline.FHasCommand("-test"))
 	{
+		u8 aBString[1024 * 100];
+		CAlloc allocString(aBString, sizeof(aBString));
+		StaticInitStrings(&allocString);
+
+		aB = new u8[s_cBHeap];
+		CAlloc alloc(aB, s_cBHeap);
+
+		SErrorManager errman;
+		CWorkspace work(&alloc, &errman);
+		FUnitTestFile(&work, comline.m_pChzFilename);
+
+		StaticShutdownStrings(&allocString);
+/*
 		TestUnicode();
 		TestLexing();
 		TestParse();
 		TestTypeCheck();
 		TestCodeGen();
 		printf("passed unit tests\n");
+		*/
 	}
 	return 0;
 }

@@ -395,6 +395,14 @@ struct SStringBuffer // tag=strbuf
 
 class CAlloc;
 
+inline size_t CBCodepoint(const char * pCoz)
+{
+	if ((*pCoz & 0xF8) == 0xF0)	return 4;
+	if ((*pCoz & 0xF0) == 0xE0)	return 3;
+	if ((*pCoz & 0xE0) == 0xC0)	return 2;
+	return 1;
+}
+
 // growing buffer for string edits
 struct SStringEditBuffer // tag = seb
 {
@@ -412,9 +420,16 @@ struct SStringEditBuffer // tag = seb
 	void		PrependCoz(const char * pCoz);
 	void		AppendCo(const char * pCoz, size_t cB);
 	void		AppendCoz(const char * pCoz);
+	size_t		CBAppendCodepoint(const char * pCoz)
+					{
+						auto cB = CBCodepoint(pCoz);
+						AppendCo(pCoz, cB+1);	// +1 because AppendCo argument cB counts the null terminator
+						return cB;
+					}
 
 	void		Clear();
 	void		Resize(size_t cBPrefix, size_t cbUsed, size_t cBPostfix);
+	char *		PCozAllocateCopy(CAlloc * pAlloc);
 
 	char *		PCoz()
 					{ return m_pCozBegin; }
@@ -451,6 +466,7 @@ size_t  CBFromCoz(const char * pCoz, size_t cCodepoint);
 void	ConcatPChz(const char* pChzA, const char * pChzB, char * pChOut, size_t cChOutMax);
 bool	FAreCozEqual(const char * pChzA, const char * pChzB);
 bool	FAreCozEqual(const char * pChzA, const char * pChzB, size_t cCh);
+bool	FIsEmptyString(const char * pChzA);
 void	ConvertChToWch(const char * pChz, size_t cWchMax, WChar * pWchz);
 bool	FPChzContainsChar(const char * pChz, char ch);
 void	ReplaceChars(const char * pChSrc, size_t cCh, const char * pChzRemove, char chFill, char * pChDst);
@@ -508,6 +524,7 @@ enum BK // block kind
 	BK_Stack,	// should be stack array allocated
 	BK_StringTable,
 	BK_ReflectTable,
+	BK_UnitTest,
 };
 
 #define EWC_ALLOC(numBytes, alignment) 			AllocImpl(numBytes, alignment, __FILE__, __LINE__)
@@ -1634,6 +1651,13 @@ int NCmpCoz(const char * pCozA, const char * pCozB)
 	return 0;
 }
 
+bool FIsEmptyString(const char * pChzA)
+{
+	if (!pChzA)
+		return true;
+	return pChzA[0] == '\0';
+}
+
 bool FAreCozEqual(const char * pCozA, const char * pCozB)
 {
 	return NCmpCoz(pCozA, pCozB) == 0;
@@ -1707,14 +1731,7 @@ void ReplaceChars(const char * pChSrc, size_t cCh, const char * pChzRemove, char
 
 SStringEditBuffer::~SStringEditBuffer()
 {
-	if (m_pCozMin)
-	{
-		m_pAlloc->EWC_DELETE(m_pCozMin);
-		m_pCozMin = nullptr;
-		m_pCozBegin = nullptr;
-		m_pCozAppend = nullptr;
-		m_pCozMax = nullptr;
-	}
+	Resize(0,0,0);
 }
 
 void SStringEditBuffer::PrependCo(const char * pCoz, size_t cB)
@@ -1777,6 +1794,20 @@ void SStringEditBuffer::Resize(size_t cBPrefix, size_t cBUsed, size_t cBPostfix)
 	size_t cB = cBPrefix + cBUsed + cBPostfix;
 	//cB = ewcMin(cB, cBOld + s_cChPrefixPad*2);
 
+	if (!cB)
+	{
+		m_pCozMin = nullptr;
+		m_pCozBegin = nullptr;
+		m_pCozAppend = nullptr;
+		m_pCozMax = nullptr;
+
+		if (pCozMinOld)
+		{
+			m_pAlloc->EWC_DELETE(pCozMinOld);
+		}
+		return;
+	}
+
 	m_pCozMin = (char*)m_pAlloc->EWC_ALLOC(sizeof(char) * cB, EWC_ALIGN_OF(char));
 	m_pCozBegin = m_pCozMin + cBPrefix;
 	m_pCozAppend = m_pCozBegin;
@@ -1792,6 +1823,23 @@ void SStringEditBuffer::Resize(size_t cBPrefix, size_t cBUsed, size_t cBPostfix)
 	}
 
 	*m_pCozAppend = '\0';
+}
+
+char * SStringEditBuffer::PCozAllocateCopy(CAlloc * pAlloc)
+{
+	auto cBNew = CB();
+	const char * pCozSource = PCoz();
+
+	if (!cBNew)
+	{
+		cBNew = 1;
+		pCozSource = "";
+	}
+	
+	char * pCozNew = (char*)pAlloc->EWC_ALLOC(cBNew, sizeof(char));
+
+	CBCopyCoz(pCozSource, pCozNew, cBNew);
+	return pCozNew;
 }
 
 void DoNothing()

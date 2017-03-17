@@ -459,14 +459,6 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 
 
 
-struct SDIFile // tag = dif
-{
-	LLVMOpaqueValue *				m_pLvalScope;
-	LLVMOpaqueValue *				m_pLvalFile;
-
-	EWC::CDynAry<LLVMOpaqueValue *>	m_aryLvalScopeStack;
-};
-
 void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile)
 {
 	char * pCozPath = ".";
@@ -661,8 +653,8 @@ static inline LLVMOpaqueValue * PLvalCreateDebugFunction(
 	CIRBuilder * pBuild,
 	const char * pChzName,
 	const char * pChzMangled,
-	CSTNode * pStnodFunction,
-	CSTNode * pStnodBody,
+	CSTNode * pStnodFunction,	// BB - should be lexlocFunction
+	CSTNode * pStnodBody,		// BB - should be lexlocBody
 	LLVMOpaqueValue * pLvalDIFunctionType,
 	LLVMOpaqueValue * pLvalFunction)
 {
@@ -3415,23 +3407,27 @@ void GeneratePredicate(
 	}
 }
 
-static inline CIRValue * PValGenerateMethodBody(
+static inline void GenerateMethodBody(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild,
 	CIRProcedure * pProc,
-	CSTNode * pStnodBody, 
+	CSTNode ** apStnodBody, 
+	int cpStnodBody,
 	bool fNeedsNullReturn)
 {
-	EWC_ASSERT(pProc && pStnodBody, "bad parameters to PValGenerateMethodBody");
+	EWC_ASSERT(pProc && apStnodBody && cpStnodBody, "bad parameters to GenerateMethodBody");
 	EWC_ASSERT(pProc->m_pLvalDIFunction, "Missing debug info function");
 
-	auto pDif = PDifEnsure(pWork, pBuild, pStnodBody->m_lexloc.m_strFilename.PCoz());
+	auto pDif = PDifEnsure(pWork, pBuild, apStnodBody[0]->m_lexloc.m_strFilename.PCoz());
 	PushDIScope(pDif, pProc->m_pLvalDIFunction);
 
 	pBuild->ActivateProcedure(pProc, pProc->m_pBlockLocals);
 	pBuild->ActivateBlock(pProc->m_pBlockFirst);
 
-	CIRValue * pValRet = PValGenerate(pWork, pBuild, pStnodBody, VALGENK_Instance);
+	for (int ipStnodBody = 0; ipStnodBody < cpStnodBody; ++ipStnodBody)
+	{
+		(void) PValGenerate(pWork, pBuild, apStnodBody[ipStnodBody], VALGENK_Instance);
+	}
 
 	if (fNeedsNullReturn)
 	{
@@ -3448,7 +3444,6 @@ static inline CIRValue * PValGenerateMethodBody(
 	pBuild->ActivateProcedure(nullptr, nullptr);
 
 	pBuild->m_arypProcVerify.Append(pProc);
-	return pValRet;
 }
 
 // helper routine for generating operators, used to make sure type checking errors are in sync with the code generator
@@ -4222,7 +4217,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 			if (pProc && pStnodBody)
 			{
-				(void) PValGenerateMethodBody(pWork, pBuild, pProc, pStnodBody, false);
+				GenerateMethodBody(pWork, pBuild, pProc, &pStnodBody, 1, false);
 			}
 		} break;
 	case PARK_List:
@@ -5329,6 +5324,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 					pValOp = pBuild->PInstCreate(IROP_Not, pValOperandCast, "NCmpEq");
 				} break;
+			case '+':
+				{
+					pValOp = pValOperand;
+				} break;
 			case '-':
 				{
 					switch (tink)
@@ -5818,66 +5817,42 @@ void CodeGenEntryPoint(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild, 
 	CSymbolTable * pSymtabTop,
-	CAry<CWorkspace::SEntry> * paryEntry,
+	CAry<SWorkspaceEntry> * paryEntry,
 	CAry<int> * paryiEntryOrder)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
+	CIRProcedure * pProcImplicit = nullptr;
+
 	int * piEntryMax = paryiEntryOrder->PMac();
+
+	CDynAry<CSTNode *> arypStnodUnitTest(pWork->m_pAlloc, BK_UnitTest, (int)paryiEntryOrder->C());	// entry points from unit tests that are not procedure definitions
 	for (int * piEntry = paryiEntryOrder->A(); piEntry != piEntryMax; ++piEntry)
 	{
-		CWorkspace::SEntry *pEntry = &(*paryEntry)[*piEntry];
+		SWorkspaceEntry *pEntry = &(*paryEntry)[*piEntry];
 		CSTNode * pStnod = pEntry->m_pStnod;
 
 		EWC_ASSERT(pBuild->m_pProcCur == nullptr, "expected null procedure for entry point.");
 
 		bool fGlobalTypeDeclaration = false;
-		bool fImplicitFunction = (pWork->m_globmod == GLOBMOD_UnitTest);
 
+		bool fImplicitFunction = (pWork->m_globmod == GLOBMOD_UnitTest);
 		switch (pStnod->m_park)
 		{
-			case PARK_StructDefinition:		fGlobalTypeDeclaration = true;	break;
-			case PARK_EnumDefinition:		fGlobalTypeDeclaration = true;	break;
-			case PARK_Typedef:				fGlobalTypeDeclaration = true;	break;
-			case PARK_Nop:					fGlobalTypeDeclaration = true;	break;
-			case PARK_ProcedureDefinition:	fImplicitFunction = false;		break;
+		case PARK_StructDefinition:		fGlobalTypeDeclaration = true;	break;
+		case PARK_EnumDefinition:		fGlobalTypeDeclaration = true;	break;
+		case PARK_Typedef:				fGlobalTypeDeclaration = true;	break;
+		case PARK_Nop:					fGlobalTypeDeclaration = true;	break;
+		case PARK_ProcedureDefinition:	fImplicitFunction = false;		break;
 		}
 
-		char aCh[128];
 		if (fGlobalTypeDeclaration)
 		{
 			continue;
 		}
 		else if (fImplicitFunction)
 		{
-			CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
-			pEntry->m_pProc = pProc;
-
-			GenerateUniqueName(&pWork->m_unset, "__AnonFunc__", aCh, EWC_DIM(aCh));
-
-			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
-			pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
-
-			pProc->m_pBlockLocals = pBuild->PBlockCreate(pProc, aCh);
-			pProc->m_pBlockFirst = pBuild->PBlockCreate(pProc, aCh);
-
-			s32 iLineBody, iColBody;
-			CalculateLinePosition(pWork, &pStnod->m_lexloc, &iLineBody, &iColBody);
-
-			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
-			u64 cBitAlign = cBitSize;
-			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0, cBitSize, cBitAlign);
-
-			pProc->m_pLvalDIFunction = PLvalCreateDebugFunction(
-										pWork,
-										pBuild,
-										aCh,
-										nullptr,
-										pStnod,
-										pStnod,
-										pLvalDIFunctionType,
-										pProc->m_pLvalFunction);
-
-			(void) PValGenerateMethodBody(pWork, pBuild, pProc, pStnod, true);
+			arypStnodUnitTest.Append(pStnod);
+			continue;
 		}
 		else
 		{
@@ -5902,6 +5877,36 @@ void CodeGenEntryPoint(
 
 				pEntry->m_pProc = pProc;
 			}
+		}
+
+		if (!arypStnodUnitTest.FIsEmpty())
+		{
+			pProcImplicit = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
+
+			char aCh[128];
+			GenerateUniqueName(&pWork->m_unset, "__AnonFunc__", aCh, EWC_DIM(aCh));
+
+			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
+			pProcImplicit->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
+
+			pProcImplicit->m_pBlockLocals = pBuild->PBlockCreate(pProcImplicit, aCh);
+			pProcImplicit->m_pBlockFirst = pBuild->PBlockCreate(pProcImplicit, aCh);
+
+			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
+			u64 cBitAlign = cBitSize;
+			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0, cBitSize, cBitAlign);
+
+			pProcImplicit->m_pLvalDIFunction = PLvalCreateDebugFunction(
+													pWork,
+													pBuild,
+													aCh,
+													nullptr,
+													arypStnodUnitTest[0],
+													arypStnodUnitTest[0],
+													pLvalDIFunctionType,
+													pProcImplicit->m_pLvalFunction);
+
+			GenerateMethodBody(pWork, pBuild, pProcImplicit, arypStnodUnitTest.A(), (int)arypStnodUnitTest.C(), true);
 		}
 	}
 
@@ -5930,6 +5935,11 @@ void CodeGenEntryPoint(
 		printf("\n\n LLVM IR:\n");
 		pBuild->PrintDump();
 		EmitError(pWork, nullptr, "Code generation for entry point is invalid");
+	}
+
+	if (pProcImplicit)
+	{
+		pAlloc->EWC_DELETE(pProcImplicit);
 	}
 }
 
@@ -6079,13 +6089,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		if (!pFile->m_pChzFileBody)
 			continue;
 
-		// skip a unicode byte order mark
-		const u8 * pCozFileBody = (u8 *)pFile->m_pChzFileBody;
-		// utf8 BOM
-		if (pCozFileBody[0] == 0xEF && pCozFileBody[1] == 0xBB && pCozFileBody[2] == 0xBF)
-		{
-			pCozFileBody += 3;
-		}
+		const char * pCozFileBody = PCozSkipUnicodeBOM(pFile->m_pChzFileBody);
 
 		printf("Parsing %s\n", pFile->m_strFilename.PCoz());
 		BeginParse(pWork, &lex, (char *)pCozFileBody);

@@ -361,6 +361,7 @@ CSTValue * PStvalExpected(CSTNode * pStnod);
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
 void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GRFDBGSTR grfdbgstr = FDBGSTR_None);
 void WriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
+void HideDebugStringForEntries(CWorkspace * pWork, size_t cBHiddenMax);
 
 inline bool FIsReservedWord(CSTNode * pStnod, RWORD rword)
 {

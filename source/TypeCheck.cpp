@@ -1533,6 +1533,8 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 		}
 	}
 
+	pTinDst = PTinStripQualifiers(pTinDst); 
+
 	bool fWasHandled;
 	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit);
 	if (fWasHandled)
@@ -4501,7 +4503,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 								else
 								{
-									(void) FCanImplicitCast(pTinInit, pTinInstance);
 									EmitError(pTcwork, pStnod, "Cannot initialize variable of type '%s' with '%s'",
 										StrFromTypeInfo(pStnod->m_pTin).PCoz(),
 										StrFromTypeInfo(pTinInit).PCoz());
@@ -6017,7 +6018,7 @@ void PerformTypeCheck(
 	CAlloc * pAlloc,
 	SErrorManager * pErrman,
 	CSymbolTable * pSymtabTop,
-	CAry<CWorkspace::SEntry> * paryEntry,
+	CAry<SWorkspaceEntry> * paryEntry,
 	CAry<int> * paryiEntryChecked, 
 	GLOBMOD globmod)
 {
@@ -6030,9 +6031,9 @@ void PerformTypeCheck(
 		pSymRoot = pSymtabTop->PSymEnsure(pErrman, "__ImplicitMethod", nullptr);
 	}
 
-	CWorkspace::SEntry * pEntryMax = paryEntry->PMac();
+	SWorkspaceEntry * pEntryMax = paryEntry->PMac();
 	int ipTcfram = 0;
-	for (CWorkspace::SEntry * pEntry = paryEntry->A(); pEntry != pEntryMax; ++pEntry, ++ipTcfram)
+	for (SWorkspaceEntry * pEntry = paryEntry->A(); pEntry != pEntryMax; ++pEntry, ++ipTcfram)
 	{
 		EWC_ASSERT(pEntry->m_pSymtab, "entry point without symbol table");
 		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
@@ -6288,6 +6289,30 @@ void AssertTestSigned65()
 
 }
 
+void SwapDoubleHashForPlatformBits(const char * pChInput, char * aChOut, size_t cB)
+{
+#if EWC_X64
+	const char * pChzWord = "64";
+#else
+	const char * pChzWord = "32";
+#endif
+
+	//size_t cCh = CCh(pCozExpected);
+	for (size_t iCh = 0; iCh < cB; ++iCh)
+	{
+		if (iCh < cB - 2 && pChInput[iCh] == '#' && pChInput[iCh + 1] == '#')
+		{
+			aChOut[iCh] = pChzWord[0];
+			++iCh;
+			aChOut[iCh] = pChzWord[1];
+		}
+		else
+		{
+			aChOut[iCh] = pChInput[iCh];
+		}
+	}
+}
+
 void AssertTestTypeCheck(
 	CWorkspace * pWork,
 	const char * pCozIn,
@@ -6314,27 +6339,9 @@ void AssertTestTypeCheck(
 
 	WriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type|FDBGSTR_LiteralSize|FDBGSTR_NoWhitespace);
 
-#if EWC_X64
-	const char * pChzWord = "64";
-#else
-	const char * pChzWord = "32";
-#endif
-
 	char aChExpected[1024];
-	size_t cCh = CCh(pCozExpected);
-	for (size_t iCh = 0; iCh < cCh+1; ++iCh)
-	{
-		if (iCh < cCh - 1 && pCozExpected[iCh] == '#' && pCozExpected[iCh + 1] == '#')
-		{
-			aChExpected[iCh] = pChzWord[0];
-			++iCh;
-			aChExpected[iCh] = pChzWord[1];
-		}
-		else
-		{
-			aChExpected[iCh] = pCozExpected[iCh];
-		}
-	}
+	size_t cB = CBCoz(pCozExpected);
+	SwapDoubleHashForPlatformBits(pCozExpected, aChExpected, cB);
 
 	EWC_ASSERT(FAreCozEqual(aCh, aChExpected), "type check debug string doesn't match expected value");
 

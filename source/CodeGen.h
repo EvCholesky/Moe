@@ -31,11 +31,13 @@ struct LLVMOpaqueValue;
 class CIRBuilderErrorContext;
 class CIRInstruction;
 class CSTNode;
+class CSymbolTable;
 class CWorkspace;
 struct SSymbol;
 struct SErrorManager;
 struct STypeInfo;
 struct STypeInfoInteger;
+struct SWorkspaceEntry;
 
 
 
@@ -418,6 +420,14 @@ public:
 	EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
 };
 
+struct SDIFile // tag = dif (debug info file)
+{
+	LLVMOpaqueValue *				m_pLvalScope;
+	LLVMOpaqueValue *				m_pLvalFile;
+
+	EWC::CDynAry<LLVMOpaqueValue *>	m_aryLvalScopeStack;
+};
+
 
 
 enum VALGENK
@@ -434,3 +444,9 @@ void InitLLVM(EWC::CAry<const char*> * paryPCozArgs);
 void ShutdownLLVM();
 
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn);
+void CodeGenEntryPoint(
+	CWorkspace * pWork,
+	CIRBuilder * pBuild, 
+	CSymbolTable * pSymtabTop,
+	EWC::CAry<SWorkspaceEntry> * paryEntry,
+	EWC::CAry<int> * paryiEntryOrder);

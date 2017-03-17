@@ -24,22 +24,32 @@ namespace EWC
 }
 
 class CIRProcedure;
+class CIRValue;
 class CParseContext;
 class CSTNode;
+class CSymbolTable;
 class CWorkspace;
 struct SDIFile;
 struct SLexerLocation;
+struct STypeInfo;
+struct STypeInfoProcedure;
 
 struct SErrorManager	//  // tag = errman
 {
-				SErrorManager()
-				:m_pWork(nullptr)
+				SErrorManager(CWorkspace * pWork = nullptr)
+				:m_pWork(pWork)
 				,m_cError(0)
 				,m_cWarning(0)
 					{ ; }
 
+
 	void		Clear()
 					{ m_cError = 0; m_cWarning = 0;}
+	void		AddChildErrors(const SErrorManager * pErrmanOther)
+					{
+						m_cError += pErrmanOther->m_cError;
+						m_cWarning += pErrmanOther->m_cWarning;
+					}
 
 	CWorkspace *	m_pWork;		// back pointer for SFile lookup inside EmitError
 	int				m_cError;
@@ -119,23 +129,31 @@ extern void			GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, c
 extern EWC::CString	StrUniqueName(SUniqueNameSet * pUnset, const EWC::CString & strIn);
 
 
+
+struct SWorkspaceEntry // tag = entry
+{
+	CSTNode *				m_pStnod;
+	CSymbolTable *		 	m_pSymtab;	// symbol table for this entry, local symbols for lambdas 
+
+	// BB - could remove? (just use CSTNode::m_pVal for PARK_ProcedureDefinition?)
+	CIRProcedure *			m_pProc;
+	bool					m_fHideDebugString;	// don't print during WriteDebugStringForEntries()
+};
+
+	
+
 class CWorkspace	// tag = work
 {
 public:
-	struct SEntry // tag = entry
-	{
-		CSTNode *				m_pStnod;
-		CSymbolTable *		 	m_pSymtab;	// symbol table for this entry, local symbols for lambdas 
-
-		// BB - could remove? (just use CSTNode::m_pVal for PARK_ProcedureDefinition?)
-		CIRProcedure *			m_pProc;
-	};
-	
 	enum FILEK
 	{
-		FILEK_Nil = -1,
 		FILEK_Source,
-		FILEK_Library
+		FILEK_UnitTest,
+		FILEK_Library,
+
+		FILEK_Max,
+		FILEK_Min = 0,
+		FILEK_Nil = -1,
 	};
 
 	enum FILES
@@ -148,6 +166,7 @@ public:
 
 	static const int	s_cBFilenameMax = 1024;
 	static const char * s_pCozSourceExtension;
+	static const char * s_pCozUnitTestExtension;
 
 	struct SFile // tag = file
 	{
@@ -181,8 +200,9 @@ public:
 	CSymbolTable *			PSymtabNew(const EWC::CString & strNamespace, SUniqueNameSet * pUnset);
 
 	SFile *					PFileEnsure(const char * pCozFile, FILEK filek);
-	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek) 
-								{ return (filek == FILEK_Source) ? &m_hashHvIPFileSource :  &m_hashHvIPFileLibrary; }
+	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek);
+
+	void					CopyUnitTestFiles(CWorkspace * pWorkOther);
 	int						CFile(FILEK filek)
 								{ return PHashHvIPFile(filek)->C(); }
 	SFile *					PFileLookup(const char * pCozFile, FILEK filek);
@@ -190,12 +210,12 @@ public:
 
 	EWC::CAlloc *					m_pAlloc;
 	CParseContext *					m_pParctx;
-	EWC::CDynAry<SEntry> 			m_aryEntry;
+	EWC::CDynAry<SWorkspaceEntry> 	m_aryEntry;
 	EWC::CDynAry<int> 				m_aryiEntryChecked;		// order in which entry points were successfully type checked
 	EWC::CDynAry<CIRValue *>		m_arypValManaged;
 
-	EWC::CHash<HV, int>				m_hashHvIPFileSource;	// imported (and root) source files
-	EWC::CHash<HV, int>				m_hashHvIPFileLibrary;	// requested foreign library files
+	typedef EWC::CHash<HV, int> HashHvIPFile;
+	EWC::CHash<HV, int> *			m_mpFilekPHashHvIPFile[FILEK_Max];
 	EWC::CDynAry<SFile *> 			m_arypFile;
 	const char *					m_pChzObjectFilename;
 
@@ -217,6 +237,8 @@ void BeginParse(CWorkspace * pWork, SLexer * pLex, const char * pCozIn, const ch
 void EndParse(CWorkspace * pWork, SLexer * pLex);
 void EndWorkspace(CWorkspace * pWork);
 
+const char * PCozSkipUnicodeBOM(const char * pCozFile);
+
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint);
 size_t CChConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax);
 
@@ -224,7 +246,9 @@ void PerformTypeCheck(
 	EWC::CAlloc * pAlloc,
 	SErrorManager * pErrman, 
 	CSymbolTable * pSymtabTop,
-	EWC::CAry<CWorkspace::SEntry> * paryEntry,
+	EWC::CAry<SWorkspaceEntry> * paryEntry,
 	EWC::CAry<int> * paryiEntryChecked,
 	GLOBMOD globmod);
 
+
+void SwapDoubleHashForPlatformBits(const char * pChInput, char * aChOut, size_t cB);
