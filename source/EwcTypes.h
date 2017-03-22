@@ -320,6 +320,14 @@ struct SCopySelector
 		for (size_t i = 0; i < c; ++i)
 			new (p + i) T(orig);
 	}
+
+	static void CopyConstructArray(T * pTDst, size_t cT, const T * pTSrc)
+	{
+		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct missaligned object" );
+		auto pTDestMax = pTDst + cT;
+		for (auto pTDstIt = pTDst; pTDstIt != pTDstMax; ++pTDstIt, pTSrc)
+			new (pTDst) T(*pTSrc);
+	}
 };
 
 template <typename T>
@@ -330,6 +338,11 @@ struct SCopySelector<T, true> // trivial copy constructor
 	{ 
 		for (T * pEnd = &p[c]; p != pEnd; ++p)
 			*p = orig;
+	}
+
+	static void CopyConstructArray(T * pTDst, size_t cT, const T * pTSrc)		
+	{ 
+		CopyAB(pTSrc, pTDst, sizeof(T) * cT);
 	}
 };
 
@@ -360,6 +373,8 @@ template <typename T> void ConstructN(T * p, size_t c)						{ SConstructSelector
 
 template <typename T> void CopyConstruct(T * p, const T & orig)				{ SCopySelector<T, SHasTrivialCopy<T>::V >::CopyConstruct(p, orig); }
 template <typename T> void CopyConstructN(T * p, size_t c, const T & orig)	{ SCopySelector<T, SHasTrivialCopy<T>::V >::CopyConstructN(p, c, orig); }
+template <typename T> void CopyConstructArray(T * pTDst, size_t cT, const T * pTSrc)	
+																			{ SCopySelector<T, SHasTrivialCopy<T>::V >::CopyConstructArray(pTDst, cT, pTSrc); }
 
 template <typename T> void Destruct(T * p)									{ SDestructSelector<T, SHasTrivialDestructor<T>::V >::Destruct(p); }
 template <typename T> void DestructN(T * p, size_t c)						{ SDestructSelector<T, SHasTrivialDestructor<T>::V >::DestructN(p,c); }

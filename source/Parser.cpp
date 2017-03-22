@@ -366,7 +366,7 @@ void ParseError(CParseContext * pParctx, SLexer * pLex, const char * pChzFormat,
 	SLexerLocation lexloc(pLex);
 	va_list ap;
 	va_start(ap, pChzFormat);
-	EmitError(pParctx->m_pWork->m_pErrman, &lexloc, pChzFormat, ap);
+	EmitError(pParctx->m_pWork->m_pErrman, &lexloc, ERRID_UnknownError, pChzFormat, ap);
 }
 
 void ParseWarning(CParseContext * pParctx, SLexer * pLex, const char * pChzFormat, ...)
@@ -374,7 +374,7 @@ void ParseWarning(CParseContext * pParctx, SLexer * pLex, const char * pChzForma
 	SLexerLocation lexloc(pLex);
 	va_list ap;
 	va_start(ap, pChzFormat);
-	EmitWarning(pParctx->m_pWork->m_pErrman, &lexloc, pChzFormat, ap);
+	EmitWarning(pParctx->m_pWork->m_pErrman, &lexloc, ERRID_UnknownWarning, pChzFormat, ap);
 }
 
 EWC::CString StrUnexpectedToken(SLexer * pLex)
@@ -796,7 +796,8 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 		case TOK_Arrow:
 			{ 
 				SLexerLocation lexloc(pLex);
-				EmitError(pParctx->m_pWork->m_pErrman, &lexloc, "c-style member dereference '->' is not required, use '.'");
+				EmitError(pParctx->m_pWork->m_pErrman, &lexloc, ERRID_UnknownError, 
+					"c-style member dereference '->' is not required, use '.'");
 
 			} // fallthrough
 		case TOK('.'):		// . identifier
@@ -965,12 +966,12 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SLexer * pLex)
 
 	if (pStdecl->m_iStnodInit < 0)
 	{
-		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, "Cast statement missing right hand side");
+		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, ERRID_UnknownError, "Cast statement missing right hand side");
 	}
 
 	if (pStdecl->m_iStnodType < 0 && rword != RWORD_AutoCast)
 	{
-		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, "Cast statement missing type");
+		EmitError(pParctx->m_pWork->m_pErrman, &pStnodCast->m_lexloc, ERRID_UnknownError, "Cast statement missing type");
 	}
 	return pStnodCast;
 }
@@ -1832,7 +1833,8 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SLexer * pLex)
 		s32 iCol;
 		CalculateLinePosition(pErrman->m_pWork, &pSym->m_pStnodDefinition->m_lexloc, &iLine, &iCol);
 
-		EmitError(pErrman, &pStnodConstant->m_lexloc, "Enum constant name '%s' has already been defined at (%d, %d)", strIdent.PCoz(), iLine, iCol);
+		EmitError(pErrman, &pStnodConstant->m_lexloc, 
+			ERRID_EnumRepeat, "Enum constant name '%s' has already been defined at (%d, %d)", strIdent.PCoz(), iLine, iCol);
 	}
 
 	pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConstant, FSYM_VisibleWhenNested);
@@ -2064,14 +2066,15 @@ bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManag
 			{
 				if (pTinproc->m_fIsCommutative && !FAllowsCommutative(park))
 				{
-					EmitError(pErrman, pLexloc, "'%s' is not allowed when overloading '%s'", PCozFromRword(RWORD_Commutative), PCozFromTok(tok));
+					EmitError(pErrman, pLexloc, ERRID_UnknownError, 
+						"'%s' is not allowed when overloading '%s'", PCozFromRword(RWORD_Commutative), PCozFromTok(tok));
 					return false;
 				}
 				return true;
 			}
 		}
 
-		SError error(pErrman);
+		SError error(pErrman, ERRID_BadOverloadSig);
 		PrintErrorLine(&error, "Error:", pLexloc, "Incorrect signature for overloading operator '%s'. Options are:", PCozFromTok(tok));
 
 		for (int iPark = 0; iPark < EWC_DIM(pOvinf->m_aPark); ++iPark)
@@ -3591,7 +3594,7 @@ SSymbol * CSymbolTable::PSymEnsure(
 
 				}
 
-				EmitError(pErrman, &lexloc, "%s symbol shadows previous type definition at %s(%d, %d)", 
+				EmitError(pErrman, &lexloc, ERRID_ShadowedDefine, "%s symbol shadows previous type definition at %s(%d, %d)", 
 					strName.PCoz(),
 					pChzFilename,
 					iLine,
@@ -3913,7 +3916,7 @@ void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeI
 	else
 	{
 		SLexerLocation lexloc = (pLex) ? SLexerLocation(pLex) : SLexerLocation();
-		EmitError(pErrman, &lexloc, "Two types encountered with same name (%s)", strName.PCoz());
+		EmitError(pErrman, &lexloc, ERRID_UnknownError, "Two types encountered with same name (%s)", strName.PCoz());
 	}
 }
 
@@ -4436,7 +4439,7 @@ void AssertParseMatchTailRecurse(
 	BeginWorkspace(pWork);
 	BeginParse(pWork, &lex, pCozIn);
 
-	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
+	EWC_ASSERT(!pWork->m_pErrman->FHasErrors(), "parse errors detected");
 	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &lex, true);
@@ -4534,29 +4537,29 @@ void TestParse()
 		pCozOut = u8"(+ $😁 $✂)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "n1: int, g1, g2: float = ---";
-		pCozOut = "(decl (decl $n1 $int) (decl $g1 $float) (decl $g2 $float) (---))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "n1: int, g1, g2: float = ---";
+		//pCozOut = "(decl (decl $n1 $int) (decl $g1 $float) (decl $g2 $float) (---))";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "n1, n2: int, g: float";
-		pCozOut = "(decl (decl $n1 $int) (decl $n2 $int) (decl $g $float))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "n1, n2: int, g: float";
+		//pCozOut = "(decl (decl $n1 $int) (decl $n2 $int) (decl $g $float))";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "(@ppFunc)(2)";
 		pCozOut = "(procCall (unary[@] $ppFunc) 2)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
-		pCozOut = "(decl $func (procref (params (decl $n $s32)) $s64) $fooFunc)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
+		//pCozOut = "(decl $func (procref (params (decl $n $s32)) $s64) $fooFunc)";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "apFunc[2](2)";
 		pCozOut = "(procCall (elem $apFunc 2) 2)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "pN = cast(& int) pG";
-		pCozOut = "(= $pN (cast (ptr $int) $pG))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "pN = cast(& int) pG";
+		//pCozOut = "(= $pN (cast (ptr $int) $pG))";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "aN := {:int: 2, 4, 5} ";
 		pCozOut = "(decl $aN (arrayLit $int ({} 2 4 5)))";
@@ -4575,9 +4578,9 @@ void TestParse()
 		pCozOut = "(typedef $PtrType (ptr $s16)) (typedef $ArrayType ([] 2 $s8))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "SomeConst :: 0xFF ";
-		pCozOut = "(const $SomeConst 255)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "SomeConst :: 0xFF ";
+		//pCozOut = "(const $SomeConst 255)";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		//pCozIn = "SomeConst : s16 : 0xFF ";
 		//pCozOut = "(const $SomeConst $s16 255)";
@@ -4648,9 +4651,9 @@ void TestParse()
 		pCozOut = "({} (break) (continue) (return (= $foo \"test\")))";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "VarArgs proc (a : int, ..) #foreign";
-		pCozOut = "(func $VarArgs (params (decl $a $int) (..)) $void)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "VarArgs proc (a : int, ..) #foreign";
+		//pCozOut = "(func $VarArgs (params (decl $a $int) (..)) $void)";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "{ AddNums proc (a : int, b := 1) -> int { return a + b } bah := 3 }";
 		pCozOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
@@ -4666,25 +4669,25 @@ void TestParse()
 //			" ({} (procCall $AddNums 2 3))";
 //		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ FooFunc(); n:=BarFunc(x+(ack)) }";
-		pCozOut = "({} (procCall $FooFunc) (decl $n (procCall $BarFunc (+ $x $ack))))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "{ FooFunc(); n:=BarFunc(x+(ack)) }";
+		//pCozOut = "({} (procCall $FooFunc) (decl $n (procCall $BarFunc (+ $x $ack))))";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "{ NopFunc proc () { guh := 2 } wha : & int }";
-		pCozOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "{ NopFunc proc () { guh := 2 } wha : & int }";
+		//pCozOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "STest struct { m_a := 2; m_b : int } boo : int = 3";
-		pCozOut = "(struct $STest ({} (decl $m_a 2) (decl $m_b $int))) (decl $boo $int 3)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "STest struct { m_a := 2; m_b : int } boo : int = 3";
+		//pCozOut = "(struct $STest ({} (decl $m_a 2) (decl $m_b $int))) (decl $boo $int 3)";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
 		pCozIn = "pChz := foo; guh : gur = 5; bah : s32 = woo";
 		pCozOut = "(decl $pChz $foo) (decl $guh $gur 5) (decl $bah $s32 $woo)";
 		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 
-		pCozIn = "ForeignFunc proc () -> int #foreign";
-		pCozOut = "(func $ForeignFunc $int)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
+		//pCozIn = "ForeignFunc proc () -> int #foreign";
+		//pCozOut = "(func $ForeignFunc $int)";
+		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
 			
 		pCozIn = "#import \"foo/blah/ack\" #foreign_library \"foo/blah/ack\" "
 				"#import \"test\\wha\\huh\" #foreign_library \"test\\wha\\huh\" "

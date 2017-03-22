@@ -145,6 +145,7 @@ enum TESTRES	// TEST RESults
 	TESTRES_Success,
 	TESTRES_UnitTestFailure,	// failed parsing the test
 	TESTRES_SourceError,		// the unit test has an unexpected error in it's source
+	TESTRES_MissingExpectedErr,
 	TESTRES_ParseMismatch,		
 	TESTRES_TypeCheckMismatch,
 	TESTRES_CodeGenFailure,
@@ -187,7 +188,7 @@ void ParseError(STestContext * pTesctx, SLexerLocation * pLexloc, const char * p
 {
 	va_list ap;
 	va_start(ap, pChzFormat);
-	EmitError(pTesctx->m_pErrman, pLexloc, pChzFormat, ap);
+	EmitError(pTesctx->m_pErrman, pLexloc, ERRID_UnknownError, pChzFormat, ap);
 }
 
 void ParseError(STestContext * pTesctx, SLexer * pLex, const char * pChzFormat, ...)
@@ -195,7 +196,7 @@ void ParseError(STestContext * pTesctx, SLexer * pLex, const char * pChzFormat, 
 	SLexerLocation lexloc(pLex);
 	va_list ap;
 	va_start(ap, pChzFormat);
-	EmitError(pTesctx->m_pErrman, &lexloc, pChzFormat, ap);
+	EmitError(pTesctx->m_pErrman, &lexloc, ERRID_UnknownError, pChzFormat, ap);
 }
 
 void ParseWarning(STestContext * pTesctx, SLexer * pLex, const char * pChzFormat, ...)
@@ -203,7 +204,7 @@ void ParseWarning(STestContext * pTesctx, SLexer * pLex, const char * pChzFormat
 	SLexerLocation lexloc(pLex);
 	va_list ap;
 	va_start(ap, pChzFormat);
-	EmitWarning(pTesctx->m_pErrman, &lexloc, pChzFormat, ap);
+	EmitWarning(pTesctx->m_pErrman, &lexloc, ERRID_UnknownWarning, pChzFormat, ap);
 }
 
 char * PCozExpectString(STestContext * pTesctx, SLexer * pLex)
@@ -297,7 +298,7 @@ void PromoteStringEscapes(STestContext * pTesctx, SLexerLocation * pLexloc, cons
 			case 'n':	pSeb->AppendCoz("\n");	break;
 			case 'r':	pSeb->AppendCoz("\r");	break;
 			case 't':	pSeb->AppendCoz("\t");	break;
-			case '"':	pSeb->AppendCoz("\r");	break;
+			case '"':	pSeb->AppendCoz("\"");	break;
 			case '\'':	pSeb->AppendCoz("\\");	break;
 
 			default:	pSeb->AppendCoz("?");		break;
@@ -322,7 +323,8 @@ char * PCozAllocateSubstitution(
 	STestContext * pTesctx,
 	SLexerLocation * pLexloc,
 	const char * pCozInput,
-	const CSubStack & arySub)
+	const CSubStack & arySub,
+	SSubstitution * pSubSelf = nullptr)
 {
 	if (!pCozInput)
 		pCozInput = "";
@@ -358,6 +360,11 @@ char * PCozAllocateSubstitution(
 			{
 				CString strName(pCozIt, pCozEnd - pCozIt +1);
 				ParseError(pTesctx, pLexloc, "Unable to find substitution for $%s in string %s", strName.PCoz(), pCozInput);
+				return nullptr;
+			}
+			else if (pSub == pSubSelf)
+			{
+				ParseError(pTesctx, pLexloc, "Cannot substitute $%s recursively in option %s", pSubSelf->m_strVar.PCoz(), pCozInput);
 				return nullptr;
 			}
 
@@ -600,7 +607,7 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 			break;
 		}
 	}
-
+	
 	return pUtest;
 }
 
@@ -654,41 +661,88 @@ void PrintTestError(const char * pCozIn, const char * pCozOut, const char * pCoz
 	printf("\n\n");
 }
 
+bool FCheckForExpectedErrors(SErrorManager * pErrman, ERRID erridMin, ERRID erridMax, TESTRES * pTestres)
+{
+	auto paryErrcExpected = pErrman->m_paryErrcExpected;
+	if (!paryErrcExpected)
+		return false;
+
+	const char * pChzSpacer = "";
+	{
+		int cErrInRange = 0;
+		auto pErrcMax = paryErrcExpected->PMac();
+		for (auto pErrc = paryErrcExpected->A(); pErrc != pErrcMax; ++pErrc)
+		{
+			if (pErrc->m_errid < erridMin || pErrc->m_errid >= erridMax)
+				continue;
+
+			++cErrInRange;
+			if (pErrc->m_c)
+			{
+				printf("%s Error(%d)", pChzSpacer, pErrc->m_errid);
+			}
+			else
+			{
+				printf("%sMissing expected Error(%d)", pChzSpacer, pErrc->m_errid);
+				*pTestres = TESTRES_MissingExpectedErr;
+			}
+			pChzSpacer = ", ";
+		}
+
+		if (cErrInRange)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 TESTRES TestresRunUnitTest(
-	CWorkspace * pWork,
+	CWorkspace * pWorkParent,
 	SUnitTest * pUtest,
 	const char * pCozPrereq,
 	const char * pCozIn,
 	const char * pCozParseExpected,
-	const char * pCozTypeCheckExpected)
+	const char * pCozTypeCheckExpected,
+	CDynAry<SErrorCount> * paryErrcExpected)
 {
+	if (pCozPrereq && pCozPrereq[0] != '\0')
+		printf("(%s): %s\n%s ", pUtest->m_strName.PCoz(), pCozPrereq, pCozIn);
+	else
+		printf("(%s): %s ", pUtest->m_strName.PCoz(), pCozIn);
+
+	SErrorManager errmanTest;
+	CWorkspace work(pWorkParent->m_pAlloc, &errmanTest);
+	errmanTest.m_paryErrcExpected = paryErrcExpected;
+	work.CopyUnitTestFiles(pWorkParent);
 
 #ifdef EWC_TRACK_ALLOCATION
 	u8 aBAltrac[1024 * 100];
 	CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
 
 	CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
-	pWork->m_pAlloc->SetAltrac(pAltrac);
+	work.m_pAlloc->SetAltrac(pAltrac);
 #endif
 
-	BeginWorkspace(pWork);
+	BeginWorkspace(&work);
 
-	SStringEditBuffer sebFilename(pWork->m_pAlloc);
-	SStringEditBuffer sebInput(pWork->m_pAlloc);
+	SStringEditBuffer sebFilename(work.m_pAlloc);
+	SStringEditBuffer sebInput(work.m_pAlloc);
 	CWorkspace::SFile * pFile = nullptr;
 
-	pWork->m_globmod = GLOBMOD_UnitTest;
+	work.m_globmod = GLOBMOD_UnitTest;
 
 	sebFilename.AppendCoz(pUtest->m_strName.PCoz());
-	pFile = pWork->PFileEnsure(sebFilename.PCoz(), CWorkspace::FILEK_Source);
+	pFile = work.PFileEnsure(sebFilename.PCoz(), CWorkspace::FILEK_Source);
 
+	size_t cbPrereq = 0;
 	if (pCozPrereq)
 	{
 		sebInput.AppendCoz(pCozPrereq);
 		sebInput.AppendCoz("\n");
+		cbPrereq = sebInput.CB() - 1; // don't count the null terminator
 	}
 
-	size_t cbPrereq = sebInput.CB() - 1; // don't count the null terminator
 	if (pCozIn)
 	{
 		sebInput.AppendCoz(pCozIn);
@@ -697,31 +751,34 @@ TESTRES TestresRunUnitTest(
 	pFile->m_pChzFileBody = sebInput.PCoz();
 
 	SLexer lex;
-	BeginParse(pWork, &lex, sebInput.PCoz(), sebFilename.PCoz());
-	pWork->m_pErrman->Clear();
+	BeginParse(&work, &lex, sebInput.PCoz(), sebFilename.PCoz());
+	work.m_pErrman->Clear();
 
 	// Parse
-	ParseGlobalScope(pWork, &lex, true);
-	EndParse(pWork, &lex);
+	ParseGlobalScope(&work, &lex, true);
+	EndParse(&work, &lex);
 
-	HideDebugStringForEntries(pWork, cbPrereq);
+	HideDebugStringForEntries(&work, cbPrereq);
 
 	TESTRES testres = TESTRES_Success;
-	if (pWork->m_pErrman->m_cError)
+	if (work.m_pErrman->FHasErrors())
 	{
 		printf("Unexpected error parsing error during test %s\n", pUtest->m_strName.PCoz());
 		printf("input = \"%s\"\n", sebInput.PCoz());
 		testres = TESTRES_SourceError;
 	}
 
+	
+	bool fHasExpectedErr = FCheckForExpectedErrors(&errmanTest, ERRID_Min, ERRID_ParserMax, &testres);
+
 	char aCh[1024];
 	char * pCh = aCh;
 	char * pChMax = &aCh[EWC_DIM(aCh)];
-	if (testres == TESTRES_Success)
+	if (!fHasExpectedErr && testres == TESTRES_Success)
 	{
 		if (!FIsEmptyString(pCozParseExpected))
 		{
-			WriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Name);
+			WriteDebugStringForEntries(&work, pCh, pChMax, FDBGSTR_Name);
 
 			if (!FAreCozEqual(aCh, pCozParseExpected))
 			{
@@ -736,19 +793,21 @@ TESTRES TestresRunUnitTest(
 	if (testres == TESTRES_Success)
 	{
 		// Type Check
-		PerformTypeCheck(pWork->m_pAlloc, pWork->m_pErrman, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked, pWork->m_globmod);
-		if (pWork->m_pErrman->m_cError)
+		PerformTypeCheck(work.m_pAlloc, work.m_pErrman, work.m_pSymtab, &work.m_aryEntry, &work.m_aryiEntryChecked, work.m_globmod);
+		if (work.m_pErrman->FHasErrors())
 		{
 			printf("Unexpected error during type check test %s\n", pUtest->m_strName.PCoz());
 			printf("input = \"%s\"\n", pCozIn);
 		}
 
-		if (!FIsEmptyString(pCozTypeCheckExpected))
+		fHasExpectedErr = FCheckForExpectedErrors(&errmanTest, ERRID_TypeCheckMin, ERRID_TypeCheckMax, &testres);
+
+		if (!fHasExpectedErr && testres == TESTRES_Success && !FIsEmptyString(pCozTypeCheckExpected))
 		{
-			WriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Type | FDBGSTR_LiteralSize | FDBGSTR_NoWhitespace);
+			WriteDebugStringForEntries(&work, pCh, pChMax, FDBGSTR_Type | FDBGSTR_LiteralSize | FDBGSTR_NoWhitespace);
 
 			size_t cB = CBCoz(pCozTypeCheckExpected);
-			char * aChExpected = (char *)pWork->m_pAlloc->EWC_ALLOC(cB, 1);
+			char * aChExpected = (char *)work.m_pAlloc->EWC_ALLOC(cB, 1);
 			SwapDoubleHashForPlatformBits(pCozTypeCheckExpected, aChExpected, cB);
 
 			if (!FAreCozEqual(aCh, aChExpected))
@@ -758,37 +817,47 @@ TESTRES TestresRunUnitTest(
 				PrintTestError(pCozIn, aCh, aChExpected);
 				testres = TESTRES_TypeCheckMismatch;
 			}
-			pWork->m_pAlloc->EWC_DELETE(aChExpected);
+			work.m_pAlloc->EWC_DELETE(aChExpected);
 		}
 	}
 
 	if (testres == TESTRES_Success)
 	{
-		CIRBuilder build(pWork, &pWork->m_arypValManaged, sebFilename.PCoz(), FCOMPILE_None);
-		CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+		CIRBuilder build(&work, &work.m_arypValManaged, sebFilename.PCoz(), FCOMPILE_None);
+		CodeGenEntryPoint(&work, &build, work.m_pSymtab, &work.m_aryEntry, &work.m_aryiEntryChecked);
 
-		if (pWork->m_pErrman->m_cError)
+		if (work.m_pErrman->FHasErrors())
 		{
 			printf("Unexpected error during codegen for test %s\n", pUtest->m_strName.PCoz());
 			testres = TESTRES_CodeGenFailure;
 		}
 	}
+
+	(void) FCheckForExpectedErrors(&errmanTest, ERRID_CodeGenMin, ERRID_Max, &testres);
+
 	sebFilename.Resize(0, 0, 0);
 	sebInput.Resize(0, 0, 0);
 	
 
 	if (pFile && pFile->m_pDif)
 	{
-		pWork->m_pAlloc->EWC_DELETE(pFile->m_pDif);
+		work.m_pAlloc->EWC_DELETE(pFile->m_pDif);
 		pFile->m_pDif = nullptr;
 	}
 
-	EndWorkspace(pWork);
+
+	pWorkParent->m_pErrman->AddChildErrors(&errmanTest);
+	errmanTest.m_aryErrid.Clear();
+	EWC_ASSERT(pWorkParent->m_pErrman->m_pWork == pWorkParent, "whaa?");
+
+	EndWorkspace(&work);
 
 #ifdef EWC_TRACK_ALLOCATION
 	DeleteAltrac(&allocAltrac, pAltrac);
-	pWork->m_pAlloc->SetAltrac(nullptr);
+	work.m_pAlloc->SetAltrac(nullptr);
 #endif
+	
+	printf("\n");
 	return testres;
 }
 
@@ -806,7 +875,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 		pSub->m_pOpt = *ppOpt;
 		if (pSub->m_pOpt->m_fAllowSubstitution)
 		{
-			pCozSub = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pSub->m_pOpt->m_pCozOption, pTesctx->m_arySubStack);
+			pCozSub = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pSub->m_pOpt->m_pCozOption, pTesctx->m_arySubStack, pSub);
 			pSub->m_pCozOption = pCozSub;
 		}
 		else
@@ -825,8 +894,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 		}
 		else
 		{
-			bool fHasError = false;
-
+			CDynAry<SErrorCount> aryErrcExpected(pTesctx->m_pAlloc, BK_UnitTest);
 			auto pSubMax = pTesctx->m_arySubStack.PMac();
 			for (auto pSubIt = pTesctx->m_arySubStack.A(); pSubIt != pSubMax; ++pSubIt)
 			{
@@ -834,41 +902,30 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 
 				if (pSubIt->m_pOpt->m_erridExpected != ERRID_Nil)
 				{
-				//	printf("ERRID(%d) ", pSubIt->m_pOpt->m_erridExpected);
-					fHasError = true;
+					aryErrcExpected.Append(pSubIt->m_pOpt->m_erridExpected);
 				}
 			}
 
 			//printf("\n");
 
+
 			// error testing is not in yet.
-			if (!fHasError)
 			{
 				auto pCozPrereq = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozPrereq, pTesctx->m_arySubStack);
 				auto pCozInput = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozInput, pTesctx->m_arySubStack);
 				auto pCozParse = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozParse, pTesctx->m_arySubStack);
 				auto pCozTypeCheck = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozTypeCheck, pTesctx->m_arySubStack);
 
-				printf("(%s): %s\n", pUtest->m_strName.PCoz(), pCozInput);
-				//printf("    par: %s\n", pCozParse);
-				//printf("    typ: %s\n", pCozTypeCheck);
-
-				TESTRES testres = TESTRES_UnitTestFailure;
 				if (!pCozInput || !pCozParse || !pCozTypeCheck)
 				{
 					printf("... skipping test due to errors\n");
 				}
 				else
 				{
-					SErrorManager errmanTest(pTesctx->m_pWork);
-					CWorkspace workChild(pTesctx->m_pWork->m_pAlloc, &errmanTest);
-					workChild.CopyUnitTestFiles(pTesctx->m_pWork);
-					testres = TestresRunUnitTest(&workChild, pUtest, pCozPrereq, pCozInput, pCozParse, pCozTypeCheck);
-					pTesctx->m_pErrman->AddChildErrors(&errmanTest);
-
-					pTesctx->m_pErrman->m_pWork = pTesctx->m_pWork;
+					TESTRES testres = TESTRES_UnitTestFailure;
+					testres = TestresRunUnitTest(pTesctx->m_pWork, pUtest, pCozPrereq, pCozInput, pCozParse, pCozTypeCheck, &aryErrcExpected);
+					++pTesctx->m_mpTestresCResults[testres];
 				}
-				++pTesctx->m_mpTestresCResults[testres];
 
 				if (pCozPrereq) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozPrereq);
 				if (pCozInput) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozInput);
@@ -900,6 +957,15 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 	for (auto ppUtest = arypUtest.A(); ppUtest != ppUtestMax; ++ppUtest)
 	{
 		SUnitTest * pUtest = *ppUtest;
+
+		if (pUtest->m_arypPerm.FIsEmpty())
+		{
+			// no permutations, just test it as is.
+			TESTRES testres = TESTRES_UnitTestFailure;
+			testres = TestresRunUnitTest(tesctx.m_pWork, pUtest, pUtest->m_pCozPrereq, pUtest->m_pCozInput, pUtest->m_pCozParse, pUtest->m_pCozTypeCheck, nullptr);
+			++tesctx.m_mpTestresCResults[testres];
+			continue;
+		}
 
 		auto ppPermMax = pUtest->m_arypPerm.PMac();
 		for (auto ppPerm = pUtest->m_arypPerm.A(); ppPerm != ppPermMax; ++ppPerm)
@@ -939,6 +1005,6 @@ bool FUnitTestFile(CWorkspace * pWork, const char * pChzFilenameIn)
 	lex.m_pCozFilename = pFile->m_strFilename.PCoz();
 
 	ParseAndTestMoetestFile(pAlloc, pWork->m_pErrman, &lex);
-	return pWork->m_pErrman->m_cError == 0;
+	return !pWork->m_pErrman->FHasErrors();
 }
 		

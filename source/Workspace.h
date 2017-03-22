@@ -14,6 +14,7 @@
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
 #pragma once
+#include "Error.h"
 #include "EwcArray.h"
 #include "EwcHash.h"
 #include "EwcString.h"
@@ -34,41 +35,82 @@ struct SLexerLocation;
 struct STypeInfo;
 struct STypeInfoProcedure;
 
+struct SErrorCount	// tag = errc
+{
+			SErrorCount(ERRID errid)
+			:m_errid(errid)
+			,m_c(0)
+				{ ; }
+
+	ERRID	m_errid;
+	int		m_c;
+};
+
 struct SErrorManager	//  // tag = errman
 {
-				SErrorManager(CWorkspace * pWork = nullptr)
-				:m_pWork(pWork)
-				,m_cError(0)
-				,m_cWarning(0)
-					{ ; }
+				SErrorManager();
 
+	void		SetWorkspace(CWorkspace * pWork);
 
 	void		Clear()
-					{ m_cError = 0; m_cWarning = 0;}
+					{ 
+						m_aryErrid.Clear();
+					}
 	void		AddChildErrors(const SErrorManager * pErrmanOther)
 					{
-						m_cError += pErrmanOther->m_cError;
-						m_cWarning += pErrmanOther->m_cWarning;
+						auto paryErridOther = &pErrmanOther->m_aryErrid;
+						m_aryErrid.Append(paryErridOther->A(), paryErridOther->C());
 					}
+	bool		FHasHiddenErrors();
+	bool		FHasErrors()
+					{
+						return CError() != 0;
+					}
+	int			CError()
+					{	
+						int cError, cWarning; 
+						ComputeErrorCounts(&cError, &cWarning);
+						return cError;
+					}
+	int			CWarning()
+					{	
+						int cError, cWarning; 
+						ComputeErrorCounts(&cError, &cWarning);
+						return cWarning;
+					}
+	void		ComputeErrorCounts(int * pCError, int * pCWarning);
+	bool		FTryHideError(ERRID errid);
 
-	CWorkspace *	m_pWork;		// back pointer for SFile lookup inside EmitError
-	int				m_cError;
-	int				m_cWarning;
+	CWorkspace *		m_pWork;			// back pointer for SFile lookup inside EmitError
+	EWC::CDynAry<ERRID>	m_aryErrid;			// numbered errors (for expected unit test errors)
+
+	EWC::CDynAry<SErrorCount> *
+						m_paryErrcExpected;
+};
+
+
+enum ERRS
+{
+	ERRS_Unreported,
+	ERRS_Hidden,
+	ERRS_Reported,
 };
 
 struct SError 
 {
-						SError(SErrorManager * pErrman);
+						SError(SErrorManager * pErrman, ERRID errid = ERRID_UnknownError);
 
 	SErrorManager *		m_pErrman;
+	ERRID				m_errid;
+	ERRS				m_errs;
 };
 
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap);
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...);
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, va_list ap);
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...);
 
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap);
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...);
-void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pCoz, ...);
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, va_list ap);
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...);
+void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...);
 
 void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pCoz, va_list ap);
 void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pCoz, ...);

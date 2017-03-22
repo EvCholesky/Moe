@@ -615,7 +615,19 @@ void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const char * pCo
 
 	va_list ap;
 	va_start(ap, pCozFormat);
-	EmitError(pTcwork->m_pErrman, &lexloc, pCozFormat, ap);
+	EmitError(pTcwork->m_pErrman, &lexloc, ERRID_UnknownError, pCozFormat, ap);
+}
+
+void EmitError(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, ERRID errid, const char * pCozFormat, ...)
+{
+	// BB - need to do file/line lookup from pStnod
+	//printf("%s(%d) Error:", pLex->m_pChzFilename, NLine(pLex));
+	
+	const SLexerLocation & lexloc = pStnod->m_lexloc;
+
+	va_list ap;
+	va_start(ap, pCozFormat);
+	EmitError(pTcwork->m_pErrman, &lexloc, errid, pCozFormat, ap);
 }
 
 void AllocateOptype(CSTNode * pStnod)
@@ -2578,7 +2590,7 @@ bool FVerifyIvalk(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, IVALK ivalkEx
 		const char * pChzIvalk = PChzFromIvalk(ivalkExpected);
 		CString strLhs = StrFromStnod(pTcwork->m_pAlloc, pStnod);
 		CString strTin = StrFromTypeInfo(pStnod->m_pTin);
-		EmitError(pTcwork, pStnod, "'%s%s%s' is not a valid %s", 
+		EmitError(pTcwork, pStnod, ERRID_IncorrectIvalk, "'%s%s%s' is not a valid %s", 
 			strLhs.PCoz(), 
 			(strLhs.FIsEmpty()) ? "" : ": ",
 			strTin.PCoz(), 
@@ -2815,7 +2827,8 @@ PROCMATCH ProcmatchCheckArguments(
 	{
 		if (errep == ERREP_ReportErrors)
 		{
-			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "Too few arguments to procedure '%s'. Expected %d but encountered %d",
+			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_TooFewArgs,
+				"Too few arguments to procedure '%s'. Expected %d but encountered %d",
 				PChzProcName(pTinproc, pSymProc),
 				pTinproc->m_arypTinParams.C(),
 				cArg);
@@ -2827,7 +2840,8 @@ PROCMATCH ProcmatchCheckArguments(
 	{
 		if (errep == ERREP_ReportErrors)
 		{
-			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "Too many arguments to procedure '%s'. Expected %d but encountered %d",
+			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_TooManyArgs,
+				"Too many arguments to procedure '%s'. Expected %d but encountered %d",
 				PChzProcName(pTinproc, pSymProc),
 				pTinproc->m_arypTinParams.C(),
 				cArg);
@@ -2845,8 +2859,9 @@ PROCMATCH ProcmatchCheckArguments(
 		{
 			if (errep == ERREP_ReportErrors)
 			{
-				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "Procedure argument %d, Expected an instance, but encountered a type.",
-						iStnodArg+1);
+				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_NotRvalue,
+					"Procedure argument %d, Expected an instance, but encountered a type.",
+					iStnodArg+1);
 			}
 			return PROCMATCH_None;
 		}
@@ -2856,9 +2871,9 @@ PROCMATCH ProcmatchCheckArguments(
 		// Find the default literal promotion, as we need this to check for exact matches (which have precedence for matching)
 		//  Things that can't default (void *) are problematic.
 		STypeInfo * pTinParam = nullptr;
-		bool fIsVarArg = iStnodArg >= (int)pTinproc->m_arypTinParams.C();
+		bool fIsArgOutsideRange = iStnodArg >= (int)pTinproc->m_arypTinParams.C();
 
-		if (!fIsVarArg)
+		if (!fIsArgOutsideRange)
 		{
 			pTinParam = pTinproc->m_arypTinParams[iStnodArg];
 			if (!EWC_FVERIFY(pTinParam, "unknown parameter type"))
@@ -2870,7 +2885,8 @@ PROCMATCH ProcmatchCheckArguments(
 				{
 					if (!FVerifyIvalk(pTcwork, pStnodArg, IVALK_LValue))
 					{
-						EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "Argument %d, must be an LValue for implicit conversion to pointer.",
+						EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_NotLvalue,
+							"Argument %d, must be an LValue for implicit conversion to pointer.",
 							iStnodArg+1);
 					}
 					pTinParam = ((STypeInfoPointer*)pTinParam)->m_pTinPointedTo;
@@ -2881,13 +2897,14 @@ PROCMATCH ProcmatchCheckArguments(
 		}
 
 		STypeInfo * pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, pTinParam);
-		if (fIsVarArg)
+		if (fIsArgOutsideRange)
 		{
 			if (!pTinproc->m_fHasVarArgs)
 			{
 				if (errep == ERREP_ReportErrors)
 				{
-					EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "procedure '%s' expected %d arguments but encountered %d",
+					EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_TooManyArgs,
+						"procedure '%s' expected %d arguments but encountered %d",
 						PChzProcName(pTinproc, pSymProc),
 						pTinproc->m_arypTinParams.C(),
 						cArg);
@@ -2912,7 +2929,8 @@ PROCMATCH ProcmatchCheckArguments(
 			{
 				CString strTinCall = StrFromTypeInfo(pTinCall);
 				CString strTinParam = StrFromTypeInfo(pTinParam);
-				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "procedure call '%s' cannot convert argument %d from type %s to %s",
+				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_BadImplicitConversion,
+					"procedure call '%s' cannot convert argument %d from type %s to %s",
 					PChzProcName(pTinproc, pSymProc),
 					iStnodArg+1,
 					strTinCall.PCoz(),
@@ -2947,7 +2965,8 @@ TCRET TcretTryFindMatchingProcedureCall(
 	{
 		if (pPmparam->m_fMustFindMatch)
 		{
-			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "unknown procedure in type check: %s", strProcName.PCoz());
+			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_CantFindProc,
+				"unknown procedure in type check: %s", strProcName.PCoz());
 		}
 		return TCRET_StoppingError;
 	}
@@ -3027,7 +3046,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 		{
 			if (pPmparam->m_fMustFindMatch)
 			{
-				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "'%s' does not evaluate to a procedure.", strProcName.PCoz());
+				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_CantFindProc, "'%s' does not evaluate to a procedure.", strProcName.PCoz());
 			}
 		}
 		else if (cSymOptions == 1)
@@ -3045,9 +3064,10 @@ TCRET TcretTryFindMatchingProcedureCall(
 					}
 				}
 
-				if (pTcwork->m_pErrman->m_cError == 0)
+				if (!pTcwork->m_pErrman->FHasErrors())
 				{
-					EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, "error type matching procedure '%s'", strProcName.PCoz());
+					EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_UnknownError,
+						"error type matching procedure '%s'", strProcName.PCoz());
 				}
 			}
 		}
@@ -3340,7 +3360,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 							}
 
-							if (pTcwork->m_pErrman->m_cError)
+							if (pTcwork->m_pErrman->FHasErrors())
 								return TCRET_StoppingError;
 						}
 
@@ -4305,6 +4325,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 				auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
 
+				if (!FVerifyIvalk(pTcwork, pStnodInit, IVALK_RValue))
+					return TCRET_StoppingError;
+
 				STypeInfo * pTinInit = pStnodInit->m_pTin;
 
 				// AutoCast will be resolved during promotion of untyped RHSs
@@ -4424,6 +4447,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					if (pStdecl->m_iStnodInit >= 0)
 					{
 						CSTNode * pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+						if (!FVerifyIvalk(pTcwork, pStnodInit, IVALK_RValue))
+						{
+							pStnodInit->m_park = PARK_Uninitializer;
+						}
 
 						STypeInfo * pTinInitDefault = pStnod->m_pTin;
 						if (!pTinInitDefault && pStnodInit->m_park != PARK_Uninitializer)
@@ -4503,7 +4530,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 								else
 								{
-									EmitError(pTcwork, pStnod, "Cannot initialize variable of type '%s' with '%s'",
+									EmitError(pTcwork, pStnod, ERRID_InitTypeMismatch, 
+										"Cannot initialize variable of type '%s' with '%s'",
 										StrFromTypeInfo(pStnod->m_pTin).PCoz(),
 										StrFromTypeInfo(pTinInit).PCoz());
 								}
@@ -5424,13 +5452,19 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								else if (pStnod->CStnodChild() == 1)
 								{
 									CSTNode * pStnodRhs = pStnod->PStnodChild(0);
+									if (!FVerifyIvalk(pTcwork, pStnodRhs, IVALK_RValue))
+										return TCRET_StoppingError;
+
 									STypeInfo * pTinRhs = pStnodRhs->m_pTin;
 									STypeInfo * pTinRhsPromoted = PTinPromoteUntypedRvalueTightest(
 																	pTcwork,
 																	pTcsentTop->m_pSymtab,
 																	pStnodRhs,
 																	pTinReturn);
-									if (FCanImplicitCast(pTinRhsPromoted, pTinReturn))
+
+									// Strip the top level const, as we're declaring a new instance
+									auto pTinInstance = PTinQualifyAfterAssignment(pTinReturn, pTcsentTop->m_pSymtab);
+									if (FCanImplicitCast(pTinRhsPromoted, pTinInstance))
 									{
 										pStnod->m_pTin = pTinReturn;
 										FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinReturn, pStnodRhs);
@@ -5953,7 +5987,7 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 	auto pSym = pSymtabRoot->PSymLookup("main", lexloc);
 	if (!pSym)
 	{
-		EmitError(pErrman, &lexloc, "Failed to find global 'main' procedure");
+		EmitError(pErrman, &lexloc, ERRID_CantFindMain, "Failed to find global 'main' procedure");
 		return;
 	}
 
@@ -6062,10 +6096,10 @@ void PerformTypeCheck(
 		if (tcret == TCRET_StoppingError)
 		{
 			// make sure we've reported at least one error.
-			if (pErrman->m_cError == 0)
+			if (!pErrman->FHasErrors() && !pErrman->FHasHiddenErrors())
 			{
 				SLexerLocation lexloc;
-				EmitError(pErrman, &lexloc, "Unknown error in type checker, quitting.");
+				EmitError(pErrman, &lexloc, ERRID_UnknownError, "Unknown error in type checker, quitting.");
 			}
 
 			while (pTcfram->m_aryTcsent.C())
@@ -6323,7 +6357,7 @@ void AssertTestTypeCheck(
 	pWork->m_globmod = GLOBMOD_UnitTest;
 	BeginParse(pWork, &lex, pCozIn);
 
-	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
+	EWC_ASSERT(!pWork->m_pErrman->FHasErrors(), "parse errors detected");
 	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &lex, true);

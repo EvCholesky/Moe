@@ -238,8 +238,18 @@ public:
 	void		Append(const Type t)
 					{
 						EnsureSize(m_c+1);
-						T * retValue = &m_a[m_c++];
-						CopyConstruct(retValue, t);
+						T * pTEnd = &m_a[m_c++];
+						CopyConstruct(pTEnd, t);
+					}
+
+	void		Append(const Type * pTArray, size_t cT)
+					{
+						if (!cT)
+							return;
+
+						EnsureSize(m_c + cT);
+						T * pTEnd = &m_a[m_c++];
+						CopyConstructArray(pTEnd, cT, pTArray);
 					}
 
 	void		AppendFill(size_t c, const Type t)

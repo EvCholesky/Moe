@@ -17,14 +17,39 @@
 
 enum ERRID
 {
-	ERRID_ParserBegin		= 1000,
-	ERRID_ParserEnd			= 2000,
+	ERRID_UnknownError				= 0,
+	ERRID_FailedOpeningFile 		= 1,
 
-	ERRID_TypeCheckBegin	= ERRID_ParserEnd,
-	ERRID_TypeCheckEnd		= 3000,
+	ERRID_ParserMin					= 1000,
+	ERRID_EnumRepeat				= 1001,
+	ERRID_ShadowedDefine			= 1002,
+	ERRID_BadOverloadSig			= 1003,
+	ERRID_ParserMax					= 2000,
 
-	ERRID_CodeGenBegin		= ERRID_TypeCheckEnd,
-	ERRID_CodeGenEnd		= 3000,
+	ERRID_TypeCheckMin				= ERRID_ParserMax,
+	ERRID_InitTypeMismatch			= 2001,
+	ERRID_TooFewArgs				= 2002,
+	ERRID_TooManyArgs				= 2003,
+	ERRID_NotLvalue					= 2004,
+	ERRID_NotRvalue					= 2005,
+	ERRID_BadImplicitConversion		= 2006,
+	ERRID_CantFindProc				= 2007,
+	ERRID_CantFindMain				= 2008,
+	ERRID_IncorrectIvalk			= 2009,
+	ERRID_TypeCheckMax				= 3000,
+
+	ERRID_CodeGenMin				= ERRID_TypeCheckMax,
+	ERRID_UnreachableInst			= 3001,
+	ERRID_BadStore					= 3002,
+	ERRID_BadCastGen				= 3003,
+	ERRID_ObjFileFail				= 3004,
+	ERRID_CodeGenMax				= 4000,
+	ERRID_ErrorMax					= 10000,
+
+	ERRID_WarningMin				= 10000,
+	ERRID_UnknownWarning			= 10000,
+	ERRID_WarningMax				= 20000,
+
 
 	ERRID_Max,
 	ERRID_Min = 0,

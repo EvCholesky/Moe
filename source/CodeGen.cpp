@@ -1182,7 +1182,7 @@ CIRInstruction * CIRBuilder::PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRVa
 	{
 		if (irop != IROP_Branch && EWC_FVERIFY(m_pBerrctx, "trying to throw warning with no error context"))
 		{
-			EmitWarning(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, "Unreachable instruction detected");
+			EmitWarning(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, ERRID_UnreachableInst, "Unreachable instruction detected");
 		}
 		irop = IROP_Error;
 		pValLhs = nullptr;
@@ -1487,7 +1487,7 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 	{
 		printf("pLtypeT:"); LLVMDumpType(pLtypeT);
 		printf("pLtypePT: (dest)"); LLVMDumpType(pLtypePT);
-		EmitError(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, "bad store information\n");
+		EmitError(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, ERRID_BadStore, "bad store information\n");
 	}
 
 #if WARN_ON_LARGE_STORE
@@ -3127,7 +3127,7 @@ static inline CIRValue * PValGenerateCast(
 		auto pVal = PValCreateCast(pWork, pBuild, pValSrc, pTinRhs, pTinOut);
 		if (!pVal)
 		{
-			EmitError(pWork, &pStnodRhs->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
+			EmitError(pWork, &pStnodRhs->m_lexloc, ERRID_BadCastGen, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
 		}
 		return pVal;
 	}
@@ -3138,7 +3138,7 @@ static inline CIRValue * PValGenerateCast(
 	auto pVal = PValCreateCast(pWork, pBuild, pValRhs, pTinRhs, pTinOut);
 	if (!pVal)
 	{
-		EmitError(pWork, &pStnodRhs->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
+		EmitError(pWork, &pStnodRhs->m_lexloc, ERRID_BadCastGen, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
 	}
 	return pVal;
 }
@@ -3398,7 +3398,8 @@ void GeneratePredicate(
 		CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
 		if (!pValPredCast)
 		{
-			EmitError(pWork, &pStnodPred->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast in predicate.");
+			EmitError(pWork, &pStnodPred->m_lexloc, ERRID_BadCastGen, 
+				"INTERNAL ERROR: trying to codegen unsupported numeric cast in predicate.");
 		}
 		else
 		{
@@ -4796,9 +4797,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					else
 					{
 						if (pString)
-							EmitError(pWork, &pStnod->m_lexloc, "Could not %s to label matching '%s'", PCozFromRword(rword), pString->PCoz());
+						{
+							EmitError(pWork, &pStnod->m_lexloc, ERRID_UnknownError,
+								"Could not %s to label matching '%s'", PCozFromRword(rword), pString->PCoz());
+						}
 						else
-							EmitError(pWork, &pStnod->m_lexloc, "Encountered %s statement outside of a loop or switch", PCozFromRword(rword));
+							EmitError(pWork, &pStnod->m_lexloc, ERRID_UnknownError,
+								"Encountered %s statement outside of a loop or switch", PCozFromRword(rword));
 					}
 
 				} break;
@@ -4912,7 +4917,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!pStnod->m_pSym || !pStnod->m_pSym->m_pVal)
 			{
 				CString strName(StrFromIdentifier(pStnod));
-				EmitError(pWork, &pStnod->m_lexloc, "INTERNAL ERROR: Missing value for symbol %s", strName.PCoz());
+				EmitError(pWork, &pStnod->m_lexloc, ERRID_UnknownError, "INTERNAL ERROR: Missing value for symbol %s", strName.PCoz());
 			}
 
 			CIRValue * pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
@@ -5217,7 +5222,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 	
 			if (LLVMTypeOf(pValLhsCast->m_pLval) != LLVMTypeOf(pValRhsCast->m_pLval))
 			{
-				EmitError(pWork, &pStnod->m_lexloc, "INTERNAL ERROR: bad cast");
+				EmitError(pWork, &pStnod->m_lexloc, ERRID_BadCastGen, "INTERNAL ERROR: bad cast");
 				DumpLtype("Lhs", pValLhsCast);
 				DumpLtype("Rhs", pValRhsCast);
 				return nullptr;
@@ -5318,7 +5323,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					CIRValue * pValOperandCast = PValCreateCast(pWork, pBuild, pValOperand, pTinOperand, pTinOutput);
 					if (!pValOperandCast)
 					{
-						EmitError(pWork, &pStnod->m_lexloc, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
+						EmitError(pWork, &pStnod->m_lexloc, ERRID_BadCastGen, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
 						return nullptr;
 					}
 
@@ -5934,7 +5939,7 @@ void CodeGenEntryPoint(
 	{
 		printf("\n\n LLVM IR:\n");
 		pBuild->PrintDump();
-		EmitError(pWork, nullptr, "Code generation for entry point is invalid");
+		EmitError(pWork, nullptr, ERRID_UnknownError, "Code generation for entry point is invalid");
 	}
 
 	if (pProcImplicit)
@@ -6034,7 +6039,7 @@ void CompileToObjectFile(CWorkspace * pWork, CIRBuilder * pBuild, const char * p
 
 	if (fFailed)
 	{
-		EmitError(pWork, nullptr, "Error generating object file\n%s", pChzError);
+		EmitError(pWork, nullptr, ERRID_ObjFileFail, "Error generating object file\n%s", pChzError);
 		LLVMDisposeMessage(pChzError);
 	}
 
@@ -6101,7 +6106,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 
 	}
 
-	if (pWork->m_pErrman->m_cError == 0)
+	if (!pWork->m_pErrman->FHasErrors())
 	{
 		printf("Type Check:\n");
 		PerformTypeCheck(
@@ -6112,7 +6117,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 			&pWork->m_aryiEntryChecked,
 			pWork->m_globmod);
 
-		if (pWork->m_pErrman->m_cError == 0)
+		if (!pWork->m_pErrman->FHasErrors())
 		{
 
 #if EWC_X64
@@ -6134,10 +6139,11 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		}
 	}
 
-	bool fSuccess = (pWork->m_pErrman->m_cError == 0);
-	if (!fSuccess)
+	int cError, cWarning;
+	pWork->m_pErrman->ComputeErrorCounts(&cError, &cWarning);
+	if (cError != 0 && cWarning != 0)
 	{
-		printf("Compilation failed: %d errors\n", pWork->m_pErrman->m_cError);
+		printf("%d errors, %d warnings\n", cError, cWarning);
 	}
 
 	for (size_t ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)
@@ -6159,7 +6165,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		}
 	}
 
-	return fSuccess;
+	return cError == 0;
 }
 
 void AssertTestCodeGen(
@@ -6176,7 +6182,7 @@ void AssertTestCodeGen(
 
 	BeginParse(pWork, &lex, pChzIn, s_pChzUnitTestFilename);
 
-	EWC_ASSERT(pWork->m_pErrman->m_cError == 0, "parse errors detected");
+	EWC_ASSERT(!pWork->m_pErrman->FHasErrors(), "parse errors detected");
 	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &lex, true);

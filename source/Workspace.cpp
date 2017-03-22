@@ -23,8 +23,84 @@
 
 using namespace EWC;
 
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap)
+
+
+SErrorManager::SErrorManager()
+:m_pWork(nullptr)
+,m_aryErrid()
+,m_paryErrcExpected(nullptr)
+{ 
+}
+
+void SErrorManager::SetWorkspace(CWorkspace * pWork)
 {
+	m_pWork = pWork;
+	m_aryErrid.SetAlloc(pWork->m_pAlloc, BK_Workspace, 0);
+} 
+
+bool SErrorManager::FHasHiddenErrors()
+{
+	if (!m_paryErrcExpected)
+		return false;
+
+	auto pErrcMax = m_paryErrcExpected->PMac();
+	for (auto pErrc = m_paryErrcExpected->A(); pErrc != pErrcMax; ++pErrc)
+	{
+		if (pErrc->m_c)
+			return true;
+	}
+	return false;
+}
+
+void SErrorManager::ComputeErrorCounts(int * pCError, int * pCWarning)
+{
+	int cError = 0;
+	int cWarning = 0;
+	auto pErridMax = m_aryErrid.PMac();
+	for (auto pErrid = m_aryErrid.A(); pErrid != pErridMax; ++pErrid)
+	{
+		if (*pErrid < ERRID_ErrorMax)
+			++cError;
+		else
+			++cWarning;
+
+	}
+	*pCError = cError;
+	*pCWarning = cWarning;
+}
+
+bool SErrorManager::FTryHideError(ERRID errid)
+{
+	if (!m_paryErrcExpected)
+		return false;
+
+	auto pErrcMax = m_paryErrcExpected->PMac();
+	for (auto pErrc = m_paryErrcExpected->A(); pErrc != pErrcMax; ++pErrc)
+	{
+		if (pErrc->m_errid == errid)
+		{
+			++pErrc->m_c;
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+SError::SError(SErrorManager * pErrman, ERRID errid)
+:m_pErrman(pErrman)
+,m_errid(errid)
+,m_errs(ERRS_Unreported)
+{
+}
+
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, va_list ap)
+{
+	bool fHidden = pErrman->FTryHideError(errid);
+	if (fHidden)
+		return;
+
 	if (pLexloc && pLexloc->FIsValid())
 	{
 		s32 iLine;
@@ -37,7 +113,7 @@ void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const 
 	{
 		printf("Internal Warning: ");
 	}
-	++pErrman->m_cWarning;
+	pErrman->m_aryErrid.Append(errid);
 	
 	if (pCoz)
 	{
@@ -46,54 +122,70 @@ void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const 
 	}
 }
 
-void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...)
+void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)
 {
 	va_list ap;
 	va_start(ap, pCoz);
-	EmitWarning(pErrman, pLexloc, pCoz, ap);
+	EmitWarning(pErrman, pLexloc, errid, pCoz, ap);
 }
 
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, va_list ap)
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, va_list ap)
 {
-	SError error(pErrman);
+	SError error(pErrman, errid);
 	PrintErrorLine(&error, "Error:", pLexloc, pCoz, ap);
 }
 
-void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, const char * pCoz, ...)
+void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)
 {
 	va_list ap;
 	va_start(ap, pCoz);
-	EmitError(pErrman, pLexloc, pCoz, ap);
+	EmitError(pErrman, pLexloc, errid, pCoz, ap);
 }
 
-void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, const char * pCoz, ...)
+void EmitError(CWorkspace * pWork, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)
 {
 	va_list ap;
 	va_start(ap, pCoz);
-	EmitError(pWork->m_pErrman, pLexloc, pCoz, ap);
-}
-
-
-
-SError::SError(SErrorManager * pErrman)
-:m_pErrman(pErrman)
-{
-	++pErrman->m_cError;
+	EmitError(pWork->m_pErrman, pLexloc, errid, pCoz, ap);
 }
 
 void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocation * pLexloc, const char * pCoz, va_list ap)
 {
+	auto pErrman = pError->m_pErrman;
+	if (pError->m_errs == ERRS_Unreported)
+	{
+		if (pErrman->FTryHideError(pError->m_errid))
+		{
+			pError->m_errs = ERRS_Hidden;
+		}
+		else
+		{
+			pErrman->m_aryErrid.Append(pError->m_errid);
+			pError->m_errs = ERRS_Reported;
+		}
+	}
+
+	if (pError->m_errs == ERRS_Hidden)
+		return;
+
+
 	if (pLexloc && pLexloc->FIsValid())
 	{
 		s32 iLine;
 		s32 iCol;
-		CalculateLinePosition(pError->m_pErrman->m_pWork, pLexloc, &iLine, &iCol);
+		CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
 
 		printf("%s(%d,%d) %s ", pLexloc->m_strFilename.PCoz(), iLine, iCol, pChzPrefix);
 	}
 	else
 	{
 		printf("Internal %s ", pChzPrefix);
+	}
+
+	ERRID errid = pError->m_errid;
+	if (errid != ERRID_Nil && errid != ERRID_UnknownError && errid != ERRID_UnknownWarning)
+	{
+		printf("#%d: ", errid);
 	}
 	
 	if (pCoz)
@@ -200,7 +292,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_optlevel(OPTLEVEL_Debug)
 ,m_globmod(GLOBMOD_Normal)
 {
-	m_pErrman->m_pWork = this;
+	m_pErrman->SetWorkspace(this);
 
 	for (int filek = FILEK_Min; filek < FILEK_Max; ++filek)
 	{
@@ -549,7 +641,7 @@ char * CWorkspace::PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * 
 #endif
 	if (!pFile)
 	{
-		EmitError(m_pErrman, &lexloc, "Failed opening file %s", strFilename.PCoz());
+		EmitError(m_pErrman, &lexloc, ERRID_FailedOpeningFile, "Failed opening file %s", strFilename.PCoz());
 		return nullptr;
 	}
 
@@ -563,7 +655,7 @@ char * CWorkspace::PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * 
 
 	if (cB != cBRead)
 	{
-		EmitError(m_pErrman, &lexloc, "Failed reading file %s", strFilename.PCoz());
+		EmitError(m_pErrman, &lexloc, ERRID_UnknownError, "Failed reading file %s", strFilename.PCoz());
 		pAlloc->EWC_FREE(pChzFile);
 		return nullptr;
 	}
