@@ -1755,7 +1755,7 @@ void SStringEditBuffer::PrependCo(const char * pCoz, size_t cB)
 	size_t cBPrefix = m_pCozBegin - m_pCozMin;
 	if (cBPrefix < cCh)
 	{
-		Resize(cCh + s_cChPrefixPad, ewcMax<size_t>(s_cChPrefixPad, m_pCozAppend - m_pCozBegin), m_pCozMax - m_pCozAppend);
+		Resize(cCh + s_cChPrefixPad, ewcMax<size_t>(s_cChPrefixPad, CB()), m_pCozMax - m_pCozAppend);
 	}
 
 	m_pCozBegin -= cCh;
@@ -1770,14 +1770,16 @@ void SStringEditBuffer::PrependCoz(const char * pCoz)
 
 void SStringEditBuffer::AppendCo(const char * pCoz, size_t cB)
 {
-	size_t cBAvail = m_pCozMax - m_pCozBegin;
+	size_t cBAvail = m_pCozMax - m_pCozAppend;
 	if (cBAvail < cB) // +1 for null terminator
 	{
-		Resize(s_cChPrefixPad, ewcMax<size_t>(s_cChPrefixPad, m_pCozAppend - m_pCozBegin), cB + s_cChPrefixPad);
+		Resize(s_cChPrefixPad, ewcMax<size_t>(s_cChPrefixPad, CB()), cB + s_cChPrefixPad);
 	}
 
 	CopyAB(pCoz, m_pCozAppend, cB);
+
 	m_pCozAppend += cB-1;
+	EWC_ASSERT((uintptr_t(m_pCozAppend) <= uintptr_t(m_pCozMax)), "seb overflow"); 
 }
 
 void SStringEditBuffer::AppendCoz(const char * pCoz)
@@ -1805,9 +1807,7 @@ void SStringEditBuffer::Resize(size_t cBPrefix, size_t cBUsed, size_t cBPostfix)
 	auto pCozBeginOld = m_pCozBegin;
 	auto cBOld = CB();
 
-	cBPostfix = ewcMin<size_t>(1, cBPostfix);
 	size_t cB = cBPrefix + cBUsed + cBPostfix;
-	//cB = ewcMin(cB, cBOld + s_cChPrefixPad*2);
 
 	if (!cB)
 	{

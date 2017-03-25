@@ -8,6 +8,8 @@
 // We test each permutation option against all of the permutation's children's options
 // permutations options are added with '+' for a single child or curly braces for multiple comma separated child permutations
 
+// Note: Int## is a stand in for platform specific int sizes (any ## will be replaced with 32 or 64 depending on the platform)
+
 // [X] Document permute string format
 // [ ] Track and fix unit test memory leaks
 // [ ] Finish porting tests and delete old code
@@ -18,9 +20,8 @@
 // Declaration Tests:
 test DeclareAssign
 	input "v : $type = $init"
-	parse "(decl `v `$type $initp)"
-	typecheck "($type `v $type Literal:$littype)"
-	permute
+	parse "(decl v $type $initp)"
+	typecheck "($type v $type Literal:$littype)"
 	{
 		$init(2.200000$errid(2001)) + $initp("$init")
 		{
@@ -29,7 +30,7 @@ test DeclareAssign
 			$type(s64|u64) + $littype(Int64),
 		},
 
-		$init(int$errid(2009)) + $initp("`$init") + $type(int) + $littype(Int32),	// make sure we can't assign a type as an RVal
+		$init(int$errid(2009)) + $initp("$init") + $type(int) + $littype(Int32),	// make sure we can't assign a type as an RVal
 
 		$littype(Int8) + $type(u8|s8)
 		{
@@ -39,11 +40,19 @@ test DeclareAssign
 		},
 	}
 
+test DeclareAssignString
+	input "v : $type = \"hello world\""
+	parse "(decl v $ptype \"hello world\")"
+	typecheck "($tctype v ($tctype ($tcinit u8)) Literal:String)"
+	{
+		$type(&const u8) + $ptype("(ptr (const u8))") + $tctype("&const.u8") + $tcinit(const.u8),
+		$type(const&u8) + $ptype("(const (ptr u8))") + $tctype("const.&const.u8") + $tcinit(&const.u8),
+	}
+
 test QualDeclareAssign
 	input "v : $qual $type = $init"
-	parse "(decl `v ($qual `$type) $init)"
-	typecheck "($typetc `v ($typetc $type) Literal:$littype)"
-	permute
+	parse "(decl v ($qual $type) $init)"
+	typecheck "($typetc v ($typetc $type) Literal:$littype)"
 	{
 		$qual(const|inarg) + 
  			$init(22|2147483647|2.200000$errid(2001))
@@ -56,23 +65,22 @@ test QualDeclareAssign
 
 test BasicAssign
 	prereq "lhs: $lhsType; rhs: $rhsType"
-	input "lhs = $rvalue"
-	permute
+	input "$lvalue = $rvalue"
 	{
-		$rhsType(int|float|"&int") + $rvalue(rhs)
+		$rhsType(int|float|"&int") + $lvalue(lhs) + $rvalue(rhs)
 		{
 			$lhsType("$rhsType"),
 			$qual(const|inarg) + $lhsType("$qual $rhsType"$errid(2009))
 		},
-		$rhsType(int|float|"&int") + $lhsType("$rhsType") + $rvalue("$rhsType"$errid(2009)),
+		$rhsType(int|float|"&int") + $lhsType("$rhsType") + $rvalue("$rhsType"$errid(2009)) + $lvalue(lhs) ,
+		$rhsType(int|float|"&int") + $lhsType("$rhsType") + $rvalue(rhs) + $lvalue(10$errid(2009)|true$errid(2009)|null$errid(2009)),
 	}
 
 
 test MultiDeclare
 	input "a1, a2: $typeA, b1: $typeB $init"
-	parse "(decl (decl `a1 `$typeA) (decl `a2 `$typeA) (decl `b1 `$typeB)$initp)"
-	typecheck "(??? ($typeA `a1 $typeA) ($typeA `a2 $typeA) ($typeB `b1 $typeB)$initp)"
-	permute
+	parse "(decl (decl a1 $typeA) (decl a2 $typeA) (decl b1 $typeB)$initp)"
+	typecheck "(??? ($typeA a1 $typeA) ($typeA a2 $typeA) ($typeB b1 $typeB)$initp)"
 	{
 		$typeA(float|bool|int) + $typeB(float|bool|int)
 		{ 
@@ -86,9 +94,8 @@ test MultiDeclare
 test MathOperators
 	prereq "x: int"
 	input "x $opA 3 $opB 5"
-	parse "($opA `x ($opB 3 5))"
-	typecheck "(int int (Literal:Int64 Literal:Int Literal:Int))"
-	permute
+	parse "($opA x ($opB 3 5))"
+	typecheck "(int int (Literal:Int## Literal:Int Literal:Int))"
 	{
 		$opA(+|-) + $opB(*|%|/)
 	}
@@ -96,19 +103,26 @@ test MathOperators
 test OperatorOrder
 	prereq "ick, ack, foo: int"
 	input "ick $opAdd ack $opMul $opUnary(3 $opMul foo)"
-	parse "($opAdd `ick ($opMul `ack (unary[$opUnary] ($opMul 3 `foo))))"
-	typecheck "(int int (int int (int (int Literal:Int64 int))))"
-	permute
+	parse "($opAdd ick ($opMul ack (unary[$opUnary] ($opMul 3 foo))))"
+	typecheck "(int int (int int (int (int Literal:Int## int))))"
 	{
 		$opAdd(+|-) + $opUnary(+|-) + $opMul(*|/|%),
+	}
+
+test OperatorPrePost
+	prereq "a: $type"
+	input "$op a; a$op"
+	parse "(unary[$op] a) (postUnary[$op] a)"
+	typecheck "($type $type) ($type $type)"
+	{
+		$op(++|--) + $type(s8|int|&u8),
 	}
 
 test OperatorRepeated
 	prereq "ugh, foo, guh, ack: int"
 	input "ugh $op foo $op guh $op ack"
-	parse "($op ($op ($op `ugh `foo) `guh) `ack)"
+	parse "($op ($op ($op ugh foo) guh) ack)"
 	typecheck "($typeRes ($typeRes ($typeRes int int) int) int)"
-	permute
 	{
 		$op(+|-|*|/|%|"|"|&|^|<<|>>) + $typeRes(int),
 		$op("||"|&&) + $typeRes(bool)
@@ -117,82 +131,177 @@ test OperatorRepeated
 test OperatorAndOr
 	prereq "ugh, foo, guh, ack: int"
 	input "ugh $opHigh foo $opLow guh $opHigh ack"
-	parse "($opLow ($opHigh `ugh `foo) ($opHigh `guh `ack))"
+	parse "($opLow ($opHigh ugh foo) ($opHigh guh ack))"
 	typecheck "(bool (bool int int) (bool int int))"
-	permute
 	{
 		$opLow("||"|&&) + $opHigh("=="|"!="),
 	//	$opLow("|"|&) + $opHigh("=="|"!="|"<="|<|">="|>)
 	}
 
 test ConstantDecl
-	input "SomeConst :: $value"
-	parse "(const `SomeConst $pvalue)"
-	typecheck "(Literal:$lit `SomeConst Literal:$lit)"
-	permute
+	input "SomeConst :: $value$extra"
+	parse "(const SomeConst $pvalue)$pextra"
+	typecheck "(Literal:$lit SomeConst Literal:$lit)"
 	{
-		$value("\"this is a test\"") + $pvalue("\"this is a test\"") + $lit(String),
-		$value(255|123123) + $pvalue("$value") + $lit(Int),
-		$value(true|false) + $pvalue("$value") + $lit(Bool),
-		$value(null) + $pvalue("$value") + $lit(Null),
-}
+		$extra("") + $pextra("")
+		{
+			$value("\"this is a test\"") + $pvalue("\"this is a test\"") + $lit(String),
+			$value(255|123123) + $pvalue("$value") + $lit(Int),
+			$value(true|false) + $pvalue("$value") + $lit(Bool),
+			$value(null) + $pvalue("$value") + $lit(Null),
+		},
+
+		$value(255|123123) + $pvalue("$value") + $lit(Int) + $extra("; SomeConst = 0"$errid(2009)) + $pextra(" (= SomeConst 0)"),
+	}
+
+test ConstantTypedDecl
+	input "SomeConst : $type : $value"
+	parse "(const SomeConst $type $value)"
+	typecheck "(Literal:$lit SomeConst $type Literal:$lit)"
+	{
+		$type(s8) + $value(100|2000$errid(2001)) + $lit(Int8),
+		$type(int) + $value(100|2000) + $lit(Int##),
+		$type(u8) + $value(100|300$errid(2001)) + $lit(Int8),
+	}
 
 // Pointers:
 
 test PointerDecl
 	input "t: $type; pT : & $type = &t"
-	parse "(decl `t $ptype) (decl `pT (ptr $ptype) (unary[&] `t))"
-	typecheck "($type `t $tctype) (&$type `pT (&$type $tctype) (&$type $type))"
-	permute
+	parse "(decl t $ptype) (decl pT (ptr $ptype) (unary[&] t))"
+	typecheck "($type t $tctype) (&$type pT (&$type $tctype) (&$type $type))"
 	{
-		$type(int|u8|float|bool) + $ptype("`$type") + $tctype("$type"),
-		$type(&int) + $ptype("(ptr `int)") + $tctype("(&int int)")
+		$type(int|u8|float|bool) + $ptype("$type") + $tctype("$type"),
+		$type(&int) + $ptype("(ptr int)") + $tctype("(&int int)"),
+		$type([2]int) + $ptype("([] 2 int)") + $tctype("([2]int Literal:Int## int)"),
 	}
 
 test PointerDeref
 	prereq "pT : & $type"
 	input "t := @pT"
-	parse "(decl `t (unary[@] `pT))"
-	typecheck "($type `t ($type &$type))"
-	permute
+	parse "(decl t (unary[@] pT))"
+	typecheck "($type t ($type &$type))"
 	{
-		$type(int|u8|float|bool|&int|&&int),
+		$type(int|u8|float|bool|&int|&&int|[2]int),
+	}
+
+test PointerArayAccess
+	prereq "pT: & $type"
+	input "t := pT[2]"
+	parse "(decl t (elem pT 2))"
+	typecheck "($type t ($type &$type Literal:Int##))"
+	{
+		$type(int|u8|bool|&int|&&int|[2]int),
 	}
 
 // If/Else:
+test IfElse
+	prereq "n:s64"
+	input "if $cond {n = 5} else {n = 6}"
+	parse "(if $pcond ({} (= n 5)) (else ({} (= n 6))))"
+	typecheck "(bool $tccond ({} (= s64 Literal:Int64)) (else ({} (= s64 Literal:Int64))))"
+	{
+		$cond("n") + $pcond(n) + $tccond(s64),
+		$cond(0|true) + $pcond("$cond") + $tccond(Literal:Bool8),
+		$cond("n == 0") + $pcond("(== n 0)") + $tccond("(bool s64 Literal:Int64)"),
+	}
+
 // Initializers:
+
 // Structures:
 test StructDecl
 	input "SFoo struct { m_n $init } foo : SFoo"
-	parse "(struct `SFoo ({} ($decl `m_n $initp))) (decl `foo `SFoo)"
-	typecheck "(SFoo `SFoo ({} ($typememb))) (SFoo `foo SFoo)"
-	permute
+	parse "(struct SFoo ({} ($decl m_n $initp))) (decl foo SFoo)"
+	typecheck "(SFoo SFoo ({} ($typememb))) (SFoo foo SFoo)"
 	{
-		$init(":= 2") + $initp(2) + $decl(decl) + $typememb("int `m_n Literal:Int64"),
-		$init(": int") + $initp("`int") + $decl(decl) + $typememb("int `m_n int"),
-		$init(": int = 2") + $initp("`int 2") + $decl(decl) + $typememb("int `m_n int Literal:Int64"),
-		$init(" :: 2") + $initp(2) + $decl(const) + $typememb("Literal:Int `m_n Literal:Int"),
+		$init(":= 2") + $initp(2) + $decl(decl) + $typememb("int m_n Literal:Int##"),
+		$init(": int") + $initp("int") + $decl(decl) + $typememb("int m_n int"),
+		$init(": int = 2") + $initp("int 2") + $decl(decl) + $typememb("int m_n int Literal:Int##"),
+		$init(": int = ---") + $initp("int (---)") + $decl(decl) + $typememb("int m_n int (---)"),
+		$init(" :: 2") + $initp(2) + $decl(const) + $typememb("Literal:Int m_n Literal:Int"),
 	}
 
 test StructMember
 	prereq "SFoo struct { m_n : $type }; foo : SFoo; n: $type"
 	input "n = foo.m_n; foo.m_n = n"
-	parse "(= `n (member `foo `m_n)) (= (member `foo `m_n) `n)"
-	typecheck "(= $type ($type SFoo `m_n)) (= ($type SFoo `m_n) $type)"
-	permute
+	parse "(= n (member foo m_n)) (= (member foo m_n) n)"
+	typecheck "(= $type ($type SFoo m_n)) (= ($type SFoo m_n) $type)"
 	{
 		$type(int|"&SFoo")
 	}
 
-// Recursion:
 // Enumerations:
+
+test EnumDecl
+	input "ENUMK enum $loose { Ick : 1, Foo, Bah : 3 }"
+	parse "(enum ENUMK $loose({} (enumConst nil) (enumConst min) (enumConst last) (enumConst max) (arrayLit names) (arrayLit values) (enumConst Ick 1) (enumConst Foo) (enumConst Bah 3)))"
+	typecheck "(ENUMK_enum ENUMK $loose({} (ENUMK_enum Literal:Enum nil) (ENUMK_enum Literal:Enum min) (ENUMK_enum Literal:Enum last) (ENUMK_enum Literal:Enum max) (Literal:Array names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array values (Literal:Array Literal:$litk Literal:$litk Literal:$litk)) (ENUMK_enum Literal:Enum Ick Literal:Int) (ENUMK_enum Literal:Enum Foo) (ENUMK_enum Literal:Enum Bah Literal:Int)))"
+	{
+		$loose("") + $litk("Int8"),
+		$loose("s32 ") + $litk("Int32"),
+		$loose("s8 ") + $litk("Int8"),
+	}
+
+test EnumSubtypes
+	prereq "ENUMK enum $loose { Ick : 1, Foo, Bah : 3 }"
+	input "t: ENUMK.$subtype"
+	parse "(decl t (member ENUMK $subtype))"
+	typecheck "($tctype t ($tctype ENUMK_enum $tctype))"
+	{
+		$loose("") + $ltype(u8)
+		{
+			$subtype(loose) + $tctype("$ltype"),
+			$subtype(strict) + $tctype(ENUMK_enum),
+		},
+
+		$loose(s32|s64|u32) + $ltype("$loose")
+		{
+			$subtype(loose) + $tctype("$ltype"),
+			$subtype(strict) + $tctype(ENUMK_enum),
+		}
+	}
+
+test EnumBadInit
+	input "ENUMK enum $loose { Ick : 1, Foo, Bah : $init }"
+	{
+		$loose(u8) + $init(300$errid(2001)),
+		$loose(u64) + $init(-3$errid(2001)),
+	}
+
+test EnumImplicitMembers
+	prereq "ENUMK enum $loose { Ick : 1, Foo, Bah : 3 }"
+	input "t := ENUMK.$memb$extra"
+	parse "(decl t (member $pmemb))"	
+	typecheck "($tctype t ($tcinit))"
+	{
+		$memb(min|max|nil) + $extra("") + $tctype(ENUMK_enum) + $pmemb("ENUMK $memb")
+		{
+			$loose(s8) + $lit("Int8") + $tcinit("Literal:$lit ENUMK_enum $memb"),
+			$loose(u64) + $lit("Int64") + $tcinit("Literal:$lit ENUMK_enum $memb"),
+		},
+		$loose(s8)
+		{
+			$memb(names)
+			{
+				$extra("") + $tctype("[3]&u8") + $pmemb("ENUMK $memb") + $lit(Array) + $tcinit("Literal:$lit ENUMK_enum $memb"),
+				$extra(".count") + $tctype("int") + $pmemb("(member ENUMK $memb) count") + $tcinit("Literal:Int64 (Literal:Array ENUMK_enum $memb) count"),
+				$extra(".data") + $tctype("&&u8") + $pmemb("(member ENUMK $memb) data") + $tcinit("$tctype (Literal:Array ENUMK_enum $memb) data"),
+			},
+			$memb(values)
+			{
+				$extra("") + $tctype("[3]s8") + $pmemb("ENUMK $memb") + $lit(Array) + $tcinit("Literal:$lit ENUMK_enum $memb"),
+				$extra(".count") + $tctype("int") + $pmemb("(member ENUMK $memb) count") + $tcinit("Literal:Int64 (Literal:Array ENUMK_enum $memb) count"),
+				$extra(".data") + $tctype("&s8") + $pmemb("(member ENUMK $memb) data") + $tcinit("$tctype (Literal:Array ENUMK_enum $memb) data"),
+			},
+		},
+	}
+
 // Arrays:
 
 test ArrayDecl
 	input "paN : & [$count] $type"
-	parse "(decl `paN (ptr ([] $count `$type)))"
-	typecheck "(&[$count]$type `paN (&[$count]$type ([$count]$type Literal:Int64 $type)))"
-	permute
+	parse "(decl paN (ptr ([] $count $type)))"
+	typecheck "(&[$count]$type paN (&[$count]$type ([$count]$type Literal:Int## $type)))"
 	{
 		$type(s32|s8|f32|bool) + $count(1|2|1000)
 	}
@@ -200,24 +309,75 @@ test ArrayDecl
 test ArrayAccess
 	prereq "aN : [5] $type"
 	input "n := aN[$index]"
-	parse "(decl `n (elem `aN $index))"
-	typecheck "($type `n ($type [5]$type Literal:Int64))"
-	permute
+	parse "(decl n (elem aN $index))"
+	typecheck "($type n ($type [5]$type Literal:Int##))"
 	{
-		$type(s32|s8|f32|bool) + $index(0|4)
+		$type(s32|s8|f32|bool) + $index(0|4),
+		$type(s32) + $index(2.200000$errid(2010)),
 	}
 
 test ArrayAssign
 	prereq "aN : [5] $type; n: $type"
 	input "aN[$index] = n"
-	parse "(= (elem `aN $index) `n)"
-	typecheck "(= ($type [5]$type Literal:Int64) $type)"
-	permute
+	parse "(= (elem aN $index) n)"
+	typecheck "(= ($type [5]$type Literal:Int##) $type)"
 	{
 		$type(s32|s8|f32|bool) + $index(0|4)
 	}
 
+test ArrrayConstants
+	prereq "aN : [3] int"
+	input "n := aN.$arymemb"
+	parse "(decl n (member aN $arymemb))"
+	typecheck "($tctype n ($tcinit [3]int $arymemb))"
+	{
+		$arymemb(count) + $tctype(int) + $tcinit(Literal:Int##),
+		$arymemb(data) + $tctype(&int) + $tcinit(&int),
+	}
+
+test ArrrayConstantsAreConst
+	prereq "aN : [3] int"
+	input "aN.$arymemb = $init"
+	parse "(= (member aN $arymemb) $init)"
+	{
+		$arymemb(count$errid(2009)) + $init(2),
+		// $arymemb(data$errid(2009)) + $init(null),	- TODO: think about what to do here, aN must be mutable because it points at mutable data - inarg maybe?
+	}
+
+test ArrayToPointer
+	prereq "aT : [3] $type"
+	input "pT: & $type = aT"
+	parse "(decl pT (ptr $ptype) aT)"
+	typecheck "(&$type pT (&$type $tctype) [3]$type)"
+	{
+		$type(int|bool) + $ptype("$type") + $tctype("$type"),
+		$type("&int") + $ptype("(ptr int)") + $tctype("(&int int)"),
+	}
+
 // Explicit Casts:
+
+test CastAssignment
+	prereq "a: $typeA; b: $typeB"
+	input "a = cast($typeA)$bval"
+	parse "(= a (cast $ptypeA $bval))"	
+	typecheck "(= $typeA ($typeA $tctypeA $typeB))"
+	{
+		$typeA(s64|f64) + $typeB(u8|s8|int|u32|f32|f64) + $ptypeA("$typeA") + $tctypeA("$typeA") + $bval(b),
+		$typeA(&int) + $typeB("&u8"|"&f32") + $ptypeA("(ptr int)") + $tctypeA("($typeA int)") + $bval(b),	
+		$typeA(s32) + $typeB(s8) + $ptypeA("$typeA") + $tctypeA("$typeA") + $bval(int$errid(2009)),	// make sure we can't pass non-rvalue
+	}
+
+test AutoCast
+	prereq "a: $typeA; b: $typeB"
+	input "a = acast $bval"
+	parse "(= a (cast $bval))"	
+	typecheck "(= $typeA ($typeA $typeB))"
+	{
+		$typeA(s64|f64) + $typeB(u8|s8|int|u32|f32|f64) + $bval(b),
+		$typeA(&int) + $typeB("&u8"|"&f32") + $bval(b),	
+		$typeA(s32) + $typeB(s8) + $bval(int$errid(2009)),	// make sure we can't pass non-rvalue
+	}
+
 // Overloading:
 // Operator Overloading:
 // Global initialization:
@@ -225,86 +385,99 @@ test ArrayAssign
 
 test ProcDef
 	input "AddNums proc (a : $type, b : $type) -> $type { return a + b }"
-	parse "(func `AddNums (params (decl `a `$type) (decl `b `$type)) `$type ({} (return (+ `a `b))))"
-	typecheck "(AddNums($type, $type)->$type `AddNums (Params ($type `a $type) ($type `b $type)) $type ({} ($type ($type $type $type))))"
-	permute
+	parse "(func AddNums (params (decl a $type) (decl b $type)) $type ({} (return (+ a b))))"
+	typecheck "(AddNums($type, $type)->$type AddNums (Params ($type a $type) ($type b $type)) $type ({} ($type ($type $type $type))))"
 	{
 		$type(int|s32|s8|f32)
 	}
 
 test ProcDefVoid
-	input "DoNothing proc () $ret { }"
-	parse "(func `DoNothing `void ({} (return)))"
-	typecheck "(DoNothing()->void `DoNothing void ({} (void)))"
-	permute
+	input "DoNothing proc () $ret { $optRet }"
+	parse "(func DoNothing void ({} (return)))"
+	typecheck "(DoNothing()->void DoNothing void ({} (void)))"
 	{
-		$ret(""|"-> void")
+		$ret(""|"-> void") + $optRet(""|return)
 	}
 
 test ProcCall
 	prereq "AddNums proc (a : $type, b : $type) -> $type { return a + b }; i,j: $type"
-	input "k := AddNums(i, j)"
-	typecheck "($type `k ($type AddNums($type, $type)->$type $type $type))"
-	permute
+	input "k := AddNums($args)"
+	typecheck "($type k ($type AddNums($type, $type)->$type $type $type))"
 	{
-		$type(int|s32|s8|f32)
+		$type(int|s32|s8|f32) + $args("i, j"),
+		$type(s32) + $args("i"$errid(2002)|"i,i,i"$errid(2003)|"&i, &i"$errid(2006)),
+	}
+
+test ProcCallIsRval
+	prereq "ReturnInt proc () -> $type { return 2 }"
+	input "ReturnInt() = 2"
+	{
+		$type(int$errid(2009))
 	}
 
 test ProcForeign
 	input "ForeignFunc proc () -> int #foreign; ForeignFunc()"
-	parse "(func `ForeignFunc `int) (procCall `ForeignFunc)"
-	typecheck "(ForeignFunc()->int `ForeignFunc int) (int ForeignFunc()->int)"
+	parse "(func ForeignFunc int) (procCall ForeignFunc)"
+	typecheck "(ForeignFunc()->int ForeignFunc int) (int ForeignFunc()->int)"
 
 test ProcVararg
 	input "VarArgs proc ($args..) $ret #foreign"
-	parse "(func `VarArgs (params $pargs(..)) `void)"
-	typecheck "(VarArgs($argtype..)->void `VarArgs (Params $tcargs(..)) void)"
-	permute
+	parse "(func VarArgs (params $pargs(..)) void)"
+	typecheck "(VarArgs($argtype..)->void VarArgs (Params $tcargs(..)) void)"
 	{
 		$args("") + $pargs("") + $argtype("") + $tcargs("") + $ret(""|"-> void"),
-		$args("a: int, ") + $argtype("int, ") + $pargs("(decl `a `int) ") + $tcargs("(int `a int) ") + $ret(""|"-> void"),
-		$args("a: int, b: int, ") + $argtype("int, int, ") + $pargs("(decl `a `int) (decl `b `int) ") + $tcargs("(int `a int) (int `b int) ") + $ret(""|"-> void"),
+		$args("a: int, ") + $argtype("int, ") + $pargs("(decl a int) ") + $tcargs("(int a int) ") + $ret(""|"-> void"),
+		$args("a: int, b: int, ") + $argtype("int, int, ") + $pargs("(decl a int) (decl b int) ") + $tcargs("(int a int) (int b int) ") + $ret(""|"-> void"),
 	}
+
+test ProcRecurse
+	input "foo proc () { foo() }"
+	parse "(func foo void ({} (procCall foo) (return)))"
+	typecheck "(foo()->void foo void ({} (void foo()->void) (void)))"
 
 // ProcedureRef:
 test ProcRefDecl
 	prereq "ReturnArg proc(v: $type) -> $type { return v }"
 	input "pFn: (v: $type)->$type = ReturnArg"
-	parse "(decl `pFn (procref (params (decl `v $ptype)) $ptype) `ReturnArg)"
-	permute
+	parse "(decl pFn (procref (params (decl v $ptype)) $ptype) ReturnArg)"
 	{
-		$type(s32|f32) + $ptype("`$type"),
-		$type("&u8") + $ptype("(ptr `u8)"),
-		$type("const u8") + $ptype("(const `u8)"),
+		$type(s32|f32) + $ptype("$type"),
+		$type("&u8") + $ptype("(ptr u8)"),
+		$type("const u8") + $ptype("(const u8)"),
 	}
 
-// Casting:
-test CastAssignment
-	prereq "a: $typeA; b: $typeB"
-	input "a = cast($typeA)$bval"
-	parse "(= `a (cast $ptypeA `$bval))"	
-	typecheck "(= $typeA ($typeA $tctypeA $typeB))"
-	permute
+test ProcRefArray
+	input "apFn: [$atype] (n: s32)$ret;   apFn[1](33)"
+	parse "(decl apFn ([] $patype(procref (params (decl n s32)) $type))) (procCall (elem apFn 1) 33)"
+	typecheck "([$atype](s32)->$type apFn ([$atype](s32)->$type $tcatype((s32)->$type (Params (s32 n s32)) $type))) ($type ((s32)->$type [$atype](s32)->$type Literal:Int64) Literal:Int32)"
 	{
-		$typeA(s64|f64) + $typeB(u8|s8|int|u32|f32|f64) + $ptypeA("`$typeA") + $tctypeA("$typeA") + $bval(b),
-		$typeA(&int) + $typeB("&u8"|"&f32") + $ptypeA("(ptr `int)") + $tctypeA("($typeA int)") + $bval(b),	
-		$typeA(s32) + $typeB(s8) + $ptypeA("`$typeA") + $tctypeA("$typeA") + $bval(int$errid(2009)),	// make sure we can't pass non-rvalue
-	}
-
-test AutoCast
-	prereq "a: $typeA; b: $typeB"
-	input "a = acast $bval"
-	parse "(= `a (cast `$bval))"	
-	typecheck "(= $typeA ($typeA $typeB))"
-	permute
-	{
-		$typeA(s64|f64) + $typeB(u8|s8|int|u32|f32|f64) + $bval(b),
-		$typeA(&int) + $typeB("&u8"|"&f32") + $bval(b),	
-		$typeA(s32) + $typeB(s8) + $bval(int$errid(2009)),	// make sure we can't pass non-rvalue
+		$ret("") + $type(void)
+		{
+			$atype(4) + $patype("4 ") + $tcatype("Literal:Int64 "),
+			$atype("") + $patype("") + $tcatype(""),
+			$atype(..$errid(2011)) + $patype("") + $tcatype(""),
+		},
+		$ret("->int") + $type(int)
+		{
+			$atype(4) + $patype("4 ") + $tcatype("Literal:Int64 "),
+			$atype("") + $patype("") + $tcatype(""),
+			$atype(..$errid(2011)) + $patype("") + $tcatype(""),
+		},
 	}
 
 // Here Strings:
 // For Loops:
+// Loops:
+test WhileLoop
+	prereq "n:s64 = 5"
+	input "while $cond { --n }"
+	parse "(while $pcond ({} (unary[--] n)))"
+	typecheck "(bool $tccond ({} (s64 s64)))"
+	{
+		$cond(n) + $pcond(n) + $tccond(s64),
+		$cond(n >= 0) + $pcond("(>= n 0)") + $tccond("(bool s64 Literal:Int64)")
+	}
+
 // Break & Continue:
 // Switch:
 

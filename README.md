@@ -63,7 +63,7 @@ nUninitialized : s32 = ---
 Constants are defined with a name, followed by the `::` operator and the constant value.
 ```
 kPi :: 3.14159         
-kAnswer :: s32 = 42   // constants can be explicitly typed
+kAnswer : s32 : 42   // constants can be explicitly typed
 ```
 
 Literals and most constants are unsized until assigned to an instance value. Variables that are type inferred from an untyped value will use the fitting default type (ie `n := 2` is an `int`).

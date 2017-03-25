@@ -377,6 +377,7 @@ char * PCozAllocateSubstitution(
 		}
 	}
 
+	size_t cBSeb = seb.CB();
 	return seb.PCozAllocateCopy(pTesctx->m_pAlloc);
 }
 
@@ -598,13 +599,21 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 		{
 			pUtest->m_pCozTypeCheck = PCozExpectString(pTesctx, pLex);
 		}
-		else if (FConsumeIdentifier(pTesctx, pLex, "permute"))
+		else if (pLex->m_tok == TOK('{'))
 		{
 			ParsePermuteString(pTesctx, pLex, pUtest);
 		}
 		else
 		{
-			break;
+			if ((pLex->m_tok == TOK_Identifier && pLex->m_str == CString("test")) ||
+				pLex->m_tok == TOK_Eof)
+			{
+				break;
+			}
+
+			ParseError(pTesctx, pLex, "unknown token encountered '%s' during test %s", PCozCurrentToken(pLex), pUtest->m_strName.PCoz());
+			TokNext(pLex);
+			SkipRestOfLine(pLex);
 		}
 	}
 	
@@ -667,33 +676,23 @@ bool FCheckForExpectedErrors(SErrorManager * pErrman, ERRID erridMin, ERRID erri
 	if (!paryErrcExpected)
 		return false;
 
-	const char * pChzSpacer = "";
+	int cErrInRange = 0;
+	auto pErrcMax = paryErrcExpected->PMac();
+	for (auto pErrc = paryErrcExpected->A(); pErrc != pErrcMax; ++pErrc)
 	{
-		int cErrInRange = 0;
-		auto pErrcMax = paryErrcExpected->PMac();
-		for (auto pErrc = paryErrcExpected->A(); pErrc != pErrcMax; ++pErrc)
-		{
-			if (pErrc->m_errid < erridMin || pErrc->m_errid >= erridMax)
-				continue;
+		if (pErrc->m_errid < erridMin || pErrc->m_errid >= erridMax)
+			continue;
 
-			++cErrInRange;
-			if (pErrc->m_c)
-			{
-				printf("%s Error(%d)", pChzSpacer, pErrc->m_errid);
-			}
-			else
-			{
-				printf("%sMissing expected Error(%d)", pChzSpacer, pErrc->m_errid);
-				*pTestres = TESTRES_MissingExpectedErr;
-			}
-			pChzSpacer = ", ";
-		}
-
-		if (cErrInRange)
+		++cErrInRange;
+		if (pErrc->m_c == 0)
 		{
-			return true;
+			printf("FAILURE: Missing expected Error(%d)\n", pErrc->m_errid);
+			*pTestres = TESTRES_MissingExpectedErr;
 		}
 	}
+
+	if (cErrInRange)
+		return true;
 	return false;
 }
 
@@ -706,10 +705,23 @@ TESTRES TestresRunUnitTest(
 	const char * pCozTypeCheckExpected,
 	CDynAry<SErrorCount> * paryErrcExpected)
 {
-	if (pCozPrereq && pCozPrereq[0] != '\0')
-		printf("(%s): %s\n%s ", pUtest->m_strName.PCoz(), pCozPrereq, pCozIn);
-	else
-		printf("(%s): %s ", pUtest->m_strName.PCoz(), pCozIn);
+	//if (pCozPrereq && pCozPrereq[0] != '\0')
+	//	printf("(%s): %s\n%s ", pUtest->m_strName.PCoz(), pCozPrereq, pCozIn);
+	//else
+	printf("(%s): %s ", pUtest->m_strName.PCoz(), pCozIn);
+
+	if (paryErrcExpected)
+	{
+		auto pErrcMax = paryErrcExpected->PMac();
+
+		const char * pCozSpacer = "";
+		for (auto pErrc = paryErrcExpected->A(); pErrc != pErrcMax; ++pErrc)
+		{
+			printf("%sErrid(%d)", pCozSpacer, pErrc->m_errid);
+			pCozSpacer = ", ";
+		}
+	}
+	printf("\n");
 
 	SErrorManager errmanTest;
 	CWorkspace work(pWorkParent->m_pAlloc, &errmanTest);
@@ -857,7 +869,6 @@ TESTRES TestresRunUnitTest(
 	work.m_pAlloc->SetAltrac(nullptr);
 #endif
 	
-	printf("\n");
 	return testres;
 }
 
@@ -952,6 +963,13 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 	CDynAry<SUnitTest *> arypUtest(pAlloc, BK_UnitTest);
 
 	ParseMoetestFile(&tesctx, pLex, &arypUtest);
+	if (pErrman->FHasErrors())
+	{
+		int cError, cWarning;
+		pErrman->ComputeErrorCounts(&cError, &cWarning);
+		printf("Failed parsing unit test file: %d errors, %d warnings\n", cError, cWarning);
+		return;
+	}
 	
 	SUnitTest ** ppUtestMax = arypUtest.PMac();
 	for (auto ppUtest = arypUtest.A(); ppUtest != ppUtestMax; ++ppUtest)
@@ -979,20 +997,32 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 	{
 		cTests += tesctx.m_mpTestresCResults[testres];
 	}
+
+	if (tesctx.m_mpTestresCResults[TESTRES_Success] == cTests)
+		printf("\nSUCCESS: ");
+	else
+		printf("\nFailure: ");
+
 	printf("%d / %d tests succeeded\n", tesctx.m_mpTestresCResults[TESTRES_Success], cTests);
 }
 
 bool FUnitTestFile(CWorkspace * pWork, const char * pChzFilenameIn)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
+	if (!pChzFilenameIn)
+		pChzFilenameIn = "";
+	
 	auto pFile = pWork->PFileEnsure(pChzFilenameIn, CWorkspace::FILEK_UnitTest);
+	pFile->m_pChzFileBody = nullptr;
 
 	char aChFilenameOut[CWorkspace::s_cBFilenameMax];
 	(void)CChConstructFilename(pFile->m_strFilename.PCoz(), CWorkspace::s_pCozUnitTestExtension, aChFilenameOut, EWC_DIM(aChFilenameOut));
 
 	pFile->m_pChzFileBody = pWork->PChzLoadFile(aChFilenameOut, pWork->m_pAlloc);
 	if (!pFile->m_pChzFileBody)
+	{
 		return false;
+	}
 
 	const char * pCozFileBody = PCozSkipUnicodeBOM(pFile->m_pChzFileBody);
 

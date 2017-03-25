@@ -6229,17 +6229,17 @@ void TestCodeGen()
 
 	const char * pChzIn;
 
-	pChzIn = "{ n1 := 6; n := 2 * n1}";		// procedure reference declaration
-	AssertTestCodeGen(&work, pChzIn);
+	//pChzIn = "{ n1 := 6; n := 2 * n1}";		// procedure reference declaration
+	//AssertTestCodeGen(&work, pChzIn);
 
 	//pChzIn = " g := 2.2; pG := &g; "; // not handling this properly as globals
-	AssertTestCodeGen(&work, pChzIn);
+	//AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "fooFunc proc (n: s32) -> s64 { return 2 }     func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
-	AssertTestCodeGen(&work, pChzIn);
+	//pChzIn = "fooFunc proc (n: s32) -> s64 { return 2 }     func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
+	//AssertTestCodeGen(&work, pChzIn);
 
-	pChzIn = "{ pFunc: (n: s32)->s64;   pFunc(33) }";
-	AssertTestCodeGen(&work, pChzIn);
+	//pChzIn = "{ pFunc: (n: s32)->s64;   pFunc(33) }";
+	//AssertTestCodeGen(&work, pChzIn);
 
 	pChzIn = "{apFunc: [4] (n: s32)->s64;   apFunc[1](33) }";
 	AssertTestCodeGen(&work, pChzIn);

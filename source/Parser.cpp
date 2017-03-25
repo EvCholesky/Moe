@@ -4209,7 +4209,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 {
 	switch (pStnod->m_park)
 	{
-	case PARK_Identifier:			FormatCoz(pStrbuf, "`%s", StrFromIdentifier(pStnod).PCoz());	return;
+	case PARK_Identifier:			FormatCoz(pStrbuf, "%s", StrFromIdentifier(pStnod).PCoz());	return;
 	case PARK_ReservedWord:			AppendCoz(pStrbuf, PCozFromRword(pStnod->m_pStval->m_rword));	return;
 	case PARK_Nop:					AppendCoz(pStrbuf, "nop");										return;
 	case PARK_Literal:				

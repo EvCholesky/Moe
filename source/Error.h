@@ -36,6 +36,8 @@ enum ERRID
 	ERRID_CantFindProc				= 2007,
 	ERRID_CantFindMain				= 2008,
 	ERRID_IncorrectIvalk			= 2009,
+	ERRID_BadArrayIndex				= 2010,
+	ERRID_NotYetSupported			= 2011,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

@@ -166,7 +166,7 @@ struct SLiteralType	// litty
 
 enum FLEXER
 {
-	FLEXER_EndOfLine	= 0x1,
+	FLEXER_EndOfLine	= 0x1,	// lexing to this token passed a newline - really StartOfLine
 
 	FLEXER_None			= 0x0,
 	FLEXER_All			= 0x1,
@@ -234,6 +234,11 @@ struct SLexerLocation // tag = lexloc
 void InitLexer(SLexer * pLex, const char * pCoInput, const char * pCoInputEnd, char * aChStorage, u32 cChStorage);
 bool FConsumeToken(SLexer * pLex, TOK tok);
 int TokNext(SLexer * pLex);
+
+void SkipToToken(SLexer * pLex, TOK const * const aTok, int cTok, GRFLEXER grflexer);
+inline void SkipRestOfLine(SLexer * pLex)
+	{ SkipToToken(pLex, nullptr, 0, FLEXER_EndOfLine); }
+
 void SplitToken(SLexer * pLex, TOK tokSplit);
 RWORD RwordLookup(SLexer * pLex);
 
