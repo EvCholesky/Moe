@@ -24,6 +24,7 @@ enum ERRID
 	ERRID_EnumRepeat				= 1001,
 	ERRID_ShadowedDefine			= 1002,
 	ERRID_BadOverloadSig			= 1003,
+	ERRID_OldCStyle					= 1004,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,

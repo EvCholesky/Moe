@@ -11,13 +11,20 @@
 // Note: Int## is a stand in for platform specific int sizes (any ## will be replaced with 32 or 64 depending on the platform)
 
 // [X] Document permute string format
-// [ ] Track and fix unit test memory leaks
 // [ ] Finish porting tests and delete old code
 // [ ] Add support for named test command line arg
-// [ ] Add support for built-in tests
+// [X] Add support for built-in tests
 // [X] Finish work on expected errors
 
+// Built in tests
+
+test builtin Lexer
+test builtin Signed65
+test builtin Unicode
+test builtin UniqueNames
+
 // Declaration Tests:
+
 test DeclareAssign
 	input "v : $type = $init"
 	parse "(decl v $type $initp)"
@@ -325,6 +332,12 @@ test ArrayAssign
 		$type(s32|s8|f32|bool) + $index(0|4)
 	}
 
+test ArrayRefAssign
+	prereq "aN : [2] int"
+	input "aNRef : [] int = aN"
+	parse "(decl aNRef ([] int) aN)"
+	typecheck "([]int aNRef ([]int int) [2]int)"
+
 test ArrrayConstants
 	prereq "aN : [3] int"
 	input "n := aN.$arymemb"
@@ -352,6 +365,39 @@ test ArrayToPointer
 	{
 		$type(int|bool) + $ptype("$type") + $tctype("$type"),
 		$type("&int") + $ptype("(ptr int)") + $tctype("(&int int)"),
+	}
+
+test ArrayLiteral
+	input "aN $tdecl {$tspec 1, 2, 3}"
+	parse "(decl aN $ptdecl(arrayLit $elemspec({} 1 2 3)))"
+	typecheck "([3]$elemtype aN $tcdecl(Literal:Array $elemspec({} Literal:$lit Literal:$lit Literal:$lit)))"
+	{
+		$tdecl(": [3] s16 = ") + $ptdecl("([] 3 s16) ") + $tcdecl("([3]s16 Literal:Int64 s16) ") + $elemtype(s16)
+		{
+			$tspec(":$elemtype:") + $elemspec("$elemtype ") + $lit(Int16),
+		},
+		$tdecl(": [3] int = ") + $ptdecl("([] 3 int) ") + $tcdecl("([3]int Literal:Int64 int) ") + $elemtype(int) + $lit("Int64")
+		{
+			$tspec("") + $elemspec(""),
+			$tspec(":$elemtype:") + $elemspec("$elemtype "),
+		},
+		$tdecl(":=") + $ptdecl("") + $tcdecl("") + $elemtype(int) + $lit("Int64")
+		{
+			$tspec("") + $elemspec(""),
+			$tspec(":$elemtype:") + $elemspec("$elemtype "),
+		},
+	}
+
+test ArrayLiteralConst
+	input "aN :: {$tspec 1, 2, 3}"
+	parse "(const aN (arrayLit $elemspec({} 1 2 3)))"
+	typecheck "(Literal:Array aN (Literal:Array $elemspec({} Literal:Int Literal:Int Literal:Int)))"
+	{
+		$elemtype(int|s8) + $lit("Int")
+		{
+			$tspec("") + $elemspec(""),
+			$tspec(":$elemtype:") + $elemspec("$elemtype "),
+		},
 	}
 
 // Explicit Casts:
@@ -467,7 +513,9 @@ test ProcRefArray
 
 // Here Strings:
 // For Loops:
+
 // Loops:
+
 test WhileLoop
 	prereq "n:s64 = 5"
 	input "while $cond { --n }"
@@ -481,4 +529,4 @@ test WhileLoop
 // Break & Continue:
 // Switch:
 
-
+// Unicode

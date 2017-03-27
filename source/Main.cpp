@@ -27,7 +27,6 @@
 
 using namespace EWC;
 
-extern void TestLexing();
 extern void TestParse();
 extern void TestTypeCheck();
 extern void TestCodeGen();

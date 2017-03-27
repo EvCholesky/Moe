@@ -501,7 +501,7 @@ void TestUtf8()
 	EWC_ASSERT(EWC::FAreCozEqual(strbuf.m_pCozBegin, pCozExpected), "bad utf8 copy");
 }
 
-void TestUnicode()
+bool FTestUnicode()
 {
 	TestUtf8();
 
@@ -561,4 +561,5 @@ void TestUnicode()
 		EWC_ASSERT(EWC::FAreCozEqual((char*)aCozPuny, s_aTestr[ipCoz].m_pCozUtf8), "punycode decode fail");
 
 	}
+	return true;
 }

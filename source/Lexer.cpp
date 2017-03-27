@@ -770,12 +770,8 @@ void AssertMatches(
 	}
 }
 
-void TestLexing()
+bool FTestLexing()
 {
-	u8 aBString[1024 * 100];
-	EWC::CAlloc allocString(aBString, sizeof(aBString));
-
-	StaticInitStrings(&allocString);
 
 	const char * s_pChz = u8"😁+✂";
 	const TOK s_aTokEmoji[] = {	
@@ -871,7 +867,7 @@ void TestLexing()
 
 	AssertMatches(s_pChzTriple, s_aTokTriple);
 
-	StaticShutdownStrings(&allocString);
+	return true;
 }
 #else // LEXER_TEST
 void TestLexing()

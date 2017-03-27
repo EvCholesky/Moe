@@ -19,5 +19,3 @@
 
 EWC::CString StrPunyEncode(const char * pCozInput);
 EWC::CString StrPunyDecode(const char * pChzInput);
-
-void TestUnicode();

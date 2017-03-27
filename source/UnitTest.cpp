@@ -31,6 +31,11 @@
 using namespace EWC;
 
 
+extern bool FTestLexing();
+extern bool FTestSigned65();
+extern bool FTestUnicode();
+extern bool FTestUniqueNames(CAlloc * pAlloc);
+
 
 struct SPermutation;
 struct SOption // tag = opt
@@ -81,6 +86,14 @@ struct SPermutation // tag = perm
 	SLexerLocation			m_lexloc;
 };
 
+enum UTESTK
+{
+	UTESTK_Permute,
+	UTESTK_Builtin,
+
+	EWC_MAX_MIN_NIL(UTESTK)
+};
+
 struct SUnitTest // tag = utest
 {
 							SUnitTest(CAlloc * pAlloc)
@@ -89,6 +102,7 @@ struct SUnitTest // tag = utest
 							,m_pCozInput(nullptr)
 							,m_pCozParse(nullptr)
 							,m_pCozTypeCheck(nullptr)
+							,m_utestk(UTESTK_Permute)
 							,m_arypPerm(pAlloc, BK_UnitTest)
 								{ ; }
 
@@ -116,6 +130,7 @@ struct SUnitTest // tag = utest
 	char *					m_pCozInput;
 	char *					m_pCozParse;
 	char *					m_pCozTypeCheck;
+	UTESTK					m_utestk;
 
 	CDynAry<SPermutation *>	m_arypPerm;
 };
@@ -149,6 +164,7 @@ enum TESTRES	// TEST RESults
 	TESTRES_ParseMismatch,		
 	TESTRES_TypeCheckMismatch,
 	TESTRES_CodeGenFailure,
+	TESTRES_BuiltinFailure,
 	
 	EWC_MAX_MIN_NIL(TESTRES)
 };
@@ -573,11 +589,20 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 	SLexerLocation lexloc(pLex);
 	SUnitTest * pUtest = EWC_NEW(pTesctx->m_pAlloc, SUnitTest) SUnitTest(pTesctx->m_pAlloc);
 
+	auto pChzDirective = "test";
+	if (pLex->m_str == "builtin")
+	{
+		TokNext(pLex);
+		pUtest->m_utestk = UTESTK_Builtin;
+		pChzDirective = "builtin";
+	}
 	if (pLex->m_tok != TOK_Identifier)
 	{
-		ParseError(pTesctx, pLex, "Expected test name to follow test directive, but encountered '%s'", PCozCurrentToken(pLex));
+		ParseError(pTesctx, pLex, "Expected test name to follow %s directive, but encountered '%s'", pChzDirective, PCozCurrentToken(pLex));
 		return nullptr;
 	}
+
+
 	pUtest->m_strName = pLex->m_str;
 	TokNext(pLex);
 
@@ -614,6 +639,14 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 			ParseError(pTesctx, pLex, "unknown token encountered '%s' during test %s", PCozCurrentToken(pLex), pUtest->m_strName.PCoz());
 			TokNext(pLex);
 			SkipRestOfLine(pLex);
+		}
+	}
+
+	if (pUtest->m_utestk != UTESTK_Permute)
+	{
+		if (pUtest->m_pCozPrereq || pUtest->m_pCozInput || pUtest->m_pCozParse || pUtest->m_pCozTypeCheck || pUtest->m_arypPerm.C())
+		{
+			ParseError(pTesctx, pLex, "permute string test is not allowed for test %s", pUtest->m_strName.PCoz());
 		}
 	}
 	
@@ -957,6 +990,34 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 	pTesctx->m_arySubStack.PopLast();
 }
 
+bool FRunBuiltinTest(const CString & strName, CAlloc * pAlloc)
+{
+	bool fReturn;
+	if (strName == "Lexer")
+	{
+		fReturn = FTestLexing();
+	}
+	else if (strName == "Signed65")
+	{
+		fReturn = FTestSigned65();
+	}
+	else if (strName == "Unicode")
+	{
+		fReturn = FTestUnicode();
+	}
+	else if (strName == "UniqueNames")
+	{
+		fReturn = FTestUniqueNames(pAlloc);
+	}
+	else
+	{
+		printf("ERROR: Unknown built in test %s\n", strName.PCoz());
+		fReturn = false;
+	}
+	
+	return fReturn;
+}
+
 void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLexer * pLex)
 {
 	STestContext tesctx(pAlloc, pErrman, pErrman->m_pWork);
@@ -975,6 +1036,21 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 	for (auto ppUtest = arypUtest.A(); ppUtest != ppUtestMax; ++ppUtest)
 	{
 		SUnitTest * pUtest = *ppUtest;
+
+		if (pUtest->m_utestk == UTESTK_Builtin)
+		{
+			printf("Built-In %s\n", pUtest->m_strName.PCoz());
+			if (!FRunBuiltinTest(pUtest->m_strName, pAlloc))
+			{
+				printf("Built in test %s Failed\n", pUtest->m_strName.PCoz());
+				++tesctx.m_mpTestresCResults[TESTRES_BuiltinFailure];
+			}
+			else
+			{
+				++tesctx.m_mpTestresCResults[TESTRES_Success];
+			}
+			continue;
+		}
 
 		if (pUtest->m_arypPerm.FIsEmpty())
 		{

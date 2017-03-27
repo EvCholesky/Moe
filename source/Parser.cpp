@@ -2960,6 +2960,13 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 	{
 		CSTNode * pStnodFor = PStnodParseReservedWord(pParctx, pLex, RWORD_For);
 
+		SLexerLocation lexloc(pLex);
+		if (pLex->m_tok == TOK('('))
+		{
+			EmitError(pParctx->m_pWork, &lexloc, ERRID_OldCStyle, "Parens are not needed for C-Style for loop");
+			TokNext(pLex);
+		}
+
 		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
 		pStnodFor->m_pStfor = pStfor;
 
@@ -2969,7 +2976,6 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 			*ppStidentLabel = nullptr;
 		}
 
-		SLexerLocation lexloc(pLex);
 		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for", &pParctx->m_pWork->m_unsetTin);
 		pStnodFor->m_pSymtab = pSymtabLoop;
 

@@ -264,6 +264,8 @@ GLerp proc (gA: f32, gB: f32, uLerp: f32) -> f32 inline			{ return gA + (gB - gA
 
 NMin proc (nA: int, nB: int) -> int inline						{ if (nA < nB) { return nA } return nB }
 NMax proc (nA: int, nB: int) -> int inline						{ if (nA > nB) { return nA } return nB }
+NMin proc (nA: s32, nB: s32) -> s32 inline						{ if (nA < nB) { return nA } return nB }
+NMax proc (nA: s32, nB: s32) -> s32 inline						{ if (nA > nB) { return nA } return nB }
 
 NSign proc (n: int) -> int inline
 {

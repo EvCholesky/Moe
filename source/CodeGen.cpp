@@ -5948,45 +5948,59 @@ void CodeGenEntryPoint(
 	}
 }
 
-void TestUniqueNames(CAlloc * pAlloc)
+bool FTestUniqueNames(CAlloc * pAlloc)
 {
+#ifdef EWC_TRACK_ALLOCATION
+	u8 aBAltrac[1024 * 100];
+	CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
+
+	CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
+	pAlloc->SetAltrac(pAltrac);
+#endif
+
 	size_t cbFreePrev = pAlloc->CB();
 	{
-		SErrorManager errman;
-		CWorkspace work(pAlloc, &errman);
-
-		CIRBuilder build(&work, nullptr, "", FCOMPILE_None);
-
 		const char * pChzIn;
 		char aCh[128];
+		SUniqueNameSet unset(pAlloc, EWC::BK_Workspace, 0);
 
-		auto pUnset = &work.m_unset;
 		pChzIn = "funcName";
-		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(&unset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual(pChzIn, aCh), "bad unique name");
 
-		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(&unset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("funcName1", aCh), "bad unique name");
 
 		pChzIn = "funcName20";
-		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(&unset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("funcName20", aCh), "bad unique name");
 
 		pChzIn = "234";
-		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(&unset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("234", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(&unset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("test6000", aCh), "bad unique name");
 
 		pChzIn = "test6000";
-		GenerateUniqueName(pUnset, pChzIn, aCh, EWC_DIM(aCh));
+		GenerateUniqueName(&unset, pChzIn, aCh, EWC_DIM(aCh));
 		EWC_ASSERT(FAreCozEqual("test6001", aCh), "bad unique name");
 	}
 
 	size_t cbFreePost = pAlloc->CB();
+#ifdef EWC_TRACK_ALLOCATION
+	if (cbFreePrev != cbFreePost)
+	{
+		pAlloc->PrintAllocations();
+	}
+
+	DeleteAltrac(&allocAltrac, pAltrac);
+	pAlloc->SetAltrac(nullptr);
+#endif
 	EWC_ASSERT(cbFreePrev == cbFreePost, "memory leak testing unique names");
+
+	return true;
 }
 
 size_t CChConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax)
@@ -6225,7 +6239,7 @@ void TestCodeGen()
 	CWorkspace work(&alloc, &errman);
 	work.m_globmod = GLOBMOD_UnitTest;
 
-	TestUniqueNames(&alloc);
+	FTestUniqueNames(&alloc);
 
 	const char * pChzIn;
 
