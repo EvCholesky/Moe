@@ -38,6 +38,14 @@ F32x2Create proc (x: float, y: float) -> f32x2
 	return vec
 }
 
+F32x2Cast proc (ivec: s32x2) -> f32x2
+{
+	vec : f32x2
+	vec.m_x = cast(f32)ivec.m_x
+	vec.m_y = cast(f32)ivec.m_y
+	return vec
+}
+
 F32x3Create proc (x: float, y: float, z: float) -> f32x3
 {
 	vec : f32x3
@@ -165,6 +173,14 @@ S32x2Create proc (x: s32, y: s32) -> s32x2
 	ivec: s32x2
 	ivec.m_x = x
 	ivec.m_y = y
+	return ivec
+}
+
+S32x2Round proc (vec: f32x2) -> s32x2
+{
+	ivec: s32x2
+	ivec.m_x = NRound(vec.m_x)
+	ivec.m_y = NRound(vec.m_y)
 	return ivec
 }
 

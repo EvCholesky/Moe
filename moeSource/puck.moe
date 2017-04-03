@@ -935,7 +935,7 @@ FMapGridFromString proc (pChzInput: & const u8, aChMap: [] u8) -> bool
 	return true
 }
 
-FHandlePlayerInputEvent proc (pEvent: & SEvent, pPlayinp: & SPlayerInput)
+HandlePlayerInputEvent proc (pEvent: & SEvent, pPlayinp: & SPlayerInput)
 {
 	mpKeycodeButk: [BUTK.max] KEYCODE = 
 	{	
@@ -968,9 +968,6 @@ ClearPlayerInput proc (pPlayinp: & SPlayerInput)
 
 FHandleEvents proc (pPlayinp: & SPlayerInput) -> bool
 {
-	a : int = 1	
-	b : int = 1	
-
 	ClearPlayerInput(pPlayinp)
 
 	event : SEvent
@@ -980,7 +977,7 @@ FHandleEvents proc (pPlayinp: & SPlayerInput) -> bool
 		if event.m_keycode == KEYCODE.Escape && event.m_edges == EDGES.Press
 			{ return false }
 
-		FHandlePlayerInputEvent(&event, pPlayinp)
+		HandlePlayerInputEvent(&event, pPlayinp)
 	}
 
 	return true

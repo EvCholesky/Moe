@@ -963,6 +963,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 				if (!pCozInput || !pCozParse || !pCozTypeCheck)
 				{
 					printf("... skipping test due to errors\n");
+					++pTesctx->m_mpTestresCResults[TESTRES_UnitTestFailure];
 				}
 				else
 				{

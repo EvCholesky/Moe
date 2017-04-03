@@ -28,6 +28,9 @@ Sleep proc (msResolution: u32) #foreign
 
 FGetNextEvent proc (pEvent: & SEvent) -> bool #foreign
 
+CreateJoystickManager proc () -> & void #foreign
+UpdateJoystickManager proc (pVJoyman: & void) #foreign
+
 
 GL_POINTS ::                0x0000
 GL_LINES ::                 0x0001
@@ -244,6 +247,15 @@ KEYCODE enum u32
     F14: 24,
     F15: 25,
     F16: 26,
+
+    DPadLeft: 30,
+    DPadRight: 31,
+    DPadUp: 32,
+    DPadDown: 33,
+    JoypadButton1: 34,
+    JoypadButton2: 35,
+    JoypadButton3: 36,
+    JoypadButton4: 37,
 }
 
 EDGES enum u32

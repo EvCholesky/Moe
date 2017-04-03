@@ -101,6 +101,11 @@ extern "C" int32_t NCeil(float g)
 	return static_cast<int32_t>(ceil(g)); 
 }
 
+extern "C" int32_t NFloor(float g)
+{ 
+	return static_cast<int32_t>(floor(g)); 
+}
+
 extern "C" int32_t NRound(float g)
 {
 	float gSign = GSign(g); 

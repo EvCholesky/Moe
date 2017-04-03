@@ -47,6 +47,15 @@ test DeclareAssign
 		},
 	}
 
+test DeclareSigned
+	input "n : s$bits = -1"
+	parse "(decl n s$bits (unary[-] 1))"
+	typecheck "(s$bits n s$bits (Literal:Int$bits Literal:Int))"
+	{
+		$bits(8|16|32|64)
+	}
+
+
 test DeclareAssignString
 	input "v : $type = \"hello world\""
 	parse "(decl v $ptype \"hello world\")"

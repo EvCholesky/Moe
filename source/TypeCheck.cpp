@@ -1597,12 +1597,21 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 				return pSymtab->PTinBuiltin("u64");
 			}
 
+			s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
+			if (fIsValNegative)
+			{
+				if (nSigned >= SCHAR_MIN)	return pSymtab->PTinBuiltin("s8");
+				if (nSigned >= SHRT_MIN)	return pSymtab->PTinBuiltin("s16");
+				if (nSigned >= INT_MIN)	return pSymtab->PTinBuiltin("s32");
+				return pSymtab->PTinBuiltin("s64");
+			}
+
 			// NOTE - if this value isn't explicitly negative, allow code to initialize it with 
 			//  values large enough to cause it to be negative. ie. n:s32=0xFFFFFFFF;
-			s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
-			if ((nSigned & ~0x00000000000000FF) == 0)	return pSymtab->PTinBuiltin("s8");
-			if ((nSigned & ~0x000000000000FFFF) == 0)	return pSymtab->PTinBuiltin("s16");
-			if ((nSigned & ~0x00000000FFFFFFFF) == 0)	return pSymtab->PTinBuiltin("s32");
+
+			if (nSigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("s8");
+			if (nSigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("s16");
+			if (nSigned <= UINT_MAX)	return pSymtab->PTinBuiltin("s32");
 			return pSymtab->PTinBuiltin("s64");
 		}
 	case LITK_Float:	return pSymtab->PTinBuiltin("float");
@@ -1694,6 +1703,11 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 			auto pTinstructRhs = (STypeInfoStruct *)pTinRhs;
 
 			return pTinstructLhs->m_pStnodStruct == pTinstructRhs->m_pStnodStruct;
+		}
+	case TINK_Enum:
+		{
+			// if we're not the same enum, return false
+			return false;
 		}
 	case TINK_Procedure:
 		{

@@ -10,6 +10,7 @@
 enum EVENTK : s32   // JB - If we set this to u8, our packing will stop matching C's.
 {
     EVENTK_Keyboard,
+	EVENTK_Joystick,
     EVENTK_TextInput,
     EVENTK_Window,
     EVENTK_Quit,
@@ -43,6 +44,15 @@ enum KEYCODE : s32
     KEYCODE_F10 = 20,
     KEYCODE_F11 = 21,
     KEYCODE_F12 = 22,
+
+    KEYCODE_DPadLeft = 30,
+    KEYCODE_DPadRight = 31,
+    KEYCODE_DPadUp = 32,
+    KEYCODE_DPadDown = 33,
+	KEYCODE_JoypadButton1 = 34,
+	KEYCODE_JoypadButton2 = 35,
+	KEYCODE_JoypadButton3 = 36,
+	KEYCODE_JoypadButton4 = 37,
 
 	EWC_MAX_MIN_NIL(KEYCODE)
 };
@@ -91,6 +101,9 @@ public:
 };
 
 static SEventFifo s_evfifo;
+
+static int s_cJoystickConnected = 0;
+static int s_aiJoystick[GLFW_JOYSTICK_LAST];
 
 SEvent * SEventFifo::PEventPushBack()
 {
@@ -247,6 +260,164 @@ extern "C" pfnGlProc PFnGlProcLookup(const char * pChzProcname)
 		printf("GL Error: %d\n", nGlError);
 	}
 	return pFnGlProc;
+}
+
+enum JOYCONS // JOYstick CONnection State
+{
+	JOYCONS_Disconnected,
+	JOYCONS_Connected,
+
+	JOYCONS_Nil = -1
+};
+
+struct SJoystick // tag = Joy
+{
+
+	JOYCONS			m_joycons;
+
+	int				m_iJoy;			// GLFW joystick token GLFW_JOYSTICK_1 .. GLFW_JOYSTICK_LAST
+	int				m_cGAxis;
+	int				m_cBButton;
+	const float *	m_aGAxis;		// allocated by GLFL, scope valid until controller disconnect
+	const u8 *		m_aBButton;		// allocated by GLFL, scope valid until controller disconnect
+
+	float *			m_aGAxisPrev;	// allocted locally, delete upon controller disconnect
+	u8 *			m_aBButtonPrev;	// allocted locally, delete upon controller disconnect
+};
+
+struct SJoystickManager
+{
+					SJoystickManager();
+
+	SJoystick		 m_aJoy[GLFW_JOYSTICK_LAST];
+
+	SJoystickManager *	m_pJoymanNext;
+};
+
+SJoystickManager::SJoystickManager()
+:m_pJoymanNext(nullptr)
+{ 
+	SJoystick * pJoyMax = EWC_PMAC(m_aJoy);
+	for (SJoystick * pJoy = m_aJoy; pJoy != pJoyMax; ++pJoy)
+	{
+		pJoy->m_iJoy = int(pJoy - m_aJoy);
+		pJoy->m_joycons = JOYCONS_Disconnected;
+
+		pJoy->m_cGAxis = 0;
+		pJoy->m_cBButton = 0;
+		pJoy->m_aGAxis = nullptr;
+		pJoy->m_aBButton = nullptr;
+
+		pJoy->m_aGAxisPrev = nullptr;
+		pJoy->m_aBButtonPrev = nullptr;
+	}
+}
+
+static SJoystickManager * s_pJoymanRoot = nullptr;
+
+
+
+static void SetJoycons(SJoystick * pJoy, JOYCONS joycons)
+{
+	if (pJoy->m_joycons == joycons)
+		return;
+
+	pJoy->m_joycons = joycons;
+	if (joycons == JOYCONS_Connected)
+	{
+		const char * pChzName = glfwGetJoystickName(pJoy->m_iJoy);
+		printf("joystick \"%s\" connected\n", pChzName);
+
+		pJoy->m_aGAxis = glfwGetJoystickAxes(pJoy->m_iJoy, &pJoy->m_cGAxis);
+		pJoy->m_aBButton = glfwGetJoystickButtons(pJoy->m_iJoy, &pJoy->m_cBButton);
+
+		pJoy->m_aGAxisPrev = new float[pJoy->m_cGAxis];
+		pJoy->m_aBButtonPrev = new u8[pJoy->m_cBButton];
+
+		auto pGAxisPrevMax = &pJoy->m_aGAxisPrev[pJoy->m_cGAxis];
+		for (auto pGAxisPrev = pJoy->m_aGAxisPrev; pGAxisPrev != pGAxisPrevMax; ++pGAxisPrev)
+		{
+			*pGAxisPrev = 0.0f;
+		}
+
+		auto pBButtonPrevMax = &pJoy->m_aBButtonPrev[pJoy->m_cBButton];
+		for (auto pBButtonPrev = pJoy->m_aBButtonPrev; pBButtonPrev != pBButtonPrevMax; ++pBButtonPrev)
+		{
+			*pBButtonPrev = GLFW_RELEASE;
+		}
+	}
+	else
+	{
+		pJoy->m_aGAxis = nullptr;
+		pJoy->m_aBButton = nullptr;
+		pJoy->m_cGAxis = 0;
+		pJoy->m_cBButton = 0;
+		delete[] pJoy->m_aGAxisPrev;
+		delete[] pJoy->m_aBButtonPrev;
+	}
+}
+
+static void GlfwJoystickCallback(int iJoy, int event)
+{
+	JOYCONS joycons = JOYCONS_Nil;
+    if (event == GLFW_CONNECTED)
+    {
+		joycons = JOYCONS_Connected;
+    }
+    else if (event == GLFW_DISCONNECTED)
+    {
+		joycons = JOYCONS_Disconnected;
+    }
+
+	if (joycons != JOYCONS_Nil)
+	{
+		SJoystickManager * pJoyman = s_pJoymanRoot;
+		while (pJoyman)
+		{
+			SetJoycons(&pJoyman->m_aJoy[iJoy], joycons);
+			pJoyman = pJoyman->m_pJoymanNext;
+		}
+	}
+}
+
+extern "C" void * CreateJoystickManager()
+{
+	SJoystickManager * pJoyman = new SJoystickManager;
+	if (!s_pJoymanRoot)
+	{
+		glfwSetJoystickCallback(GlfwJoystickCallback);
+	}
+
+	for (int iJoy = 0; iJoy < EWC_DIM(pJoyman->m_aJoy); ++iJoy)
+	{
+		JOYCONS joycons = (glfwJoystickPresent(iJoy) != 0) ? JOYCONS_Connected : JOYCONS_Disconnected;
+		SetJoycons(&pJoyman->m_aJoy[iJoy], joycons);
+	}
+
+	pJoyman->m_pJoymanNext = s_pJoymanRoot;
+	s_pJoymanRoot = pJoyman;
+	return pJoyman;
+}
+
+extern "C" void UpdateJoystickManager(void * pVJoyman)
+{
+	auto pJoyman = (SJoystickManager *)pVJoyman;
+	for (int iJoy = 0; iJoy < EWC_DIM(pJoyman->m_aJoy); ++iJoy)
+	{
+		auto pJoy = &pJoyman->m_aJoy[iJoy];
+
+		for (int iBButton = 0; iBButton < pJoy->m_cBButton; ++iBButton)
+		{
+			pJoy->m_aBButton = glfwGetJoystickButtons(pJoy->m_iJoy, &pJoy->m_cBButton);
+
+			if (pJoy->m_aBButton[iBButton] != pJoy->m_aBButtonPrev[iBButton])
+			{
+				printf("joy(%d) button %d: %d -> %d\n", iJoy, iBButton, pJoy->m_aBButtonPrev[iBButton], pJoy->m_aBButton[iBButton]);
+				pJoy->m_aBButtonPrev[iBButton] = pJoy->m_aBButton[iBButton];
+			}
+		}
+	}
+	pJoyman = pJoyman->m_pJoymanNext;
 }
 
 extern "C" void CreateWindow_MOE(s64 dX, s64 dY, const char * pChzName, void ** ppVHwnd)

@@ -390,7 +390,7 @@ void SkipToToken(SLexer * pLex, TOK const * const aTok, int cTok, GRFLEXER grfle
 {
 	while (1)
 	{
-		bool fFound = pLex->m_grflexer.FIsSet(grflexer);
+		bool fFound = (grflexer != FLEXER_None) && pLex->m_grflexer.FIsSet(grflexer);
 		TOK tok = (TOK)pLex->m_tok;
 		if (tok == TOK_Eof)
 			break;
@@ -406,7 +406,7 @@ void SkipToToken(SLexer * pLex, TOK const * const aTok, int cTok, GRFLEXER grfle
 	}
 }
 
-void Expect(CParseContext * pParctx, SLexer * pLex, TOK tokExpected, const char * pCozInfo = nullptr, ...)
+bool FExpect(CParseContext * pParctx, SLexer * pLex, TOK tokExpected, const char * pCozInfo = nullptr, ...)
 {
 	if (pLex->m_tok != tokExpected)
 	{
@@ -420,10 +420,12 @@ void Expect(CParseContext * pParctx, SLexer * pLex, TOK tokExpected, const char 
 
 		auto strUnexpected = StrUnexpectedToken(pLex);
 		ParseError(pParctx, pLex, "Expected '%s' before '%s' %s", PCozFromTok(tokExpected), strUnexpected.PCoz(), aB);
+		return false;
 	}
 	else
 	{
 		TokNext(pLex);
+		return true;
 	}
 }
 
@@ -703,13 +705,13 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 					auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
 					pStdecl->m_iStnodType = pStnodLit->IAppendChild(pStnodType);
 
-					Expect(pParctx, pLex, TOK(':'));
+					FExpect(pParctx, pLex, TOK(':'));
 				}
 
 				CSTNode * pStnodValues = PStnodParseExpressionList(pParctx, pLex);
 				pStdecl->m_iStnodInit = pStnodLit->IAppendChild(pStnodValues);
 
-				Expect(pParctx, pLex, TOK('}'), "while parsing array literal");
+				FExpect(pParctx, pLex, TOK('}'), "while parsing array literal");
 				return pStnodLit;
 			} break;
 		case '(':	// ( Expression )
@@ -717,7 +719,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 				TokNext(pLex); // consume '('
 
 				CSTNode * pStnodReturn = PStnodParseExpression(pParctx, pLex);
-				Expect(pParctx, pLex, TOK(')'));
+				FExpect(pParctx, pLex, TOK(')'));
 				return pStnodReturn;
 			}
 
@@ -752,7 +754,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 				pStnodArray->IAppendChild(pStnodElement);
 
 				pStnod = pStnodArray;
-				Expect(pParctx, pLex, TOK(']'));
+				FExpect(pParctx, pLex, TOK(']'));
 			} break;
 		case TOK('('):		// ( )
 			{				// ( ArgumentExpressionList )
@@ -783,10 +785,10 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 
 					if ((pStnodArg==nullptr) | (pLex->m_tok != TOK(',')))
 						break;
-					Expect(pParctx, pLex, TOK(','));
+					FExpect(pParctx, pLex, TOK(','));
 				}
 
-				Expect(
+				FExpect(
 					pParctx,
 					pLex,
 					TOK(')'),
@@ -863,7 +865,7 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SLexer * pLex)
 					SLexerLocation lexloc(pLex);
 					TokNext(pLex);
 
-					Expect(pParctx, pLex, TOK('('));
+					FExpect(pParctx, pLex, TOK('('));
 
 					CSTNode * pStnodChild = PStnodParseUnaryExpression(pParctx, pLex);
 					if (!pStnodChild)
@@ -871,7 +873,7 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SLexer * pLex)
 						ParseError(pParctx, pLex, "%s missing argument.", PCozFromRword(rword));
 					}
 					
-					Expect(pParctx, pLex, TOK(')'));
+					FExpect(pParctx, pLex, TOK(')'));
 
 					CSTNode * pStnodRword = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 					pStnodRword->m_tok = tokPrev;
@@ -950,12 +952,12 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SLexer * pLex)
 
 	if (rword == RWORD_Cast)
 	{
-		Expect(pParctx, pLex, TOK('('));
+		FExpect(pParctx, pLex, TOK('('));
 
 		auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
 		pStdecl->m_iStnodType = pStnodCast->IAppendChild(pStnodType);
 
-		Expect(pParctx, pLex, TOK(')'));
+		FExpect(pParctx, pLex, TOK(')'));
 	}
 
 	auto pStnodChild = PStnodParseCastExpression(pParctx, pLex);
@@ -1249,7 +1251,7 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SLexer * pLex)
 			}
 		}
 
-		Expect(pParctx, pLex, TOK(']'));
+		FExpect(pParctx, pLex, TOK(']'));
 		return pStnodArray;
 	}
 	return nullptr;
@@ -1270,7 +1272,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		CSymbolTable * pSymtabProc = nullptr; //null symbol table as the we're a forward reference
 		CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pLex, pSymtabProc);
 		pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
-		Expect(pParctx, pLex, TOK(')'));
+		FExpect(pParctx, pLex, TOK(')'));
 
 		auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex);
 		pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
@@ -2150,7 +2152,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			// function definition
 			if (rword == RWORD_Proc || rword == RWORD_Operator)
 			{
-				Expect(pParctx, pLex, TOK('('));
+				FExpect(pParctx, pLex, TOK('('));
 
 				CSTNode * pStnodProc = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodProc->m_park = PARK_ProcedureDefinition;
@@ -2170,7 +2172,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pLex, pSymtabProc);
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
-				Expect(pParctx, pLex, TOK(')'));
+				FExpect(pParctx, pLex, TOK(')'));
 
 				auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex);
 				pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
@@ -2377,7 +2379,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				(void) pSymtabEnum->PSymEnsure(pErrman, "loose", pStnodEnum, FSYM_IsType | FSYM_VisibleWhenNested);
 				(void) pSymtabEnum->PSymEnsure(pErrman, "strict", pStnodEnum, FSYM_IsType | FSYM_VisibleWhenNested);
 
-				Expect(pParctx, pLex, TOK('{'));
+				FExpect(pParctx, pLex, TOK('{'));
 
 				pSymtabEnum->m_iNestingDepth = pParctx->m_pSymtab->m_iNestingDepth + 1;
 				PushSymbolTable(pParctx, pSymtabEnum, lexloc);
@@ -2389,7 +2391,11 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
 				EWC_ASSERT(pSymtabEnum == pSymtabPop, "CSymbol table push/pop mismatch (enum)");
 
-				Expect(pParctx, pLex, TOK('}'));
+				if (!FExpect(pParctx, pLex, TOK('}')))
+				{
+					TOK closeBracket = TOK('}');
+					SkipToToken(pLex, &closeBracket, 1, FLEXER_None);
+				}
 
 				// type info enum
 				int cStnodChild;
@@ -2443,7 +2449,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			}
 			else if (rword == RWORD_Struct)
 			{
-				Expect(pParctx, pLex, TOK('{'));
+				FExpect(pParctx, pLex, TOK('{'));
 
 				CSTNode * pStnodStruct = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodStruct->m_park = PARK_StructDefinition;
@@ -2565,7 +2571,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pSymStruct->m_pTin = pTinstruct;
 				pStnodStruct->m_pTin = pTinstruct;
 
-				Expect(pParctx, pLex, TOK('}'));
+				FExpect(pParctx, pLex, TOK('}'));
 
 				return pStnodStruct;
 			}
@@ -2699,7 +2705,7 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pLex, C
 
 		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
 		EWC_ASSERT(pSymtab == pSymtabPop, "CSymbol table push/pop mismatch (list)");
-		Expect(pParctx, pLex, TOK('}'));
+		FExpect(pParctx, pLex, TOK('}'));
 	}
 
 	return pStnodList;
@@ -2788,7 +2794,7 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 					TokNext(pLex);
 				}
 
-				Expect(pParctx, pLex, TOK(':'));
+				FExpect(pParctx, pLex, TOK(':'));
 				CreateSwitchList(pParctx, pLex, &pStnodList);
 
 				pStnodCase->IAppendChild(pStnodList);
@@ -2799,7 +2805,7 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 				CSTNode * pStnodDefault = PStnodParseReservedWord(pParctx, pLex, RWORD_Default);
 				pStnodSwitch->IAppendChild(pStnodDefault);
 
-				Expect(pParctx, pLex, TOK(':'));
+				FExpect(pParctx, pLex, TOK(':'));
 				CreateSwitchList(pParctx, pLex, &pStnodList);
 
 				pStnodDefault->IAppendChild(pStnodList);
@@ -2827,7 +2833,7 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 		EWC_ASSERT(pStnodList->m_pSymtab == pSymtabPop, "CSymbol table push/pop mismatch (list)");
 	}
 
-	Expect(pParctx, pLex, TOK('}'));
+	FExpect(pParctx, pLex, TOK('}'));
 
 	if (pStnodSwitch->CStnodChild() < 2)
 	{
@@ -2986,21 +2992,21 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 		if (pStnodDecl)
 			ExpectEndOfStatement(pParctx, pLex);
 		else
-			Expect(pParctx, pLex, TOK(';'));
+			FExpect(pParctx, pLex, TOK(';'));
 		pStfor->m_iStnodDecl = pStnodFor->IAppendChild(pStnodDecl);
 
 		CSTNode * pStnodPred = PStnodParseExpression(pParctx, pLex);
 		if (pStnodPred)
 			ExpectEndOfStatement(pParctx, pLex);
 		else
-			Expect(pParctx, pLex, TOK(';'));
+			FExpect(pParctx, pLex, TOK(';'));
 		pStfor->m_iStnodPredicate = pStnodFor->IAppendChild(pStnodPred);
 
 		CSTNode * pStnodIncrement = PStnodParseExpression(pParctx, pLex);
 		if (pStnodIncrement)
 			ExpectEndOfStatement(pParctx, pLex);
 		else
-			Expect(pParctx, pLex, TOK(';'));
+			FExpect(pParctx, pLex, TOK(';'));
 		pStfor->m_iStnodIncrement = pStnodFor->IAppendChild(pStnodIncrement);
 
 		CSTNode * pStnodBody = PStnodExpectCompoundStatement(pParctx, pLex, PCozFromRword(rword));
