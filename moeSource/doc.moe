@@ -296,6 +296,16 @@ FIsCellOccupied proc (pBoard: & SBoard, xCell: int, yCell: int) -> bool
 	return PEntFromCell(pBoard, xCell, yCell, CELOOK.IncludeTail) != null
 }
 
+FIsCellOccupied proc (pBoard: & SBoard, xCell: int, yCell: int, pEntIgnore: & SEntity) -> bool
+{
+	if xCell < 0 || xCell >= kDXCellBoard || yCell < 0 || yCell >= kDYCellBoard
+		{ return true }
+
+	pEnt := PEntFromCell(pBoard, xCell, yCell, CELOOK.IncludeTail)
+	return pEnt != null && pEnt != pEntIgnore
+}
+
+
 PillcolFromCell proc (pBoard: & SBoard, xCell: int, yCell: int) -> PILLCOL
 {
 	pEnt := PEntFromCell(pBoard, xCell, yCell, CELOOK.IncludeTail)
@@ -670,8 +680,8 @@ FHandleEvents proc (pPlayinp: & SPlayerInput) -> bool
 		KEYCODE.ArrowDown, 		//Down,
 		KEYCODE.ArrowLeft, 		//Left,
 		KEYCODE.ArrowRight, 	//Right,
-		KEYCODE.Shift,			//RotateClock,
-		KEYCODE.F5,				//RotateCClock,
+		KEYCODE.KeyA,			//RotateClock,
+		KEYCODE.KeyS,			//RotateCClock,
 		KEYCODE.F2, 			//Select,
 		KEYCODE.F3				//Cancel,
 	}	
@@ -833,7 +843,9 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 		if (pPlay.m_pEntSteer)
 		{
 			pEntSteer := pPlay.m_pEntSteer
-			xNew := pEntSteer.m_pos.m_x
+
+			posNew := pEntSteer.m_pos
+			dirNew := pEntSteer.m_dir
 			posCell := PosCell(pBoard, pEntSteer.m_pos)
 
 			if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
@@ -844,7 +856,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 
 				if xCellMax < kDXCellBoard && !FIsCellOccupied(pBoard, xCellMax, posCell.m_y)
 				{
-					xNew = cast(f32)((posCell.m_x + 1) * pBoard.m_dXyTile.m_y)
+					posNew.m_x = cast(f32)((posCell.m_x + 1) * pBoard.m_dXyTile.m_x)
 				}
 			}
 			if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
@@ -855,15 +867,72 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 
 				if xCellMin >= 0 && !FIsCellOccupied(pBoard, xCellMin, posCell.m_y)
 				{
-					xNew = cast(f32)((posCell.m_x - 1) * pBoard.m_dXyTile.m_y)
+					posNew.m_x = cast(f32)((posCell.m_x - 1) * pBoard.m_dXyTile.m_x)
 				}
 			}
+
+			dCellDir := DCellFromDir(dirNew)
+			posCellMin := S32x2Min(posCell, posCell + dCellDir)
+
+			dirTry := dirNew
+
+			if pPlayinp.m_mpButkEdges[BUTK.RotateClock] == EDGES.Press
+			{
+				dirTry = (dirNew + 1) % DIR.max
+			}
+
+			if pPlayinp.m_mpButkEdges[BUTK.RotateCClock] == EDGES.Press
+			{
+				dirTry = (dirNew + DIR.max - 1) % DIR.max
+			}
+
+			posCellCheck: s32x2
+			posCellCheckAlt: s32x2
+			switch dirTry
+			{
+				case DIR.Left,
+					DIR.Right:
+					posCellCheck = posCellMin + S32x2Create(1, 0)
+					posCellCheckAlt = posCellMin + S32x2Create(-1, 0)
+				case DIR.Up,
+					DIR.Down:
+					posCellCheck = posCellMin + S32x2Create(0, 1)
+					posCellCheckAlt = posCellMin + S32x2Create(1, 1)
+			}
+
+			posCellDest: s32x2 
+			switch dirTry
+			{
+				case DIR.Right,
+					DIR.Up:
+						posCellDest = posCellMin
+				case DIR.Left,
+					DIR.Down: 
+						posCellDest = posCellMin - DCellFromDir(dirTry)
+			}
+
+			if dirTry != dirNew 
+			{
+				if !FIsCellOccupied(pBoard, posCellCheck.m_x, posCellCheck.m_y, pEntSteer)  
+				{
+					posNew = F32x2Cast(posCellDest * pBoard.m_dXyTile)
+					dirNew = dirTry
+				}
+				else if !FIsCellOccupied(pBoard, posCellCheckAlt.m_x, posCellCheckAlt.m_y)
+				{
+					posCellDest += (posCellCheckAlt - posCellMin)
+					posNew = F32x2Cast(posCellDest * pBoard.m_dXyTile)
+					dirNew = dirTry	
+				}
+			}
+
 			if (pPlayinp.m_mpButkEdges[BUTK.Down] >= EDGES.Hold)
 			{
 				dCellPerSecond = kDCellPerSecondPressDown
 			}
 
-			pEntSteer.m_pos.m_x = xNew
+			pEntSteer.m_dir = dirNew
+			pEntSteer.m_pos = posNew
 			ReparentBoardEntity(pBoard, pEntSteer)
 		}
 
@@ -910,12 +979,12 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 					{
 						// check for a landing
 
-						fIsBelowBlocked := FIsCellOccupied(pBoard, xCell, yCellNew)
+						fIsBelowBlocked := FIsCellOccupied(pBoard, xCell, yCellNew, pEnt)
 
 						if pEnt.m_fHasTail
 						{
 							dCellTail := DCellFromDir(pEnt.m_dir)
-							fIsBelowBlocked |= FIsCellOccupied(pBoard, xCell + dCellTail.m_x, yCellNew + dCellTail.m_y)
+							fIsBelowBlocked |= FIsCellOccupied(pBoard, xCell + dCellTail.m_x, yCellNew + dCellTail.m_y, pEnt)
 						}
 
 						if fIsBelowBlocked
@@ -1013,19 +1082,24 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 		}
 
 		if pPlay.m_dTUntilSpawn < 0 && pPlay.m_pEntSteer == null && fStepDown
-		//if pPlay.m_pEntSteer == null
 		{
-			pEntPill := PEntAllocate(&g_game.m_pEntUnusedFirst, ENTK.Pill)
-			if pEntPill
+			xCellSpawn := kDXCellBoard/2 - 1
+			yCellSpawn := kDYCellBoard - 1
+			if !FIsCellOccupied(pBoard, xCellSpawn, yCellSpawn) &&
+				!FIsCellOccupied(pBoard, xCellSpawn + 1, yCellSpawn)
 			{
-				pEntPill.m_fHasTail = true
-				pEntPill.m_pillcol = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
-				pEntPill.m_pillcolTail = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
+				pEntPill := PEntAllocate(&g_game.m_pEntUnusedFirst, ENTK.Pill)
+				if pEntPill
+				{
+					pEntPill.m_fHasTail = true
+					pEntPill.m_pillcol = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
+					pEntPill.m_pillcolTail = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 
-				pEntPill.m_pos = PosFromCell(pBoard, kDXCellBoard/2 - 1, kDYCellBoard - 1)
-				pPlay.m_pEntSteer = pEntPill
+					pEntPill.m_pos = PosFromCell(pBoard, xCellSpawn, yCellSpawn)
+					pPlay.m_pEntSteer = pEntPill
 
-				ReparentBoardEntity(pBoard, pEntPill)
+					ReparentBoardEntity(pBoard, pEntPill)
+				}
 			}
 		}
 	}

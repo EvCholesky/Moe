@@ -184,6 +184,22 @@ S32x2Round proc (vec: f32x2) -> s32x2
 	return ivec
 }
 
+S32x2Min proc (lhs: s32x2, rhs: s32x2) -> s32x2
+{
+	ivec: s32x2
+	ivec.m_x = NMin(lhs.m_x, rhs.m_x)
+	ivec.m_y = NMin(lhs.m_y, rhs.m_y)
+	return ivec
+}
+
+S32x2Max proc (lhs: s32x2, rhs: s32x2) -> s32x2
+{
+	ivec: s32x2
+	ivec.m_x = NMax(lhs.m_x, rhs.m_x)
+	ivec.m_y = NMax(lhs.m_y, rhs.m_y)
+	return ivec
+}
+
 operator+(vecLhs: s32x2, vecRhs: s32x2) -> s32x2
 {
 	vecLhs.m_x += vecRhs.m_x	
@@ -191,11 +207,23 @@ operator+(vecLhs: s32x2, vecRhs: s32x2) -> s32x2
 	return vecLhs
 }
 
+operator+=(pVecLhs: &s32x2, vecRhs: s32x2) 
+{
+	pVecLhs.m_x += vecRhs.m_x
+	pVecLhs.m_y += vecRhs.m_y
+}
+
 operator-(vecLhs: s32x2, vecRhs: s32x2) -> s32x2
 {
 	vecLhs.m_x -= vecRhs.m_x	
 	vecLhs.m_y -= vecRhs.m_y
 	return vecLhs
+}
+
+operator-=(pVecLhs: &s32x2, vecRhs: s32x2) 
+{
+	pVecLhs.m_x -= vecRhs.m_x
+	pVecLhs.m_y -= vecRhs.m_y
 }
 
 operator-(vecLhs: s32x2) -> s32x2
@@ -209,6 +237,13 @@ operator*(vecLhs: s32x2, r: s32) -> s32x2 #commutative
 {
 	vecLhs.m_x *= r
 	vecLhs.m_y *= r
+	return vecLhs
+}
+
+operator*(vecLhs: s32x2, vecRhs: s32x2) -> s32x2
+{
+	vecLhs.m_x *= vecRhs.m_x	
+	vecLhs.m_y *= vecRhs.m_y
 	return vecLhs
 }
 
