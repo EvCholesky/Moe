@@ -4118,9 +4118,15 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 	case TINK_Literal:		
 		{
 			auto pTinlit = (STypeInfoLiteral *)pTin;
+
 			if (pTinlit->m_litty.m_litk == LITK_Enum)
 			{
 				PrintTypeInfo(pStrbuf, pTinlit->m_pTinSource, PARK_Nil, grfdbgstr);
+				AppendCoz(pStrbuf, " ");
+			}
+			else if (!grfdbgstr.FIsSet(FDBGSTR_LiteralSize))
+			{
+				AppendCoz(pStrbuf, PChzFromLitk(pTinlit->m_litty.m_litk));
 				AppendCoz(pStrbuf, " ");
 			}
 			
