@@ -19,6 +19,7 @@ kDYWindow :: 720
 kDXCellBoard :: 8
 kDYCellBoard :: 16
 kBoardBorderWidth :: 10
+kDYBoardBorderBottom :: 30
 
 kCCellPerBoard :: kDXCellBoard * kDYCellBoard
 kEntMax :: kCCellPerBoard * kCPlayerMax
@@ -38,7 +39,7 @@ Syst typedef f64
 g_systCur: f64
 g_rng: SRandomGen
 
-PILLCOL enum
+PILLCOL enum u8
 {
 	Red,
 	Blue,
@@ -98,10 +99,49 @@ SPlayerInput struct // tag = playinp
 	m_mpButkEdges: [BUTK.max] EDGES
 }
 
+GAMRES enum // GAMe RESult
+{
+	Pending,
+	WinMin,
+	WinClearedAll: WinMin,
+	WinLastStanding,
+	WinMax,
+
+	LoseMin: WinMax,
+	LoseOverflow: LoseMin,
+	LoseTooSlow,
+	LoseMax,
+}
+
+PLAYS enum s8 // PLAYer State
+{
+	Inactive,
+	PregameOptions,
+	PregameReady,
+	InGame,
+	PostGame,
+}
+
+FPLAY enum u8
+{
+	Autokill: 0x1,		// pills are killed as soon as they stabilize, used to test n players. Can't win, can't spawn garbage.
+}
+
+GAMS enum s8 // GAMe State
+{
+	Pregame,
+	InGame,
+	PostGame,
+}
+
 SPlayer struct // tag = play
 {
+	m_plays := PLAYS.nil
+	m_gamres := GAMRES.nil
+	m_grfplay: FPLAY.loose
 	m_pillcol: PILLCOL
 	m_iPlayerTarget: int						// player that will receive this player's garbage
+	m_playinp: SPlayerInput
 
 	m_mpIplayCGarbagePending: [kCPlayerMax] int	// how much garbage is pending from each player
 	m_cKills: int
@@ -117,6 +157,7 @@ SGame struct // tag = game
 
 	m_aBoard: [kCPlayerMax] SBoard	
 
+	m_gams := GAMS.nil
 	m_cPlay:= 2
 	m_aPlay: [kCPlayerMax] SPlayer
 	m_dTStepDown : f32
@@ -152,7 +193,7 @@ ENTS enum s8 // ENTity State
 	Dead,
 }
 
-SEntity struct// tag = ent
+SEntity struct // tag = ent
 {
 	m_entk: ENTK
 	m_ents: ENTS
@@ -183,8 +224,27 @@ InitPlayers proc (pGame: & SGame)
 
 	for iPlay := 0; iPlay < pGame.m_cPlay; ++iPlay
 	{
-		pGame.m_aPlay[0].m_pillcol = cast(PILLCOL)iPlay
-		pGame.m_aPlay[0].m_iPlayerTarget = (iPlay + 1) % pGame.m_cPlay
+		pPlay := &pGame.m_aPlay[iPlay]
+		if pPlay.m_plays == PLAYS.nil
+		{
+			SetPlays(pPlay, PLAYS.Inactive)
+		}
+
+		pPlay.m_pEntSteer = null
+		pPlay.m_pillcol = cast(PILLCOL)iPlay
+		pPlay.m_iPlayerTarget = (iPlay + 1) % pGame.m_cPlay
+		pPlay.m_dTUntilSpawn = kDTStartingSpawn
+
+		SetGamres(pPlay, GAMRES.Pending)
+
+		if (pPlay.m_grfplay & FPLAY.Autokill) != 0
+		{
+	    	SetPlays(pPlay, PLAYS.Inactive)	
+		}
+    	else if pPlay.m_plays != PLAYS.Inactive
+    	{
+	    	SetPlays(pPlay, PLAYS.PregameOptions)	
+	    }
 	}
 }
 
@@ -422,20 +482,35 @@ ReparentBoardEntity proc (pBoard: & SBoard, pEnt: & SEntity)
 	}
 }
 
+ClearBoard proc (pBoard: & SBoard, pGame: & SGame)
+{
+	for yCell := 0; yCell < kDYCellBoard; ++yCell
+	{	
+		for xCell := 0; xCell < kDXCellBoard; ++xCell
+		{
+			pEnt := PEntFromCell(pBoard, xCell, yCell, CELOOK.ExcludeTail)
+			if pEnt
+			{
+				FreeEntity(pGame, &pGame.m_pEntUnusedFirst, pEnt)
+			}
+		}
+	}
+}
+
 InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cVirus: int)
 {
 	// 40 x 40
 	kDYBorderTop :: 92
-	kDYBorderBottom :: 36
-	kDXBorderLeft :: 100
-	kDXBorderRight :: 100
-	kDXBorderMiddle :: 100
+	kDYBorderBottom :: 44
+	kDXBorderLeft :: 30
+	kDXBorderRight :: 30
+	kDXBorderMiddle :: 30
 
 	// find our cell size
 	dYMax := cast(s32)dXyVport.m_y - (kDYBorderTop + kDYBorderBottom)
 	dYCell := dYMax / kDYCellBoard
 
-	dXBoard : s32 = cast(s32)((dXyVport.m_x - (kDXBorderLeft + kDXBorderRight + ((cPlay - 1) * kDXBorderMiddle))) / cPlay)
+	dXBoard : s32 = cast(s32)((dXyVport.m_x - (kDXBorderLeft + kDXBorderRight + (cPlay - 1) * kDXBorderMiddle)) / cPlay)
 	dXCell := dXBoard / kDXCellBoard
 
 	dXCell = NMin(dXCell, dYCell)	
@@ -446,13 +521,8 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 
 	pBoard.m_dXyBoard = S32x2Create(cast(s32)dXCell * kDXCellBoard, cast(s32)dYCell * kDYCellBoard)
 
-	switch iPlay
-	{
-		case 0: pBoard.m_pos = S32x2Create(kDXBorderLeft, kDYBorderBottom)
-		case 1: pBoard.m_pos = S32x2Create(kDXBorderLeft + cast(s32)dXBoard + kDXBorderMiddle, kDYBorderBottom)
-		case 2: pBoard.m_pos = S32x2Create(kDXBorderRight - cast(s32)dXBoard, kDYBorderBottom)
-		case 3: pBoard.m_pos = S32x2Create(kDXBorderLeft - cast(s32)(2 * dXBoard) - kDXBorderMiddle, kDYBorderBottom)
-	}
+	dXBoardSep := dXyVport.m_x / cPlay
+	pBoard.m_pos = S32x2Create(cast(s32)((dXBoard + kDXBorderMiddle) * iPlay) + kDXBorderLeft, kDYBorderBottom)
 
 	SeedRandom(&pBoard.m_rng, pBoard.m_nRngSeed)
 
@@ -517,6 +587,13 @@ DrawBoardBackground proc (pBoard: & SBoard, pillcolSelf: PILLCOL, pillcolTarget:
 
 	colvecBorder := ColvecFromCol(ColFromPillcol(pillcolSelf))
 	DrawOutsideBorder(xMin, yMin, xMax, yMax, kBoardBorderWidth, colvecBorder)
+
+	dYBottom: f32 = kDYBoardBorderBottom  - kBoardBorderWidth
+	xMin -= kBoardBorderWidth
+	xMax += kBoardBorderWidth
+	yMin -= kBoardBorderWidth
+	AppendTile(xMin, yMin - dYBottom, xMax, yMin, &colvecBorder, &g_tilbuf)
+
 }
 
 DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard)
@@ -663,10 +740,11 @@ DrawGarbage proc (pBoard: & SBoard, posMin: f32x2, colvec: SColorVec)
 }
 
 
-DrawBoards proc (pGame : & SGame)
+DrawBoards proc (pGame : & SGame, pDrac: & SDrawContext)
 {
 	for iPlay:=0; iPlay < pGame.m_cPlay; ++iPlay
 	{
+		cVirusLiving: int
 		pPlay := pGame.m_aPlay[iPlay]
 		iPlayTarget  := iPlay
 		if (pPlay.m_iPlayerTarget >= 0)
@@ -683,6 +761,10 @@ DrawBoards proc (pGame : & SGame)
 				if pEnt
 				{ 
 					DrawEntity(pEnt, pBoard)
+					if pEnt.m_entk == ENTK.Virus
+					{
+						++cVirusLiving
+					}
 				}
 			}
 		}
@@ -705,6 +787,14 @@ DrawBoards proc (pGame : & SGame)
 				posGarbage.m_x += cast(s32)(cast(f32)pBoard.m_dXyTile.m_x * kRGarbageSpacing)
 			}
 		}
+
+		posLabel := pBoard.m_pos
+		posLabel.m_x += pBoard.m_dXyBoard.m_x / 2
+		posLabel.m_y -= kDYBoardBorderBottom - 5
+
+		aChVirusCount: [16] u8
+		snprintf(aChVirusCount, aChVirusCount.count, "%d", cVirusLiving)
+		DrawTextCentered(pDrac, F32x2Cast(posLabel), aChVirusCount)
 	}
 }
 
@@ -741,7 +831,7 @@ FHandleEvents proc (pPlayinp: & SPlayerInput) -> bool
 		KEYCODE.ArrowRight, 	//Right,
 		KEYCODE.KeyA,			//RotateClock,
 		KEYCODE.KeyS,			//RotateCClock,
-		KEYCODE.F2, 			//Select,
+		KEYCODE.Enter, 			//Select,
 		KEYCODE.F3				//Cancel,
 	}	
 
@@ -876,7 +966,7 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 	pTilbuf.m_cTilvert = 0
 }	
 
-UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
+UpdatePlayers proc (pGame : & SGame, dT: f32)
 {
 	kDTStepDown :: 0.4
 	fStepDown := false
@@ -892,10 +982,10 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 	{
 		pBoard := &g_game.m_aBoard[iPlay]
 		pPlay := &g_game.m_aPlay[iPlay]
-		pPlayinp := &aPlayinp[iPlay]
+		pPlayinp := &pPlay.m_playinp
 
 		kDCellPerSecond :: 0
-		kDCellPerSecondPressDown :: 10
+		kDCellPerSecondPressDown :: 20
 		dCellPerSecond : f32 = kDCellPerSecond
 
 		// update steering for player pill
@@ -1050,7 +1140,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 						{
 							yNew = cast(f32)(yCell * pBoard.m_dXyTile.m_y) + 0.01
 
-							pEnt.m_ents = ENTS.Stable
+							SetEnts(pEnt, ENTS.Stable)
 							if pPlay.m_pEntSteer == pEnt
 							{
 								pPlay.m_pEntSteer = null
@@ -1058,7 +1148,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 						}
 						else
 						{
-							pEnt.m_ents = ENTS.Falling
+							SetEnts(pEnt, ENTS.Falling)
 							fAnyFalling = true
 						}
 					}
@@ -1069,6 +1159,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 		}
 
 		// loop over all cells checking for pills that should be dead
+		cVirusLiving : int
 		fAnyDead := false
 		for yCell := 0; yCell < kDYCellBoard; ++yCell
 		{	
@@ -1093,11 +1184,17 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 						{ break }
 				}
 
-				fAutoKill := iPlay > 0
+				fAutoKill := (pPlay.m_grfplay & FPLAY.Autokill) != 0
 				cPillcol := xCellIt - xCell
-				if cPillcol >= 4 || fAutoKill
+				cPillcolKill := 4
+				if fAutoKill && pEnt.m_entk != ENTK.Virus
+					{ cPillcolKill = 1}
+
+				if cPillcol >= cPillcolKill
 				{
-					++pPlay.m_cKills
+					if !fAutoKill
+						{ ++pPlay.m_cKills }
+
 					for iCellDead := 0; iCellDead < cPillcol; ++iCellDead
 					{
 						KillCell(pBoard, xCell + iCellDead, yCell)
@@ -1124,16 +1221,25 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 					}
 				}
 
-				if fAutoKill
+				// living viruses?	
+				if pEnt.m_entk == ENTK.Virus
 				{
-					pPlay.m_cKills = 0
+					if pEnt.m_ents != ENTS.Dead
+					{
+						cVirusLiving += 1
+					}
 				}
 			}
 		}
 
+		if !cVirusLiving
+		{
+			SetGamres(pPlay, GAMRES.WinClearedAll)
+		}
+
 		if fAnyFalling || fAnyDead
 		{
-			pPlay.m_dTUntilSpawn = kDTNextPill
+			pPlay.m_dTUntilSpawn = GMax(kDTNextPill, pPlay.m_dTUntilSpawn - dT)
 		}
 		else
 		{
@@ -1217,8 +1323,12 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 			}
 			else
 			{
-				if !FIsCellOccupied(pBoard, xCellMidpoint, yCellSpawn) &&
-					!FIsCellOccupied(pBoard, xCellMidpoint + 1, yCellSpawn)
+				if FIsCellOccupied(pBoard, xCellMidpoint, yCellSpawn) ||
+					FIsCellOccupied(pBoard, xCellMidpoint + 1, yCellSpawn)
+				{
+					SetGamres(pPlay, GAMRES.LoseOverflow)
+				}
+				else
 				{
 					pEntPill := PEntAllocate(&g_game.m_pEntUnusedFirst, ENTK.Pill)
 					if pEntPill
@@ -1237,6 +1347,171 @@ UpdatePlayers proc (pGame : & SGame, dT: f32, aPlayinp: [] SPlayerInput)
 			}
 		}
 	}
+
+	cWon, cLost, cPending: int
+	pPlayPending: & SPlayer
+	for iPlay := 0; iPlay < pGame.m_cPlay; ++iPlay
+	{
+		gamresCur := pGame.m_aPlay[iPlay].m_gamres
+		if gamresCur >= GAMRES.LoseMin && gamresCur < GAMRES.LoseMax
+		{
+			++cLost
+		}
+		else if gamresCur >= GAMRES.WinMin && gamresCur < GAMRES.WinMax
+		{
+			++cWon
+		}
+		else 
+		{
+			++cPending
+			pPlayPending = &pGame.m_aPlay[iPlay]
+		}
+	}
+
+	if cPending <= 1 && cWon == 0
+	{
+		if pPlayPending
+		{
+			SetGamres(pPlayPending, GAMRES.WinLastStanding)
+			++cWon
+		}
+	}
+
+	if cWon || cLost == pGame.m_cPlay
+	{
+		SetGams(pGame, GAMS.PostGame)
+
+		for iPlay := 0; iPlay < pGame.m_cPlay; ++iPlay
+		{
+			pPlay := &pGame.m_aPlay[iPlay]
+			if (pPlay.m_gamres == GAMRES.Pending)
+			{
+				SetGamres(pPlay, GAMRES.LoseTooSlow)
+			}
+		}
+	}
+}
+
+SetGamres proc (pPlay: & SPlayer, gamres: GAMRES)
+{
+	pPlay.m_gamres = gamres
+}
+
+SetPlays proc (pPlay: & SPlayer, plays: PLAYS)
+{
+	pPlay.m_plays = plays
+}
+
+SetGams proc (pGame: & SGame, gams: GAMS)
+{
+	pGame.m_gams = gams
+
+	switch (pGame.m_gams)
+	{
+		case GAMS.Pregame:
+			InitPlayers(&g_game)
+
+		    dXyVport := S32x2Create(kDXWindow, kDYWindow)
+
+			pGame.m_cPlay = kCPlayerMax
+			for iBoard := 0; iBoard < pGame.m_cPlay; ++iBoard
+		    {
+			    ClearBoard(&pGame.m_aBoard[iBoard], pGame)
+				InitBoard(iBoard, pGame.m_cPlay, dXyVport, &pGame.m_aBoard[iBoard], kCVirusStarting)
+			}
+
+		case GAMS.InGame:
+
+			// BB - need to remap correct players (and controllers) if there are gaps in the players that have signed in
+			cPlay := 0
+
+			pPlayAuto := &pGame.m_aPlay[1]
+			if pPlayAuto.m_plays == PLAYS.Inactive
+			{
+				SetPlays(pPlayAuto, PLAYS.PregameReady)
+				pPlayAuto.m_grfplay = pPlayAuto.m_grfplay | FPLAY.Autokill
+			}
+
+			for iPlay := 0; iPlay < pGame.m_aPlay.count; ++iPlay
+			{
+				pPlay := &pGame.m_aPlay[iPlay]
+				if pPlay.m_plays >= PLAYS.PregameReady
+				{
+					++cPlay
+					SetPlays(pPlay, PLAYS.InGame)
+				}
+			}
+
+			pGame.m_cPlay = cPlay
+
+		case GAMS.PostGame:
+	}
+}
+
+UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
+{
+	pPlayZero := &pGame.m_aPlay[0]
+	if pPlayZero.m_plays == PLAYS.Inactive
+	{
+		SetPlays(pPlayZero, PLAYS.PregameOptions)
+	}
+
+	cWaiting := 0
+	for iPlay := 0; iPlay < pGame.m_aPlay.count; ++iPlay
+	{
+		pPlay := &pGame.m_aPlay[iPlay]
+		pBoard := &pGame.m_aBoard[iPlay]
+		pPlayinp := &pPlay.m_playinp
+
+		posCenter := F32x2Cast(pBoard.m_pos) + F32x2Cast(pBoard.m_dXyBoard) * 0.5
+
+		switch pPlay.m_plays
+		{
+			case PLAYS.Inactive:
+				DrawTextCentered(pDrac, posCenter, "Press Start")
+			case PLAYS.PregameOptions:
+				DrawTextCentered(pDrac, posCenter, "Press 'X' when ready")
+				++cWaiting
+
+				if pPlayinp.m_mpButkEdges[BUTK.Select] == EDGES.Press
+				{
+					SetPlays(pPlay, PLAYS.PregameReady)
+				}
+				if pPlayinp.m_mpButkEdges[BUTK.Cancel] == EDGES.Press
+				{
+					SetPlays(pPlay, PLAYS.Inactive)
+				}
+			case PLAYS.PregameReady:
+				DrawTextCentered(pDrac, posCenter, "Ready")
+
+				if pPlayinp.m_mpButkEdges[BUTK.Cancel] == EDGES.Press
+				{
+					SetPlays(pPlay, PLAYS.PregameOptions)
+				}
+		}
+	}
+
+	if cWaiting == 0
+	{
+		SetGams(pGame, GAMS.InGame)
+	}
+}
+
+DrawGameResults proc (pDrac: & SDrawContext, pPlay: & SPlayer, pBoard: & SBoard)
+{
+	posCenter := F32x2Cast(pBoard.m_pos) + F32x2Cast(pBoard.m_dXyBoard) * 0.5
+	aCh: [64] u8
+	switch pPlay.m_gamres
+	{
+		case GAMRES.WinClearedAll,
+			GAMRES.WinLastStanding:
+			snprintf(aCh, aCh.count, "Winner!")
+		case GAMRES.LoseOverflow,
+			GAMRES.LoseTooSlow:
+			snprintf(aCh, aCh.count, "You Lose.")
+	}
+
+	DrawTextCentered(pDrac, posCenter, aCh)
 }
 
 main proc () -> int
@@ -1256,14 +1531,7 @@ main proc () -> int
     dRadSpin :: 0.01
     gRadSpin: float
 
-    dXyVport := S32x2Create(kDXWindow, kDYWindow)
-
 	InitUnusedEntList(g_game.m_aEnt, &g_game.m_pEntUnusedFirst)
-	InitPlayers(&g_game)
-    for iBoard := 0; iBoard < g_game.m_aBoard.count; ++iBoard
-    {
-		InitBoard(iBoard, g_game.m_cPlay, dXyVport, &g_game.m_aBoard[iBoard], kCVirusStarting)
-	}
 
     // Make sure sleep has 1ms granularity
     s_cMsDesiredGranularity :: 1
@@ -1276,32 +1544,32 @@ main proc () -> int
     dTFrameTarget := 1.0 / nHzTarget
 	aChStatus: [512] u8
 
-	aPlayinp: [kCPlayerMax] SPlayerInput 
-
 	cTickLast := CTickWallClock()
 	fShouldClose := false
 	dTGame: f32
 
+	SetGams(&g_game, GAMS.Pregame)
 	pVJoyman := CreateJoystickManager()
 
 	while fShouldClose == false
 	{
-		fShouldClose |= !FHandleEvents(&aPlayinp[0])
+		fShouldClose |= !FHandleEvents(&g_game.m_aPlay[0].m_playinp)
 		UpdateJoystickManager(pVJoyman)
 
 		/*
-		for iPlayinp := 1; iPlayinp < aPlayinp.count; ++iPlayinp
+		for iPlay := 1; iPlay < g_game.m_aPlay.count; ++iPlay
 		{
-			aPlayinp[iPlayinp] = aPlayinp[0]
+			g_game.m_aPlay[iPlay].m_playinp = g_game.m_aPlay[0].m_playinp
 		}*/
 
 		gRadSpin += dRadSpin
 
-		DrawBoards(&g_game)
+		DrawBoards(&g_game, pDrac)
 		//DrawMapBackground(aChMap, &g_tilbuf)
 		//DrawEntities(aEnt, &g_tilbuf)
 
 		FlushTileVerts(pDrac, &g_tilbuf)
+		FlushFontVerts(pDrac, &g_Fvbuf)
 
 		//DrawTestTriangle(gRadSpin)
 
@@ -1310,7 +1578,25 @@ main proc () -> int
 
         UpdateWindowEvents()
 
-        UpdatePlayers(&g_game, dTGame, aPlayinp)
+        switch (g_game.m_gams)
+        {
+        	case GAMS.Pregame:
+        		UpdatePregame(&g_game, pDrac)
+        	case GAMS.InGame:
+		        UpdatePlayers(&g_game, dTGame)
+        	case GAMS.PostGame:
+        		for iPlay := 0; iPlay < g_game.m_cPlay; ++iPlay
+        		{
+        			pPlay := &g_game.m_aPlay[iPlay]
+        			pBoard := &g_game.m_aBoard[iPlay]
+        			DrawGameResults(pDrac, pPlay, pBoard)
+
+					if pPlay.m_playinp.m_mpButkEdges[BUTK.Select] == EDGES.Press
+					{
+						SetGams(&g_game, GAMS.Pregame)
+					}
+        		}
+        }
         //UpdateActors(aAct, &playinp, dTGame)
 		//UpdatePuck(g_pActPuck, &playinp, dTGame, aChMap, &mapdim)
 		//UpdateEntities(aEnt)

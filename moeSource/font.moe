@@ -393,7 +393,7 @@ kChMaxDrawText :: 1024
 
 SFontVertexBuffer struct // tag=fvbuf
 {
-	m_aFvert: [1024] SFontVertex
+	m_aFvert: [10240] SFontVertex
 	m_cFvert: int
 }
 g_Fvbuf: SFontVertexBuffer
@@ -943,7 +943,7 @@ CreateVerts proc (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFont
 	pDras.m_fontd.m_posCursor = posCursor
 }
 
-FlushVerts proc (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
+FlushFontVerts proc (pDrac: & SDrawContext, pFvbuf: & SFontVertexBuffer)
 {
 	// push orthographic projection
 	glPushMatrix()
@@ -1090,7 +1090,7 @@ DXDYCalculateExtents proc (pDrac: & SDrawContext, pWchz: & u32) -> f32x2
 	return DXDYExtentsFromAWch(pDrac, pWchz)
 }
 
-DXDYCalculateExtents proc (pDrac: & SDrawContext, pCoz: & u8) -> f32x2
+DXDYCalculateExtents proc (pDrac: & SDrawContext, pCoz: & const u8) -> f32x2
 {
 	aWch: [kChMaxDrawText] u32
 
@@ -1108,7 +1108,6 @@ DrawTextRaw proc (pDrac: & SDrawContext, pos: f32x2, pWchz: & u32)
 	// draw characters to the right. pos is the left side baseline
 
 	CreateVerts(pDrac.m_pFontman, pDrac.m_pDras, &g_Fvbuf, pos, pWchz)
-	FlushVerts(pDrac, &g_Fvbuf)
 }
 
 DrawTextAligned proc (pDrac: & SDrawContext, pos: f32x2, pWchz: & u32) inline
@@ -1160,7 +1159,21 @@ DrawTextAligned proc (pDrac: & SDrawContext, pos: f32x2, pWchz: & u32) inline
 	DrawTextRaw(pDrac, posCursor, pWchz)
 }
 
-DrawText proc (pDrac: & SDrawContext, pos: f32x2, pCoz: & u8)
+DrawTextCentered proc (pDrac: & SDrawContext, pos: f32x2, pCoz: & const u8)
+{
+	aWch: [kChMaxDrawText] u32
+	if FTryConvertUtf8ToUcs4(pCoz, aWch, &aWch[aWch.count])
+	{
+		pDras := pDrac.m_pDras
+		alignkPrevX := pDras.m_fontd.m_alignkX
+		pDras.m_fontd.m_alignkX = ALIGNK.Center
+
+		DrawTextAligned(pDrac, pos, aWch)
+		pDras.m_fontd.m_alignkX = alignkPrevX
+	}
+}
+
+DrawText proc (pDrac: & SDrawContext, pos: f32x2, pCoz: & const u8)
 {
 	aWch: [kChMaxDrawText] u32
 	if FTryConvertUtf8ToUcs4(pCoz, aWch, &aWch[aWch.count])

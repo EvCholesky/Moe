@@ -1373,6 +1373,7 @@ main proc () -> int
 		DrawEntities(aEnt, &g_tilbuf)
 
 		FlushTileVerts(pDrac, &g_tilbuf)
+		FlushFontVerts(pDrac, &g_Fvbuf)
 
 		//DrawTestTriangle(gRadSpin)
 
