@@ -536,6 +536,18 @@ test WhileLoop
 	}
 
 // Break & Continue:
+
 // Switch:
+
+test EmptyCase
+	prereq "n: s32"
+	input "switch n {$cond: $statement\n}"
+	{
+		$cond("case 1"|"case 1, 2"|default)
+		{
+			$statement(""$errid(1005)),
+			$statement("n = 2")
+		},
+	}
 
 // Unicode

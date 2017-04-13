@@ -361,6 +361,13 @@ CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc)
 	return pStnodDst;
 }
 
+void ParseError(CParseContext * pParctx, SLexerLocation * pLexloc, ERRID errid, const char * pChzFormat, ...)
+{
+	va_list ap;
+	va_start(ap, pChzFormat);
+	EmitError(pParctx->m_pWork->m_pErrman, pLexloc, errid, pChzFormat, ap);
+}
+
 void ParseError(CParseContext * pParctx, SLexer * pLex, const char * pChzFormat, ...)
 {
 	SLexerLocation lexloc(pLex);
@@ -2834,6 +2841,24 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 	}
 
 	FExpect(pParctx, pLex, TOK('}'));
+
+	for (int ipStnodCase = 1; ipStnodCase < pStnodSwitch->CStnodChild(); ++ipStnodCase)
+	{
+		auto pStnodCase = pStnodSwitch->PStnodChild(ipStnodCase);
+		if (!EWC_FVERIFY(pStnodCase, "case should have value, list children"))
+			continue;
+
+		int ipStnodList = pStnodCase->CStnodChild() - 1; 
+		auto _pStnodList = pStnodCase->PStnodChildSafe(ipStnodList);
+		if (!EWC_FVERIFY(_pStnodList && _pStnodList->m_park == PARK_List, "Case without list child"))
+			continue;
+
+		if (_pStnodList->CStnodChild() == 0)
+		{
+			ParseError(pParctx, &pStnodCase->m_lexloc, ERRID_EmptyCase, 
+				"empty switch case must contain at least one statement. Multiple case values are comma separated");
+		}
+	}
 
 	if (pStnodSwitch->CStnodChild() < 2)
 	{

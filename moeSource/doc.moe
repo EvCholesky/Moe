@@ -1444,7 +1444,8 @@ SetGams proc (pGame: & SGame, gams: GAMS)
 
 			pGame.m_cPlay = cPlay
 
-		case GAMS.PostGame:
+		case GAMS.PostGame: 
+			break
 	}
 }
 
