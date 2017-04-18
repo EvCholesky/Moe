@@ -31,6 +31,11 @@ FGetNextEvent proc (pEvent: & SEvent) -> bool #foreign
 CreateJoystickManager proc () -> & void #foreign
 UpdateJoystickManager proc (pVJoyman: & void) #foreign
 
+kNDeviceIdJoystickMin :: 0
+kNDeviceIdJoystickMax :: 16
+FIsJoystickConnected proc (nDeviceId: s32) -> bool #foreign
+PChzJoystickName proc (nDeviceId: s32) -> & u8 #foreign
+
 
 GL_POINTS ::                0x0000
 GL_LINES ::                 0x0001
@@ -212,9 +217,12 @@ glClientActiveTexture: (texture: glenum) #stdcall
 EVENTK enum s32 
 {  // If we set this to u8, our packing will stop matching C's.
     Keyboard,
+    Joystick,
     TextInput,
     Window,
     Quit,
+    JoystickConnected,
+    JoystickDisconnected,
 }
 
 KEYCODE enum u32 
@@ -334,6 +342,7 @@ SEvent struct
 
     // If keyboard event:
     m_edges : EDGES
+    m_nDeviceId: s32
     m_keycode : KEYCODE = KEYCODE.nil
     m_nTextInput : u32
 }

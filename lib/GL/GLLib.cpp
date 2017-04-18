@@ -7,13 +7,15 @@
 #include <GLFW/glfw3.h>
 
 
-enum EVENTK : s32   // JB - If we set this to u8, our packing will stop matching C's.
+enum EVENTK : s32 
 {
     EVENTK_Keyboard,
 	EVENTK_Joystick,
     EVENTK_TextInput,
     EVENTK_Window,
     EVENTK_Quit,
+	EVENTK_JoystickConnected,
+	EVENTK_JoystickDisconnected,
 
 	EWC_MAX_MIN_NIL(EVENTK)
 };
@@ -137,6 +139,7 @@ struct SEvent // tag=event
 
     EVENTK			m_eventk;
     EDGES			m_edges;
+	s32				m_nDeviceId;
     KEYCODE			m_keycode;
     u32				m_nTextInput;
 };
@@ -299,6 +302,7 @@ static void GlfwKeyboardCallback(GLFWwindow * pWindow, int nKey, int nScancode, 
 	auto pEvent = s_evfifo.PEventPushBack();
 	pEvent->m_eventk = EVENTK_Keyboard;
 	pEvent->m_edges = edges;
+	pEvent->m_nDeviceId = 0;
 	pEvent->m_keycode = KeycodeFromGlfwKey(nKey);
 }
 
@@ -426,6 +430,15 @@ SJoystickManager::SJoystickManager()
 static SJoystickManager * s_pJoymanRoot = nullptr;
 
 
+extern "C" bool FIsJoystickConnected(s32 nDeviceId)
+{
+	return glfwJoystickPresent(nDeviceId) == GLFW_TRUE;
+}
+
+extern "C" u8 * PChzJoystickName(s32 nDeviceId)
+{
+	return (u8 *)glfwGetJoystickName(nDeviceId);
+}
 
 static void SetJoycons(SJoystick * pJoy, JOYCONS joycons)
 {
@@ -473,10 +486,22 @@ static void GlfwJoystickCallback(int iJoy, int event)
     if (event == GLFW_CONNECTED)
     {
 		joycons = JOYCONS_Connected;
+
+		auto pEvent = s_evfifo.PEventPushBack();
+		pEvent->m_eventk = EVENTK_JoystickConnected;
+		pEvent->m_edges = EDGES_Off;
+		pEvent->m_nDeviceId = iJoy;
+		pEvent->m_keycode = KEYCODE_Unknown;
     }
     else if (event == GLFW_DISCONNECTED)
     {
 		joycons = JOYCONS_Disconnected;
+
+		auto pEvent = s_evfifo.PEventPushBack();
+		pEvent->m_eventk = EVENTK_JoystickDisconnected;
+		pEvent->m_edges = EDGES_Off;
+		pEvent->m_nDeviceId = iJoy;
+		pEvent->m_keycode =KEYCODE_Unknown;
     }
 
 	if (joycons != JOYCONS_Nil)
@@ -522,8 +547,14 @@ extern "C" void UpdateJoystickManager(void * pVJoyman)
 
 			if (pJoy->m_aBButton[iBButton] != pJoy->m_aBButtonPrev[iBButton])
 			{
-				printf("joy(%d) button %d: %d -> %d\n", iJoy, iBButton, pJoy->m_aBButtonPrev[iBButton], pJoy->m_aBButton[iBButton]);
-				pJoy->m_aBButtonPrev[iBButton] = pJoy->m_aBButton[iBButton];
+				u8 bButton = pJoy->m_aBButton[iBButton];
+				auto pEvent = s_evfifo.PEventPushBack();
+				pEvent->m_eventk = EVENTK_Joystick;
+				pEvent->m_edges = (bButton) ? EDGES_Press : EDGES_Release;
+				pEvent->m_nDeviceId = iJoy;
+				pEvent->m_keycode = (KEYCODE)(int(KEYCODE_JoypadButton1) + iBButton);
+
+				pJoy->m_aBButtonPrev[iBButton] = bButton;
 			}
 		}
 	}

@@ -15,6 +15,8 @@
 
 kDXWindow :: 1280
 kDYWindow :: 720
+//kDXWindow :: 1920
+//kDYWindow :: 1080
 
 kDXCellBoard :: 8
 kDYCellBoard :: 16
@@ -90,6 +92,8 @@ BUTK enum // button kind
 	Right,
 	RotateClock,
 	RotateCClock,
+	RotateClockAlt,		// BB - once we have struct literals this should go away, replace mpButkKeycode with a pair map
+	RotateCClockAlt,
 	Select,
 	Cancel,
 }
@@ -97,6 +101,20 @@ BUTK enum // button kind
 SPlayerInput struct // tag = playinp
 {
 	m_mpButkEdges: [BUTK.max] EDGES
+	m_pPadmap: & SGamepadMap
+	m_nDeviceId: s32 = -1
+}
+
+SGamepadMapData	struct // tag = padmapd
+{
+	m_mpButkKeycode: & KEYCODE
+	m_pChzJoystickName: & u8		// joystick name reported by GLFW
+}
+
+SGamepadMap	struct	// tag = padmap
+{
+	m_nDeviceId: s32				// gamepad index as reported by Gllib
+	m_pPadmapd: & SGamepadMapData
 }
 
 GAMRES enum // GAMe RESult
@@ -156,6 +174,11 @@ SGame struct // tag = game
 	m_pEntUnusedFirst: & SEntity		// list of unused entities
 
 	m_aBoard: [kCPlayerMax] SBoard	
+
+	m_aPadmapd: [kCPlayerMax] SGamepadMapData
+	m_aPadmap: [kCPlayerMax] SGamepadMap
+	m_cPadmapd: int
+	m_cPadmap: int
 
 	m_gams := GAMS.nil
 	m_cPlay:= 2
@@ -521,8 +544,10 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 
 	pBoard.m_dXyBoard = S32x2Create(cast(s32)dXCell * kDXCellBoard, cast(s32)dYCell * kDYCellBoard)
 
-	dXBoardSep := dXyVport.m_x / cPlay
-	pBoard.m_pos = S32x2Create(cast(s32)((dXBoard + kDXBorderMiddle) * iPlay) + kDXBorderLeft, kDYBorderBottom)
+	dXBorderTotal := dXyVport.m_x - pBoard.m_dXyBoard.m_x * cPlay
+	dXSeperate := dXBorderTotal / (cPlay + 1)
+
+	pBoard.m_pos = S32x2Create(cast(s32)((pBoard.m_dXyBoard.m_x + dXSeperate) * iPlay + dXSeperate), kDYBorderBottom)
 
 	SeedRandom(&pBoard.m_rng, pBoard.m_nRngSeed)
 
@@ -608,7 +633,7 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard)
 
 	colvecEnt := ColvecFromCol(ColFromPillcol(pEnt.m_pillcol))	
 
-	kULerpStable :: 0.7
+	kULerpStable :: 1.0 // 0.7
 	colvecStable := ColvecFromCol(ColCreate(0, 0, 0, 255))
 	uLerpStable := 1.0
 	if pEnt.m_ents == ENTS.Stable
@@ -821,9 +846,60 @@ AdvancePlayerInput proc (pPlayinp: & SPlayerInput)
 	}
 }
 
-FHandleEvents proc (pPlayinp: & SPlayerInput) -> bool
+g_mpButkKeycodePs4: [BUTK.max] KEYCODE = 
 {
-	mpKeycodeButk: [BUTK.max] KEYCODE = 
+	KEYCODE.JoypadButton15,	//Up,
+	KEYCODE.JoypadButton17, //Down,
+	KEYCODE.JoypadButton18, //Left,
+	KEYCODE.JoypadButton16, //Right,
+	KEYCODE.JoypadButton2,	//RotateClock,
+	KEYCODE.JoypadButton3,	//RotateCClock,
+	KEYCODE.JoypadButton4,	//RotateClockAlt,
+	KEYCODE.JoypadButton1,	//RotateCClockAlt,
+	KEYCODE.JoypadButton2, 	//Select,
+	KEYCODE.JoypadButton3	//Cancel,
+}
+
+g_mpButkKeycodeWiredX360: [BUTK.max] KEYCODE = 
+{
+	KEYCODE.JoypadButton11,	//Up,
+	KEYCODE.JoypadButton13, //Down,
+	KEYCODE.JoypadButton14, //Left,
+	KEYCODE.JoypadButton12, //Right,
+	KEYCODE.JoypadButton1,	//RotateClock,
+	KEYCODE.JoypadButton2,	//RotateCClock,
+	KEYCODE.JoypadButton3,	//RotateClockAlt,
+	KEYCODE.JoypadButton4,	//RotateCClockAlt,
+	KEYCODE.JoypadButton1, 	//Select,
+	KEYCODE.JoypadButton2	//Cancel,
+}
+
+InitJoysticks proc (pGame: & SGame) -> void
+{
+	iPadmapd := 0
+
+	pPadmapd := &pGame.m_aPadmapd[iPadmapd++]
+	pPadmapd.m_pChzJoystickName = "Wireless Controller"
+	pPadmapd.m_mpButkKeycode = g_mpButkKeycodePs4
+
+	pPadmapd = &pGame.m_aPadmapd[iPadmapd++]
+	pPadmapd.m_pChzJoystickName = "Xbox 360 Controller"
+	pPadmapd.m_mpButkKeycode = g_mpButkKeycodeWiredX360
+
+	pGame.m_cPadmapd = iPadmapd
+
+	for iDeviceId : s32 = kNDeviceIdJoystickMin; iDeviceId < kNDeviceIdJoystickMax; ++iDeviceId
+	{
+		if FIsJoystickConnected(iDeviceId)
+		{
+			OnJoystickConnect(pGame, iDeviceId)
+		}
+	}
+}
+
+FHandleEvents proc (pGame: & SGame) -> bool
+{
+	mpButkKeycodeKeyboard: [BUTK.max] KEYCODE = 
 	{	
 		KEYCODE.ArrowUp, 		//Up,
 		KEYCODE.ArrowDown, 		//Down,
@@ -831,33 +907,140 @@ FHandleEvents proc (pPlayinp: & SPlayerInput) -> bool
 		KEYCODE.ArrowRight, 	//Right,
 		KEYCODE.KeyA,			//RotateClock,
 		KEYCODE.KeyS,			//RotateCClock,
+		KEYCODE.KeyA,			//RotateClockAlt,
+		KEYCODE.KeyS,			//RotateCClockAlt,
 		KEYCODE.Enter, 			//Select,
 		KEYCODE.F3				//Cancel,
 	}	
 
-	AdvancePlayerInput(pPlayinp)
+	for iPlay := 0; iPlay < pGame.m_aPlay.count; ++iPlay
+	{
+		pPlayinp := &pGame.m_aPlay[iPlay].m_playinp
+		AdvancePlayerInput(pPlayinp)
+	}
 
 	event : SEvent
+	#label EventLoop
 	while FGetNextEvent(&event)
 	{
-		//printf("Event: keycode=%d, edges = %d\n", event.m_keycode, event.m_edges)
+		/*
+		if event.m_keycode != KEYCODE.nil
+		{
+			printf("Event: eventk = %d, nDeviceId = %d, keycode=%d, edges = %d\n", event.m_eventk, event.m_nDeviceId, event.m_keycode, event.m_edges)
+		}*/
 		if event.m_keycode == KEYCODE.Escape && event.m_edges == EDGES.Press
 			{ return false }
 
-		//HandlePlayerInputEvent(&event, pPlayinp)
+		mpButkKeycode: & KEYCODE 
+		iPlay := -1
+
+		switch event.m_eventk
+		{
+			case EVENTK.Keyboard:
+				iPlay = 0
+				mpButkKeycode = mpButkKeycodeKeyboard
+
+			case EVENTK.Joystick:
+				iPlay = IPlayFromNDeviceId(pGame, event.m_nDeviceId)
+				pPlayinp := &pGame.m_aPlay[iPlay].m_playinp
+				if pPlayinp && pPlayinp.m_pPadmap
+				{
+					mpButkKeycode = pPlayinp.m_pPadmap.m_pPadmapd.m_mpButkKeycode
+				}
+
+			case EVENTK.JoystickConnected:
+				OnJoystickConnect(pGame, event.m_nDeviceId)
+				continue EventLoop
+
+			case EVENTK.JoystickDisconnected:
+				OnJoystickDisconnect(pGame, event.m_nDeviceId)
+				continue EventLoop
+		}
+
+
+		if iPlay < 0 || !mpButkKeycode
+		{
+			continue
+		}
+		pPlayinp := &pGame.m_aPlay[iPlay].m_playinp
 
 		for butk := BUTK.min; butk != BUTK.max; ++butk
 		{
-			if event.m_keycode == mpKeycodeButk[butk]
+			if event.m_keycode == mpButkKeycode[butk]
 			{
 				pPlayinp.m_mpButkEdges[butk] = event.m_edges
-				break	
 			}
 		}
 	}
 
 	return true
+
+	OnJoystickDisconnect proc (pGame : & SGame, nDeviceId: s32)
+	{
+		printf("Disconnecting Joystick %d\n", nDeviceId)
+		iPlay := IPlayFromNDeviceId(pGame, nDeviceId)
+		if iPlay >= 0
+		{
+			pPlayinp := &pGame.m_aPlay[iPlay].m_playinp
+			if pPlayinp.m_pPadmap
+			{
+				pPlayinp.m_pPadmap.m_nDeviceId = -1
+				pPlayinp.m_nDeviceId = -1
+			}
+			pPlayinp.m_pPadmap = null
+		}
+	}
 }
+
+OnJoystickConnect proc (pGame: & SGame, nDeviceId: s32)
+{
+	// find the first player without a padmap	
+
+	for iPlay := 0; iPlay < pGame.m_aPlay.count; ++iPlay
+	{
+		pPlayinp := &pGame.m_aPlay[iPlay].m_playinp	
+		if pPlayinp.m_pPadmap == null
+		{
+			pPlayinp.m_pPadmap = &pGame.m_aPadmap[iPlay]
+			assert(pGame.m_aPadmap[iPlay].m_nDeviceId == 0, "", #file, #line)	
+			pGame.m_aPadmap[iPlay].m_nDeviceId = nDeviceId
+
+			// find a valid map data
+			pChzJoystickName := PChzJoystickName(nDeviceId)
+			iPadmapdMatch := 0
+			for iPadmapd := 0; iPadmapd < pGame.m_cPadmapd; ++iPadmapd
+			{
+				pPadmapd := &pGame.m_aPadmapd[iPadmapd]
+				if FAreCozEqual(pChzJoystickName, pPadmapd.m_pChzJoystickName)
+				{
+					iPadmapdMatch = iPadmapd
+					break
+				}
+			}
+
+			printf("Connecting Joystick %d, %p\n", nDeviceId, pPlayinp.m_pPadmap)
+			pGame.m_aPadmap[iPlay].m_pPadmapd = &pGame.m_aPadmapd[iPadmapdMatch]
+			return
+		}
+	}
+
+	// all players have joysticks
+}
+
+
+IPlayFromNDeviceId proc (pGame: & SGame, nDeviceId: s32) -> int
+{
+	for iPlay := 0; iPlay < g_game.m_aPlay.count; ++iPlay
+	{
+		if g_game.m_aPlay[iPlay].m_playinp.m_nDeviceId == nDeviceId
+		{
+			return iPlay
+		}
+	}
+
+	return 0
+}
+
 DTElapsed proc (cTickStart: s64, cTickEnd: s64) -> f32 inline
 {
     return cast (f32)(cTickEnd - cTickStart) / cast(f32)g_cTickPerSecond
@@ -1025,12 +1208,14 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 
 			dirTry := dirNew
 
-			if pPlayinp.m_mpButkEdges[BUTK.RotateClock] == EDGES.Press
+			if pPlayinp.m_mpButkEdges[BUTK.RotateClock] == EDGES.Press || 
+				pPlayinp.m_mpButkEdges[BUTK.RotateClockAlt] == EDGES.Press 
 			{
 				dirTry = (dirNew + 1) % DIR.max
 			}
 
-			if pPlayinp.m_mpButkEdges[BUTK.RotateCClock] == EDGES.Press
+			if pPlayinp.m_mpButkEdges[BUTK.RotateCClock] == EDGES.Press ||
+				pPlayinp.m_mpButkEdges[BUTK.RotateCClockAlt] == EDGES.Press
 			{
 				dirTry = (dirNew + DIR.max - 1) % DIR.max
 			}
@@ -1368,7 +1553,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 		}
 	}
 
-	if cPending <= 1 && cWon == 0
+	if cPending <= 1 && cWon == 0 && pGame.m_cPlay > 1
 	{
 		if pPlayPending
 		{
@@ -1406,12 +1591,11 @@ SetGams proc (pGame: & SGame, gams: GAMS)
 {
 	pGame.m_gams = gams
 
+	dXyVport := S32x2Create(kDXWindow, kDYWindow)
 	switch (pGame.m_gams)
 	{
 		case GAMS.Pregame:
 			InitPlayers(&g_game)
-
-		    dXyVport := S32x2Create(kDXWindow, kDYWindow)
 
 			pGame.m_cPlay = kCPlayerMax
 			for iBoard := 0; iBoard < pGame.m_cPlay; ++iBoard
@@ -1425,12 +1609,14 @@ SetGams proc (pGame: & SGame, gams: GAMS)
 			// BB - need to remap correct players (and controllers) if there are gaps in the players that have signed in
 			cPlay := 0
 
+			/*
+			// set up player 2 as an autokill player (for testing)
 			pPlayAuto := &pGame.m_aPlay[1]
 			if pPlayAuto.m_plays == PLAYS.Inactive
 			{
 				SetPlays(pPlayAuto, PLAYS.PregameReady)
 				pPlayAuto.m_grfplay = pPlayAuto.m_grfplay | FPLAY.Autokill
-			}
+			}*/
 
 			for iPlay := 0; iPlay < pGame.m_aPlay.count; ++iPlay
 			{
@@ -1443,6 +1629,11 @@ SetGams proc (pGame: & SGame, gams: GAMS)
 			}
 
 			pGame.m_cPlay = cPlay
+			for iBoard := 0; iBoard < pGame.m_cPlay; ++iBoard
+		    {
+			    ClearBoard(&pGame.m_aBoard[iBoard], pGame)
+				InitBoard(iBoard, pGame.m_cPlay, dXyVport, &pGame.m_aBoard[iBoard], kCVirusStarting)
+			}
 
 		case GAMS.PostGame: 
 			break
@@ -1550,12 +1741,15 @@ main proc () -> int
 	dTGame: f32
 
 	SetGams(&g_game, GAMS.Pregame)
+
 	pVJoyman := CreateJoystickManager()
+	InitJoysticks(&g_game)
 
 	while fShouldClose == false
 	{
-		fShouldClose |= !FHandleEvents(&g_game.m_aPlay[0].m_playinp)
 		UpdateJoystickManager(pVJoyman)
+
+		fShouldClose |= !FHandleEvents(&g_game)
 
 		/*
 		for iPlay := 1; iPlay < g_game.m_aPlay.count; ++iPlay
