@@ -3,6 +3,7 @@
 #import "Font"
 #import "GL"
 #import "Math"
+#import "Smooth"
 
 // Ideas:
 // Each player has a color
@@ -19,9 +20,10 @@ kDYWindow :: 720
 //kDYWindow :: 1080
 
 kDXCellBoard :: 8
-kDYCellBoard :: 16
+kDYCellBoard :: 17
+kDYCellBoardVisible :: 16 // the last row is only for overflow off the top, shouldn't draw (unless occupied)
 kBoardBorderWidth :: 10
-kDYBoardBorderBottom :: 30
+kDYBoardBorderBottom :: 54
 
 kCCellPerBoard :: kDXCellBoard * kDYCellBoard
 kEntMax :: kCCellPerBoard * kCPlayerMax
@@ -30,8 +32,19 @@ kYMaxVirusStart :: 12
 kDTStartingSpawn :: 1
 kDTNextPill	:: 0.20
 kDTShowDead :: 0.2
+kDTStabilize :: 0.05
 
-kCVirusStarting :: 2 //20
+kDTEndgameMin :: 1.5
+
+kDTPulseTotal :: 1.5
+kDTPulseBell :: 0.25
+
+kDTPulseBellStabilize :: 0.45
+
+g_fApplyGravity := true	// debug toggle for falling pieces
+
+kCVirusStarting :: 15
+//kCVirusStarting :: 2
 
 kCPlayerMax :: 4
 
@@ -158,6 +171,8 @@ SPlayer struct // tag = play
 	m_gamres := GAMRES.nil
 	m_grfplay: FPLAY.loose
 	m_pillcol: PILLCOL
+	m_pillcolNextHead: PILLCOL
+	m_pillcolNextTail: PILLCOL
 	m_iPlayerTarget: int						// player that will receive this player's garbage
 	m_playinp: SPlayerInput
 
@@ -165,7 +180,15 @@ SPlayer struct // tag = play
 	m_cKills: int
 
 	m_dTUntilSpawn : f32 = kDTStartingSpawn 	// nothing was falling last update, spawn a new pill
+	m_dTRepeatHold : f32 = -1
+	m_dTStepDown : f32
 	m_pEntSteer : & SEntity						// falling entity controlled by this player
+
+	m_cKilledCells: int
+	m_cGarbageSent: int
+	m_cGarbageReceived: int
+	m_cErrors: int
+	m_dTHoldDown: f32
 }
 
 SGame struct // tag = game
@@ -181,9 +204,9 @@ SGame struct // tag = game
 	m_cPadmap: int
 
 	m_gams := GAMS.nil
+	m_dTGams : f32 						// Time in this game state
 	m_cPlay:= 2
 	m_aPlay: [kCPlayerMax] SPlayer
-	m_dTStepDown : f32
 }
 g_game: SGame
 
@@ -191,11 +214,11 @@ SBoard struct
 {
 	m_dXyTile: s32x2	// pixel dims of each tile
 	m_dXyBoard: s32x2	// total dims of the map
-	m_gTileSpacing: s32
+	m_gTileSpacing: f32
 	m_pos: s32x2 		// lower left of the board
 
 	m_iBoard: s32
-	m_nRngSeed: u32	= 0xBADDBEEF
+	m_nRngSeed: u32	= 0x1234BEEF //0xBADDBEEF
 	m_rng: SRandomGen
 	m_mpIcellPEnt: [kCCellPerBoard] & SEntity
 }
@@ -223,9 +246,13 @@ SEntity struct // tag = ent
 	m_dTEnts: f32				// time in this state
 
 	m_pos: f32x2				// pixel position
+	m_posSmooth: f32x2
+	m_radSmooth: f32
 	m_pillcol: PILLCOL
 	m_pillcolTail: PILLCOL		// other pill color (cause pills are one entity but two colors)
 	m_dir:= DIR.Right 			// direction from pill head to tail
+	m_dTPulse := 0.0
+	m_dTStabilize := 0.0		// time since landing, before stabilizing (for ground sliding)
 
 	m_iBoard	: s32 = -1
 	m_iCellParent : s32 = -1	// board cell this entity is parented to
@@ -248,6 +275,7 @@ InitPlayers proc (pGame: & SGame)
 	for iPlay := 0; iPlay < pGame.m_cPlay; ++iPlay
 	{
 		pPlay := &pGame.m_aPlay[iPlay]
+		pBoard := &pGame.m_aBoard[iPlay]
 		if pPlay.m_plays == PLAYS.nil
 		{
 			SetPlays(pPlay, PLAYS.Inactive)
@@ -257,6 +285,15 @@ InitPlayers proc (pGame: & SGame)
 		pPlay.m_pillcol = cast(PILLCOL)iPlay
 		pPlay.m_iPlayerTarget = (iPlay + 1) % pGame.m_cPlay
 		pPlay.m_dTUntilSpawn = kDTStartingSpawn
+
+		pPlay.m_cKilledCells = 0
+		pPlay.m_cGarbageSent = 0
+		pPlay.m_cGarbageReceived = 0
+		pPlay.m_cErrors = 0
+		pPlay.m_dTHoldDown = 0
+
+		pPlay.m_pillcolNextHead = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
+		pPlay.m_pillcolNextTail = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 
 		SetGamres(pPlay, GAMRES.Pending)
 
@@ -297,7 +334,10 @@ PEntAllocate proc (ppEntFirst: && SEntity, entk: ENTK) -> & SEntity
 
 	pEnt := @ppEntFirst
 	pEnt.m_fHasTail = false
+	pEnt.m_pillcolTail = PILLCOL.nil
 	pEnt.m_dir = DIR.Right
+	pEnt.m_dTPulse = 0
+	pEnt.m_dTStabilize = 0
 
 	@ppEntFirst = pEnt.m_pEntUnusedNext
 
@@ -408,9 +448,10 @@ PillcolFromCell proc (pBoard: & SBoard, xCell: int, yCell: int) -> PILLCOL
 	return pEnt.m_pillcol
 }
 
-KillCell proc (pBoard: & SBoard, xCell: int, yCell: int)
+KillCell proc (pPlay: & SPlayer, pBoard: & SBoard, xCell: int, yCell: int)
 {
 	pEnt := PEntFromCell(pBoard, xCell, yCell, CELOOK.IncludeTail)
+	++pPlay.m_cKilledCells
 
 	// Need to handle tails
 	if pEnt
@@ -427,7 +468,7 @@ KillCell proc (pBoard: & SBoard, xCell: int, yCell: int)
 			pEntTail.m_pillcol = pEnt.m_pillcolTail
 
 			posCellTail := posCell + DCellFromDir(pEnt.m_dir)
-			pEntTail.m_pos = PosFromCell(pBoard, posCellTail.m_x, posCellTail.m_y)
+			CutPos(pEntTail, PosFromCell(pBoard, posCellTail.m_x, posCellTail.m_y))
 
 			ReparentBoardEntity(pBoard, pEntTail)
 			if posCellTail.m_x == xCell && posCellTail.m_y == yCell
@@ -524,14 +565,14 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 {
 	// 40 x 40
 	kDYBorderTop :: 92
-	kDYBorderBottom :: 44
+	kDYBorderBottom :: 68
 	kDXBorderLeft :: 30
 	kDXBorderRight :: 30
 	kDXBorderMiddle :: 30
 
 	// find our cell size
 	dYMax := cast(s32)dXyVport.m_y - (kDYBorderTop + kDYBorderBottom)
-	dYCell := dYMax / kDYCellBoard
+	dYCell := dYMax / kDYCellBoardVisible
 
 	dXBoard : s32 = cast(s32)((dXyVport.m_x - (kDXBorderLeft + kDXBorderRight + (cPlay - 1) * kDXBorderMiddle)) / cPlay)
 	dXCell := dXBoard / kDXCellBoard
@@ -540,16 +581,14 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 	dYCell = dXCell
 
 	pBoard.m_dXyTile = S32x2Create(cast(s32)dXCell, cast(s32)dYCell)
-	pBoard.m_gTileSpacing = pBoard.m_dXyTile.m_x / 8 
+	pBoard.m_gTileSpacing = cast(f32)pBoard.m_dXyTile.m_x / 8 
 
-	pBoard.m_dXyBoard = S32x2Create(cast(s32)dXCell * kDXCellBoard, cast(s32)dYCell * kDYCellBoard)
+	pBoard.m_dXyBoard = S32x2Create(cast(s32)dXCell * kDXCellBoard, cast(s32)dYCell * kDYCellBoardVisible)
 
 	dXBorderTotal := dXyVport.m_x - pBoard.m_dXyBoard.m_x * cPlay
 	dXSeperate := dXBorderTotal / (cPlay + 1)
 
 	pBoard.m_pos = S32x2Create(cast(s32)((pBoard.m_dXyBoard.m_x + dXSeperate) * iPlay + dXSeperate), kDYBorderBottom)
-
-	SeedRandom(&pBoard.m_rng, pBoard.m_nRngSeed)
 
 	pBoard.m_iBoard = cast(s32)iPlay
 
@@ -563,6 +602,9 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 		pillcol := cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 		pEntVirus.m_pillcol = pillcol
 
+		// start each entity at a random spot in the pulse cycle
+		pEntVirus.m_dTPulse = GRandom(&pBoard.m_rng, 0, kDTPulseTotal)
+
 		while true
 		{
 			xCell := NRandom(&pBoard.m_rng, 0, kDXCellBoard)
@@ -570,7 +612,7 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 
 			if !FIsCellOccupied(pBoard, xCell, yCell)
 			{
-				pEntVirus.m_pos = PosFromCell(pBoard, xCell, yCell)
+				CutPos(pEntVirus, PosFromCell(pBoard, xCell, yCell))
 				ReparentBoardEntity(pBoard, pEntVirus)
 				break
 			}
@@ -607,8 +649,8 @@ DrawBoardBackground proc (pBoard: & SBoard, pillcolSelf: PILLCOL, pillcolTarget:
 {
 	xMin : f32 = cast(f32)pBoard.m_pos.m_x
 	yMin : f32 = cast(f32)pBoard.m_pos.m_y
-	xMax : f32 = cast(f32)(pBoard.m_pos.m_x + pBoard.m_dXyBoard.m_x + pBoard.m_gTileSpacing)
-	yMax : f32 = cast(f32)(pBoard.m_pos.m_y + pBoard.m_dXyBoard.m_y + pBoard.m_gTileSpacing)
+	xMax : f32 = cast(f32)(pBoard.m_pos.m_x + pBoard.m_dXyBoard.m_x) + pBoard.m_gTileSpacing
+	yMax : f32 = cast(f32)(pBoard.m_pos.m_y + pBoard.m_dXyBoard.m_y) + pBoard.m_gTileSpacing
 
 	colvecBorder := ColvecFromCol(ColFromPillcol(pillcolSelf))
 	DrawOutsideBorder(xMin, yMin, xMax, yMax, kBoardBorderWidth, colvecBorder)
@@ -618,20 +660,109 @@ DrawBoardBackground proc (pBoard: & SBoard, pillcolSelf: PILLCOL, pillcolTarget:
 	xMax += kBoardBorderWidth
 	yMin -= kBoardBorderWidth
 	AppendTile(xMin, yMin - dYBottom, xMax, yMin, &colvecBorder, &g_tilbuf)
+}
+
+CutPos proc (pEnt: & SEntity, pos: f32x2)
+{
+	pEnt.m_pos = pos	
+	pEnt.m_posSmooth = pos
+}
+
+RadFromDir proc (dir: DIR) -> f32
+{
+	switch dir
+	{
+	case DIR.Left: 	return kPi
+	case DIR.Up:	return kPiOver2
+	case DIR.Right:	return 0
+	case DIR.Down:	return kPi + kPiOver2
+	}
+	assert(false, "unhandled dir?", #file, #line)
+	return 0
+}
+
+DPosPillFromDir proc (pBoard: & SBoard, dir: DIR) -> f32x2
+{
+	// returns the offset applied to each piece as it rotates
+
+	switch dir
+	{
+	case DIR.Left: 	return F32x2Create(cast(f32)pBoard.m_dXyTile.m_x, 0)
+	case DIR.Up:	return F32x2Create(cast(f32)pBoard.m_dXyTile.m_x, 0)
+	case DIR.Right:	return F32x2Create(0, 0)
+	case DIR.Down:	return F32x2Create(0, cast(f32)pBoard.m_dXyTile.m_y)
+	}
+	assert(false, "unhandled dir?", #file, #line)
+	return F32x2Create(0,0)
 
 }
 
-DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard)
+DrawPill proc (pBoard: & SBoard, pos: f32x2, rad: f32, colHead: SColor, fHasTail: bool, colTail: SColor, rOpacity: f32, rXScale: f32)
+{
+	gHalfSpacing := pBoard.m_gTileSpacing * 0.5
+
+	dXySpacing := F32x2Create(pBoard.m_gTileSpacing, pBoard.m_gTileSpacing)
+	posOrigin := pos + dXySpacing
+	vecHalfSpace := (F32x2Cast(pBoard.m_dXyTile) - dXySpacing) * 0.5
+	posOrigin += vecHalfSpace
+
+	posMin := -vecHalfSpace
+	posMax := posMin + F32x2Cast(pBoard.m_dXyTile) - dXySpacing
+
+	posMinTail := posMin
+	posMinTail.m_x += cast(f32)pBoard.m_dXyTile.m_x
+
+	posMaxTail := posMinTail + F32x2Cast(pBoard.m_dXyTile) - dXySpacing
+
+	if fHasTail
+	{
+		posMax.m_x += gHalfSpacing	
+		posMinTail.m_x = posMax.m_x
+	}
+
+	// xScaling
+	{
+		xMid := (posMaxTail.m_x - posMin.m_x) * 0.5 + posMin.m_x
+		posMin.m_x = (posMin.m_x - xMid) * rXScale + xMid
+		posMax.m_x = (posMax.m_x - xMid) * rXScale + xMid
+		posMinTail.m_x = (posMinTail.m_x - xMid) * rXScale + xMid
+		posMaxTail.m_x = (posMaxTail.m_x - xMid) * rXScale + xMid
+	}
+
+	dPosRot := F32x2Create(0,0)
+	posOrigin += dPosRot
+
+	colvecEnt := ColvecFromCol(colHead)	
+	colvecEnt.m_w *= rOpacity
+
+	AppendTile(posOrigin, rad, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
+
+	// debug marker for primary cell
+	colvecLight := ColvecLerp(ColvecFromCol(ColCreate(255,255,255,255)), colvecEnt, 0.5)
+	AppendTile(posOrigin, rad, posMin.m_x + 5, posMax.m_y - 10, posMin.m_x + 10, posMax.m_y - 5, &colvecLight, &g_tilbuf)
+
+	if (fHasTail)
+	{
+		colvecTail := ColvecFromCol(colTail)
+		colvecTail.m_w *= rOpacity
+
+		AppendTile(posOrigin, rad, posMinTail.m_x, posMinTail.m_y, posMaxTail.m_x, posMaxTail.m_y, &colvecTail, &g_tilbuf)
+	}
+}
+
+DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 {
 	kVirusBorderWidth :: 3
+	kVirusBorderSeparation :: 2
 	kDeadEntWidth :: 3
 
-	posMin := pEnt.m_pos + F32x2Cast(pBoard.m_pos)
+	posMin := pos + F32x2Cast(pBoard.m_pos)
 	posMax := posMin + F32x2Cast(pBoard.m_dXyTile)
 	posMin.m_x += cast(f32)pBoard.m_gTileSpacing
 	posMin.m_y += cast(f32)pBoard.m_gTileSpacing
 
 	colvecEnt := ColvecFromCol(ColFromPillcol(pEnt.m_pillcol))	
+	colvecEnt.m_w *= rOpacity
 
 	kULerpStable :: 1.0 // 0.7
 	colvecStable := ColvecFromCol(ColCreate(0, 0, 0, 255))
@@ -653,12 +784,29 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard)
 				posMax.m_x -= kVirusBorderWidth
 				posMax.m_y -= kVirusBorderWidth
 
-				AppendTile(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
+				uPulse := 0.0
+				if pEnt.m_dTPulse >= kDTPulseTotal
+				{
+					pEnt.m_dTPulse = 0
+				}
+				if pEnt.m_dTPulse < kDTPulseBell 
+				{
+					u := pEnt.m_dTPulse / kDTPulseBell
+					uPulse = GCurveBell(u)
+				}
 
-				colvecBorder := ColvecFromCol(ColCreate(165, 231, 255, 255))
-				colvecBorder = ColvecLerp(colvecStable, colvecBorder, uLerpStable)
+				kPulseWidthShrink :: 3
+				kPulseWidthGrow :: 2
+				uShrink := uPulse * kPulseWidthShrink
+				uGrow := uPulse * kPulseWidthGrow
+				AppendTile(posMin.m_x + uShrink, posMin.m_y + uShrink, posMax.m_x - uShrink, posMax.m_y - uShrink, &colvecEnt, &g_tilbuf)
 
-				DrawOutsideBorder(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, kVirusBorderWidth, colvecBorder)
+				posMin.m_x -= kVirusBorderSeparation + uGrow
+				posMin.m_y -= kVirusBorderSeparation + uGrow
+				posMax.m_x += kVirusBorderSeparation + uGrow
+				posMax.m_y += kVirusBorderSeparation + uGrow
+
+				DrawOutsideBorder(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, kVirusBorderWidth, colvecEnt)
 			}
 			else
 			{
@@ -696,19 +844,21 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard)
 
 			if (pEnt.m_ents != ENTS.Dead)	
 			{
-				AppendTile(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
-
-				// debug marker for primary cell
-				colvecLight := ColvecLerp(ColvecFromCol(ColCreate(255,255,255,255)), colvecEnt, 0.5)
-				AppendTile(posMin.m_x + 5, posMax.m_y - 10, posMin.m_x + 10, posMax.m_y - 5, &colvecLight, &g_tilbuf)
-
-				if (pEnt.m_fHasTail)
+				kRPillPulseScale :: 0.2
+				uPulse := 0.0
+				if pEnt.m_dTPulse < kDTPulseBellStabilize
 				{
-					colvecTail := ColvecFromCol(ColFromPillcol(pEnt.m_pillcolTail))	
-					colvecTail = ColvecLerp(colvecStable, colvecTail, uLerpStable)
-
-					AppendTile(posMinTail.m_x, posMinTail.m_y, posMaxTail.m_x, posMaxTail.m_y, &colvecTail, &g_tilbuf)
+					u := pEnt.m_dTPulse / kDTPulseBellStabilize
+					uPulse = GCurveBell(u)
 				}
+
+				posPill := pos + F32x2Cast(pBoard.m_pos)
+				radDir := RadFromDir(pEnt.m_dir)
+
+				colWhite := ColCreate(255, 255, 255, 255)
+				colPill := ColLerp(ColFromPillcol(pEnt.m_pillcol), colWhite, uPulse)
+				colTail := ColLerp(ColFromPillcol(pEnt.m_pillcolTail), colWhite, uPulse)
+				DrawPill(pBoard, posPill, radDir, colPill, pEnt.m_fHasTail, colTail, 1, 1)
 			}
 			else
 			{
@@ -778,48 +928,67 @@ DrawBoards proc (pGame : & SGame, pDrac: & SDrawContext)
 		pBoard := &pGame.m_aBoard[iPlay]
 		DrawBoardBackground(pBoard, pPlay.m_pillcol, pGame.m_aPlay[iPlayTarget].m_pillcol)
 
-		for yCell := 0; yCell < kDYCellBoard; ++yCell
-		{	
-			for xCell := 0; xCell < kDXCellBoard; ++xCell
-			{
-				pEnt := PEntFromCell(pBoard, xCell, yCell, CELOOK.ExcludeTail)
-				if pEnt
-				{ 
-					DrawEntity(pEnt, pBoard)
-					if pEnt.m_entk == ENTK.Virus
-					{
-						++cVirusLiving
+		if pGame.m_gams != GAMS.Pregame
+		{
+			for yCell := 0; yCell < kDYCellBoard; ++yCell
+			{	
+				for xCell := 0; xCell < kDXCellBoard; ++xCell
+				{
+					pEnt := PEntFromCell(pBoard, xCell, yCell, CELOOK.ExcludeTail)
+					if pEnt
+					{ 
+						DrawEntity(pEnt, pBoard, pEnt.m_pos, 1.0)
+
+						if pEnt.m_entk == ENTK.Virus
+						{
+							++cVirusLiving
+						}
 					}
 				}
 			}
 		}
 
-		kRGarbageTrimBottom :: 0.25
-		kRGarbageSpacing :: 1.25
-
-		posGarbage := pBoard.m_pos + S32x2Create(-kBoardBorderWidth, kBoardBorderWidth)
-		posGarbage.m_y += pBoard.m_dXyBoard.m_y + cast(s32)(cast(f32)pBoard.m_dXyTile.m_y * kRGarbageTrimBottom)
-
-		for iPlayOther:=0; iPlayOther < pGame.m_cPlay; ++iPlayOther
+		if pGame.m_gams == GAMS.InGame
 		{
-			pPlayOther := &pGame.m_aPlay[iPlayOther]
-			colvec := ColvecFromCol(ColFromPillcol(pPlayOther.m_pillcol))
+			kRGarbageTrimBottom :: 0.25
+			kRGarbageSpacing :: 1.25
 
-			cGarbage := pPlay.m_mpIplayCGarbagePending[iPlayOther]
-			for iGarbage := 0; iGarbage < cGarbage; ++iGarbage
+			posGarbage := pBoard.m_pos + S32x2Create(-kBoardBorderWidth, kBoardBorderWidth)
+			posGarbage.m_y += pBoard.m_dXyBoard.m_y + cast(s32)(cast(f32)pBoard.m_dXyTile.m_y * kRGarbageTrimBottom)
+
+			pillWidth := cast(f32)pBoard.m_dXyTile.m_x * 2
+			posPill := F32x2Create(cast(f32)(pBoard.m_pos.m_x + pBoard.m_dXyBoard.m_x + kBoardBorderWidth) - pillWidth, cast(f32)posGarbage.m_y) 
+			DrawPill(pBoard, posPill, 0, ColFromPillcol(pPlay.m_pillcolNextHead), true, ColFromPillcol(pPlay.m_pillcolNextTail), 1, 1)
+
+			for iPlayOther:=0; iPlayOther < pGame.m_cPlay; ++iPlayOther
 			{
-				DrawGarbage(pBoard, F32x2Cast(posGarbage), colvec)	
-				posGarbage.m_x += cast(s32)(cast(f32)pBoard.m_dXyTile.m_x * kRGarbageSpacing)
+				pPlayOther := &pGame.m_aPlay[iPlayOther]
+				colvec := ColvecFromCol(ColFromPillcol(pPlayOther.m_pillcol))
+
+				cGarbage := pPlay.m_mpIplayCGarbagePending[iPlayOther]
+				for iGarbage := 0; iGarbage < cGarbage; ++iGarbage
+				{
+					DrawGarbage(pBoard, F32x2Cast(posGarbage), colvec)	
+					posGarbage.m_x += cast(s32)(cast(f32)pBoard.m_dXyTile.m_x * kRGarbageSpacing)
+				}
+
 			}
+
+			posLabel := pBoard.m_pos
+			posLabel.m_x += pBoard.m_dXyBoard.m_x / 2
+			posLabel.m_y -= kDYBoardBorderBottom - 10
+
+			kGCharSizeVirus :: 50
+			pFontd := &pDrac.m_pDras.m_fontd
+			gCharSizePrev := pFontd.m_gCharSize
+			pFontd.m_gCharSize = kGCharSizeVirus
+
+			aChVirusCount: [16] u8
+			snprintf(aChVirusCount, aChVirusCount.count, "%d", cVirusLiving)
+			DrawTextCentered(pDrac, F32x2Cast(posLabel), aChVirusCount)
+
+			pFontd.m_gCharSize = gCharSizePrev
 		}
-
-		posLabel := pBoard.m_pos
-		posLabel.m_x += pBoard.m_dXyBoard.m_x / 2
-		posLabel.m_y -= kDYBoardBorderBottom - 5
-
-		aChVirusCount: [16] u8
-		snprintf(aChVirusCount, aChVirusCount.count, "%d", cVirusLiving)
-		DrawTextCentered(pDrac, F32x2Cast(posLabel), aChVirusCount)
 	}
 }
 
@@ -866,8 +1035,8 @@ g_mpButkKeycodeWiredX360: [BUTK.max] KEYCODE =
 	KEYCODE.JoypadButton13, //Down,
 	KEYCODE.JoypadButton14, //Left,
 	KEYCODE.JoypadButton12, //Right,
-	KEYCODE.JoypadButton1,	//RotateClock,
-	KEYCODE.JoypadButton2,	//RotateCClock,
+	KEYCODE.JoypadButton2,	//RotateClock,
+	KEYCODE.JoypadButton1,	//RotateCClock,
 	KEYCODE.JoypadButton3,	//RotateClockAlt,
 	KEYCODE.JoypadButton4,	//RotateCClockAlt,
 	KEYCODE.JoypadButton1, 	//Select,
@@ -904,7 +1073,7 @@ FHandleEvents proc (pGame: & SGame) -> bool
 		KEYCODE.ArrowUp, 		//Up,
 		KEYCODE.ArrowDown, 		//Down,
 		KEYCODE.ArrowLeft, 		//Left,
-		KEYCODE.ArrowRight, 	//Right,
+		KEYCODE.ArrowRight, 	//Right
 		KEYCODE.KeyA,			//RotateClock,
 		KEYCODE.KeyS,			//RotateCClock,
 		KEYCODE.KeyA,			//RotateClockAlt,
@@ -930,6 +1099,27 @@ FHandleEvents proc (pGame: & SGame) -> bool
 		}*/
 		if event.m_keycode == KEYCODE.Escape && event.m_edges == EDGES.Press
 			{ return false }
+		if event.m_keycode == KEYCODE.KeyG && event.m_edges == EDGES.Press
+		{
+			g_fApplyGravity = !g_fApplyGravity
+			continue
+		}
+
+		if event.m_keycode == KEYCODE.KeyE && event.m_edges == EDGES.Press
+		{
+			SetGams(pGame, GAMS.PostGame)
+
+			SetGamres(&pGame.m_aPlay[0], GAMRES.WinLastStanding)
+			for iPlay := 1; iPlay < pGame.m_cPlay; ++iPlay
+			{
+				pPlay := &pGame.m_aPlay[iPlay]
+				if (pPlay.m_gamres == GAMRES.Pending)
+				{
+					SetGamres(pPlay, GAMRES.LoseTooSlow)
+				}
+			}
+			continue
+		}
 
 		mpButkKeycode: & KEYCODE 
 		iPlay := -1
@@ -942,6 +1132,7 @@ FHandleEvents proc (pGame: & SGame) -> bool
 
 			case EVENTK.Joystick:
 				iPlay = IPlayFromNDeviceId(pGame, event.m_nDeviceId)
+
 				pPlayinp := &pGame.m_aPlay[iPlay].m_playinp
 				if pPlayinp && pPlayinp.m_pPadmap
 				{
@@ -1002,6 +1193,7 @@ OnJoystickConnect proc (pGame: & SGame, nDeviceId: s32)
 		if pPlayinp.m_pPadmap == null
 		{
 			pPlayinp.m_pPadmap = &pGame.m_aPadmap[iPlay]
+			pPlayinp.m_nDeviceId = nDeviceId
 			assert(pGame.m_aPadmap[iPlay].m_nDeviceId == 0, "", #file, #line)	
 			pGame.m_aPadmap[iPlay].m_nDeviceId = nDeviceId
 
@@ -1018,7 +1210,7 @@ OnJoystickConnect proc (pGame: & SGame, nDeviceId: s32)
 				}
 			}
 
-			printf("Connecting Joystick %d, %p\n", nDeviceId, pPlayinp.m_pPadmap)
+			printf("Connecting Joystick(%d) %s, %p\n", nDeviceId, pChzJoystickName, pPlayinp.m_pPadmap)
 			pGame.m_aPadmap[iPlay].m_pPadmapd = &pGame.m_aPadmapd[iPadmapdMatch]
 			return
 		}
@@ -1044,6 +1236,51 @@ IPlayFromNDeviceId proc (pGame: & SGame, nDeviceId: s32) -> int
 DTElapsed proc (cTickStart: s64, cTickEnd: s64) -> f32 inline
 {
     return cast (f32)(cTickEnd - cTickStart) / cast(f32)g_cTickPerSecond
+}
+
+AppendTile proc (
+			pos: f32x2, rad: f32,
+			xMin: f32, yMin: f32,
+			xMax: f32, yMax: f32,
+			colvec: & SColorVec,
+			pTilbuf: & STileVertexBuffer)
+{
+	if pTilbuf.m_aTilvert.count < pTilbuf.m_cTilvert + 4
+		{ return }
+
+	mat := Mat33FromPosRad(pos, rad)
+
+	pos0 := F32x2Create(xMin, yMax)
+	pos0 = PosMul(mat, pos0)
+	AppendTilvert(
+		pos0.m_x, pos0.m_y,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
+
+	pos1 := F32x2Create(xMax, yMax)
+	pos1 = PosMul(mat, pos1)
+	AppendTilvert(
+		pos1.m_x, pos1.m_y,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
+
+	pos2 := F32x2Create(xMax, yMin)
+	pos2 = PosMul(mat, pos2)
+	AppendTilvert(
+		pos2.m_x, pos2.m_y,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
+
+	pos3 := F32x2Create(xMin, yMin)
+	pos3 = PosMul(mat, pos3)
+	AppendTilvert(
+		pos3.m_x, pos3.m_y,
+		0,	0,	// u, v
+		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
+		pTilbuf)
 }
 
 AppendTile proc (
@@ -1151,21 +1388,41 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 
 UpdatePlayers proc (pGame : & SGame, dT: f32)
 {
-	kDTStepDown :: 0.4
-	fStepDown := false
+	kDTStepDownSteer :: 0.4
+	kDTStepDownDrop :: 0.3
 
-	pGame.m_dTStepDown += dT
-	if pGame.m_dTStepDown > kDTStepDown
-	{
-		fStepDown = true
-		pGame.m_dTStepDown = 0
-	}
+	kDTHoldRepeatInitial :: 0.2
+	kDTHoldRepeatAgain :: 0.15
+
+	aFStepDown: [pGame.m_aPlay.count] bool
 
 	for iPlay := 0; iPlay < pGame.m_cPlay; ++iPlay
 	{
 		pBoard := &g_game.m_aBoard[iPlay]
 		pPlay := &g_game.m_aPlay[iPlay]
 		pPlayinp := &pPlay.m_playinp
+
+		aFStepDown[iPlay] = false
+		if g_fApplyGravity
+		{
+			pPlay.m_dTStepDown += dT
+		}
+
+		dTStepDown: f32
+		if pPlay.m_pEntSteer != null
+		{
+			dTStepDown = kDTStepDownSteer
+		}
+		else
+		{
+			dTStepDown = kDTStepDownDrop
+		}
+
+		if pPlay.m_dTStepDown > dTStepDown
+		{
+			aFStepDown[iPlay] = true
+			pPlay.m_dTStepDown = 0
+		}
 
 		kDCellPerSecond :: 0
 		kDCellPerSecondPressDown :: 20
@@ -1179,25 +1436,53 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 			posNew := pEntSteer.m_pos
 			dirNew := pEntSteer.m_dir
 			posCell := PosCell(pBoard, pEntSteer.m_pos)
+			posTail := posCell + DCellFromDir(pEntSteer.m_dir)
 
-			if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
+			fMoveRight := false
+			if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Hold
+			{
+				pPlay.m_dTRepeatHold -= dT
+				if pPlay.m_dTRepeatHold <= 0
+				{
+					fMoveRight = true
+					pPlay.m_dTRepeatHold = kDTHoldRepeatAgain
+				}
+			}
+			else if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
+			{
+				pPlay.m_dTRepeatHold = kDTHoldRepeatInitial
+				fMoveRight = true
+			}
+
+			if fMoveRight
 			{ 
-				xCellMax := posCell.m_x + 1
-				if pEntSteer.m_fHasTail && pEntSteer.m_dir == DIR.Right
-					{ ++xCellMax }
-
-				if xCellMax < kDXCellBoard && !FIsCellOccupied(pBoard, xCellMax, posCell.m_y)
+				if	!FIsCellOccupied(pBoard, posCell.m_x + 1, posCell.m_y, pEntSteer) &&
+					!FIsCellOccupied(pBoard, posTail.m_x + 1, posTail.m_y, pEntSteer)
 				{
 					posNew.m_x = cast(f32)((posCell.m_x + 1) * pBoard.m_dXyTile.m_x)
 				}
 			}
-			if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
-			{
-				xCellMin := posCell.m_x - 1
-				if pEntSteer.m_fHasTail && pEntSteer.m_dir == DIR.Left
-					{ --xCellMin }
 
-				if xCellMin >= 0 && !FIsCellOccupied(pBoard, xCellMin, posCell.m_y)
+			fMoveLeft := false
+			if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Hold
+			{
+				pPlay.m_dTRepeatHold -= dT
+				if pPlay.m_dTRepeatHold < 0
+				{
+					fMoveLeft = true
+					pPlay.m_dTRepeatHold = kDTHoldRepeatAgain
+				}
+			}
+			else if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
+			{
+				pPlay.m_dTRepeatHold = kDTHoldRepeatInitial
+				fMoveLeft = true
+			}
+
+			if fMoveLeft
+			{
+				if	!FIsCellOccupied(pBoard, posCell.m_x - 1, posCell.m_y, pEntSteer) &&
+					!FIsCellOccupied(pBoard, posTail.m_x - 1, posTail.m_y, pEntSteer)
 				{
 					posNew.m_x = cast(f32)((posCell.m_x - 1) * pBoard.m_dXyTile.m_x)
 				}
@@ -1263,6 +1548,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 			if (pPlayinp.m_mpButkEdges[BUTK.Down] >= EDGES.Hold)
 			{
 				dCellPerSecond = kDCellPerSecondPressDown
+				pPlay.m_dTHoldDown += dT
 			}
 
 			pEntSteer.m_dir = dirNew
@@ -1303,9 +1589,25 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 					{
 						yNew -= dY	
 					}
-					else if fStepDown
+					else if aFStepDown[iPlay]
 					{
 						yNew -= cast(f32)pBoard.m_dXyTile.m_y
+					}
+
+					fIsBelowBlocked := FIsCellOccupied(pBoard, xCell, yCell-1, pEnt)
+					if pEnt.m_fHasTail
+					{
+						dCellTail := DCellFromDir(pEnt.m_dir)
+						fIsBelowBlocked |= FIsCellOccupied(pBoard, xCell + dCellTail.m_x, yCell-1 + dCellTail.m_y, pEnt)
+					}
+
+					if !fIsBelowBlocked
+					{
+						pEnt.m_dTStabilize = 0
+					}
+					else
+					{
+						pEnt.m_dTStabilize += dT
 					}
 
 					yCellNew := NFloor(yNew / cast(f32)pBoard.m_dXyTile.m_y)
@@ -1313,22 +1615,19 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 					{
 						// check for a landing
 
-						fIsBelowBlocked := FIsCellOccupied(pBoard, xCell, yCellNew, pEnt)
-
-						if pEnt.m_fHasTail
-						{
-							dCellTail := DCellFromDir(pEnt.m_dir)
-							fIsBelowBlocked |= FIsCellOccupied(pBoard, xCell + dCellTail.m_x, yCellNew + dCellTail.m_y, pEnt)
-						}
-
 						if fIsBelowBlocked
 						{
-							yNew = cast(f32)(yCell * pBoard.m_dXyTile.m_y) + 0.01
+							yNew = cast(f32)(yCell * pBoard.m_dXyTile.m_y) + 0.001
 
-							SetEnts(pEnt, ENTS.Stable)
-							if pPlay.m_pEntSteer == pEnt
+							if pEnt.m_dTStabilize > kDTStabilize && pEnt.m_ents != ENTS.Stable
 							{
-								pPlay.m_pEntSteer = null
+								pEnt.m_dTPulse = 0
+
+								SetEnts(pEnt, ENTS.Stable)
+								if pPlay.m_pEntSteer == pEnt
+								{
+									pPlay.m_pEntSteer = null
+								}
 							}
 						}
 						else
@@ -1337,11 +1636,17 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 							fAnyFalling = true
 						}
 					}
+					pEnt.m_posSmooth.m_y += yNew - pEnt.m_pos.m_y
 					pEnt.m_pos.m_y = yNew
 					ReparentBoardEntity(pBoard, pEnt)
 				}
 			}
 		}
+
+		smpPos: SSmp
+		smpPos.m_dGMin = 25.0
+		smpPos.m_dGMax = 200.0
+		smpPos.m_dTMax = 0.25
 
 		// loop over all cells checking for pills that should be dead
 		cVirusLiving : int
@@ -1353,6 +1658,10 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 				pEnt := PEntFromCell(pBoard, xCell, yCell, CELOOK.IncludeTail)
 				if !pEnt
 					{ continue }
+
+				pEnt.m_posSmooth.m_x = GSmooth(pEnt.m_posSmooth.m_x, pEnt.m_pos.m_x, &smpPos, dT)
+				pEnt.m_posSmooth.m_y = GSmooth(pEnt.m_posSmooth.m_y, pEnt.m_pos.m_y, &smpPos, dT)
+
 				if pEnt.m_ents != ENTS.Stable
 				{ 
 					fAnyDead |= pEnt.m_ents == ENTS.Dead
@@ -1382,7 +1691,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 
 					for iCellDead := 0; iCellDead < cPillcol; ++iCellDead
 					{
-						KillCell(pBoard, xCell + iCellDead, yCell)
+						KillCell(pPlay, pBoard, xCell + iCellDead, yCell)
 						fAnyDead = true
 					}
 				}
@@ -1401,10 +1710,12 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 					++pPlay.m_cKills
 					for iCellDead := 0; iCellDead < cPillcol; ++iCellDead
 					{
-						KillCell(pBoard, xCell, yCell + iCellDead)
+						KillCell(pPlay, pBoard, xCell, yCell + iCellDead)
 						fAnyDead = true
 					}
 				}
+
+				pEnt.m_dTPulse += dT
 
 				// living viruses?	
 				if pEnt.m_entk == ENTK.Virus
@@ -1435,7 +1746,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 	for iPlay := 0; iPlay < pGame.m_cPlay; ++iPlay
 	{
 		pPlay := &pGame.m_aPlay[iPlay]
-		if pPlay.m_dTUntilSpawn < 0 && pPlay.m_pEntSteer == null && fStepDown
+		if pPlay.m_dTUntilSpawn < 0 && pPlay.m_pEntSteer == null && aFStepDown[iPlay]
 		{
 			if pPlay.m_cKills > 1
 			{
@@ -1444,8 +1755,10 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 					if iPlay == iPlayOther
 						{ continue }
 					pGame.m_aPlay[iPlayOther].m_mpIplayCGarbagePending[iPlay] += pPlay.m_cKills
+					pGame.m_aPlay[iPlayOther].m_cGarbageReceived += pPlay.m_cKills
 				}
 			}
+			pPlay.m_cGarbageSent += pPlay.m_cKills
 			pPlay.m_cKills = 0
 		}
 	}
@@ -1455,10 +1768,10 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 	{
 		pPlay := &pGame.m_aPlay[iPlay]
 		pBoard := &pGame.m_aBoard[iPlay]
-		if pPlay.m_dTUntilSpawn < 0 && pPlay.m_pEntSteer == null && fStepDown
+		if pPlay.m_dTUntilSpawn < 0 && pPlay.m_pEntSteer == null && aFStepDown[iPlay]
 		{
 			xCellMidpoint := kDXCellBoard/2 - 1
-			yCellSpawn := kDYCellBoard - 1
+			yCellSpawn := kDYCellBoardVisible - 1
 
 			cGarbagePending := 0
 			for iPlayOther := 0; iPlayOther < pGame.m_cPlay; ++iPlayOther
@@ -1498,7 +1811,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 								SetEnts(pEntGarbage, ENTS.Falling)
 								pEntGarbage.m_pillcol = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 
-								pEntGarbage.m_pos = PosFromCell(pBoard, xCellGarbage, yCellSpawn)
+								CutPos(pEntGarbage, PosFromCell(pBoard, xCellGarbage, yCellSpawn))
 								ReparentBoardEntity(pBoard, pEntGarbage)
 							}
 							break
@@ -1520,10 +1833,13 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 					{
 						SetEnts(pEntPill, ENTS.Falling)
 						pEntPill.m_fHasTail = true
-						pEntPill.m_pillcol = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
-						pEntPill.m_pillcolTail = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
+						pEntPill.m_pillcol = pPlay.m_pillcolNextHead
+						pEntPill.m_pillcolTail = pPlay.m_pillcolNextTail
 
-						pEntPill.m_pos = PosFromCell(pBoard, xCellMidpoint, yCellSpawn)
+						pPlay.m_pillcolNextHead = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
+						pPlay.m_pillcolNextTail = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
+
+						CutPos(pEntPill, PosFromCell(pBoard, xCellMidpoint, yCellSpawn))
 						pPlay.m_pEntSteer = pEntPill
 
 						ReparentBoardEntity(pBoard, pEntPill)
@@ -1590,11 +1906,20 @@ SetPlays proc (pPlay: & SPlayer, plays: PLAYS)
 SetGams proc (pGame: & SGame, gams: GAMS)
 {
 	pGame.m_gams = gams
+	pGame.m_dTGams = 0
 
 	dXyVport := S32x2Create(kDXWindow, kDYWindow)
 	switch (pGame.m_gams)
 	{
 		case GAMS.Pregame:
+			for iBoard := 0; iBoard < pGame.m_aBoard.count; ++iBoard
+			{
+				pBoard := &pGame.m_aBoard[iBoard]
+
+				pBoard.m_nRngSeed = cast(u32)NRandom(&g_rng, 0, 0xFFFFFFFF)
+				SeedRandom(&pBoard.m_rng, pBoard.m_nRngSeed)
+			}
+
 			InitPlayers(&g_game)
 
 			pGame.m_cPlay = kCPlayerMax
@@ -1661,6 +1986,11 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 		{
 			case PLAYS.Inactive:
 				DrawTextCentered(pDrac, posCenter, "Press Start")
+				if pPlayinp.m_mpButkEdges[BUTK.Select] == EDGES.Press
+				{
+					SetPlays(pPlay, PLAYS.PregameOptions)
+				}
+
 			case PLAYS.PregameOptions:
 				DrawTextCentered(pDrac, posCenter, "Press 'X' when ready")
 				++cWaiting
@@ -1691,19 +2021,62 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 
 DrawGameResults proc (pDrac: & SDrawContext, pPlay: & SPlayer, pBoard: & SBoard)
 {
+	xMin : f32 = cast(f32)pBoard.m_pos.m_x
+	yMin : f32 = cast(f32)pBoard.m_pos.m_y
+	xMax : f32 = cast(f32)(pBoard.m_pos.m_x + pBoard.m_dXyBoard.m_x) + pBoard.m_gTileSpacing
+	yMax : f32 = cast(f32)(pBoard.m_pos.m_y + pBoard.m_dXyBoard.m_y) + pBoard.m_gTileSpacing
+	colvecBg : SColorVec
+
+	kDYTextLine	:: 25
+
 	posCenter := F32x2Cast(pBoard.m_pos) + F32x2Cast(pBoard.m_dXyBoard) * 0.5
-	aCh: [64] u8
+	posCenter.m_y += kDYTextLine * 5
+	aCh: [128] u8
 	switch pPlay.m_gamres
 	{
 		case GAMRES.WinClearedAll,
 			GAMRES.WinLastStanding:
 			snprintf(aCh, aCh.count, "Winner!")
+			colvecBg = ColvecFromCol(ColCreate(25, 25, 50, 130))
 		case GAMRES.LoseOverflow,
 			GAMRES.LoseTooSlow:
 			snprintf(aCh, aCh.count, "You Lose.")
+			colvecBg = ColvecFromCol(ColCreate(100, 0, 0, 100))
 	}
 
+	AppendTile(xMin, yMin, xMax, yMax, &colvecBg, &g_tilbuf)
+
+	kGCharSizeWinLose :: 50
+	kGCharSizeStats :: 20
+	kGCharSizePrompt :: 30
+
+	pFontd := &pDrac.m_pDras.m_fontd
+	gCharSizePrev := pFontd.m_gCharSize
+
+	pFontd.m_gCharSize = kGCharSizeWinLose
 	DrawTextCentered(pDrac, posCenter, aCh)
+
+	pFontd.m_gCharSize = kGCharSizeStats
+	posCenter.m_y -= kDYTextLine * 5
+	snprintf(aCh, aCh.count, "%d kills", pPlay.m_cKilledCells)
+	DrawTextCentered(pDrac, posCenter, aCh)
+
+	posCenter.m_y -= kDYTextLine
+	snprintf(aCh, aCh.count, "%d garbage sent", pPlay.m_cGarbageSent)
+	DrawTextCentered(pDrac, posCenter, aCh)
+
+	posCenter.m_y -= kDYTextLine
+	snprintf(aCh, aCh.count, "%d garbage received", pPlay.m_cGarbageReceived)
+	DrawTextCentered(pDrac, posCenter, aCh)
+	posCenter.m_y -= kDYTextLine
+	snprintf(aCh, aCh.count, "%.2f seconds pressing down", pPlay.m_dTHoldDown)
+	DrawTextCentered(pDrac, posCenter, aCh)
+
+	pFontd.m_gCharSize = kGCharSizePrompt
+	posCenter.m_y -= kDYTextLine * 5
+	DrawTextCentered(pDrac, posCenter, "Press X To Continue.")
+
+	pFontd.m_gCharSize = gCharSizePrev
 }
 
 main proc () -> int
@@ -1718,7 +2091,9 @@ main proc () -> int
 	pDrac.m_pDras.m_fontd.m_gCharSize = 20
 
 	SetupOrthoViewport(0, 0, kDXWindow, kDYWindow)
-	SeedRandom(&g_rng, 0xBADDBEEF)
+
+	//SeedRandom(&g_rng, 0xBADDBEEF)
+	SeedRandom(&g_rng, NTimeSeed())
 
     dRadSpin :: 0.01
     gRadSpin: float
@@ -1763,6 +2138,17 @@ main proc () -> int
 		//DrawMapBackground(aChMap, &g_tilbuf)
 		//DrawEntities(aEnt, &g_tilbuf)
 
+        switch (g_game.m_gams)
+        {
+        	case GAMS.PostGame:
+        		for iPlay := 0; iPlay < g_game.m_cPlay; ++iPlay
+        		{
+        			pPlay := &g_game.m_aPlay[iPlay]
+        			pBoard := &g_game.m_aBoard[iPlay]
+        			DrawGameResults(pDrac, pPlay, pBoard)
+        		}
+        }
+
 		FlushTileVerts(pDrac, &g_tilbuf)
 		FlushFontVerts(pDrac, &g_Fvbuf)
 
@@ -1783,15 +2169,14 @@ main proc () -> int
         		for iPlay := 0; iPlay < g_game.m_cPlay; ++iPlay
         		{
         			pPlay := &g_game.m_aPlay[iPlay]
-        			pBoard := &g_game.m_aBoard[iPlay]
-        			DrawGameResults(pDrac, pPlay, pBoard)
 
-					if pPlay.m_playinp.m_mpButkEdges[BUTK.Select] == EDGES.Press
+					if g_game.m_dTGams > kDTEndgameMin && pPlay.m_playinp.m_mpButkEdges[BUTK.Select] == EDGES.Press
 					{
 						SetGams(&g_game, GAMS.Pregame)
 					}
         		}
         }
+        g_game.m_dTGams += dTGame
         //UpdateActors(aAct, &playinp, dTGame)
 		//UpdatePuck(g_pActPuck, &playinp, dTGame, aChMap, &mapdim)
 		//UpdateEntities(aEnt)

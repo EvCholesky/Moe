@@ -1,0 +1,115 @@
+#import "Basic"
+#import "Math"
+
+SSmp struct // tag = smp
+{
+	m_dGMin: f32	// ending slope 
+	m_dGMax: f32	// starting slope
+	m_dTMax: f32 	// max time used to determine the smoothing curve, may take longer than this to smooth if dGMax limited
+};
+
+CSolveQuadratic proc (gA: f32, gB: f32, gC: f32, aGOutput: [] f32) -> int
+{
+	gDiscriminant := gB*gB - 4.0 * gA * gC
+	if (gDiscriminant < 0.0) 
+	{
+		return 0
+	}
+
+	gRecip := 1.0 / (2.0 * gA)
+	gSqrtDescriminant := sqrt(gDiscriminant)
+	aGOutput[0] = (-gB + gSqrtDescriminant) * gRecip
+	aGOutput[1] = (-gB - gSqrtDescriminant) * gRecip
+
+	if gDiscriminant > 0.0000001 
+		{ return 2 }
+	return 1
+}
+
+GSmooth proc (gCurrent: f32, gTarget: f32, pSmp: & SSmp, dT: f32) -> f32
+{
+	// quadratic style smoother, incoming and outgoing tangents and dT define a curve. If the target is too large to hit with this curve
+	// we linearly step towards it with dGMax. If the target is closer we'll hit it sooner than dTMax
+
+	dGMin := pSmp.m_dGMin
+	dGMax := pSmp.m_dGMax
+	dTMax := pSmp.m_dTMax
+	assert((dGMax > 0) && (dGMin > 0) && (dTMax > 0), "expected positive smoothing params", #file, #line)
+
+	gNegate := 1.0
+	g := gTarget - gCurrent
+	if g < 0.0
+	{
+		g *= -1.0
+		gNegate = -1.0
+	}
+
+	if g < dGMin * dT
+	{
+		return gTarget
+	}
+
+	dG := 0.0
+
+	// find the value of the curve after dTMax
+	gCurve := (dGMin + dGMax) * 0.5 * dTMax
+	if g > gCurve
+	{
+		// can't hit the target in dTMax, head towards it at dGMax
+		dTMaxSlope := (g - gCurve) / dGMax
+		dTMaxSlope = GMin(dTMaxSlope, dT)
+
+		if dTMaxSlope < dT
+			{ dT += 0.0 }
+
+		dG = dTMaxSlope * dGMax
+		dT -= dTMaxSlope
+	}
+
+	if dT > 0.0
+	{
+		// take the indefinite integral of the line between our two slopes and set the constant term so 
+		//  it's zeros are at g, then solve for x so we can step forward dT
+
+		gA := (dGMin - dGMax) / (2 * dTMax)
+		gB := dGMax
+		gC := g - dG - gCurve
+
+		aX: [2] f32
+		cRoot := CSolveQuadratic(gA, gB, gC, aX)
+		assert(cRoot > 0 && aX[0] >= 0.0, "bad solve in gSmooth", #file, #line)
+
+		// our current t relative to the curve [0..dTMax] is aX[0], return aX[0] + dT;
+		tNew := aX[0] + dT
+		dG += gA * tNew * tNew + gB * tNew + gC
+	}
+
+	return gCurrent + gNegate * dG
+}
+
+RadSmooth proc (radCurrent: f32, _radTarget: f32, pSmp: & SSmp, dT: f32) -> f32
+{
+	radTarget := _radTarget
+	if radTarget > radCurrent
+	{
+		dRad := GMod(radTarget - radCurrent, kTwoPi)
+		dRadAlt := kTwoPi - dRad
+		if dRadAlt < dRad
+		{
+			dRad := -dRadAlt
+		}	
+		radTarget = radCurrent + dRad
+	}
+	else
+	{
+		dRad := GMod(radCurrent - radTarget, kTwoPi)
+		dRadAlt := kTwoPi - dRad
+		if dRadAlt < dRad
+		{
+			dRad := -dRadAlt
+		}	
+		radTarget = radCurrent - dRad
+	}
+
+	return GSmooth(radCurrent, radTarget, pSmp, dT)
+}

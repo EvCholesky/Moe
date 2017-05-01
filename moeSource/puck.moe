@@ -1276,7 +1276,7 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 
 DrawTestTriangle proc (gRadians:float)
 {
-	dRad :: g_Pi * 2.0 / 3.0
+	dRad :: kPi * 2.0 / 3.0
 	vecCenter := F32x2Create(g_dXWindow / 2.0, g_dYWindow / 2.0)
 	vecRadius := F32x2Create(300, 0)
 	vecA := VecRotate(gRadians, vecRadius)

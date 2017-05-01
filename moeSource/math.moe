@@ -1,6 +1,8 @@
 #import "Basic"
 
-g_Pi :: 3.1415926535897932
+kPi :: 3.1415926535897932
+kPiOver2 :: 1.5707963267948966
+kTwoPi :: 2.0 * 3.1415926535897932
 
 // limits
 F32_MAX :: 3.402823466e+38
@@ -28,6 +30,11 @@ f32x4 struct
 	m_y: float
 	m_z: float
 	m_w: float
+}
+
+SMat33 struct
+{
+	m_aBasis: [3] f32x3
 }
 
 F32x2Create proc (x: float, y: float) -> f32x2
@@ -63,6 +70,55 @@ F32x4Create proc (x: float, y: float, z: float, w: float) -> f32x4
 	vec.m_z = z
 	vec.m_w = w
 	return vec
+}
+
+SetVec proc (pVec: & f32x2, x: f32, y: f32)
+{
+	pVec.m_x = x
+	pVec.m_y = y
+}
+
+SetVec proc (pVec: & f32x3, x: f32, y: f32, z: f32)
+{
+	pVec.m_x = x
+	pVec.m_y = y
+	pVec.m_z = z
+}
+
+SetVec proc (pVec: & f32x4, x: f32, y: f32, z: f32, w: f32)
+{
+	pVec.m_x = x
+	pVec.m_y = y
+	pVec.m_z = z
+	pVec.m_w = w
+}
+
+Mat33FromPosRad proc (pos: f32x2, rad: f32) -> SMat33
+{
+	//[c -s][ x ]   [ cx - sy ]
+	//[s  c][ y ] = [ cy + sx ]
+
+	gSin := sin(rad)
+	gCos := cos(rad)
+	mat: SMat33
+	SetVec(&mat.m_aBasis[0], gCos, -gSin, pos.m_x)
+	SetVec(&mat.m_aBasis[1], gSin, gCos, pos.m_y)
+	SetVec(&mat.m_aBasis[2], 0, 0, 1)
+	return mat
+}
+
+PosMul proc (mat: SMat33, pos: f32x2) -> f32x2
+{
+	x := mat.m_aBasis[0].m_x * pos.m_x + mat.m_aBasis[0].m_y * pos.m_y + mat.m_aBasis[0].m_z
+	y := mat.m_aBasis[1].m_x * pos.m_x + mat.m_aBasis[1].m_y * pos.m_y + mat.m_aBasis[1].m_z
+	return F32x2Create(x, y)
+}
+
+VecMul proc (mat: SMat33, vec: f32x2) -> f32x2
+{
+	x := mat.m_aBasis[0].m_x * vec.m_x + mat.m_aBasis[0].m_y * vec.m_y
+	y := mat.m_aBasis[1].m_x * vec.m_x + mat.m_aBasis[1].m_y * vec.m_y
+	return F32x2Create(x, y)
 }
 
 VecRotate proc (gRadians: float, vec: f32x2) -> f32x2
@@ -317,6 +373,10 @@ NMin proc (nA: int, nB: int) -> int inline						{ if (nA < nB) { return nA } ret
 NMax proc (nA: int, nB: int) -> int inline						{ if (nA > nB) { return nA } return nB }
 NMin proc (nA: s32, nB: s32) -> s32 inline						{ if (nA < nB) { return nA } return nB }
 NMax proc (nA: s32, nB: s32) -> s32 inline						{ if (nA > nB) { return nA } return nB }
+
+GCurveS proc (u: f32) -> f32 inline 							{ return u * u * (3.0 - u - u) }
+GCurveZ proc (u: f32) -> f32 inline 							{ return 1.0 - GCurveS(u) }
+GCurveBell proc (u: f32) -> f32 inline 							{ return GCurveZ( GAbs(u + u - 1.0)) }
 
 NSign proc (n: int) -> int inline
 {

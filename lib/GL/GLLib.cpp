@@ -647,3 +647,19 @@ extern "C" bool FGetNextEvent(SEvent * pEvent)
 
 	return true;
 }
+
+extern "C" uint32_t NTimeSeed()
+{
+ // BB - This should be replaced with a legit get time routine, but I'm too lazy right now
+
+	SYSTEMTIME systime;
+	GetSystemTime(&systime);
+
+	// BB - This has a really crap distribution, but it should be fine after cranking it through the rng
+	uint32_t nRet = systime.wMilliseconds + 
+					((uint32_t)systime.wSecond * 1000) + 
+					((uint32_t)systime.wMinute * 60000) + 
+					((uint32_t)systime.wHour * 3600000);
+	return nRet;
+
+}

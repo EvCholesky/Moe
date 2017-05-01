@@ -35,6 +35,7 @@ kNDeviceIdJoystickMin :: 0
 kNDeviceIdJoystickMax :: 16
 FIsJoystickConnected proc (nDeviceId: s32) -> bool #foreign
 PChzJoystickName proc (nDeviceId: s32) -> & u8 #foreign
+NTimeSeed proc () -> u32 #foreign
 
 
 GL_POINTS ::                0x0000

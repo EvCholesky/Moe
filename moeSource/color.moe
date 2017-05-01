@@ -41,7 +41,7 @@ ColLerp proc (colA: SColor, colB: SColor, uLerp: f32) -> SColor inline
 	gG := cast(f32)colA.m_g; gG = GClamp(gG + (cast(f32)colB.m_g - gG) * uLerp, 0, 255)
 	gB := cast(f32)colA.m_b; gB = GClamp(gB + (cast(f32)colB.m_b - gB) * uLerp, 0, 255)
 	gA := cast(f32)colA.m_a; gA = GClamp(gA + (cast(f32)colB.m_a - gA) * uLerp, 0, 255)
-	return ColCreate(cast(u8) gR, cast(u8) gG, cast(u8) gG, cast(u8) gA)
+	return ColCreate(cast(u8) gR, cast(u8) gG, cast(u8) gB, cast(u8) gA)
 }
 
 ColScaleAlpha proc (col: SColor, rScale: f32) -> SColor inline
