@@ -582,6 +582,7 @@ void EndWorkspace(CWorkspace * pWork)
 		}
 	}
 	pWork->m_arypFile.Clear();
+	pWork->m_pErrman->Clear();
 
 	if (pWork->m_pChzObjectFilename)
 	{

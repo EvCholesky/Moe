@@ -3309,6 +3309,12 @@ void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntri
 	}
 }
 
+SLexerLocation LexlocFromSym(SSymbol * pSym)
+{
+	if (!pSym || !pSym->m_pStnodDefinition)
+		return SLexerLocation();
+	return pSym->m_pStnodDefinition->m_lexloc;
+}
 
 CSymbolTable::CSymbolIterator::CSymbolIterator(
 	CSymbolTable * pSymtab,
@@ -3402,6 +3408,10 @@ SSymbol * CSymbolTable::CSymbolIterator::PSymNext()
 						m_pSym = apSym[1];
 						return apSym[0];
 					}
+				}
+				else
+				{
+					break;
 				}
 			}
 		}

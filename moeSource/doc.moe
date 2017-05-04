@@ -468,7 +468,7 @@ KillCell proc (pPlay: & SPlayer, pBoard: & SBoard, xCell: int, yCell: int)
 			pEntTail.m_pillcol = pEnt.m_pillcolTail
 
 			posCellTail := posCell + DCellFromDir(pEnt.m_dir)
-			CutPos(pEntTail, PosFromCell(pBoard, posCellTail.m_x, posCellTail.m_y))
+			CutPos(pEntTail, PosFromCell(pBoard, posCellTail.m_x, posCellTail.m_y), pEnt.m_dir)
 
 			ReparentBoardEntity(pBoard, pEntTail)
 			if posCellTail.m_x == xCell && posCellTail.m_y == yCell
@@ -612,7 +612,7 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 
 			if !FIsCellOccupied(pBoard, xCell, yCell)
 			{
-				CutPos(pEntVirus, PosFromCell(pBoard, xCell, yCell))
+				CutPos(pEntVirus, PosFromCell(pBoard, xCell, yCell), pEntVirus.m_dir)
 				ReparentBoardEntity(pBoard, pEntVirus)
 				break
 			}
@@ -662,10 +662,13 @@ DrawBoardBackground proc (pBoard: & SBoard, pillcolSelf: PILLCOL, pillcolTarget:
 	AppendTile(xMin, yMin - dYBottom, xMax, yMin, &colvecBorder, &g_tilbuf)
 }
 
-CutPos proc (pEnt: & SEntity, pos: f32x2)
+CutPos proc (pEnt: & SEntity, pos: f32x2, dir: DIR)
 {
 	pEnt.m_pos = pos	
 	pEnt.m_posSmooth = pos
+
+	pEnt.m_dir = dir
+	pEnt.m_radSmooth = RadFromDir(dir)
 }
 
 RadFromDir proc (dir: DIR) -> f32
@@ -858,7 +861,11 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 				colWhite := ColCreate(255, 255, 255, 255)
 				colPill := ColLerp(ColFromPillcol(pEnt.m_pillcol), colWhite, uPulse)
 				colTail := ColLerp(ColFromPillcol(pEnt.m_pillcolTail), colWhite, uPulse)
-				DrawPill(pBoard, posPill, radDir, colPill, pEnt.m_fHasTail, colTail, 1, 1)
+
+				DrawPill(pBoard, posPill, radDir, colPill, pEnt.m_fHasTail, colTail, 0.2, 1)
+
+				posSmoothPill := pEnt.m_posSmooth + F32x2Cast(pBoard.m_pos)
+				DrawPill(pBoard, posSmoothPill, pEnt.m_radSmooth, colPill, pEnt.m_fHasTail, colTail, 1, 1)
 			}
 			else
 			{
@@ -1632,6 +1639,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 						}
 						else
 						{
+							pEnt.m_dTPulse = 0
 							SetEnts(pEnt, ENTS.Falling)
 							fAnyFalling = true
 						}
@@ -1643,10 +1651,31 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 			}
 		}
 
+		smpPosX: SSmp
+		smpPosX.m_dGMin = 120.0
+		smpPosX.m_dGMax = 500.0
+		smpPosX.m_dTMax = 0.1
+
+		smpPosY: SSmp
+		smpPosY.m_dGMin = 40.0
+		smpPosY.m_dGMax = 100.0
+		smpPosY.m_dTMax = 1.45
+
+		/*
+		smpRad: SSmp
+		smpRad.m_dGMin = 25.0
+		smpRad.m_dGMax = 200.0
+		smpRad.m_dTMax = 0.25
 		smpPos: SSmp
-		smpPos.m_dGMin = 25.0
-		smpPos.m_dGMax = 200.0
+		smpPos.m_dGMin = 2.5
+		smpPos.m_dGMax = 20.0
 		smpPos.m_dTMax = 0.25
+		*/
+
+		smpRad: SSmp
+		smpRad.m_dGMin = 5
+		smpRad.m_dGMax = 40
+		smpRad.m_dTMax = 0.15
 
 		// loop over all cells checking for pills that should be dead
 		cVirusLiving : int
@@ -1659,8 +1688,9 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 				if !pEnt
 					{ continue }
 
-				pEnt.m_posSmooth.m_x = GSmooth(pEnt.m_posSmooth.m_x, pEnt.m_pos.m_x, &smpPos, dT)
-				pEnt.m_posSmooth.m_y = GSmooth(pEnt.m_posSmooth.m_y, pEnt.m_pos.m_y, &smpPos, dT)
+				pEnt.m_posSmooth.m_x = GSmooth(pEnt.m_posSmooth.m_x, pEnt.m_pos.m_x, &smpPosX, dT)
+				pEnt.m_posSmooth.m_y = GSmooth(pEnt.m_posSmooth.m_y, pEnt.m_pos.m_y, &smpPosX, dT)
+				pEnt.m_radSmooth = RadSmooth(pEnt.m_radSmooth, RadFromDir(pEnt.m_dir), &smpRad, dT)
 
 				if pEnt.m_ents != ENTS.Stable
 				{ 
@@ -1811,7 +1841,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 								SetEnts(pEntGarbage, ENTS.Falling)
 								pEntGarbage.m_pillcol = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 
-								CutPos(pEntGarbage, PosFromCell(pBoard, xCellGarbage, yCellSpawn))
+								CutPos(pEntGarbage, PosFromCell(pBoard, xCellGarbage, yCellSpawn), DIR.Right)
 								ReparentBoardEntity(pBoard, pEntGarbage)
 							}
 							break
@@ -1839,7 +1869,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 						pPlay.m_pillcolNextHead = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 						pPlay.m_pillcolNextTail = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 
-						CutPos(pEntPill, PosFromCell(pBoard, xCellMidpoint, yCellSpawn))
+						CutPos(pEntPill, PosFromCell(pBoard, xCellMidpoint, yCellSpawn), pEntPill.m_dir)
 						pPlay.m_pEntSteer = pEntPill
 
 						ReparentBoardEntity(pBoard, pEntPill)

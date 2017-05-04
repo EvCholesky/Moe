@@ -6158,9 +6158,13 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 
 	int cError, cWarning;
 	pWork->m_pErrman->ComputeErrorCounts(&cError, &cWarning);
-	if (cError != 0 && cWarning != 0)
+	if (cError != 0)
 	{
-		printf("%d errors, %d warnings\n", cError, cWarning);
+		printf("_______]  Compile FAILED: %d errors, %d warnings  [_______\n", cError, cWarning);
+	}
+	else
+	{
+		printf("+++ Success: 0 errors, %d warnings +++\n", cWarning);
 	}
 
 	for (size_t ipFile = 0; ipFile < pWork->m_arypFile.C(); ++ipFile)

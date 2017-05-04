@@ -216,6 +216,14 @@ struct SLexerLocation // tag = lexloc
 					,m_dB((s32)(pLex->m_pChBegin - pLex->m_pChInput))
 						{ ; }
 
+	bool			operator<(const SLexerLocation & lexlocRhs) const
+						{
+							if (m_strFilename.Hv() == lexlocRhs.m_strFilename.Hv())
+								return m_dB < lexlocRhs.m_dB;
+
+							return m_strFilename.Hv() < lexlocRhs.m_strFilename.Hv();
+						}
+
 	bool			operator<=(const SLexerLocation & lexlocRhs) const
 						{
 							if (m_strFilename.Hv() == lexlocRhs.m_strFilename.Hv())

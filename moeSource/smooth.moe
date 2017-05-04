@@ -96,7 +96,7 @@ RadSmooth proc (radCurrent: f32, _radTarget: f32, pSmp: & SSmp, dT: f32) -> f32
 		dRadAlt := kTwoPi - dRad
 		if dRadAlt < dRad
 		{
-			dRad := -dRadAlt
+			dRad = -dRadAlt
 		}	
 		radTarget = radCurrent + dRad
 	}
@@ -106,7 +106,7 @@ RadSmooth proc (radCurrent: f32, _radTarget: f32, pSmp: & SSmp, dT: f32) -> f32
 		dRadAlt := kTwoPi - dRad
 		if dRadAlt < dRad
 		{
-			dRad := -dRadAlt
+			dRad = -dRadAlt
 		}	
 		radTarget = radCurrent - dRad
 	}

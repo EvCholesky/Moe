@@ -435,6 +435,8 @@ struct SSymbol	// tag = sym
 	EWC::CDynAry<SSymbol *>	m_aryPSymReferencedBy;
 };
 
+SLexerLocation LexlocFromSym(SSymbol * pSym);
+
 enum FSHADOW
 {
 	FSHADOW_NoShadowing,

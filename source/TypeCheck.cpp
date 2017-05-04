@@ -3375,7 +3375,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							if (pTcwork->m_pErrman->FHasErrors())
+							{
 								return TCRET_StoppingError;
+							}
 						}
 
 						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", strProcName.PCoz()))
@@ -4469,6 +4471,42 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						STypeInfo * pTinInitDefault = pStnod->m_pTin;
 						if (!pTinInitDefault && pStnodInit->m_park != PARK_Uninitializer)
 						{
+							CString strIdent = StrFromIdentifier(pStnodIdent);
+
+							CSymbolTable::CSymbolIterator symiter(pSymtab, strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook);
+							auto pSymPrior = symiter.PSymNext();
+
+							while (!symiter.FIsDone() && LexlocFromSym(pStnodIdent->m_pSym) <= LexlocFromSym(pSymPrior))
+							{
+								pSymPrior = symiter.PSymNext();
+							}
+
+							if (pSymPrior && LexlocFromSym(pSymPrior) < LexlocFromSym(pStnodIdent->m_pSym))
+							{
+								if (!pSymPrior->m_pStnodDefinition)
+								{
+									EmitError(pTcwork, pStnod, ERRID_InitTypeMismatch,
+										"'%s' is already declared. \n"
+										"Type inference is not allowed on overloaded variables. Did you type ':=' but meant '='?",
+										strIdent.PCoz());
+								}
+								else
+								{
+									s32 iLine;
+									s32 iCol;
+									auto pLexlocPrior = &pSymPrior->m_pStnodDefinition->m_lexloc;
+									CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocPrior, &iLine, &iCol);
+
+									EmitError(pTcwork, pStnod, ERRID_InitTypeMismatch,
+										"'%s' is already declared at %s (%d, %d). \n"
+										"Type inference is not allowed on overloaded variables. Did you type ':=' but meant '='?",
+										strIdent.PCoz(),
+										pLexlocPrior->m_strFilename.PCoz(),
+										iLine,
+										iCol);
+								}
+							}
+
 							// BB - This won't allow an override of operator:= to return a different type
 							// I'm planning on coming back to it when I handle return types values as regular LValues
 							pTinInitDefault = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodInit);
