@@ -63,6 +63,13 @@ PILLCOL enum u8
 	Green : MaxPills,	// extra color to allow for four player backgrounds
 }
 
+PILLSPEED enum u8
+{
+	Slow,
+	Medium,
+	Fast,
+}
+
 DIR enum u8
 {
 	Left,
@@ -174,7 +181,9 @@ SPlayer struct // tag = play
 	m_pillcolNextHead: PILLCOL
 	m_pillcolNextTail: PILLCOL
 	m_iPlayerTarget: int						// player that will receive this player's garbage
+	m_iStartingLevel := 5						// starting virus count is (m_iStartingLeve + 1)*4
 	m_playinp: SPlayerInput
+	m_pillspeed: PILLSPEED
 
 	m_mpIplayCGarbagePending: [kCPlayerMax] int	// how much garbage is pending from each player
 	m_cKills: int
@@ -265,14 +274,7 @@ SEntity struct // tag = ent
 
 InitPlayers proc (pGame: & SGame)
 {
-	/*
-	pGame.m_aPlay[0].m_col = PILLCOL.Red
-	pGame.m_aPlay[1].m_col = PILLCOL.Blue
-	pGame.m_aPlay[2].m_col = PILLCOL.Yellow
-	pGame.m_aPlay[3].m_col = PILLCOL.Green
-	*/
-
-	for iPlay := 0; iPlay < pGame.m_cPlay; ++iPlay
+	for iPlay := 0; iPlay < pGame.m_aPlay.count; ++iPlay
 	{
 		pPlay := &pGame.m_aPlay[iPlay]
 		pBoard := &pGame.m_aBoard[iPlay]
@@ -1552,10 +1554,11 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 				}
 			}
 
-			if (pPlayinp.m_mpButkEdges[BUTK.Down] >= EDGES.Hold)
+			if pPlayinp.m_mpButkEdges[BUTK.Down] >= EDGES.Hold
 			{
 				dCellPerSecond = kDCellPerSecondPressDown
 				pPlay.m_dTHoldDown += dT
+				pPlay.m_dTStepDown = 0
 			}
 
 			pEntSteer.m_dir = dirNew
@@ -1660,17 +1663,6 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 		smpPosY.m_dGMin = 40.0
 		smpPosY.m_dGMax = 100.0
 		smpPosY.m_dTMax = 1.45
-
-		/*
-		smpRad: SSmp
-		smpRad.m_dGMin = 25.0
-		smpRad.m_dGMax = 200.0
-		smpRad.m_dTMax = 0.25
-		smpPos: SSmp
-		smpPos.m_dGMin = 2.5
-		smpPos.m_dGMax = 20.0
-		smpPos.m_dTMax = 0.25
-		*/
 
 		smpRad: SSmp
 		smpRad.m_dGMin = 5
@@ -2022,6 +2014,14 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 				}
 
 			case PLAYS.PregameOptions:
+
+				aCh: [128] u8		
+				snprintf(aCh, aCh.count, "Level: %d", pPlay.m_iStartingLevel)
+				DrawTextCentered(pDrac, posCenter, aCh)
+
+				snprintf(aCh, aCh.count, "Speed: %d", pPlay.m_iStartingLevel)
+				DrawTextCentered(pDrac, posCenter, aCh)
+
 				DrawTextCentered(pDrac, posCenter, "Press 'X' when ready")
 				++cWaiting
 
@@ -2168,16 +2168,15 @@ main proc () -> int
 		//DrawMapBackground(aChMap, &g_tilbuf)
 		//DrawEntities(aEnt, &g_tilbuf)
 
-        switch (g_game.m_gams)
-        {
-        	case GAMS.PostGame:
-        		for iPlay := 0; iPlay < g_game.m_cPlay; ++iPlay
-        		{
-        			pPlay := &g_game.m_aPlay[iPlay]
-        			pBoard := &g_game.m_aBoard[iPlay]
-        			DrawGameResults(pDrac, pPlay, pBoard)
-        		}
-        }
+		for iPlay := 0; iPlay < g_game.m_cPlay; ++iPlay
+		{
+			pPlay := &g_game.m_aPlay[iPlay]
+			if pPlay.m_gamres != GAMRES.Pending
+			{
+    			pBoard := &g_game.m_aBoard[iPlay]
+    			DrawGameResults(pDrac, pPlay, pBoard)
+    		}
+		}
 
 		FlushTileVerts(pDrac, &g_tilbuf)
 		FlushFontVerts(pDrac, &g_Fvbuf)
