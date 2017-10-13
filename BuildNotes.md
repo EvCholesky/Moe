@@ -22,7 +22,11 @@ build with releases from [link](http://llvm.org/releases/download.html)
 	- in addition to the python install we need to build python debug libs (due, I believe, to an errant dependency in lldb 3.8) so download the source and build it in visual studio. (several of the libraries will fail due to missing dependencies but we don't care... move along). There must be some kind of install process to move the debug exes/dlls into the install directory structure but I didn't find it... I just manually copied python_d.exe, python35_d.dll and libs\python35_d.lib into the install directory. (yuck!)
 
 * Run vcvarsall to set up for visual studio command line builds (adding x64 to ensure ninja builds for x64)
-	"C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
+	`"C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Auxiliary\Build\vcvarsall.bat" x64`
+
+	NOTE: Vcvarsall may change the working directory...
+
+
 
 * Make sure the path includes the following:
 	C:\gnuwin32\bin
@@ -31,6 +35,8 @@ build with releases from [link](http://llvm.org/releases/download.html)
 
 * Create a cMade64 directory and cmake into it.
 	`"c:\Program Files (x86)\CMake\bin\Cmake.exe" -DPYTHON_HOME=C:\Users\Evan\AppData\Local\Programs\Python\Python35 -DCMAKE_BUILD_TYPE=release -G Ninja c:\code\llvm38\src`
+	or
+	`"c:\Program Files\CMake\bin\Cmake.exe" -DPYTHON_HOME=C:\Users\Evanc\AppData\Local\Programs\Python\Python36-32 -DCMAKE_BUILD_TYPE=release -G Ninja c:\code\llvm50\src`
 
 	(again, make sure macafee is disabled. sigh.)
 
