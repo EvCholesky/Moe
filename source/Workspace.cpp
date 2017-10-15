@@ -25,17 +25,17 @@ using namespace EWC;
 
 
 
-SErrorManager::SErrorManager()
+SErrorManager::SErrorManager(CAlloc * pAlloc)
 :m_pWork(nullptr)
-,m_aryErrid()
+,m_aryErrid(pAlloc, BK_Workspace, 0)
 ,m_paryErrcExpected(nullptr)
 { 
+
 }
 
 void SErrorManager::SetWorkspace(CWorkspace * pWork)
 {
 	m_pWork = pWork;
-	m_aryErrid.SetAlloc(pWork->m_pAlloc, BK_Workspace, 0);
 } 
 
 bool SErrorManager::FHasHiddenErrors()

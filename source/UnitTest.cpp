@@ -756,7 +756,7 @@ TESTRES TestresRunUnitTest(
 	}
 	printf("\n");
 
-	SErrorManager errmanTest;
+	SErrorManager errmanTest(pWorkParent->m_pErrman->m_aryErrid.m_pAlloc);
 	CWorkspace work(pWorkParent->m_pAlloc, &errmanTest);
 	errmanTest.m_paryErrcExpected = paryErrcExpected;
 	work.CopyUnitTestFiles(pWorkParent);

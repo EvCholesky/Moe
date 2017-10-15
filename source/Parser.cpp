@@ -4555,7 +4555,7 @@ void TestParse()
 	const char * pCozIn;
 	const char * pCozOut;
 	{
-		SErrorManager errman;
+		SErrorManager errman(&alloc);
 		CWorkspace work(&alloc, &errman);
 
 		pCozIn = "n1: const int; pN: & const int";

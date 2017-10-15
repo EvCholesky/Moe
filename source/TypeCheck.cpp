@@ -6452,7 +6452,7 @@ void TestTypeCheck()
 	u8 aB[1024 * 100];
 	CAlloc alloc(aB, sizeof(aB));
 
-	SErrorManager errman;
+	SErrorManager errman(&alloc);
 	CWorkspace work(&alloc, &errman);
 
 	const char * pCozIn;

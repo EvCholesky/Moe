@@ -6242,7 +6242,10 @@ void TestCodeGen()
 	u8 aB[1024 * 200];
 	CAlloc alloc(aB, sizeof(aB));
 
-	SErrorManager errman;
+	u8 aBError[1024 * 100];
+	CAlloc allocError(aBError, sizeof(aBError));
+
+	SErrorManager errman(&allocError);
 	CWorkspace work(&alloc, &errman);
 	work.m_globmod = GLOBMOD_UnitTest;
 

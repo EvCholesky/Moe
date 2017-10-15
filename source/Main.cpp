@@ -172,6 +172,7 @@ int main(int cpChzArg, const char * apChzArg[])
 	}
 
 	static const int s_cBHeap = 1000 * 1024;
+	static const int s_cBError = 100 * 1024;
 	u8 * aB = nullptr;
 
 	InitLLVM(&aryPCozLlvm);
@@ -185,7 +186,10 @@ int main(int cpChzArg, const char * apChzArg[])
 		aB = new u8[s_cBHeap];
 		CAlloc alloc(aB, s_cBHeap);
 
-		SErrorManager errman;
+		u8 * aBError = new u8[s_cBError];
+		CAlloc allocError(aBError, s_cBError); 
+
+		SErrorManager errman(&allocError);
 		CWorkspace work(&alloc, &errman);
 
 		if (comline.FHasCommand("-release"))
@@ -365,7 +369,10 @@ int main(int cpChzArg, const char * apChzArg[])
 		aB = new u8[s_cBHeap];
 		CAlloc alloc(aB, s_cBHeap);
 
-		SErrorManager errman;
+		u8 * aBError = new u8[s_cBError];
+		CAlloc allocError(aBError, s_cBError);
+
+		SErrorManager errman(&allocError);
 		CWorkspace work(&alloc, &errman);
 		FUnitTestFile(&work, comline.m_pChzFilename);
 

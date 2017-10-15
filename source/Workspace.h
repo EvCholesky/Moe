@@ -48,7 +48,7 @@ struct SErrorCount	// tag = errc
 
 struct SErrorManager	//  // tag = errman
 {
-				SErrorManager();
+				SErrorManager(EWC::CAlloc * pAlloc);
 
 	void		SetWorkspace(CWorkspace * pWork);
 

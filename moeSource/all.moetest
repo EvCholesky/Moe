@@ -551,3 +551,9 @@ test EmptyCase
 	}
 
 // Unicode
+test UnicodeIdent
+	input "$name := 5"
+	parse "(decl $name 5)"
+	{
+		$name("😁✂"|"エヌマ"|"Übengrößeren"|"Γαζέες")
+	}
