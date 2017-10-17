@@ -33,7 +33,7 @@ using namespace EWC;
 #include "llvm-c/TargetMachine.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Dwarf.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #pragma warning ( pop )
 
 #include "MissingLlvmC/llvmcDIBuilder.h"
@@ -167,7 +167,7 @@ static inline llvm::CallingConv::ID CallingconvFromCallconv(CALLCONV callconv)
 	{
 		llvm::CallingConv::C,				//CALLCONV_CX86,
 		llvm::CallingConv::X86_StdCall,		//CALLCONV_StdcallX86,
-		llvm::CallingConv::X86_64_Win64,	 //CALLCONV_X64,
+		llvm::CallingConv::Win64,	 //CALLCONV_X64,
 	};
 	static const int s_cCallconv = sizeof(s_mpCallconvCallingconv) / sizeof(s_mpCallconvCallingconv[0]);
 	EWC_CASSERT(s_cCallconv == CALLCONV_Max, "Missing llvm calling convention");
@@ -1117,15 +1117,17 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValMa
 
 	m_pDib = LLVMCreateDIBuilder(m_pLmoduleCur);
 	m_nRuntimeLanguage = llvm::dwarf::DW_LANG_C;
+	
+	//auto pDif = PDifEnsure(pWork, this, pStnod->m_lexloc.m_strFilename.PCoz());
 	m_pLvalCompileUnit = LLVMDIBuilderCreateCompileUnit(
 							m_pDib,
 							m_nRuntimeLanguage,
 							pCozFile,
-							pCozPath,
-							"Moe compiler",
-							false,
-							"",
-							0);
+							pCozPath,			
+							"Moe Compiler",		// pChzProducer
+							false,				// fIsOptimized
+							"",					// pChzFlags
+							0);					// nRuntimeVersion
 
 	m_pLvalScope = m_pLvalCompileUnit;
 }
@@ -5700,11 +5702,23 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		LLVMSetFunctionCallConv(pProc->m_pLvalFunction, CallingconvFromCallconv(pTinproc->m_callconv));
 	}
 
+	const char * pChzInlineAttr = nullptr;
 	switch (pTinproc->m_inlinek)
 	{
-		case INLINEK_NoInline:		LLVMAddFunctionAttr(pProc->m_pLvalFunction, LLVMNoInlineAttribute);	break;
-		case INLINEK_AlwaysInline:	LLVMAddFunctionAttr(pProc->m_pLvalFunction, LLVMAlwaysInlineAttribute);	break;
+		case INLINEK_NoInline:		pChzInlineAttr = "noinline"; break;
+		case INLINEK_AlwaysInline:	pChzInlineAttr = "alwaysinline";	break;
 		default: break;
+	}
+
+	if (pChzInlineAttr)
+	{
+		auto pLctx = LLVMGetModuleContext(pBuild->m_pLmoduleCur);
+		u32 attrKind = LLVMGetEnumAttributeKindForName(pChzInlineAttr, CCh(pChzInlineAttr));
+		if (EWC_FVERIFY(attrKind != 0, "unknown inline attr kind"))
+		{ 
+			LLVMCreateEnumAttribute(pLctx, attrKind, 0);
+		}
+		//LLVMAddFunctionAttr(pProc->m_pLvalFunction, LLVMNoInlineAttribute);	
 	}
 
 	if (!pStproc->m_fIsForeign)

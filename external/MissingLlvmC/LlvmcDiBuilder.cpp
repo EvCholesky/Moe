@@ -36,15 +36,7 @@
 
 using namespace llvm;
 
-inline DIBuilder * unwrap(LLVMDIBuilderRef pDib) 
-{
-    return reinterpret_cast<DIBuilder*>(pDib);
-}
 
-inline LLVMDIBuilderRef wrap(const DIBuilder * pDibuild)
-{
-    return reinterpret_cast<LLVMDIBuilderRef>(const_cast<DIBuilder*>(pDibuild)); 
-}
 
 inline LLVMValueRef wrap(MDNode * pMdnode) 
 {

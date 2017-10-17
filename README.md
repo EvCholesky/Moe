@@ -1,6 +1,6 @@
 # Moe
 
-Moe is a custom imperative procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is *very* much still a work in progress and is not ready to be used by anyone else.
+Moe is a custom procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is *very* much still a work in progress and is not ready to be used by anyone else.
 
 It's current feature set is roughly comprable to C: enumerations, structures, pointers, procedures, conditions and loops are all there, but there are a few changes to make it nicer to use:
   - top level symbol lookup is order independent.
@@ -11,15 +11,15 @@ It's current feature set is roughly comprable to C: enumerations, structures, po
   - run time type reflection
   - operator overloading (with in/out reference arguments)
 
-There are quite a few upcoming features that are missing from C:
+There are quite a few upcoming features that are C lacks:
   - optional array bounds checking
   - generics (templates)
   - compile time code execution
 
 To build the compiler and debug compiled source you will need to get the following dependencies:
-  - The base compiler requires LLVM 3.9
-  - Debugging with lldb requires Python 3.5, gnuWin32, swig and ninja 
-  - Debugging with Visual Studio has been tested with MSVC 2016 
+  - The base compiler requires LLVM 5.0
+  - Debugging with lldb requires Python 3.6, gnuWin32, swig and ninja 
+  - Debugging with Visual Studio has been tested with MSVC 2015 
   - puck.moe has a dependency on GLFW 3.2.1
 
 # Syntax
