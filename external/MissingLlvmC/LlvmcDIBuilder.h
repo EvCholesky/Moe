@@ -45,8 +45,7 @@ void LLVMDIBuilderFinalize(LLVMDIBuilderRef pDib);
 LLVMValueRef LLVMDIBuilderCreateCompileUnit(
 				LLVMDIBuilderRef pDib, 
 				unsigned nLanguage,
-				const char * pChzFilename, 
-				const char * pChzDirectory, 
+				LLVMOpaqueValue * pLvalFile,
 				const char * pChzProducer,
 				LLVMBool fIsOptimized,
 				const char * pChzFlags,
@@ -63,7 +62,6 @@ LLVMValueRef LLVMDIBuilderCreateBasicType(
 				LLVMDIBuilderRef pDib, 
 				const char * pChzName,
 			    uint64_t cBitSize,
-			    uint64_t cBitAlign,
 			    unsigned nDwarfEncoding);
 
 LLVMValueRef LLVMDIBuilderCreateQualifiedType(LLVMDIBuilderRef pDib, unsigned nDwarfTag, LLVMValueRef pLvalFromType);

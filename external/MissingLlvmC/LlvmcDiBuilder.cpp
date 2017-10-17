@@ -118,23 +118,21 @@ void LLVMDIBuilderFinalize(LLVMDIBuilderRef pDib)
 LLVMValueRef LLVMDIBuilderCreateCompileUnit(
 		LLVMDIBuilderRef pDib, 
 		unsigned nLanguage,
-		const char * pChzFilename, 
-		const char * pChzDirectory, 
+		LLVMOpaqueValue * pLvalFile,
 		const char * pChzProducer,
 		LLVMBool fIsOptimized,
 		const char * pChzFlags,
 		unsigned nRuntimeVersion)
 {
-	StringRef strrFilename(pChzFilename);
-	StringRef strrDirectory(pChzDirectory);
 	StringRef strrProducer(pChzProducer);
 	StringRef strrFlags(pChzFlags);
+	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
+
 
 	auto pBuild = unwrap(pDib);
 	DICompileUnit * pCU = unwrap(pDib)->createCompileUnit(
 											nLanguage,
-											strrFilename,
-											strrDirectory,
+											pDifile,
 											strrProducer,
 											fIsOptimized,
 											strrFlags,
@@ -194,11 +192,10 @@ LLVMValueRef LLVMDIBuilderCreateBasicType(
 				LLVMDIBuilderRef pDib, 
 				const char * pChzName,
 			    uint64_t cBitSize,
-			    uint64_t cBitAlign,
 			    unsigned nDwarfEncoding) 
 {
 	StringRef strrName(pChzName);
-	return wrap(unwrap(pDib)->createBasicType(strrName, cBitSize, cBitAlign, nDwarfEncoding));
+	return wrap(unwrap(pDib)->createBasicType(strrName, cBitSize, nDwarfEncoding));
 }
 
 LLVMValueRef LLVMDIBuilderCreateQualifiedType(LLVMDIBuilderRef pDib, unsigned nDwarfTag, LLVMValueRef pLvalFromType) 
@@ -216,7 +213,7 @@ LLVMValueRef LLVMDIBuilderCreatePointerType(
 {
 	StringRef strrName(pChzName);
 	DIType * pDitypePointee = cast<DIType>(PMdnodeExtract(pLvalPointeeType));
-	return wrap(unwrap(pDib)->createPointerType(pDitypePointee, cBitSize, cBitAlign, strrName));
+	return wrap(unwrap(pDib)->createPointerType(pDitypePointee, cBitSize, cBitAlign, None, strrName));
 }
 
 LLVMValueRef LLVMDIBuilderCreateTypeDef(
@@ -251,8 +248,8 @@ LLVMValueRef LLVMDIBuilderCreateMemberType(
 	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 	DIType * pDitypeParent = cast<DIType>(PMdnodeExtract(pLvalParentType));
-
-	return wrap(unwrap(pDib)->createMemberType(pDiscope, strrName, pDifile, nLine, cBitSize, cBitAlign, dBitOffset, nFlags, pDitypeParent));
+	
+	return wrap(unwrap(pDib)->createMemberType(pDiscope, strrName, pDifile, nLine, cBitSize, cBitAlign, dBitOffset, (DINode::DIFlags)nFlags, pDitypeParent));
 }
 
 LLVMValueRef LLVMDIBuilderCreateClassType(
@@ -290,7 +287,7 @@ LLVMValueRef LLVMDIBuilderCreateClassType(
 							cBitSize,
 							cBitAlign,
 							dBitOffset,
-							nFlags,
+							(DINode::DIFlags)nFlags,
 							pDitypeDerivedFrom,
 							diaryElements,
 							pDitypeVTableHolder,
@@ -329,7 +326,7 @@ LLVMValueRef LLVMDIBuilderCreateStructType(
 								nLine,
 								cBitSize,
 								cBitAlign,
-								nFlags,
+								(DINode::DIFlags)nFlags,
 								pDitypeDerivedFrom,
 								diaryElements,
 								nRuntimeLanguage,
@@ -361,7 +358,7 @@ LLVMValueRef LLVMDIBuilderCreateReplacableComposite(
 								nRuntimeLanguage,
 								cBitSize,
 								cBitAlign,
-								nFlags,
+								(DINode::DIFlags)nFlags,
 								StringRef(pChzUniqueName)));
 
 }
@@ -450,7 +447,7 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 	DIType * pDitype = cast<DIType>(PMdnodeExtract(pLvalType));
 
-	return wrap(unwrap(pDib)->createGlobalVariable(
+	return wrap(unwrap(pDib)->createGlobalVariableExpression(
 								pDiscope,
 								strrName,
 								strrMangled,
@@ -458,7 +455,7 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 								nLine,
 								pDitype,
 								fIsLocalToUnit,
-								unwrap<Constant>(pLvalValue)));
+								unwrap<DIExpression>(pLvalValue)));
 }
 
 
@@ -485,7 +482,7 @@ LLVMValueRef LLVMDIBuilderCreateAutoVariable(
 								nLine,
 								pDitype,
 								fIsPreservedWhenOptimized,
-								nFlags));
+								(DINode::DIFlags)nFlags));
 }
 
 LLVMValueRef LLVMDIBuilderCreateParameterVariable(
@@ -512,7 +509,7 @@ LLVMValueRef LLVMDIBuilderCreateParameterVariable(
 								nLine,
 								pDitype,
 								fIsPreservedWhenOptimized,
-								nFlags));
+								(DINode::DIFlags)nFlags));
 }
 
 LLVMValueRef LLVMDIBuilderInsertDeclare(
@@ -596,7 +593,7 @@ LLVMValueRef LLVMDIBuilderCreateFunction(
 											fIsLocalToUnit,
 											fIsDefinition,
 											nLineScopeBegin,
-											nDwarfFlags, 
+											(DIFile::DIFlags)nDwarfFlags, 
 											fIsOptimized,
 											tupelaryTemplateParm,
 											pDisubDecl);
@@ -617,7 +614,7 @@ LLVMValueRef LLVMDIBuilderCreateNamespace(
 	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 
-	return wrap(unwrap(pDib)->createNameSpace(pDiscope, strrName, pDifile, nLine));
+	return wrap(unwrap(pDib)->createNameSpace(pDiscope, strrName, true));
 }
 
 LLVMValueRef LLVMDIBuilderCreateLexicalBlock(

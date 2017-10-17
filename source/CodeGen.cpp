@@ -192,7 +192,9 @@ static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
 	printf("%s: ", pChzLabel);
 
 	auto pLtype = LLVMTypeOf(pVal->m_pLval);
+#ifdef LLVM_ENABLE_DUMP
 	LLVMDumpType(pLtype);
+#endif
 }
 
 
@@ -707,18 +709,18 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			{
 				nDwarf = (pTinint->m_cBit == 8) ? llvm::dwarf::DW_ATE_unsigned_char : llvm::dwarf::DW_ATE_unsigned;
 			}
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), pTinint->m_cBit, pTinint->m_cBit, nDwarf);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), pTinint->m_cBit, nDwarf);
 		} break;
 	case TINK_Float:
 		{
 			auto pTinfloat = PTinRtiCast<STypeInfoFloat *>(pTin);
 			unsigned nDwarf = llvm::dwarf::DW_ATE_float;
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), pTinfloat->m_cBit, pTinfloat->m_cBit, nDwarf);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), pTinfloat->m_cBit, nDwarf);
 		} break;
 	case TINK_Bool:
 		{
 			unsigned nDwarf = llvm::dwarf::DW_ATE_boolean;
-			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), 8, 8, nDwarf);
+			pTin->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, strPunyName.PCoz(), 8, nDwarf);
 		} break;
 	case TINK_Qualifier:
 		{
@@ -735,7 +737,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			if (pTinPointedTo->m_tink == TINK_Void)
 			{
 				// llvm doesn't support void pointers so we treat them as s8 pointers instead
-				pTinPointedTo->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, "void", 8, 8, llvm::dwarf::DW_ATE_signed_char);
+				pTinPointedTo->m_pLvalDIType = LLVMDIBuilderCreateBasicType(pDib, "void", 8, llvm::dwarf::DW_ATE_signed_char);
 			}
 			else
 			{
@@ -1008,7 +1010,7 @@ void TokenizeTripleString(char * pChzTripleCopy, char ** ppChzArch, char ** ppCh
 
 
 // Builder class Methods
-CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValManaged, const char * pChzFilename, GRFCOMPILE grfcompile)
+CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *parypValManaged, const char * pChzFilename, GRFCOMPILE grfcompile)
 :m_pBerrctx(nullptr)
 ,m_pLmoduleCur(nullptr)
 ,m_pLbuild(nullptr)
@@ -1118,16 +1120,26 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *	parypValMa
 	m_pDib = LLVMCreateDIBuilder(m_pLmoduleCur);
 	m_nRuntimeLanguage = llvm::dwarf::DW_LANG_C;
 	
-	//auto pDif = PDifEnsure(pWork, this, pStnod->m_lexloc.m_strFilename.PCoz());
-	m_pLvalCompileUnit = LLVMDIBuilderCreateCompileUnit(
-							m_pDib,
-							m_nRuntimeLanguage,
-							pCozFile,
-							pCozPath,			
-							"Moe Compiler",		// pChzProducer
-							false,				// fIsOptimized
-							"",					// pChzFlags
-							0);					// nRuntimeVersion
+	/*CWorkspace::SFile * pFile = pWork->PFileLookup(pChzFilename, CWorkspace::FILEK_Source);
+	EWC_ASSERT(pFile, "failed to find source CWorkspace::SFile");
+	
+	if (!pFile->m_pDif)
+	{
+		pFile->m_pDif = PDifEnsure(pWork, this, pChzFilename);
+	}*/
+	
+	SDIFile * pDif = PDifEnsure(pWork, this, pChzFilename);
+	if (EWC_FVERIFY(pDif, "FAILED creating debug file"))
+	{
+		m_pLvalCompileUnit = LLVMDIBuilderCreateCompileUnit(
+								m_pDib,
+								m_nRuntimeLanguage,
+								pDif->m_pLvalFile,
+								"Moe Compiler",		// pChzProducer
+								false,				// fIsOptimized
+								"",					// pChzFlags
+								0);					// nRuntimeVersion
+	}
 
 	m_pLvalScope = m_pLvalCompileUnit;
 }
@@ -1142,6 +1154,7 @@ CIRBuilder::~CIRBuilder()
 
 	if (m_pLmoduleCur)
 	{
+
 		LLVMDisposeModule(m_pLmoduleCur);
 		m_pLmoduleCur = nullptr;
 	}
@@ -1487,8 +1500,10 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 	}
 	if (!fIsPointerKind || !fTypesMatch)
 	{
+#ifdef LLVM_ENABLE_DUMP
 		printf("pLtypeT:"); LLVMDumpType(pLtypeT);
 		printf("pLtypePT: (dest)"); LLVMDumpType(pLtypePT);
+#endif
 		EmitError(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, ERRID_BadStore, "bad store information\n");
 	}
 

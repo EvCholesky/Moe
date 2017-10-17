@@ -359,8 +359,7 @@ public:
 							CWorkspace * pWork,
 							EWC::CDynAry<CIRValue *> *	parypValManaged,
 							const char * pChzFilename,
-							GRFCOMPILE grfcompile
-							);
+							GRFCOMPILE grfcompile);
 						~CIRBuilder();
 	
 	void				PrintDump();

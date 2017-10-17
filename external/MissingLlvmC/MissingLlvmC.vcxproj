@@ -110,7 +110,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..\..\llvm39\src\include;..\..\..\llvm39\cmadeDebug64\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\llvm50\src\include;..\..\..\llvm50\cmadeDebug64\include;</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -142,7 +142,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..\..\llvm39\src\include;..\..\..\llvm39\cmade64\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\llvm50\src\include;..\..\..\llvm50\cmade64\include;</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
