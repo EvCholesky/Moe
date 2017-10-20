@@ -19,7 +19,7 @@
 #include <xmmintrin.h>
 #include <ctype.h>
 #include <emmintrin.h>
-#include <new.h>
+#include <new>
 #include <stdint.h>
 
 #if _WIN64
@@ -323,8 +323,8 @@ struct SCopySelector
 
 	static void CopyConstructArray(T * pTDst, size_t cT, const T * pTSrc)
 	{
-		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct missaligned object" );
-		auto pTDestMax = pTDst + cT;
+		EWC_ASSERT( ((uintptr_t)pTDst & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct missaligned object" );
+		auto pTDstMax = pTDst + cT;
 		for (auto pTDstIt = pTDst; pTDstIt != pTDstMax; ++pTDstIt, pTSrc)
 			new (pTDst) T(*pTSrc);
 	}
@@ -569,8 +569,8 @@ class CAlloc // tag=alloc
 public:
 						CAlloc()
 						:m_pStbheap(nullptr)
-						,m_cBFree(0)
 						,m_pAltrac(nullptr)
+						,m_cBFree(0)
 							{ ; }
 
 						CAlloc(void * pBuffer, size_t cB)
@@ -870,7 +870,6 @@ public:
 						pBMin += cBPrefix;
 						pBMin = static_cast<u8 *>(PVAlign(pBMin, cBAlign));
 						u8 * pBMax = pBMin + cB;
-						u8 * pBOldest = &m_aB[m_iB];
 
 						if (pBMax > &m_aB[m_cBMax])
 						{
@@ -916,7 +915,6 @@ public:
 	void		FreeToPB(u8 * pB)
 					{
 						EWC_ASSERT(pB, "bad argument");
-						size_t cbPrev = m_cB;
 
 						if (pB < &m_aB[m_iB])
 						{
@@ -1157,6 +1155,7 @@ HV HvExtract(const T & t)
 	return static_cast<HV>(t);
 }
 
+/* Not used? doesn't compile on OSX, doesn't seem to be used
 template <typename T>
 HV HvExtract(const T * pT)
 {
@@ -1168,6 +1167,7 @@ HV HvExtract(T * pT)
 {
 	return HvFromP((void *)pT);
 }
+*/
 
 
 // Thomas Wang's 32-bit hash mix function
@@ -1177,12 +1177,12 @@ struct SHash
 	HV operator()(const T& t) const
 	{
 		HV hv = HvExtract(t);
-		HV = (hv+0x7ed55d16) + (hv<<12);
-		HV = (hv^0xc761c23c) ^ (hv>>19);
-		HV = (hv+0x165667b1) + (hv<<5);
-		HV = (hv+0xd3a2646c) ^ (hv<<9);
-		HV = (hv+0xfd7046c5) + (hv<<3);
-		HV = (hv^0xb55a4f09) ^ (hv>>16);
+		hv = (hv+0x7ed55d16) + (hv<<12);
+		hv = (hv^0xc761c23c) ^ (hv>>19);
+		hv = (hv+0x165667b1) + (hv<<5);
+		hv = (hv+0xd3a2646c) ^ (hv<<9);
+		hv = (hv+0xfd7046c5) + (hv<<3);
+		hv = (hv^0xb55a4f09) ^ (hv>>16);
 		return hv;
 	}
 };
@@ -1496,7 +1496,6 @@ static inline bool FIsStarterChar(char ch)	{ return (ch & 0xC0) == 0xC0;}
 
 void EnsureTerminated(SStringBuffer * pStrbuf, char ch)
 {
-	auto pCozMax = &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax];
 	size_t iB = pStrbuf->m_pCozAppend - pStrbuf->m_pCozBegin;
 
 	if (pStrbuf->m_cBMax <= 0)
@@ -1549,7 +1548,12 @@ void FormatCoz(SStringBuffer * pStrbuf, const char * pCozFormat, ...)
 	{
 		va_list ap;
 		va_start(ap, pCozFormat);
+#ifdef WIN32
 		ptrdiff_t cCh = vsnprintf_s(pStrbuf->m_pCozAppend, cBMax, _TRUNCATE, pCozFormat, ap);
+#else
+		ptrdiff_t cCh = vsnprintf(pStrbuf->m_pCozAppend, cBMax, pCozFormat, ap);
+		pStrbuf->m_pCozAppend[cBMax-1] = 0;
+#endif
 		va_end(ap);
 
 		if (cCh == -1)

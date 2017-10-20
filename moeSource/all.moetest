@@ -181,6 +181,7 @@ test ConstantTypedDecl
 	}
 
 // Pointers:
+	TOK_Backtick,
 
 test PointerDecl
 	input "t: $type; pT : & $type = &t"
@@ -500,6 +501,12 @@ test ProcRefDecl
 		$type("&u8") + $ptype("(ptr u8)"),
 		$type("const u8") + $ptype("(const u8)"),
 	}
+
+test ProcRefCall
+	prereq "Somefunc proc(n: int) { }"
+	input "pFn := somefunc; pFn(2)"
+	parse "(decl pFn (procref (params (decl v $ptype)) $ptype)) (procCall pFn 2)"
+	typecheck ""
 
 test ProcRefArray
 	input "apFn: [$atype] (n: s32)$ret;   apFn[1](33)"

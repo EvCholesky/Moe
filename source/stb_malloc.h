@@ -633,35 +633,20 @@ STBM__API void stbm_debug_iterate(stbm_heap *heap, stbm_debug_iterate_func *call
 
 typedef unsigned char stbm__uint8;
 
-#if __STDC_VERSION__ >= 199901L
-   #include <stdint.h>
+#include <stdint.h>
 
-   #ifndef STBM_UINT32
-   typedef uint32_t   stbm__uint32;
-   #endif
+#ifndef STBM_UINT32
+typedef uint32_t   stbm__uint32;
+#endif
 
-   #ifndef STBM_UINTPTR
-   typedef uintptr_t  stbm__uintptr;
-   #endif
+#ifndef STBM_UINTPTR
+typedef uintptr_t  stbm__uintptr;
+#endif
 
-   #ifndef STBM_POINTER_SIZE
-      #if UINTPTR_MAX > 0xffffffff
-      #define STBM_POINTER_SIZE    64
-      #else
-      #define STBM_POINTER_SIZE    32
-      #endif
-   #endif
-
-#else
-   #ifndef STBM_UINT32
-   typedef unsigned int stbm__uint32;
-   #endif
-
-   #ifndef STBM_UINTPTR
-   typedef size_t stbm__uintptr;
-   #endif
-
-   #ifndef STBM_POINTER_SIZE
+#ifndef STBM_POINTER_SIZE
+   #if UINTPTR_MAX > 0xffffffff
+   #define STBM_POINTER_SIZE    64
+   #else
    #define STBM_POINTER_SIZE    32
    #endif
 #endif
@@ -699,7 +684,7 @@ typedef int stbm__check_smallest_log2[(1 << STBM__SMALLEST_BLOCKSIZE_LOG2) == ST
 #ifndef STBM_FAIL
 // if this function is called, it represents a bug in the client code
 // (failing to obey the heap semantics properly in stbm_free)
-static void STBM_FAIL(char *message)
+static void STBM_FAIL(const char *message)
 {
    STBM_ASSERT(0);
 }
@@ -2002,7 +1987,7 @@ static void * stbm__medium_alloc(stbm_heap *heap, size_t size)
 
 static void stbm__medium_check_list(stbm_heap *heap, int index, int slot)
 {
-   char *message = "check";
+   const char *message = "check";
 
    stbm__medium_freeblock *cur = heap->medium.lists[index][slot];
    STBM_ASSERT((cur == NULL) == ((heap->medium.bitmap[index] & (1 << (31-slot)))==0));
@@ -2437,7 +2422,7 @@ static void *stbm__alloc_align(stbm__request *request)
    return user_ptr;
 }
 
-static void stbm__alloc_check_guard(stbm__debug_allocated *da, char *message)
+static void stbm__alloc_check_guard(stbm__debug_allocated *da, const char *message)
 {
    size_t num_bytes;
 

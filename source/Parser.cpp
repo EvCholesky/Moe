@@ -787,7 +787,42 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 
 				while (1)
 				{
+					CSTNode * pStnodLabel = nullptr;
+					const char * pCozLabel = "error";
+					if (pLex->m_tok == TOK_Label)
+					{
+						TokNext(pLex);
+						SLexerLocation lexloc(pLex);
+
+						pStnodLabel = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+						pStnodLabel->m_tok = TOK_Label;
+						pStnodLabel->m_park = PARK_Label;
+
+						CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+						if (!pStnodIdent)
+						{
+							ParseError(pParctx, pLex, "Argument label did not specify an argument name");
+						}
+						else
+						{
+							pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
+						}
+					}
+
 					CSTNode * pStnodArg = PStnodParseLogicalAndOrExpression(pParctx, pLex);
+					if (pStnodLabel)
+					{
+						if (!pStnodArg)
+						{
+							ParseError(pParctx, pLex, "Labeled argument '%s' does not specify a value", pCozLabel);
+						}
+						else
+						{
+							pStnodLabel->IAppendChild(pStnodArg);
+							pStnodArg = pStnodLabel;
+						}
+					}
+
 					pStnodArgList->IAppendChild(pStnodArg);
 
 					if ((pStnodArg==nullptr) | (pLex->m_tok != TOK(',')))
