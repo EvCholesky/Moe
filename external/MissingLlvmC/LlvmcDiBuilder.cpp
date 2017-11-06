@@ -15,6 +15,7 @@
 
 #include "LlvmcDIBuilder.h"
 
+#ifdef WIN32
 #pragma warning ( push )
 #pragma warning(disable : 4141)
 #pragma warning(disable : 4244)
@@ -23,6 +24,7 @@
 #pragma warning(disable : 4624)
 #pragma warning(disable : 4800)
 #pragma warning(disable : 4996)
+#endif
 #include "llvm-c/Core.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugInfo.h"
@@ -32,7 +34,9 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Target/TargetMachine.h"
+#ifdef WIN32
 #pragma warning ( push )
+#endif
 
 using namespace llvm;
 
@@ -128,8 +132,6 @@ LLVMValueRef LLVMDIBuilderCreateCompileUnit(
 	StringRef strrFlags(pChzFlags);
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 
-
-	auto pBuild = unwrap(pDib);
 	DICompileUnit * pCU = unwrap(pDib)->createCompileUnit(
 											nLanguage,
 											pDifile,
@@ -455,7 +457,10 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 								nLine,
 								pDitype,
 								fIsLocalToUnit,
-								unwrap<DIExpression>(pLvalValue)));
+								nullptr,
+								PMdnodeExtract(pLvalValue)));
+//								unwrap<MDNode>(pLvalValue)));
+//								mdconst::extract<Constant>(pLvalValue)));
 }
 
 
@@ -612,7 +617,6 @@ LLVMValueRef LLVMDIBuilderCreateNamespace(
 {
 	StringRef strrName(pChzName);
 	DIScope * pDiscope = cast<DIScope>(PMdnodeExtract(pLvalScope));
-	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 
 	return wrap(unwrap(pDib)->createNameSpace(pDiscope, strrName, true));
 }

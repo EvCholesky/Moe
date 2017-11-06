@@ -328,7 +328,7 @@ void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCo
 	// not handling whitespace...
 	u32 nIn = 0;
 	u32 nMultiple = 1;
-	while (iCh >= 0 && ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9')))
+	while ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9'))
 	{
 		nIn = (pCozIn[iCh] - '0') * nMultiple + nIn;
 		nMultiple *= 10;
@@ -336,10 +336,7 @@ void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCo
 	}
 
 	HV hv = 0;
-	if (iCh >= 0)
-	{
-		hv = HvFromPCoz(pCozIn, iCh+1);
-	}
+	hv = HvFromPCoz(pCozIn, iCh+1);
 
 	u32 * pN = nullptr;
 	FINS fins = pUnset->m_hashHvNUnique.FinsEnsureKey(hv, &pN);
@@ -367,7 +364,7 @@ CString	StrUniqueName(SUniqueNameSet * pUnset, const CString & strIn)
 	// not handling whitespace...
 	u32 nIn = 0;
 	u32 nMultiple = 1;
-	while (iCh >= 0 && ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9')))
+	while ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9'))
 	{
 		nIn = (pCozIn[iCh] - '0') * nMultiple + nIn;
 		nMultiple *= 10;
@@ -375,10 +372,7 @@ CString	StrUniqueName(SUniqueNameSet * pUnset, const CString & strIn)
 	}
 
 	HV hv = 0;
-	if (iCh >= 0)
-	{
-		hv = HvFromPCoz(pCozIn, iCh+1);
-	}
+	hv = HvFromPCoz(pCozIn, iCh+1);
 
 	u32 * pN = nullptr;
 	FINS fins = pUnset->m_hashHvNUnique.FinsEnsureKey(hv, &pN);
@@ -442,7 +436,7 @@ CWorkspace::SFile * CWorkspace::PFileLookup(const char * pCozFile, FILEK filek)
 		int * pipFile = phashHvIPFile->Lookup(hv);
 		if (pipFile)
 		{
-			if (EWC_FVERIFY(*pipFile >= 0) & (*pipFile < (int)m_arypFile.C()), "bad file index")
+			if (EWC_FVERIFY((*pipFile >= 0) & (*pipFile < (int)m_arypFile.C()), "bad file index"))
 			{
 				return m_arypFile[*pipFile];
 			}
@@ -455,7 +449,8 @@ CWorkspace::SFile * CWorkspace::PFileLookup(const char * pCozFile, FILEK filek)
 const char * PCozSkipUnicodeBOM(const char * pCozFile)
 {
 	// utf8 BOM
-	if (pCozFile[0] == 0xEF && pCozFile[1] == 0xBB && pCozFile[2] == 0xBF)
+	const u8 * pBFile = (const u8 *)pCozFile;
+	if (pBFile[0] == 0xEF && pBFile[1] == 0xBB && pBFile[2] == 0xBF)
 	{
 		pCozFile += 3;
 	}
@@ -574,7 +569,6 @@ void EndWorkspace(CWorkspace * pWork)
 	size_t cipFile = pWork->m_arypFile.C();
 	for (size_t ipFile = 0; ipFile < cipFile; ++ipFile)
 	{
-		auto pFile = pWork->m_arypFile[ipFile];
 		if (pWork->m_arypFile[ipFile])
 		{
 			pAlloc->EWC_DELETE(pWork->m_arypFile[ipFile]);

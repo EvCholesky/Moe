@@ -65,8 +65,8 @@ struct STypeCheckWorkspace // tag = tcwork
 					STypeCheckWorkspace(CAlloc * pAlloc, SErrorManager * pErrman, int cTcfram)
 					:m_pAlloc(pAlloc)
 					,m_pErrman(pErrman)
-					,m_mang(pAlloc)
 					,m_nIdNext(0)
+					,m_mang(pAlloc)
 					,m_aryTcfram()
 					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
 					,m_arypTcframPending()
@@ -326,6 +326,7 @@ STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab)
 			auto pTinqualChild = pSymtab->PTinqualEnsure(pTinary->m_pTin, pTinqual->m_grfqualk);
 			pTinary->m_pTin = pTinqualChild;
 		}break;
+	default: break;
 	}
 
 	return pTinRef;
@@ -468,7 +469,7 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 		EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc, EWC::BK_Stack);
 		EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc, EWC::BK_Stack);
 
-		while (!FMatchString("_", ppCoz) && *ppCoz != '\0')
+		while (!FMatchString("_", ppCoz) && **ppCoz != '\0')
 		{
 			arypTinParams.Append(PTinReadType(ppCoz, pSymtab));
 			if (arypTinParams.Last() == nullptr)
@@ -561,7 +562,7 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 	EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc, EWC::BK_Stack);
 	EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc, EWC::BK_Stack);
 
-	while (!FMatchString("_", &pCoz) && pCoz != '\0')
+	while (!FMatchString("_", &pCoz) && *pCoz != '\0')
 	{
 		arypTinParams.Append(PTinReadType(&pCoz, pSymtab));
 		if (arypTinParams.Last() == nullptr)
@@ -666,7 +667,7 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 
 				AppendCoz(&strbuf, "* "); 
 
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
 				pStnodIt = pStnodIt->PStnodChild(0);
 				break;
 			case PARK_ArrayDecl:
@@ -732,7 +733,7 @@ void PushTcsent(STypeCheckFrame * pTcfram, STypeCheckStackEntry ** ppTcsentTop, 
 void PopTcsent(STypeCheckFrame * pTcfram, STypeCheckStackEntry ** ppTcsentTop, CSTNode * pStnodDebug)
 {
 	*ppTcsentTop = nullptr;
-	EWC_ASSERT(pTcfram->m_aryTcsent.PLast()->m_pStnod == pStnodDebug || pStnodDebug == nullptr);
+	EWC_ASSERT(pTcfram->m_aryTcsent.PLast()->m_pStnod == pStnodDebug || pStnodDebug == nullptr, "type check entry pop mismatch");
 
 	pTcfram->m_aryTcsent.PopLast();
 }
@@ -894,8 +895,6 @@ inline bool FComputeUnaryOpOnLiteral(
 	if (!fOperandIsNumber)
 		return false;
 
-	int n = +(-3);
-
 	TOK tokOperator = pStnodOperator->m_tok;
 	bool fIsBoolOp = FDoesOperatorReturnBool(pStnodOperator->m_park);
 
@@ -903,10 +902,10 @@ inline bool FComputeUnaryOpOnLiteral(
 	{
 		bool f;
 		F64 g = GLiteralCast(pStvalOperand);
-		switch (tokOperator)
+		switch ((u32)tokOperator)
 		{
-		case TOK('-'):         g = -g; break;
-		case TOK('!'):         f = !g; break;
+		case '-':         g = -g; break;
+		case '!':         f = !g; break;
 		default: return false;
 		}
 
@@ -927,7 +926,7 @@ inline bool FComputeUnaryOpOnLiteral(
 		{
 			SetFloatValue(pStvalStnod, g);
 
-			EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Float);
+			EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Float, "expected float literal");
 			*ppTinReturn = pTinlitOperand;
 			*ppTinOperand = pTinlitOperand;
 		}
@@ -940,7 +939,7 @@ inline bool FComputeUnaryOpOnLiteral(
 		SBigInt bintOperand(BintFromStval(pStvalOperand));
 
 		bool f;
-		switch (tokOperator)
+		switch ((u32)tokOperator)
 		{
 		case TOK('-'):         bintOperand.m_fIsNegative = !bintOperand.m_fIsNegative; break;
 		// BB - We're not really handling unsized literals correctly here - we'll just promote to a 64 bit type
@@ -979,7 +978,7 @@ inline bool FComputeUnaryOpOnLiteral(
 			}
 			else
 			{
-				EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Integer);
+				EWC_ASSERT(pTinlitOperand->m_litty.m_litk == LITK_Integer, "expected integer literal");
 				*ppTinReturn = pTinlitOperand;
 				*ppTinOperand = pTinlitOperand;
 			}
@@ -1030,7 +1029,7 @@ inline bool FComputeBinaryOpOnLiterals(
 		bool f;
 		F64 gLhs = GLiteralCast(pStvalLhs);
 		F64 gRhs = GLiteralCast(pStvalRhs);
-		switch (tokOperator)
+		switch ((u32)tokOperator)
 		{
 		case TOK('+'):         g = gLhs + gRhs; break;
 		case TOK('-'):         g = gLhs - gRhs; break;
@@ -1080,7 +1079,7 @@ inline bool FComputeBinaryOpOnLiterals(
 
 		SBigInt bintOut;
 		bool f;
-		switch (tokOperator)
+		switch ((u32)tokOperator)
 		{
 		case TOK('+'):         bintOut = BintAdd(bintLhs, bintRhs); break;
 		case TOK('-'):         bintOut = BintSub(bintLhs, bintRhs); break;
@@ -1134,7 +1133,7 @@ inline bool FComputeBinaryOpOnLiterals(
 			}
 			else
 			{
-				EWC_ASSERT(pTinlitLhs->m_litty.m_litk == LITK_Integer || pTinlitLhs->m_litty.m_litk == LITK_Bool);
+				EWC_ASSERT(pTinlitLhs->m_litty.m_litk == LITK_Integer || pTinlitLhs->m_litty.m_litk == LITK_Bool, "unexpected literal kind");
 				*ppTinReturn = pTinlitLhs;
 				*ppTinOperand = pTinlitLhs;
 			}
@@ -1175,7 +1174,6 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 		return;
 
 	pTinDst = PTinStripQualifiers(pTinDst);
-	auto pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
 
 	// we've found the place the literal will become 'typed' - flush that type back down into the literal
 	// Note: we may re-finalize finalized literals here when using a typed constant (ie "SomeConst : s8 : 2;" )
@@ -1196,7 +1194,6 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 	case TINK_Bool:		pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Bool);	break;
 	case TINK_Procedure:
 		{
-			LITK litkPrev = LITK_Nil;
 			STypeInfoLiteral * pTinlitPrev = (STypeInfoLiteral *)pStnodLit->m_pTin;
 			STypeInfoLiteral * pTinlit = nullptr;
 			
@@ -1223,7 +1220,6 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 		} break;
     case TINK_Pointer:
 		{
-			LITK litkPrev = LITK_Nil;
 			STypeInfoLiteral * pTinlitPrev = PTinDerivedCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
 			STypeInfoLiteral * pTinlit = nullptr;
 			
@@ -1371,9 +1367,11 @@ inline STypeInfo * PTinFromLiteralFinalized(
 		{
 			EWC_ASSERT(false, "enum literals should not be finalized");
 		} break;
+	default:
+		break;
 	}
 
-	EWC_ASSERT(false, "Unknown literal kind");
+		EWC_ASSERT(false, "Unknown literal kind");
 	return nullptr;
 }
 
@@ -1486,6 +1484,9 @@ STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 		}
 	case LITK_Nil: 
 		EWC_ASSERT(false, "Cannot infer type for LITK_Nil");
+	default:
+		EWC_ASSERT(false, "Cannot infer type for unexpected literal kind");
+		break;
 	}
 	return nullptr;
 }
@@ -1648,6 +1649,8 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 		} break;
 	case LITK_Nil: 
 		EWC_ASSERT(false, "Cannot infer type for LITK_Nil");
+	default:
+		EWC_ASSERT(false, "Cannot infer type for unknown literal kind");
 	}
 	return nullptr;
 }
@@ -1806,7 +1809,7 @@ SOpTypes OptypeFromPark(
 		{
 			bool fLhsIsArrayRef = pTinUnqualLhs->m_tink == TINK_Array && 
 									((STypeInfoArray*)pTinLhs)->m_aryk == ARYK_Reference;
-			STypeInfo * pTinRefMax;
+			STypeInfo * pTinRefMax = nullptr;
 			if (tinkMax == TINK_Array)
 			{
 				if (tinkMin != TINK_Pointer && !fLhsIsArrayRef) // no operand for array & array
@@ -1876,19 +1879,16 @@ SOpTypes OptypeFromPark(
 			parkOperatorAdj = PARK_AdditiveOp;
 		}
 
-		switch (parkOperatorAdj)
+		if (parkOperatorAdj == PARK_AdditiveOp)
 		{
-		case PARK_AdditiveOp:
+			if (pTinOther->m_tink == TINK_Integer)
 			{
-				if (pTinOther->m_tink == TINK_Integer)
-				{
-					return SOpTypes(pTinLhs, pTinRhs, pTinRef);
-				}
-				else
-				{
-					EWC_ASSERT(false, "unexpected Additive operator");
-				}
-			} break;
+				return SOpTypes(pTinLhs, pTinRhs, pTinRef);
+			}
+			else
+			{
+				EWC_ASSERT(false, "unexpected Additive operator");
+			}
 		}
 	}
 
@@ -1935,6 +1935,8 @@ SOpTypes OptypeFromPark(
 			}
 		case TINK_Array:
 			return SOpTypes();
+		default:
+			break;
 		}
 
 		if (FTypesAreSame(pTinLhs, pTinRhs))
@@ -2225,7 +2227,6 @@ STypeInfo * PTinFromTypeSpecification(
 	// Essentially, any non-null returned from this should be enough to determine the size of this type spec and 
 	//  determine target type equivalence.
 
-	CAlloc * pAlloc = pSymtab->m_pAlloc;
 	bool fAllowForwardDecl = false;
 
 	// loop and find the concrete target type
@@ -2284,13 +2285,13 @@ STypeInfo * PTinFromTypeSpecification(
 			} break;
 		case PARK_QualifierDecl:
 			{
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
 				pStnodIt = pStnodIt->PStnodChild(0);
 			} break;
 		case PARK_ReferenceDecl:
 			{
 				fAllowForwardDecl |= true;
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
 				pStnodIt = pStnodIt->PStnodChild(0);
 			} break;
 		case PARK_ProcedureReferenceDecl:
@@ -2337,7 +2338,7 @@ STypeInfo * PTinFromTypeSpecification(
 					ppTinCur = &pTinqual->m_pTin;
 				}
 
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
 				pStnodIt = pStnodIt->PStnodChild(0);
 			} break;
 		case PARK_ReferenceDecl:
@@ -2349,7 +2350,7 @@ STypeInfo * PTinFromTypeSpecification(
 				*ppTinCur = pTinptr;
 				ppTinCur = &pTinptr->m_pTinPointedTo;
 
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1);
+				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
 				pStnodIt = pStnodIt->PStnodChild(0);
 			} break;
 		case PARK_ArrayDecl:
@@ -2431,6 +2432,10 @@ STypeInfo * PTinFromTypeSpecification(
 				ppTinCur = nullptr;
 				pStnodIt = nullptr;
 			} break;
+		default:
+			{
+				EWC_ASSERT(false, "unexpected parse node kind.");
+			} break;
 		}
 	}
 
@@ -2484,7 +2489,6 @@ IVALK IvalkCompute(CSTNode * pStnod)
 	if (pStnod->m_park == PARK_MemberLookup)
 	{
 		// if the lhs is a type this is not an lvalue, check for constant rvalues
-		bool fLhsIsType = false;
 		CSTNode * pStnodLhs = pStnod->PStnodChildSafe(0);
 		CSTNode * pStnodRhs = pStnod->PStnodChildSafe(1);
 		if (!EWC_FVERIFY((pStnodLhs != nullptr) & (pStnodRhs != nullptr), "invalid member lookup"))
@@ -2509,7 +2513,7 @@ IVALK IvalkCompute(CSTNode * pStnod)
 		auto ivalkLhs = IvalkCompute(pStnodLhs);
 		auto ivalkRhs = IvalkCompute(pStnodRhs);
 		if ((ivalkLhs == IVALK_Type && ivalkRhs == IVALK_LValue) ||
-			ivalkLhs == IVALK_Error && ivalkRhs != IVALK_RValue)
+			(ivalkLhs == IVALK_Error && ivalkRhs != IVALK_RValue))
 		{
 			// (type, (inst, m_val)) -> IVALK_Error
 			return IVALK_Error;
@@ -2589,7 +2593,8 @@ CString StrFromStnod(CAlloc * pAlloc, CSTNode * pStnod)
 			}
 			return CString(seb.PCoz());
 		}
-
+	default:
+		break;
 	}
 
 	return CString("");
@@ -2988,8 +2993,6 @@ TCRET TcretTryFindMatchingProcedureCall(
 	// the first argument is index 1, (the procedure's identifier is element zero)
 
 	int cSymOptions = 0;
-	int cArgMismatch = 0;
-	int iStnodArgMin = 1;
 
 	struct SSymMatch
 	{
@@ -3002,7 +3005,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 	ZeroAB(mpProcmatchCSymmatch, sizeof(mpProcmatchCSymmatch));
 
 	SSymbol * pSymProc;
-	while (pSymProc = symiter.PSymNext())
+	while ((pSymProc = symiter.PSymNext()))
 	{
 		CSTNode * pStnodDefinition = pSymProc->m_pStnodDefinition;
 		if (!pStnodDefinition)
@@ -4108,6 +4111,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										"%s is left hand side, has no effect",
 										PChzFromPark(pStnodChild->m_park));
 								} break;
+							default:
+								break;
 							}
 						}
 					}
@@ -4512,7 +4517,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pTinInitDefault = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodInit);
 							pTinInitDefault = PTinQualifyAfterAssignment(pTinInitDefault, pTcsentTop->m_pSymtab);
 
-							EWC_ASSERT(pTinInitDefault);
+							EWC_ASSERT(pTinInitDefault, "failed to compute default init type");
 						}
 
 						SOverloadCheck ovcheck(nullptr);
@@ -4591,8 +4596,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							else if (pTinInitDefault)
 							{
 								pStnod->m_pTin = pTinInitDefault;
-
-								EWC_ASSERT(pStnod->m_pTin);
 								FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pTin, pStnodInit);
 							}
 						}
@@ -4945,6 +4948,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										{
 											pTinMember = pSymtab->PTinBuiltin("s64");
 										} break;
+									default:
+										EWC_ASSERT(false, "unknown array kind");
+										break;
 									}
 								} break;
 							case ARYMEMB_Data:
@@ -4962,6 +4968,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 						} break;
+						default:
+							EWC_ASSERT(false, "unknown type info kind");
+							break;
 					}
 				}
 
@@ -5128,8 +5137,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							auto pStnodPredicate = pStnod->PStnodChildSafe(pStfor->m_iStnodPredicate);
 							if (pStnodPredicate)
 							{
-								STypeInfo * pTinPred = pStnodPredicate->m_pTin;
-
 								auto pSymtab = pTcsentTop->m_pSymtab;
 								STypeInfo * pTinBool = pSymtab->PTinBuiltin("bool");
 								STypeInfo * pTinPredPromoted = PTinPromoteUntypedRvalueTightest(
@@ -5265,6 +5272,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											iTcsent = -1;
 										}
 									}break;
+									default:
+										EWC_ASSERT(false, "unexpected parse kind");
+										break;
 								}
 
 								if (!fIsValidPosition)
@@ -5308,8 +5318,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								EmitError(pTcwork, pStnod, "switch missing expression");
 								return TCRET_StoppingError;
 							}
-
-							auto pTinExp = pStnodExp->m_pTin;
 
 							STypeInfo * pTinExpPromoted = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodExp);
 
@@ -5448,7 +5456,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							// (if (predicate) (ifCase) (else (elseCase)))
 							// (while (predicate) (body))
 							CSTNode * pStnodPred = pStnod->PStnodChild(0);
-							STypeInfo * pTinPred = pStnodPred->m_pTin;
 
 							auto pSymtab = pTcsentTop->m_pSymtab;
 							STypeInfo * pTinBool = pSymtab->PTinBuiltin("bool");
@@ -5700,8 +5707,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					CSTNode * pStnodOperand = pStnod->PStnodChild(0);
 					STypeInfo * pTinOperand = pStnodOperand->m_pTin;
 
-					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-
 					SProcMatchParam pmparam;
 					pmparam.m_pLexloc = &pStnod->m_lexloc;
 					pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C();
@@ -5740,7 +5745,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 						if (EWC_FVERIFY(pTinOperand != nullptr, "unknown type in unary operation"))
 						{
-							if ((pTinOperand->m_tink == TINK_Literal))
+							if (pTinOperand->m_tink == TINK_Literal)
 							{
 								// this needs to be explicitly handled, create a new literal with the result
 								if (EWC_FVERIFY(
@@ -5781,7 +5786,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							else
 							{
 								TOK tok = pStnod->m_tok;
-								switch (tok)
+								switch ((u32)tok)
 								{
 								case TOK_Dereference:
 									{
@@ -6001,6 +6006,8 @@ STVALK StvalkFromTin(STypeInfo * pTin)
 		case LITK_String:	return STVALK_String;
 		case LITK_Bool:		return STVALK_UnsignedInt;
 		case LITK_Null:		return STVALK_Nil;
+		default:
+			break;
 		}
 	}
 	return STVALK_Nil;
@@ -6029,7 +6036,7 @@ void MarkAllSymbolsUsed(CSymbolTable * pSymtab)
 	EWC::CHash<HV, SSymbol *>::CIterator iterSym(&pSymtab->m_hashHvPSym);
 
 	SSymbol ** ppSym;
-	while (ppSym = iterSym.Next())
+	while ((ppSym = iterSym.Next()))
 	{
 		if (ppSym)
 			(*ppSym)->m_symdep = SYMDEP_Used;
@@ -6057,7 +6064,7 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 		pSymtabIt = pSymtabIt->m_pSymtabNextManaged;
 
 		SSymbol ** ppSym;
-		while (ppSym = iterSym.Next())
+		while ((ppSym = iterSym.Next()))
 		{
 			if ((*ppSym)->m_symdep != SYMDEP_Nil)
 				continue;
@@ -6068,7 +6075,6 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 				SSymbol * pSym = arypSym.Last();
 				size_t ipSym = arypSym.C() - 1;
 
-				bool fAllResolved = true;
 				int cSymdepNil = 0;
 				int cSymdepUsed = 0;
 				if (pSym->m_symdep == SYMDEP_Nil)
@@ -6090,6 +6096,8 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 							{
 								++cSymdepUsed;
 							} break;
+							default:
+								break;
 						}
 					}
 
@@ -6175,9 +6183,13 @@ void PerformTypeCheck(
 			size_t iEntry = pTcwork->m_aryTcfram.IFromP(pTcfram);
 			paryiEntryChecked->Append(S32Coerce(iEntry));
 		}
-		else if (EWC_FVERIFY(tcret == TCRET_WaitingForSymbolDefinition))
+		else if (tcret == TCRET_WaitingForSymbolDefinition)
 		{
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, &pTcwork->m_arypTcframWaiting);
+		}
+		else
+		{
+			EWC_ASSERT(false, "Unhandled type check return value.")	
 		}
 
 		ValidateTcframArray(&pTcwork->m_arypTcframPending);
@@ -6224,7 +6236,7 @@ void PerformTypeCheck(
 	{
 		EWC::CHash<HV, SSymbol *>::CIterator iterSym(&pSymtabTop->m_hashHvPSym);
 		SSymbol ** ppSym;
-		while (ppSym = iterSym.Next())
+		while ((ppSym = iterSym.Next()))
 		{
 			auto pSym = *ppSym;
 			for (auto pSymSrc = pSym; pSymSrc; pSymSrc = pSymSrc->m_pSymPrev)
@@ -6302,7 +6314,6 @@ bool FTestSigned65()
 	// values. It's not clear that this is the wrong behavior for literals... it should probably throw an overflow
 	// error (?)
 
-	s64 nTest = -1 >> 1;
 	AssertEquals(BintShiftRight(BintFromInt(-1), BintFromInt(1)), BintFromInt(-1 >> 1));
 	AssertEquals(BintSub(BintFromInt(0), BintFromInt(LLONG_MIN+1)), BintFromInt(LLONG_MAX));
 
@@ -6323,7 +6334,6 @@ bool FTestSigned65()
 			{
 				// shifting by more than the number of bits in a type results in undefined behavior
 				auto nRhsClamp = (nRhs > 31) ? 31 : nRhs;
-				auto bintRhsClamp = BintFromInt(nRhsClamp);
 			
 				AssertEquals(BintShiftRight(BintFromInt(nLhs), BintFromInt(nRhsClamp)), BintFromInt(nLhs >> nRhsClamp));
 				AssertEquals(BintShiftLeft(BintFromInt(nLhs), BintFromInt(nRhsClamp)), BintFromInt(nLhs << nRhsClamp));
@@ -6351,15 +6361,11 @@ bool FTestSigned65()
 			AssertEquals(BintBitwiseOr(BintFromUint(nLhs), BintFromUint(nRhs)), BintFromUint(nLhs | nRhs));
 			AssertEquals(BintBitwiseAnd(BintFromUint(nLhs), BintFromUint(nRhs)), BintFromUint(nLhs & nRhs));
 
-			if (nRhs >= 0)
-			{
-				// shifting by more than the number of bits in a type results in undefined behavior
-				auto nRhsClamp = (nRhs > 31) ? 31 : nRhs;
-				auto bintRhsClamp = BintFromInt(nRhsClamp);
-			
-				AssertEquals(BintShiftRight(BintFromUint(nLhs), BintFromUint(nRhsClamp)), BintFromUint(nLhs >> nRhsClamp));
-				AssertEquals(BintShiftLeft(BintFromUint(nLhs), BintFromUint(nRhsClamp)), BintFromUint(nLhs << nRhsClamp));
-			}
+			// shifting by more than the number of bits in a type results in undefined behavior
+			auto nRhsClamp = (nRhs > 31) ? 31 : nRhs;
+		
+			AssertEquals(BintShiftRight(BintFromUint(nLhs), BintFromUint(nRhsClamp)), BintFromUint(nLhs >> nRhsClamp));
+			AssertEquals(BintShiftLeft(BintFromUint(nLhs), BintFromUint(nRhsClamp)), BintFromUint(nLhs << nRhsClamp));
 
 			// does not replicate unsigned underflow, because the sign bit is tracked seperately
 			if (nLhs >= nRhs)
@@ -6419,7 +6425,7 @@ void AssertTestTypeCheck(
 	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &lex, true);
-	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
+	EWC_ASSERT(pWork->m_aryEntry.C() > 0, "expected entries.");
 
 	EndParse(pWork, &lex);
 

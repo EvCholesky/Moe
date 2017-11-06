@@ -121,7 +121,7 @@ struct STypeInfo	// tag = tin
 template <typename T>
 T PTinRtiCast(STypeInfo * pTin)
 {
-	if (pTin && pTin->m_tink == SStripPointer<T>::Type::s_tink)
+	if (pTin && pTin->m_tink == EWC::SStripPointer<T>::Type::s_tink)
 		return (T)pTin;
 	return nullptr;
 }
@@ -129,7 +129,7 @@ T PTinRtiCast(STypeInfo * pTin)
 template <typename T>
 T PTinDerivedCast(STypeInfo * pTin)
 {
-	EWC_ASSERT(pTin && pTin->m_tink == SStripPointer<T>::Type::s_tink, "illegal type info derived cast");
+	EWC_ASSERT(pTin && pTin->m_tink == EWC::SStripPointer<T>::Type::s_tink, "illegal type info derived cast");
 	return (T)pTin;
 }
 

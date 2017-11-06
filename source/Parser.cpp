@@ -422,7 +422,12 @@ bool FExpect(CParseContext * pParctx, SLexer * pLex, TOK tokExpected, const char
 		{
 			va_list ap;
 			va_start(ap, pCozInfo);
+#if WIN32
 			vsprintf_s(aB, EWC_DIM(aB), pCozInfo, ap);
+#else
+			vsnprintf(aB, EWC_DIM(aB), pCozInfo, ap);
+			aB[EWC_DIM(aB)-1] = 0;
+#endif
 		}
 
 		auto strUnexpected = StrUnexpectedToken(pLex);
@@ -463,7 +468,12 @@ void ExpectEndOfStatement(CParseContext * pParctx, SLexer * pLex, const char * p
 		{
 			va_list ap;
 			va_start(ap, pCozInfo);
+#if WIN32
 			vsprintf_s(aB, EWC_DIM(aB), pCozInfo, ap);
+#else
+			vsnprintf(aB, EWC_DIM(aB), pCozInfo, ap);
+			aB[EWC_DIM(aB)-1] = 0;
+#endif
 		}
 
 		auto strUnexpected = StrUnexpectedToken(pLex);
@@ -647,6 +657,8 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 						pStval->m_litkLex = LITK_Integer;
 						pStval->m_nUnsigned = iLine;
 					} break;
+				default:
+					break;
 				}
 
 				if (pStval->m_str.FIsEmpty())
@@ -789,6 +801,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 				{
 					CSTNode * pStnodLabel = nullptr;
 					const char * pCozLabel = "error";
+					/* wip, being developed on other branch
 					if (pLex->m_tok == TOK_Label)
 					{
 						TokNext(pLex);
@@ -808,6 +821,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 							pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
 						}
 					}
+					*/
 
 					CSTNode * pStnodArg = PStnodParseLogicalAndOrExpression(pParctx, pLex);
 					if (pStnodLabel)
@@ -932,6 +946,8 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SLexer * pLex)
 				{
 					ParseError(pParctx, pLex, "typeof not implemented yet.");
 				} break;
+			default:
+				break;
 			}
 		} break;
 	case TOK_Dereference:
@@ -1319,10 +1335,9 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex);
 		pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 
-		CSTNode ** ppStnodReturns = &pStnodReturns;
 		int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
 		int cStnodParams;
-		CSTNode ** ppStnodParams = PPStnodChildFromPark(pStnodParams, &cStnodParams, PARK_ParameterList);
+		(void)PPStnodChildFromPark(pStnodParams, &cStnodParams, PARK_ParameterList);
 
 		auto pTinproc =  PTinprocAlloc(pParctx->m_pSymtab, cStnodParams, cStnodReturns, "");
 		pTinproc->m_arypTinParams.AppendFill(cStnodParams, nullptr);
@@ -2150,7 +2165,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 		}
 
 		bool fIsConstantDecl = lexPeek.m_tok == TOK_ColonColon;
-		bool fIsDefinition = fIsConstantDecl;
+		bool fIsDefinition;
 		switch (rword)
 		{
 		case RWORD_Proc:
@@ -2159,6 +2174,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 		case RWORD_Typedef:
 		case RWORD_Operator:
 			fIsDefinition = true;
+			break;
+		default: 
+			fIsDefinition = fIsConstantDecl;
 			break;
 		}
 
@@ -2336,7 +2354,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					{
 						pTinproc->m_fHasVarArgs = true;
 					}
-					else if (pStnodParam->m_park == PARK_Decl, "Expected decl")
+					else if (EWC_FVERIFY(pStnodParam->m_park == PARK_Decl, "Expected decl"))
 					{
 						pTinproc->m_arypTinParams.Append(pStnodParam->m_pTin);
 					}
@@ -3395,7 +3413,6 @@ SSymbol * CSymbolTable::CSymbolIterator::PSymNext()
 
 	auto tabvis = TabvisCompute(m_pSymtab, m_pSymtab->m_iNestingDepth, m_grfsymlook);
 	auto pSymIt = m_pSym;
-	SSymbol * pSymReturn = nullptr;
 	while (pSymIt)
 	{
 		SLexerLocation lexlocSym = (pSymIt->m_pStnodDefinition) ? pSymIt->m_pStnodDefinition->m_lexloc : SLexerLocation();
@@ -3861,8 +3878,11 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 					FormatCoz(&strbuf, "[%d]", pTinary->m_c);
 					pSeb->AppendCoz(aCh);
 				} break;
-			case ARYK_Reference:	pSeb->AppendCoz("[]");	break;
+			case ARYK_Reference:	pSeb->AppendCoz("[]");		break;
 			case ARYK_Dynamic:		pSeb->AppendCoz("[..]");	break;
+			default: 
+				EWC_ASSERT(false, "Unhandled ARYK");
+				break;
 			}
 			AppendTypeDescriptor(pTinary->m_pTin, pSeb);
 		} break;
@@ -4177,8 +4197,11 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			switch (pTinary->m_aryk)
 			{
 			case ARYK_Fixed:		FormatCoz(pStrbuf, "[%d]", pTinary->m_c);	break;
-			case ARYK_Dynamic:		AppendCoz(pStrbuf, "[..]");				break;
+			case ARYK_Dynamic:		AppendCoz(pStrbuf, "[..]");					break;
 			case ARYK_Reference:	AppendCoz(pStrbuf, "[]");					break;
+			default: 
+				EWC_ASSERT(false, "Unhandled ARYK");
+				break;
 			}
 
 			PrintTypeInfo(pStrbuf, pTinary->m_pTin, park, grfdbgstr);
@@ -4236,13 +4259,11 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 		}
     case TINK_Struct:
 		{
-			auto pTinstruct = (STypeInfoStruct *)pTin;
 			FormatCoz(pStrbuf, "%s", pTin->m_strName.PCoz());
 			return;
 		}
     case TINK_Enum:
 		{
-			auto pTinstruct = (STypeInfoStruct *)pTin;
 			FormatCoz(pStrbuf, "%s_enum", pTin->m_strName.PCoz());
 			return;
 		}

@@ -207,8 +207,8 @@ public:
 					,m_iStnodReturnType(-1)
 					,m_iStnodBody(-1)
 					,m_iStnodForeignAlias(-1)
-					,m_pTinproc(nullptr)
 					,m_pStnodParentScope(nullptr)
+					,m_pTinproc(nullptr)
 					,m_fIsForeign(false)
 					,m_fUseUnmangledName(false)
 						{ ; }

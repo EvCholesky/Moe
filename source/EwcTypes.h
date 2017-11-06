@@ -24,6 +24,8 @@
 
 #if _WIN64
 #define EWC_X64 1
+#elif EWC_OSX_X64
+#define EWC_X64 1
 #else
 #define EWC_X64 0
 #endif
@@ -62,6 +64,9 @@ enum TFN
 	TFN_True,
 	TFN_Nil = -1,
 };
+
+// BB - Messy dependency, defined in EwcString.cpp
+u32 HvFromPBFVN(const void * pV, size_t cB);
 
 namespace EWC
 {
@@ -114,7 +119,7 @@ struct Simd4 { Simd x, y, z, w; };
 	}; EWC_ENUM_UTILS(ENUM_NAME) \
 	enum ENUM_NAME##_Stub {
 
-inline void AssertHandler( const char* pChzFile, u32 line, const char* pChzCondition, const char* pChzMessage = 0, ...);
+void AssertHandler( const char* pChzFile, u32 line, const char* pChzCondition, const char* pChzMessage = 0, ...);
 
 #define EWC_VERIFY( PREDICATE, ... ) \
 	do { if (!(PREDICATE)) { \
@@ -163,6 +168,13 @@ do { if (PREDICATE) \
 void DoNothing();
 static_assert(sizeof(s64) == 8, "wha");
 static_assert(sizeof(s32) == 4, "wha");
+
+// Memory functions
+
+void	FillAB(u8 b, void * pDest, size_t cB);
+void	ZeroAB(void * pDest, size_t cB);
+void	CopyAB(const void * pSource, void * pDest, size_t cB);
+bool	FAreSameAB(const void * aB0, void * aB1, size_t cB);
 
 inline s32 S32Coerce(s64 n)		{ s32 nRet = (s32)n;	EWC_ASSERT((s64)nRet == n, "S32Coerce failure"); return nRet; }
 inline s16 S16Coerce(s64 n)		{ s16 nRet = (s16)n;	EWC_ASSERT((s64)nRet == n, "S16Coerce failure"); return nRet; }
@@ -325,8 +337,8 @@ struct SCopySelector
 	{
 		EWC_ASSERT( ((uintptr_t)pTDst & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct missaligned object" );
 		auto pTDstMax = pTDst + cT;
-		for (auto pTDstIt = pTDst; pTDstIt != pTDstMax; ++pTDstIt, pTSrc)
-			new (pTDst) T(*pTSrc);
+		for (auto pTDstIt = pTDst; pTDstIt != pTDstMax; ++pTDstIt, ++pTSrc)
+			new (pTDstIt) T(*pTSrc);
 	}
 };
 
@@ -379,13 +391,6 @@ template <typename T> void CopyConstructArray(T * pTDst, size_t cT, const T * pT
 template <typename T> void Destruct(T * p)									{ SDestructSelector<T, SHasTrivialDestructor<T>::V >::Destruct(p); }
 template <typename T> void DestructN(T * p, size_t c)						{ SDestructSelector<T, SHasTrivialDestructor<T>::V >::DestructN(p,c); }
 
-
-// Memory functions
-
-void	FillAB(u8 b, void * pDest, size_t cB);
-void	ZeroAB(void * pDest, size_t cB);
-void	CopyAB(const void * pSource, void * pDest, size_t cB);
-bool	FAreSameAB(const void * aB0, void * aB1, size_t cB);
 
 // String functions
 
@@ -540,6 +545,7 @@ enum BK // block kind
 	BK_StringTable,
 	BK_ReflectTable,
 	BK_UnitTest,
+	BK_Linker,
 };
 
 #define EWC_ALLOC(numBytes, alignment) 			AllocImpl(numBytes, alignment, __FILE__, __LINE__)
@@ -1146,8 +1152,15 @@ struct SRosterHandle // tag = rohan
 	u16		m_iLifetime;	// lifetime index (to differentiate reuses of a roster instance)
 };
 
+inline u32		HvFromAB(const void * aB, size_t cB)
+					{
+						return HvFromPBFVN(aB, cB);
+					}
 
-
+inline u32		HvFromP(void * pV)
+					{
+						return HvFromAB(&pV, sizeof(pV));
+					}
 
 template <typename T>
 HV HvExtract(const T & t)
@@ -1155,7 +1168,6 @@ HV HvExtract(const T & t)
 	return static_cast<HV>(t);
 }
 
-/* Not used? doesn't compile on OSX, doesn't seem to be used
 template <typename T>
 HV HvExtract(const T * pT)
 {
@@ -1167,7 +1179,6 @@ HV HvExtract(T * pT)
 {
 	return HvFromP((void *)pT);
 }
-*/
 
 
 // Thomas Wang's 32-bit hash mix function

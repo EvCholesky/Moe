@@ -186,6 +186,10 @@ class CDynAry : public CAry<T> //tag=ary
 {
 public:
 	typedef T Type;
+	using CAry<T>::m_a;		// workaround for templated base class dependent names 
+	using CAry<T>::m_c;	
+	using CAry<T>::m_cMax;	
+	using CAry<T>::m_bk;
 
 				CDynAry(CAlloc * pAlloc, BK bk, s32 cMaxStarting = 16)
 				:CAry<T>(nullptr, 0, 0, BK_Nil)
@@ -250,6 +254,7 @@ public:
 						EnsureSize(m_c + cT);
 						T * pTEnd = &m_a[m_c++];
 						CopyConstructArray(pTEnd, cT, pTArray);
+						m_c += (cT-1);
 					}
 
 	void		AppendFill(size_t c, const Type t)
@@ -372,10 +377,18 @@ class CFixAry : public CAry<T> // tag=ary
 {
 public:
 	typedef T Type;
-	
+	using CAry<T>::m_a;		// workaround for templated base class dependent names 
+	using CAry<T>::m_c;	
+	using CAry<T>::m_cMax;	
+	using CAry<T>::m_bk;
+
 				CFixAry()
-				:CAry<T>(reinterpret_cast<T*>(m_alby.A()), 0, C_MAX)
-					{ ; }
+				:CAry<T>()
+					{ 
+						m_a = (T *)m_alby.A(); 
+						m_c = 0;
+						m_cMax = C_MAX;
+					}
 
 				~CFixAry()
 					{ Clear(); }

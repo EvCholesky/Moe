@@ -73,8 +73,8 @@ TestPointers proc ()
 
 	// void pointers
 	
-	n := 1234
-	pN := &n
+	n = 1234
+	pN = &n
 	pV : & void = pN
 
 	assert(pN == pV, "bad null pointer assignment", #file, #line)
@@ -511,17 +511,17 @@ TestArrays proc ()
 	aN1: [4] int = {1, 2, 3, 4}
 	aN2: [] int = {1, 2, 3, 4}
 	aN3 := {1, 2, 3, 4}
-	aN3 := {:int: 1, 2, 3, 4}
-	aN4 := kN
+	aN4 := {:int: 1, 2, 3, 4}
+	aN5 := kN
 
-	aN5 : [] int
 	aN6 : [] int
 	aN7 : [] int
 	aN8 : [] int
-	aN5 = aN1
-	aN6 = aN2
-	aN7 = {1, 2, 3, 4}
-	aN8 = kN
+	aN9 : [] int
+	aN6 = aN1
+	aN7 = aN2
+	aN8 = {1, 2, 3, 4}
+	aN9 = kN
 
 	pN1: & int = aN1
 	pN2: & int = aN2
@@ -541,6 +541,7 @@ TestArrays proc ()
 		assert(aN6[iN] == n, "bad array lookup", #file, #line)
 		assert(aN7[iN] == n, "bad array lookup", #file, #line)
 		assert(aN8[iN] == n, "bad array lookup", #file, #line)
+		assert(aN9[iN] == n, "bad array lookup", #file, #line)
 
 		assert(pN1[iN] == n, "bad array lookup", #file, #line)
 		assert(pN2[iN] == n, "bad array lookup", #file, #line)
@@ -920,7 +921,7 @@ TestBreakContinue proc ()
 	}
 
 	i: int
-	pN := aNExpected.data
+	pN = aNExpected.data
 	while i < 10
 	{
 		iPrev:= i

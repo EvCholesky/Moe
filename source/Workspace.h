@@ -18,6 +18,7 @@
 #include "EwcArray.h"
 #include "EwcHash.h"
 #include "EwcString.h"
+#include <cstdarg> // for va_list forward decl
 
 namespace EWC
 {

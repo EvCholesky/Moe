@@ -23,7 +23,9 @@
 #include "Util.h"
 #include "Workspace.h"
 
+#ifdef WIN32
 #include "WindowsStub.h"
+#endif
 
 using namespace EWC;
 
@@ -31,7 +33,7 @@ extern void TestParse();
 extern void TestTypeCheck();
 extern void TestCodeGen();
 
-extern void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile);
+extern void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile, const char ** ppCozExt);
 
 class CCommandLine // tag = comline
 {
@@ -214,56 +216,111 @@ int main(int cpChzArg, const char * apChzArg[])
 
 		if (fSuccess && !comline.FHasCommand("-nolink"))
 		{
-			//static const char * s_pChzCommandLine = "C:/Program Files (x86)/Microsoft Visual Studio 10.0/VC/bin/amd64/link.exe";
+			CDynAry<const char *> arypChzOptions(&alloc, BK_Linker, 32);
 
-			static const char * s_pChzPathDebug = "Debug";
-			static const char * s_pChzPathRelease = "Release";
-			const char * pChzOptPath = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzPathRelease : s_pChzPathDebug;
+			static const char * s_pChzPathDebug = "/Debug";
+			static const char * s_pChzPathRelease = "/Release";
+			const char * pChzMoeLibOpt = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzPathRelease : s_pChzPathDebug;
 
-			static const char * s_pChzOptimizedDebug = "/debug /incremental:no";
-			static const char * s_pChzOptimizedRelease = "";
-			const char * pChzOptimized = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzOptimizedRelease : s_pChzOptimizedDebug;
+			static const char * s_aChzOptimizedDebug[] =
+			{
+				#if WIN32
+				"/debug",
+				"/incremental:no",
+				#else // POSIX
+				#endif
+			};
+			static const char * s_aChzOptimizedRelease[] =
+			{
+			};
+			if (work.m_optlevel == OPTLEVEL_Release)
+			{
+				arypChzOptions.Append(s_aChzOptimizedDebug, EWC_DIM(s_aChzOptimizedDebug));
+			}
+			else
+			{
+				arypChzOptions.Append(s_aChzOptimizedRelease, EWC_DIM(s_aChzOptimizedRelease));
+			}
 
 			const char * pChzLinkerFull = nullptr;
 
 			#if EWC_X64
-				static const char * s_pChzCommandMs = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
-				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade64/bin/lld-link.exe";
-				pChzLinkerFull = (comline.FHasCommand("-useLLD")) ? s_pChzCommandLld : s_pChzCommandMs; 
+				#if WIN32
+					static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
+					static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade64/bin/lld-link.exe";
 
-				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/moe/x64/%s\" ";
-				static const char * s_apChzDefaultPaths[] =
+					static const char * s_apChzDefaultPaths[] =
+					{
+						"\"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64\"",
+						"\"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64\"",
+						"\"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64\"",
+						"c:/code/moe/external/glfw/lib/x64"
+					};
+				#else
+					static const char * s_pChzCommand = "/usr/bin/ld";
+					static const char * s_pChzCommandLld = "/code/llvm50/cmade64/bin/lld";
+
+					static const char * s_apChzDefaultPaths[] =
+					{
+					};
+				#endif
+				pChzLinkerFull = (comline.FHasCommand("-useLLD")) ? s_pChzCommandLld : s_pChzCommand; 
+
+				static const char * s_pChzMoeLibBit = "/x64";
+				static const char * s_apChzCommand[] = 
 				{
-					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
-					"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
-					"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
-					"c:/code/moe/external/glfw/lib/x64"
+					"ld",	// first argument is ignored, name of self
+
+					#if WIN32
+					"/subsystem:console",
+					"/machine:x64",
+					"/nologo",
+					"/NODEFAULTLIB:MSVCRT.lib",
+					"/NODEFAULTLIB:LIBCMTD.lib",
+					#else // POSIX
+					"-arch",
+					"x86_64",
+					"-macosx_version_min",
+					"10.11", 
+					"-lm",
+					#endif
 				};
 
-				// s_unusedOptions = " /time+";
-				static const char * s_pChzOptions = "/subsystem:console /machine:x64 /nologo /NODEFAULTLIB:MSVCRT.lib /NODEFAULTLIB:LIBCMTD.lib";
-
+				arypChzOptions.Append(s_apChzCommand, EWC_DIM(s_apChzCommand));
 			#else
-				static const char * s_pChzCommandMs = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
-				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade/bin/lld-link.exe";
-				pChzLinkerFull = (comline.FHasCommand("-useLLD")) ? s_pChzCommandLld : s_pChzCommandMs; 
+				#if WIN32
+					static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
 
-				static const char * s_pChzLibraryFormat = "/libpath:\"c:/Code/moe/%s\" ";
-				static const char * s_apChzDefaultPaths[] =
-				{
-					"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86",
-					"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib",
-					"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x86",
-					"c:/code/moe/external/glfw/lib/win32"
-				};
-				static const char * s_pChzOptions = "/subsystem:console /nologo /NODEFAULTLIB:MSVCRT.lib ";
+					static const char * s_apChzDefaultPaths[] =
+					{
+						"\"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x86\"",
+						"\"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib\"",
+						"\"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x86\"",
+						"c:/code/moe/external/glfw/lib/win32"
+					};
+				#else
+					static const char * s_pChzCommand = "/usr/bin/ld";
+
+					static const char * s_apChzDefaultPaths[] =
+					{
+					};
+				#endif
+
+				static const char * s_pChzMoeLibBit = "";
+				static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade/bin/lld-link.exe";
+				pChzLinkerFull = (comline.FHasCommand("-useLLD")) ? s_pChzCommandLld : s_pChzCommand; 
 			#endif
 
 			char aChzCwd[1024];
-			GetCurrentDirectoryA(EWC_DIM(aChzCwd), (char*)aChzCwd);
-
-			char aCozCommandLine[2048];
-			EWC::SStringBuffer strbufCmd(aCozCommandLine, EWC_DIM(aCozCommandLine));
+			#ifdef WIN32
+				GetCurrentDirectoryA(EWC_DIM(aChzCwd), (char*)aChzCwd);
+			#else
+				if (!getcwd(aChzCwd, EWC_DIM(aChzCwd)))
+				{
+					aChzCwd[0] = 0;
+					printf("Failed to find the current working directory\n");
+				}
+			#endif
 
 			char aCozCopy[2048];
 			EWC::SStringBuffer strbufCopy(aCozCopy, EWC_DIM(aCozCopy));
@@ -271,18 +328,51 @@ int main(int cpChzArg, const char * apChzArg[])
 
 			const char * pChzLinkerPath;	
 			const char * pChzLinkerFile;	
-			PathSplitDestructive(aCozCopy, EWC_DIM(aCozCopy), &pChzLinkerPath, &pChzLinkerFile);
+			PathSplitDestructive(aCozCopy, EWC_DIM(aCozCopy), &pChzLinkerPath, &pChzLinkerFile, nullptr);
 
-			FormatCoz(
-				&strbufCmd,
-				"%s %s %s %s ",
-				pChzLinkerFile,
-				work.m_pChzObjectFilename,
-				pChzOptimized,
-				s_pChzOptions);
+			#if WIN32
+				static const char * s_pChzMoeLibPath = "c:/Code/moe";
+				static const char * s_pChzCRTLibraryDebug = "msvcrtd.lib";
+				static const char * s_pChzCRTLibraryRelease = "msvcrt.lib";
+				static const char * s_pChzLibOption = "";
+				static const char * s_pChzLibPathOption = "/libpath:";
+				static const char * s_pChzLibExtension = ".lib";
+				static const char * s_pChzOutputFileOption = "/OUT";
+				//static const char * s_pChzLibPathFormat = "/libpath:\"%s\" "
 
-			FormatCoz(&strbufCmd, s_pChzLibraryFormat, pChzOptPath);
+				//const char * pChzCRTLibrary = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug;
+				arypChzOptions.Append((work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug);
+			#else // POSIX
+				static const char * s_pChzMoeLibPath = "/Code/moe";
+				static const char * s_pChzCRTLibraryDebug = "-lcrt1.o";
+				static const char * s_pChzCRTLibraryRelease = "-lcrt1.o";
+				static const char * s_pChzLibOption = "-l";
+				static const char * s_pChzLibPathOption = "-L";
+				static const char * s_pChzLibExtension = "";
+				static const char * s_pChzOutputFileOption = "-o";
 
+				arypChzOptions.Append((work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug);
+			#endif
+
+			// current moe object file
+			arypChzOptions.Append(work.m_pChzObjectFilename);
+
+			// output filename
+			char aCozOutput[1024];
+			const char * pChzOutputPath;	
+			const char * pChzOutputFile;	
+			const char * pChzOutputExt;	
+			(void) EWC::CBCopyCoz(work.m_pChzObjectFilename, aCozOutput, EWC_DIM(aCozOutput));
+			PathSplitDestructive(aCozOutput, EWC_DIM(aCozOutput), &pChzOutputPath, &pChzOutputFile, &pChzOutputExt);
+
+			arypChzOptions.Append(s_pChzOutputFileOption);	
+			arypChzOptions.Append(pChzOutputFile);
+
+			char aCozWorking[2048];
+			char * pCozWorking = aCozWorking;
+			char * pCozWorkingMac = EWC_PMAC(aCozWorking);
+
+			// libraries requested by moe
 			CWorkspace::SFile ** ppFileMac = work.m_arypFile.PMac();
 			for (CWorkspace::SFile ** ppFile = work.m_arypFile.A(); ppFile != ppFileMac; ++ppFile)
 			{
@@ -290,8 +380,23 @@ int main(int cpChzArg, const char * apChzArg[])
 				if (file.m_filek != CWorkspace::FILEK_Library)
 					continue;
 
-				FormatCoz(&strbufCmd, "%s.lib ",file.m_strFilename.PCoz());
+				EWC::SStringBuffer strbufLib(pCozWorking, pCozWorkingMac - pCozWorking);
+				FormatCoz(&strbufLib, "%s%s%s", s_pChzLibOption, file.m_strFilename.PCoz(), s_pChzLibExtension);
+				EnsureTerminated(&strbufLib, '\0');
+
+				arypChzOptions.Append(pCozWorking);
+				pCozWorking = strbufLib.m_pCozAppend;
+				if (pCozWorking != pCozWorkingMac)
+					++pCozWorking;
 			}
+
+			// build the path for moe libraries			
+
+			EWC::SStringBuffer strbufMoeLib(pCozWorking, pCozWorkingMac - pCozWorking);
+			FormatCoz(&strbufMoeLib, "%s%s%s", s_pChzMoeLibPath, pChzMoeLibOpt, s_pChzMoeLibBit);
+
+			arypChzOptions.Append(s_pChzLibPathOption);
+			arypChzOptions.Append(strbufMoeLib.m_pCozBegin);
 
 			// NOTE: This is a bit of a mess. We're not really handling library ordering properly (we need to track
 			//  library->library dependencies, but this has us limping along for now - I believe the problem was
@@ -299,52 +404,101 @@ int main(int cpChzArg, const char * apChzArg[])
 			//  were not needed at the time and discarded) 
 			//  see: http://eli.thegreenplace.net/2013/07/09/library-order-in-static-linking
 
-			static const char * s_pChzCRTLibraryDebug = "msvcrtd.lib";
-			static const char * s_pChzCRTLibraryRelease = "msvcrt.lib";
-			const char * pChzCRTLibrary = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug;
-			FormatCoz(&strbufCmd, "%s ", pChzCRTLibrary);
 
 			for (int ipChz = 0; ipChz < EWC_DIM(s_apChzDefaultPaths); ++ipChz)
 			{
-				FormatCoz(&strbufCmd, "/libpath:\"%s\" ", s_apChzDefaultPaths[ipChz]);
+				arypChzOptions.Append(s_pChzLibPathOption);
+				arypChzOptions.Append(s_apChzDefaultPaths[ipChz]);
 			}
 
-
-			STARTUPINFOA startupinfo = {};
-			startupinfo.cb = sizeof(startupinfo);
-			startupinfo.dwFlags = STARTF_USESHOWWINDOW;
-			startupinfo.wShowWindow = SW_HIDE;
-
-			PROCESS_INFORMATION processinfo = {};
-
-			printf("Linking:\n");
-
-			// BB - Should switch CreateProcess and GetCurrentDirectory to wide char versions.
-			if (CreateProcessA(
-					pChzLinkerFull,
-					aCozCommandLine,
-					0,
-					0,
-					false,
-					0,
-					0,
-					aChzCwd,
-					&startupinfo,
-					&processinfo))
+			printf("link: \n%s ",pChzLinkerFull);
+			for (const char ** ppChzIt = arypChzOptions.A(); ppChzIt != arypChzOptions.PMac(); ++ppChzIt)
 			{
-				WaitForSingleObject(processinfo.hProcess, INFINITE);
-
-				DWORD nExitCode;
-				(void) GetExitCodeProcess(processinfo.hProcess, &nExitCode);
-				CloseHandle(processinfo.hProcess);
-				CloseHandle(processinfo.hThread);
+				printf("%s ", *ppChzIt);
 			}
-			else
-			{
-				DWORD nErrorCode = GetLastError();
-			}
+			printf("\n");
 
-			printf("\n%s\n", aCozCommandLine);
+			#if 0 //WIN32
+				STARTUPINFOA startupinfo = {};
+				startupinfo.cb = sizeof(startupinfo);
+				startupinfo.dwFlags = STARTF_USESHOWWINDOW;
+				startupinfo.wShowWindow = SW_HIDE;
+
+				PROCESS_INFORMATION processinfo = {};
+
+				printf("Linking:\n");
+
+				// BB - Should switch CreateProcess and GetCurrentDirectory to wide char versions.
+				if (CreateProcessA(
+						pChzLinkerFull,
+						aCozCommandLine,
+						0,
+						0,
+						false,
+						0,
+						0,
+						aChzCwd,
+						&startupinfo,
+						&processinfo))
+				{
+					WaitForSingleObject(processinfo.hProcess, INFINITE);
+
+					DWORD nExitCode;
+					(void) GetExitCodeProcess(processinfo.hProcess, &nExitCode);
+					CloseHandle(processinfo.hProcess);
+					CloseHandle(processinfo.hThread);
+				}
+				else
+				{
+					DWORD nErrorCode = GetLastError();
+				}
+			#elif 0 // !WIN32 so... POSIX?
+
+				// Could actually work, was reporting invalid permissions, but I think that's just a bad path.
+				//  I think having llvm::Command do all the work is better tho, just checking it in once for a backup.
+				pid_t nPid = 	0;
+			    char * apChzArgv[] = {(char *)pChzLinkerFile, NULL}; // gonna take some tweaking to get the args right for posix
+
+			    posix_spawn_file_actions_t fileact;
+			    posix_spawn_file_actions_t * pFileact = &fileact;
+		      	posix_spawn_file_actions_init(pFileact);
+
+				int nStatus = posix_spawn(&nPid, (char *)pChzLinkerPath, pFileact, NULL, apChzArgv, environ);
+			    if (nStatus == 0) 
+			    {
+			        printf("Child pid: %i\n", nPid);
+			        if (waitpid(nPid, &nStatus, 0) != -1) 
+			        {
+			            printf("Child exited with status %i\n", nStatus);
+        			} 
+        			else 
+        			{
+			            perror("waitpid");
+			        }
+			    } 
+			    else 
+			    {
+			        printf("posix_spawn moe error: %s\n", strerror(nStatus));
+			    }// POSIX
+		    #else // let llvm do the non-portable stuff.
+				EWC::CString strError;
+				bool fFailed;
+
+				arypChzOptions.Append(nullptr);
+		    	int nResult = NExecuteAndWait(
+					    		pChzLinkerFull,
+								arypChzOptions.A(),
+								nullptr, // ppChzEnvp,
+								0,	// no timeout
+								0,	// no memory limit
+								&strError,
+								&fFailed);
+					
+				if (nResult < 0 || fFailed)
+				{
+					printf("Linker process failed, %s\n", strError.PCoz());
+				}
+			#endif 
 		}
 
 		EndWorkspace(&work);

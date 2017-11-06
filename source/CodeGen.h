@@ -449,3 +449,12 @@ void CodeGenEntryPoint(
 	CSymbolTable * pSymtabTop,
 	EWC::CAry<SWorkspaceEntry> * paryEntry,
 	EWC::CAry<int> * paryiEntryOrder);
+
+int NExecuteAndWait(
+	const char * pChzProgram,
+	const char ** ppChzArgs,
+	const char ** ppChzEnvp,
+	unsigned tWait,
+	unsigned cBMemoryLimit,
+	EWC::CString * pStrError,
+	bool * pFExecutionFailed);

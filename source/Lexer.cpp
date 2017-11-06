@@ -79,6 +79,7 @@ static int FIsWhitespace(int ch)
    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '\f';
 }
 
+/* Deprecated? unused?
 static const char * PChzStrStr(const char * pChz, int ch)
 {
 	for (; *pChz; ++pChz) 
@@ -94,7 +95,7 @@ static inline char NToLower(char c)
 	if ((c >= 'A') & (c <= 'Z'))
 		return c + ('a' - 'A');
 	return c;
-}
+}*/
 
 // copy suffixes at the end of a number into the working string
 static int TokParseSuffixes(SLexer * pLex, TOK tok, LITK litk, const char * pChzStart, const char * pChzCur)
@@ -534,13 +535,15 @@ int TokNext(SLexer * pLex)
 		// single quote chars
 		{
 		    const char * pChzStart = pChz;
-		    pLex->m_n = TokParseChar(pChz+1, &pChz);
+		    int tok = TokParseChar(pChz+1, &pChz);
+		    pLex->m_n = tok;
 
-		    if (pLex->m_n < 0)
+		    if (tok < 0)
 		       return TokSetTokinf(pLex, TOK_ParseError, pChzStart,pChzStart);
 		    if (pChz == pLex->m_pChEof || *pChz != '\'')
 		       return TokSetTokinf(pLex, TOK_ParseError, pChzStart, pChz);
-			int tok = TokSetTokinf(pLex, TOK_Literal, pChzStart, pChz);
+
+			tok = TokSetTokinf(pLex, TOK_Literal, pChzStart, pChz);
 			pLex->m_litk = LITK_Char;
 			return tok;
 		}

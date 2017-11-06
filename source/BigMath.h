@@ -16,9 +16,10 @@
 #pragma once
 
 #include "EwcTypes.h"
+#include "limits.h"
 
 inline s64		NAbs(s64 n)
-					{ return abs(n); }
+					{ return llabs(n); }
 
 struct SBigInt // tag = bint
 {

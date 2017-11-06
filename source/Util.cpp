@@ -470,8 +470,8 @@ void TestUtf8()
 {
 	char aCh[256];
 
-	char * pCoz;
-	char * pCozExpected;
+	const char * pCoz;
+	const char * pCozExpected;
 	EWC::SStringBuffer strbuf;
 
 	pCoz = u8"いろはに";

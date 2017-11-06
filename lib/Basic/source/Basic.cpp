@@ -3,6 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <stddef.h>
+
+#ifndef WIN32
+#include <signal.h>
+#endif
 
 extern "C" void * PVMalloc(size_t cB)
 {
@@ -16,7 +21,11 @@ extern "C" void FreeMalloc(void * pV)
 
 extern "C" void DebugBreak()
 {
+#ifdef WIN32
 	__debugbreak();
+#else
+	raise(SIGTRAP);
+#endif
 }
 
 extern "C" void PrintFloat(float g)
@@ -115,7 +124,6 @@ extern "C" int32_t NRound(float g)
 
 void EnsureTerminatedCopy(char * pCozBegin, char * pCozAppend, size_t cBMax, char ch)
 {
-	auto pCozMax = &pCozBegin[cBMax];
 	size_t iB = pCozAppend - pCozBegin;
 
 	if (cBMax <= 0)
@@ -162,7 +170,13 @@ extern "C" ptrdiff_t snprintf_MOE(char * aCh, size_t cBMax, const char * pCozFor
 	{
 		va_list ap;
 		va_start(ap, pCozFormat);
+#ifdef WIN32
 		ptrdiff_t cCh = vsnprintf_s(aCh, cBMax, _TRUNCATE, pCozFormat, ap);
+#else
+		ptrdiff_t cCh = vsnprintf(aCh, cBMax, pCozFormat, ap);
+		aCh[cBMax-1] = 0;
+#endif
+
 		va_end(ap);
 
 		if (cCh == -1)

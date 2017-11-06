@@ -393,7 +393,6 @@ char * PCozAllocateSubstitution(
 		}
 	}
 
-	size_t cBSeb = seb.CB();
 	return seb.PCozAllocateCopy(pTesctx->m_pAlloc);
 }
 

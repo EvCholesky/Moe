@@ -56,16 +56,7 @@ inline u32		HvFromPCozLowercase(const char * pCoz, size_t cB = 0)
 
 						return HvFromPCozLowercaseFVN(pCoz, cB);
 					}
-
-inline u32		HvFromAB(const void * aB, size_t cB)
-					{
-						return HvFromPBFVN(aB, cB);
-					}
-
-inline u32		HvFromP(void * pV)
-					{
-						return HvFromAB(&pV, sizeof(pV));
-					}
+					
 
 // string hash class tracks a (possibly invalid) pointer to the source string
 #define EWC_SHASH_DEBUG_POINTER 1

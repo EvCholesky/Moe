@@ -22,22 +22,28 @@
 
 using namespace EWC;
 
+#ifdef WIN32
 #pragma warning ( push )
 #pragma warning(disable : 4141)
 #pragma warning(disable : 4146)
 #pragma warning(disable : 4267)
 #pragma warning(disable : 4800)
+#endif
 #include "llvm-c/Analysis.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/Target.h"
 #include "llvm-c/TargetMachine.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Program.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#ifdef WIN32
 #pragma warning ( pop )
+#endif
 
 #include "MissingLlvmC/llvmcDIBuilder.h"
 #include <stdio.h>
+#include <string>
 
 #define WARN_ON_LARGE_STORE 0
 #define USE_OP_NAMES 1
@@ -180,7 +186,7 @@ static inline llvm::CallingConv::ID CallingconvFromCallconv(CALLCONV callconv)
 #if EWC_X64
 		return llvm::CallingConv::C;
 #else
-		return llvm::CallingConv::X86_64_Win64;
+		return llvm::CallingConv::Win64;
 #endif
 	}
 
@@ -191,7 +197,6 @@ static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
 {
 	printf("%s: ", pChzLabel);
 
-	auto pLtype = LLVMTypeOf(pVal->m_pLval);
 #ifdef LLVM_ENABLE_DUMP
 	LLVMDumpType(pLtype);
 #endif
@@ -461,12 +466,13 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 
 
 
-void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile)
+void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile, const char ** ppCozExt)
 {
-	char * pCozPath = ".";
+	const char * pCozPath = ".";
 	char * pCozFile = pCozFull;
 
 	char * pChLastSlash = nullptr;
+	char * pChLastPeriod = nullptr;
 	
 	char * pChEnd = pCozFull + cBMax;
 	for (char * pCozIt = pCozFull; pCozIt != pChEnd; ++pCozIt)
@@ -474,6 +480,11 @@ void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath
 		if ((*pCozIt == '/') | (*pCozIt == '\\'))
 		{
 			pChLastSlash = pCozIt;
+		}
+
+		if (*pCozIt == '.')
+		{
+			pChLastPeriod = pCozIt;
 		}
 
 		if (*pCozIt == '\0')
@@ -489,6 +500,16 @@ void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath
 
 	*ppCozPath = pCozPath;
 	*ppCozFile = pCozFile;
+
+	// if ppCozExt is non-null we trim and return the extension
+	if (ppCozExt && pChLastPeriod)
+	{
+		if ((uintptr_t)pChLastPeriod >= (uintptr_t)pCozFile)
+		{
+			*pChLastPeriod = '\0';
+			*ppCozExt = pChLastPeriod + 1;
+		}
+	}
 }
 
 SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & strFilename)
@@ -510,7 +531,7 @@ SDIFile * PDifEnsure(CWorkspace * pWork, CIRBuilder * pBuild, const CString & st
 
 	const char * pCozPath;	
 	const char * pCozFile;	
-	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile);
+	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile, nullptr);
 
 	pDif->m_pLvalScope = pBuild->m_pLvalCompileUnit;
 	pDif->m_pLvalFile = LLVMDIBuilderCreateFile(pBuild->m_pDib, pCozFile, pCozPath);
@@ -605,7 +626,8 @@ void CalculateSizeAndAlign(CIRBuilder * pBuild, LLVMOpaqueType * pLtype, u64 * p
 
 CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CIRBuilder * pBuild, SSymbol * pSym)
 {
-	if (pSym->m_pVal && EWC_FVERIFY(pSym->m_pVal->m_valk == VALK_ProcedureDefinition))
+	if (pSym->m_pVal && 
+		EWC_FVERIFY(pSym->m_pVal->m_valk == VALK_ProcedureDefinition, "symbol is not procedure definition"))
 	{
 		return (CIRProcedure *)pSym->m_pVal;
 	}
@@ -619,7 +641,8 @@ CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CIRBuilder * pBuild, SSymbol *
 	(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
 	PopDIScope(pDif, pLvalParentScope);
 
-	if (pSym->m_pVal && EWC_FVERIFY(pSym->m_pVal->m_valk == VALK_ProcedureDefinition))
+	if (pSym->m_pVal && 
+		EWC_FVERIFY(pSym->m_pVal->m_valk == VALK_ProcedureDefinition, "symbol is not procedure definition"))
 	{
 		return (CIRProcedure *)pSym->m_pVal;
 	}
@@ -853,8 +876,10 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 											nullptr, //pLvalVTableHolder
 											pBuild->m_nRuntimeLanguage);
 				} break;
+			default:
 		    case ARYK_Dynamic:
 				EWC_ASSERT(false, "debug info is for aryk %s is TBD", PChzFromAryk(pTinary->m_aryk));
+				break;
 			}
 		} break;
 	case TINK_Struct:
@@ -891,7 +916,6 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 
 			int cTypememb = (int)pTinstruct->m_aryTypemembField.C();
 			auto apLvalMember = (LLVMOpaqueValue **)(alloca(sizeof(LLVMOpaqueValue *) * cTypememb));
-			LLVMValueRef * ppLvalMember = apLvalMember;
 			pTin->m_pLvalDIType = pLvalDicomp;
 
 			for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
@@ -1041,7 +1065,7 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *parypValMan
 
 	const char * pCozPath;	
 	const char * pCozFile;	
-	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile);
+	PathSplitDestructive(pCozCopy, cBFilename, &pCozPath, &pCozFile, nullptr);
 
 
 	for (int intfunk = 0; intfunk < INTFUNK_Max; ++intfunk)
@@ -1084,8 +1108,13 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *parypValMan
 	case OPTLEVEL_Release:	loptlevel = LLVMCodeGenLevelAggressive;		break; // -O2
 	}
 
+	#if !WIN32
+	// BB - Mac builds want position independent relocation, should be a command line arg
+	LLVMRelocMode lrelocmode = LLVMRelocPIC;
+	#else
 	LLVMRelocMode lrelocmode = LLVMRelocDefault;
-	LLVMCodeModel lcodemodel = LLVMCodeModelJITDefault;
+	#endif
+	LLVMCodeModel lcodemodel = LLVMCodeModelDefault;
 
 	// NOTE: llvm-c doesn't expose functions to query these, but it seems to just return the empty string.
 	//  This may not work for all target backends.
@@ -1214,7 +1243,9 @@ CIRInstruction * CIRBuilder::PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRVa
 	pInst->m_apValOperand[0] = pValLhs;
 	if (cpValOperand > 1)
 	{
-		pInst->m_apValOperand[1] = pValRhs;
+		CIRValue ** ppValOperand = pInst->m_apValOperand;
+		ppValOperand[1] = pValRhs;
+
 	}
 	else
 	{
@@ -1474,7 +1505,6 @@ CIRValue * CIRBuilder::PValFromSymbol(SSymbol * pSym)
 	}
 	else if (pVal->m_valk == VALK_ProcedureDefinition)
 	{
-		auto pProc = (CIRProcedure *)pVal;
 		return pVal;
 	}
 
@@ -1585,7 +1615,6 @@ inline LLVMOpaqueValue * PLvalConstantFloat(int cBit, F64 g)
 
 LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 {
-	auto pLbuild = pBuild->m_pLbuild;
 	switch (pTin->m_tink)
 	{
 	case TINK_Bool:		return LLVMConstInt(LLVMInt1Type(), 0, false);
@@ -1617,7 +1646,7 @@ LLVMOpaqueValue * PLvalZeroInType(CIRBuilder * pBuild, STypeInfo * pTin)
 			{
 			case ARYK_Fixed:
 			{
-				auto pLvalElement = PLvalZeroInType(pBuild, pTinary->m_pTin);
+				(void) PLvalZeroInType(pBuild, pTinary->m_pTin);
 
 				auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, (size_t)pTinary->m_c);
 
@@ -1728,7 +1757,6 @@ LLVMOpaqueType * PLtypeForTypeInfo(CWorkspace * pWork, const char * pChzTinName)
 		pSymTin = pWork->m_pSymtab->PSymLookup(pChzTinName, SLexerLocation());
 	}
 
-	LLVMOpaqueType * pLtypeTin = nullptr;
 	if (pSymTin && pSymTin->m_pTin)
 	{
 		return PLtypeFromPTin(pSymTin->m_pTin);
@@ -2169,6 +2197,9 @@ void EnsureReftent(SReflectGlobalTable * pReftab, STypeInfo * pTin, CDynAry<STyp
 			}
 
 		} break;
+	default:
+		EWC_ASSERT(false, "Unhandled type info kind in EnsureReftent")
+		break;
 	}
 }
 
@@ -2183,7 +2214,7 @@ static inline LLVMOpaqueValue * PLvalGenerateReflectTypeTable(CWorkspace * pWork
 
 	STypeInfo ** ppTin;
 	EWC::CHash<HV, STypeInfo *>::CIterator iter(pSymtab->m_phashHvPTinUnique);
-	while (ppTin = iter.Next())
+	while ((ppTin = iter.Next()))
 	{
 		auto pTin = *ppTin;
 		if (!pTin || pTin->m_tink >= TINK_ReflectedMax)
@@ -2280,7 +2311,6 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 					EWC_ASSERT(pStval->m_nSigned >= 0, "Negative literal being assigned to unsigned value");
 				}
 			}
-			u64 nUnsigned = pStval->m_nUnsigned;
 
 			pLval = PLvalConstantInt(pTinlit->m_litty.m_cBit, pTinlit->m_litty.m_fIsSigned, pStval->m_nUnsigned);
 		}break;
@@ -2292,7 +2322,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 			case STVALK_UnsignedInt:	g = (float)pStval->m_nUnsigned;	break;
 			case STVALK_SignedInt:		g = (float)pStval->m_nSigned;	break;
 			case STVALK_Float:			g = pStval->m_g;				break;
-			default: EWC_ASSERT(false, "Float literal kind mismatch");
+			default: EWC_ASSERT(false, "Float literal kind mismatch");	break;
 			}
 
 			pLval = PLvalConstantFloat(pTinlit->m_litty.m_cBit, g);
@@ -2313,6 +2343,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 			case STVALK_UnsignedInt:	nUnsigned = pStval->m_nUnsigned;		break;
 			case STVALK_SignedInt:		nUnsigned = (pStval->m_nSigned != 0);	break;
 			case STVALK_Float:			nUnsigned = (pStval->m_g != 0);			break;
+			default: EWC_ASSERT(false, "bool literal kind mismatch");			break;
 			}
 
 			pLval = LLVMConstInt(LLVMInt1Type(), nUnsigned, false);
@@ -2369,6 +2400,8 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 
 			return pLvalReturn;
 		} break;
+	default:
+		break;
 	}
 
 	EWC_ASSERT(pLval, "unknown LITK in PLValueFromLiteral");
@@ -2480,6 +2513,9 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 				{
 					return pValSrc;
 				} break;
+			default:
+				EWC_ASSERT(false, "unexpected type info kind in integer cast");
+				break;
 			}
 		} break;
 	case TINK_Float:
@@ -2499,6 +2535,9 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 				{
 					return pValSrc;
 				} break;
+			default:
+				EWC_ASSERT(false, "unexpected type info kind in float cast");
+				break;
 			}
 
 		}break;
@@ -2533,6 +2572,9 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 				{
 					return pValSrc;
 				} break;
+			default:
+				EWC_ASSERT(false, "unexpected type info kind in boo cast");
+				break;
 			} break;
 	case TINK_Literal:
 		EWC_ASSERT(false, "can't cast to literal");
@@ -2594,7 +2636,6 @@ CIRInstruction * PInstCreateMemset(
 	u8 bFill)
 {
 	auto pLtypePInt8 = LLVMPointerType(LLVMInt8Type(), 0);
-	auto pLtypeInt64 = LLVMInt64Type();
 	if (!pBuild->m_mpIntfunkPLval[INTFUNK_Memset])
 	{
 		LLVMTypeRef apLtypeArgs[] = { pLtypePInt8, LLVMInt8Type(), LLVMInt64Type(), LLVMInt32Type(), LLVMInt1Type() };
@@ -2636,8 +2677,6 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CIRBuilder *
 		CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
 		EWC_ASSERT(pStnodStruct, "missing definition in struct type info");
 
-		CGINITK cginitkMax = CGINITK_NoInit;
-		auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
 		for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 		{
 			STypeStructMember * pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
@@ -2714,6 +2753,9 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CIRBuilder *
 
 				return PLvalZeroInType(pBuild, pTin);
 			} break;
+		default:
+			EWC_ASSERT(false, "Unhandled array kind");
+			break;
 		}
 	}
 
@@ -2988,6 +3030,9 @@ static inline CIRValue * PValInitialize(
 				return pInst;
 			}
 		} break;
+	default:
+		EWC_ASSERT(false, "unhandled codegen init kind");
+		break;
 	}
 	return nullptr;
 }
@@ -2998,7 +3043,7 @@ CIRValue * PValFromArrayMember(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue
 
 	if (pTinary->m_aryk == ARYK_Fixed)
 	{
-		EWC_ASSERT(valgenk == VALGENK_Instance);
+		EWC_ASSERT(valgenk == VALGENK_Instance, "expected instance");
 		if (arymemb == ARYMEMB_Count)
 		{
 			return PValConstantInt(pBuild, 64, true, pTinary->m_c);
@@ -3202,7 +3247,6 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 				{
 					EWC_ASSERT(arykRhs == ARYK_Fixed, "cannot copy mixed array kinds to fixed array");
 
-					auto pLbuild = pBuild->m_pLbuild;
 					CIRProcedure * pProc = pBuild->m_pProcCur;
 
 					auto pValZero = PValConstantInt(pBuild, 64, false, 0);
@@ -3557,7 +3601,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		if (tinkMin == TINK_Pointer && tinkMax == TINK_Array)
 		{
 			// BB- check that it's a pointer to the array type.
-			switch(tok)
+			switch((u32)tok)
 			{
 			case '=':
 				{
@@ -3576,7 +3620,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		}
 		else if (tinkMin == TINK_Integer && tinkMax == TINK_Array)
 		{
-			switch(tok)
+			switch((u32)tok)
 			{
 			case '+':				
 				{
@@ -3591,7 +3635,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		}
 		else if (tinkMin == TINK_Integer && tinkMax == TINK_Pointer)
 		{
-			switch(tok)
+			switch((u32)tok)
 			{
 			case '+':				
 				{
@@ -3621,6 +3665,9 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 										CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
+				default:
+					EWC_ASSERT(false, "Unhandled TOK");
+					break;
 			}
 		}
 
@@ -3630,11 +3677,10 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 	TINK tink = aTink[0];
 	bool fIsSigned = aFIsSigned[0];
 
-	CIRInstruction * pInstOp = nullptr;
 	switch (tink)
 	{
 	case TINK_Bool:
-		switch (tok)
+		switch ((u32)tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
@@ -3647,7 +3693,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 			case TOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 		} break;
 	case TINK_Integer:
-		switch (tok)
+		switch ((u32)tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 			case TOK_PlusEqual:
@@ -3689,7 +3735,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				break;
 		} break;
 	case TINK_Float:
-		switch (tok)
+		switch ((u32)tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 			case TOK_PlusEqual:
@@ -3711,7 +3757,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		} break;
 	case TINK_Procedure:
 		{
-			switch (tok)
+			switch ((u32)tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
@@ -3720,7 +3766,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		} break;
 	case TINK_Struct:
 		{
-			switch (tok)
+			switch ((u32)tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 			}
@@ -3728,7 +3774,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 	case TINK_Pointer:
 	case TINK_Array:
 		{
-			switch (tok)
+			switch ((u32)tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 				case '-': 			
@@ -3755,7 +3801,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 
 			// BB - Why no plus equals here?
 
-			switch (tok)
+			switch ((u32)tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
@@ -3834,7 +3880,7 @@ static inline CIRInstruction * PInstGenerateOperator(
 			auto pLtype = PLtypeFromPTin(pTinptr->m_pTinPointedTo);
 			CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
 
-			if (!EWC_FVERIFY(pOptype->m_pTinResult->m_tink == TINK_Integer))
+			if (!EWC_FVERIFY(pOptype->m_pTinResult->m_tink == TINK_Integer, "Expected integer type result"))
 				return nullptr;
 
 			auto pTinintResult = PTinRtiCast<STypeInfoInteger *>(pOptype->m_pTinResult);
@@ -3899,16 +3945,16 @@ CIRValue * PValGenerateDecl(
 		auto pGlob = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
 		pStnod->m_pSym->m_pVal = pGlob;
 
-		auto pLvalDIVariable = LLVMDIBuilderCreateGlobalVariable(
-								pBuild->m_pDib,
-								pLvalScope, 
-								strName.PCoz(),
-								strPunyName.PCoz(),
-								pDif->m_pLvalFile,
-								iLine,
-								pStnod->m_pTin->m_pLvalDIType,
-								true,
-								pGlob->m_pLval);
+		(void) LLVMDIBuilderCreateGlobalVariable(
+					pBuild->m_pDib,
+					pLvalScope, 
+					strName.PCoz(),
+					strPunyName.PCoz(),
+					pDif->m_pLvalFile,
+					iLine,
+					pStnod->m_pTin->m_pLvalDIType,
+					true,
+					pGlob->m_pLval);
 
 		LLVMOpaqueValue * pLvalInit = nullptr;
 		if (pStnodInit)
@@ -3975,7 +4021,8 @@ CIRValue * PValGenerateDecl(
 		if (FIsOverloadedOp(pStnod))
 		{
 			CSTDecl * pStdecl = pStnod->m_pStdecl;
-			if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodIdentifier >= 0 && pStdecl->m_iStnodInit >= 0))
+			if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodIdentifier >= 0 && pStdecl->m_iStnodInit >= 0,
+					"bad declaration"))
 			{
 				CDynAry<LLVMValueRef> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 
@@ -4354,7 +4401,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					pBuild->AddManagedVal(pGlob);
 
 					auto pLtypePTin = PLtypeFromPTin(pStnod->m_pTin);
-					auto pLtypeTin = LLVMGetElementType(pLtypePTin);
 
 					pGlob->m_pLval = LLVMConstPointerCast(pStnodChild->m_pTin->m_pLvalReflectGlobal, pLtypePTin);
 					return pGlob;
@@ -4381,7 +4427,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
 					CDynAry<CIRBasicBlock *> arypBlock(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
 
-					bool fHasDefault = false;
 					u32 cStnodCase = 0;
 					for (int iStnodChild = 1; iStnodChild < pStnod->CStnodChild(); ++iStnodChild)
 					{
@@ -4401,6 +4446,9 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 							} break;
 							case RWORD_Default:	
 								pBlockDefault = pBuild->PBlockCreate(pProc, "Default");
+								break;
+							default:
+								EWC_ASSERT(false, "Unexpected reserved word in switch");
 								break;
 						}
 					}
@@ -4554,7 +4602,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 						GeneratePredicate(pWork, pBuild, pStnodPred, pBlockTrue, pBlockFalse, pTinBool);
 
 						pBuild->ActivateBlock(pBlockTrue);
-						auto pValThen = PValGenerate(pWork, pBuild, pStnodIf->PStnodChild(1), VALGENK_Instance);
+						(void) PValGenerate(pWork, pBuild, pStnodIf->PStnodChild(1), VALGENK_Instance);
 						(void) pBuild->PInstCreateBranch(pBlockPost);	
 						pBlockTrue = pBuild->m_pBlockCur;	// could have changed during this' codegen
 
@@ -4565,7 +4613,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 						if (pStnodElseChild)
 						{
-							auto pValThen = PValGenerate(pWork, pBuild, pStnodElseChild, VALGENK_Instance);
+							(void) PValGenerate(pWork, pBuild, pStnodElseChild, VALGENK_Instance);
 							pBlockFalse = pBuild->m_pBlockCur;	// could have changed during else's codegen
 
 							(void) pBuild->PInstCreateBranch(pBlockPost);	
@@ -4799,7 +4847,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					}
 					else //RWORD_Continue
 					{
-						for (size_t iJumpt = pBuild->m_aryJumptStack.C(); --iJumpt >= 0; )
+						for (size_t iJumpt = pBuild->m_aryJumptStack.C()-1; true; --iJumpt)
 						{
 							auto pJumpt = &pBuild->m_aryJumptStack[iJumpt];
 							if (pJumpt->m_pBlockContinue && (pString == nullptr || pJumpt->m_strLabel == *pString))
@@ -5121,7 +5169,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			AddPhiIncoming(pValPhi, pValTrue, pBlockTrue);
 			AddPhiIncoming(pValPhi, pValFalse, pBlockFalse);
 
-			EWC_ASSERT(valgenk != VALGENK_Reference, "taking the address of a temporary (??)");
+			EWC_ASSERT(valgenk != VALGENK_Reference, "taking the address of a temporary (?)");
 			return pValPhi;
 
 		} break;
@@ -5331,7 +5379,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				fIsSigned = ((STypeInfoInteger *)pTinOutput)->m_fIsSigned;
 			}
 
-			switch (pStnod->m_tok)
+			switch ((u32)pStnod->m_tok)
 			{
 			case '!':				
 				{
@@ -5419,7 +5467,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					default: EWC_ASSERT(false, "unexpected type '%s' for increment/decrement operator", PChzFromTink(tink));
 					}
 
-					auto pInstStore = pBuild->PInstCreateStore(pValOperand, pInstAdd);
+					(void) pBuild->PInstCreateStore(pValOperand, pInstAdd);
 					pValOp = (pStnod->m_park == PARK_PostfixUnaryOp) ? pInstLoad : pInstAdd;
 				}
 			default: break;
@@ -5507,7 +5555,7 @@ void CIRBuilder::ActivateBlock(CIRBasicBlock * pBlock)
 
 	if (pBlock)
 	{
-		EWC_ASSERT(pBlock->m_pLblock);
+		EWC_ASSERT(pBlock->m_pLblock, "bad block ptr");
 		auto pLvalBlockParent = LLVMGetBasicBlockParent(pBlock->m_pLblock);
 
 		EWC_ASSERT(pLvalBlockParent == m_pProcCur->m_pLvalFunction, "block with multiple parents?");
@@ -5741,7 +5789,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		pProc->m_pBlockLocals = pBuild->PBlockCreate(pProc, pChzMangled);
 		pProc->m_pBlockFirst = pBuild->PBlockCreate(pProc, pChzMangled);
 
-		if (EWC_FVERIFY(pTinproc))
+		if (EWC_FVERIFY(pTinproc, "expected type info procedure"))
 		{
 			if (pTinproc->m_pLvalDIType == nullptr)
 			{
@@ -5880,6 +5928,13 @@ void CodeGenEntryPoint(
 		case PARK_Typedef:				fGlobalTypeDeclaration = true;	break;
 		case PARK_Nop:					fGlobalTypeDeclaration = true;	break;
 		case PARK_ProcedureDefinition:	fImplicitFunction = false;		break;
+
+		case PARK_Decl:
+		case PARK_ConstantDecl:
+			break;
+		default:
+			EWC_ASSERT(fImplicitFunction, "Unexpected top level PARK (%s)", PChzFromPark(pStnod->m_park));
+			break;
 		}
 
 		if (fGlobalTypeDeclaration)
@@ -5979,6 +6034,34 @@ void CodeGenEntryPoint(
 		pAlloc->EWC_DELETE(pProcImplicit);
 	}
 }
+
+int NExecuteAndWait(
+	const char * pChzProgram,
+	const char ** ppChzArgs,
+	const char ** ppChzEnvp,
+	unsigned tWait,
+	unsigned cBMemoryLimit,
+	EWC::CString * pStrError,
+	bool * pFExecutionFailed)
+{
+	std::string strError;
+	llvm::StringRef strrProgram(pChzProgram);
+	int nReturn = llvm::sys::ExecuteAndWait(
+								strrProgram, 
+								ppChzArgs, 
+								ppChzEnvp,
+			                    0, 	// const StringRef ** ppStrrRedirects
+			                    tWait,
+			                    cBMemoryLimit,
+			                    &strError,
+			                    pFExecutionFailed);
+	if (pStrError && !strError.empty())
+	{
+		*pStrError = strError.c_str();	
+	}
+	return nReturn;
+}
+
 
 bool FTestUniqueNames(CAlloc * pAlloc)
 {
@@ -6204,7 +6287,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 
 		if (pFile->m_pChzFileBody)
 		{
-			pWork->m_pAlloc->EWC_DELETE((void *)pFile->m_pChzFileBody);
+			pWork->m_pAlloc->EWC_DELETE((u8 *)pFile->m_pChzFileBody);
 			pFile->m_pChzFileBody = nullptr;
 		}
 
@@ -6236,7 +6319,7 @@ void AssertTestCodeGen(
 	pWork->m_pErrman->Clear();
 
 	ParseGlobalScope(pWork, &lex, true);
-	EWC_ASSERT(pWork->m_aryEntry.C() > 0);
+	EWC_ASSERT(pWork->m_aryEntry.C() > 0, "No entries to test");
 
 	EndParse(pWork, &lex);
 

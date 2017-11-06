@@ -262,8 +262,6 @@ public:
 
 							if (m_cUsed * 100 >= m_cCapacity * LOAD_FACTOR_PERCENT)
 							{
-								s32 cUsedPrev = m_cUsed;
-								s32 cCapacityPrev = m_cCapacity;
 								Grow(m_cCapacity * 2);
 							}
 
@@ -320,8 +318,6 @@ public:
 
 							if (m_cUsed * 100 >= m_cCapacity * LOAD_FACTOR_PERCENT)
 							{
-								s32 cUsedPrev = m_cUsed;
-								s32 cCapacityPrev = m_cCapacity;
 								Grow(m_cCapacity * 2);
 
 								if (ppValue)
