@@ -55,6 +55,16 @@ test DeclareSigned
 		$bits(8|16|32|64)
 	}
 
+test DeclareHex
+	input "n := $init"
+	parse "(decl n $dec)"
+	typecheck "(int n Literal:Int64)"
+	{
+		$init(0x0) + $dec(0),
+		$init(0xFFFF) + $dec(65535),
+		$init(0xFFFFFFFF) + $dec(4294967295),
+		$init(0xFFFFFFFFFFFFFFF) + $dec(1152921504606846975)
+	}
 
 test DeclareAssignString
 	input "v : $type = \"hello world\""
@@ -64,6 +74,7 @@ test DeclareAssignString
 		$type(&const u8) + $ptype("(ptr (const u8))") + $tctype("&const.u8") + $tcinit(const.u8),
 		$type(const&u8) + $ptype("(const (ptr u8))") + $tctype("const.&const.u8") + $tcinit(&const.u8),
 	}
+
 
 test QualDeclareAssign
 	input "v : $qual $type = $init"
@@ -77,6 +88,16 @@ test QualDeclareAssign
 				$type(s32|u32) + $littype(Int32) + $typetc("$qual.$type"),
 				$type(s64|u64) + $littype(Int64) + $typetc("$qual.$type"),
 			},
+	}
+
+test DeclareAssignConstExp
+	input "n : $type = $exp"
+	parse "(decl n $type $pexp)"
+	{
+		$type(s8) + $exp(2+5) + $pexp("(+ 2 5)"),
+		$type(u8) + $exp(2-5) + $pexp("(- 2 5)"$errid(2001)),
+		$type(s8) + $exp(200*3) + $pexp("(* 200 3)"$errid(2001)),
+		$type(u16) + $exp(200*3) + $pexp("(* 200 3)"),
 	}
 
 test BasicAssign
@@ -105,6 +126,39 @@ test MultiDeclare
 		}
 	}	
 
+test ConstantDecl
+	input "SomeConst :: $value$extra"
+	parse "(const SomeConst $pvalue)$pextra"
+	typecheck "(Literal:$lit SomeConst Literal:$lit)"
+	{
+		$extra("") + $pextra("")
+		{
+			$value("\"this is a test\"") + $pvalue("\"this is a test\"") + $lit(String),
+			$value(255|123123) + $pvalue("$value") + $lit(Int),
+			$value(true|false) + $pvalue("$value") + $lit(Bool),
+			$value(null) + $pvalue("$value") + $lit(Null),
+		},
+
+		$value(255|123123) + $pvalue("$value") + $lit(Int) + $extra("; SomeConst = 0"$errid(2009)) + $pextra(" (= SomeConst 0)"),
+	}
+
+test ConstantTypedDecl
+	input "SomeConst : $type : $value"
+	parse "(const SomeConst $type $value)"
+	typecheck "(Literal:$lit SomeConst $type Literal:$lit)"
+	{
+		$type(s8) + $value(100|2000$errid(2001)) + $lit(Int8),
+		$type(int) + $value(100|2000) + $lit(Int##),
+		$type(u8) + $value(100|300$errid(2001)) + $lit(Int8),
+	}
+
+test DeclareShadowing
+	input "ovr := 2; { ovr: float = 2.2; g := ovr} n := ovr"
+	parse "(decl ovr 2) ({} (decl ovr float 2.200000) (decl g ovr)) (decl n ovr)"
+	typecheck "(int ovr Literal:Int##) ({} (float ovr float Literal:Float32) (float g float)) (int n int)"
+	{
+	}
+
 // Operator Tests:
 
 test MathOperators
@@ -123,6 +177,15 @@ test OperatorOrder
 	typecheck "(int int (int int (int (int Literal:Int## int))))"
 	{
 		$opAdd(+|-) + $opUnary(+|-) + $opMul(*|/|%),
+	}
+
+test OperatorCompareOrder
+	prereq "ack, ick, guh: int; foo: bool"
+	input "f := (ick $opD ack $opC foo) $opA (123 $opB guh)"
+	parse "(decl f ($opA ($opC ($opD ick ack) foo) ($opB 123 guh)))"
+	typecheck "(bool f (bool (bool (bool int int) bool) (bool Literal:Int## int)))"
+	{
+		$opA("!="|"==") + $opB(">="|"<="|">"|"<"|"=="|"!=") + $opC("=="|"!=") + $opD(">="|"<="|">"|"<"|"!="|"==")
 	}
 
 test OperatorPrePost
@@ -154,34 +217,7 @@ test OperatorAndOr
 	//	$opLow("|"|&) + $opHigh("=="|"!="|"<="|<|">="|>)
 	}
 
-test ConstantDecl
-	input "SomeConst :: $value$extra"
-	parse "(const SomeConst $pvalue)$pextra"
-	typecheck "(Literal:$lit SomeConst Literal:$lit)"
-	{
-		$extra("") + $pextra("")
-		{
-			$value("\"this is a test\"") + $pvalue("\"this is a test\"") + $lit(String),
-			$value(255|123123) + $pvalue("$value") + $lit(Int),
-			$value(true|false) + $pvalue("$value") + $lit(Bool),
-			$value(null) + $pvalue("$value") + $lit(Null),
-		},
-
-		$value(255|123123) + $pvalue("$value") + $lit(Int) + $extra("; SomeConst = 0"$errid(2009)) + $pextra(" (= SomeConst 0)"),
-	}
-
-test ConstantTypedDecl
-	input "SomeConst : $type : $value"
-	parse "(const SomeConst $type $value)"
-	typecheck "(Literal:$lit SomeConst $type Literal:$lit)"
-	{
-		$type(s8) + $value(100|2000$errid(2001)) + $lit(Int8),
-		$type(int) + $value(100|2000) + $lit(Int##),
-		$type(u8) + $value(100|300$errid(2001)) + $lit(Int8),
-	}
-
 // Pointers:
-	TOK_Backtick,
 
 test PointerDecl
 	input "t: $type; pT : & $type = &t"
@@ -200,6 +236,14 @@ test PointerDeref
 	typecheck "($type t ($type &$type))"
 	{
 		$type(int|u8|float|bool|&int|&&int|[2]int),
+	}
+
+test PointerInfer
+	prereq "pN : & int"
+	input "a := @pN; ppN := & pN; b := @@ppN"
+	parse "(decl a (unary[@] pN)) (decl ppN (unary[&] pN)) (decl b (unary[@] (unary[@] ppN)))"
+	typecheck "(int a (int &int)) (&&int ppN (&&int &int)) (int b (int (&int &&int)))"
+	{
 	}
 
 test PointerArayAccess
@@ -238,11 +282,29 @@ test StructDecl
 		$init(" :: 2") + $initp(2) + $decl(const) + $typememb("Literal:Int m_n Literal:Int"),
 	}
 
+test StructNesting
+	input "SOuter struct { SInner struct { $nested }}"
+	parse "(struct SOuter ({} (struct SInner ({} $pnested))))"
+	typecheck "(SOuter SOuter ({} (SInner SInner ({} $tcnested))))"
+	{
+		$nested("m_f: bool") + $pnested("(decl m_f bool)") + $tcnested("(bool m_f bool)"), 
+		$nested("ConstTwo :: 2") + $pnested("(const ConstTwo 2)") + $tcnested("(Literal:Int ConstTwo Literal:Int)")
+	}
+
 test StructMember
 	prereq "SFoo struct { m_n : $type }; foo : SFoo; n: $type"
 	input "n = foo.m_n; foo.m_n = n"
 	parse "(= n (member foo m_n)) (= (member foo m_n) n)"
 	typecheck "(= $type ($type SFoo m_n)) (= ($type SFoo m_n) $type)"
+	{
+		$type(int|"&SFoo")
+	}
+
+test StructMemberPointer
+	prereq "SFoo struct { m_n : $type }; pFoo : & SFoo; n: $type"
+	input "n = pFoo.m_n; pFoo.m_n = n"
+	parse "(= n (member pFoo m_n)) (= (member pFoo m_n) n)"
+	typecheck "(= $type ($type &SFoo m_n)) (= ($type &SFoo m_n) $type)"
 	{
 		$type(int|"&SFoo")
 	}
@@ -410,7 +472,7 @@ test ArrayLiteralConst
 		},
 	}
 
-// Explicit Casts:
+// Casting:
 
 test CastAssignment
 	prereq "a: $typeA; b: $typeB"
@@ -435,8 +497,98 @@ test AutoCast
 	}
 
 // Overloading:
+test Overloading
+	prereq "Ovr proc(a: $typeA)->$typeA { return a } Ovr proc(b: $typeB)->$typeB { return b }"
+	input "a: $typeA, b: $typeB; Ovr(a); Ovr(b)"
+	typecheck "(??? ($typeA a $typeA) ($typeB b $typeBInit)) ($typeA Ovr($typeA)->$typeA $typeA) ($typeB Ovr($typeB)->$typeB $typeB)"
+	{
+		$typeA(int|s8) + $typeB(float|double) + $typeBInit("$typeB"),
+		$typeA(int|s8|float) + $typeBRef(int|float) + $typeB("&$typeBRef") + $typeBInit("($typeB $typeBRef)"),
+	}
+
+test OverloadLiteral
+	prereq "Ovr proc(a: $typeA)->$typeA { return a } Ovr proc(b: $typeB)->$typeB { return b }"
+	input "Ovr($argA); Ovr($argB)"
+	typecheck "($typeA Ovr($typeA)->$typeA $litA) ($tctypeB Ovr($tctypeB)->$tctypeB $litB)"
+	{
+		$typeA(int) + $argA(245) + $litA("Literal:Int64") + $typeB(float) + $argB("2.45") + $litB("Literal:Float32") + $tctypeB("$typeB"),
+		$typeA(int) + $argA(245) + $litA("Literal:Int64") + $typeB(bool) + $argB("true") + $litB("Literal:Bool8") + $tctypeB("$typeB"),
+		$typeA(bool) + $argA(true) + $litA("Literal:Bool8") + $typeB("&const u8") + $argB("\"hello\"") + $litB("Literal:String") + $tctypeB("&const.u8"),
+
+		// ambiguous overloads
+		$typeA(s8) + $argA(18) + $litA("Literal:Int8") + $typeB(s16) + $argB("-322") + $litB("Literal:Int16") + $tctypeB("$typeB"$errid(2012)),
+		$typeA(s16) + $argA(245) + $litA("Literal:Int16") + $typeB(double) + $argB("2.45") + $litB("Literal:Float64")+ $tctypeB("$typeB"$errid(2012)),
+	}
+
 // Operator Overloading:
-// Global initialization:
+test BinaryCommutativeOpOverload
+	prereq "SFoo struct { m_n: int } fooA: SFoo; g: float"
+	input "operator $op(lhs:SFoo, rhs:float)->int #commutative {return 1} n := fooA $op g; n = g $op fooA"
+	typecheck "(operator$op(SFoo, float)->int operator$op (Params (SFoo lhs SFoo) (float rhs float)) int ({} (int Literal:Int64))) (int n (int SFoo float)) (= int (int float SFoo))"
+	{
+		$op(+|-|*|/|"|"|"&"|"^"),
+	}
+
+test BinaryOpNonCommutativeOverload
+	prereq "SFoo struct { m_n: int } fooA, fooB: SFoo"
+	input "operator $op(lhs:SFoo, rhs:SFoo)->int {return 1} n := fooA $op fooB"
+	typecheck "(operator$op(SFoo, SFoo)->int operator$op (Params (SFoo lhs SFoo) (SFoo rhs SFoo)) int ({} (int Literal:Int64))) (int n (int SFoo SFoo))"
+	{
+		$op(">>"|"<<"),
+	}
+
+test BinaryOpOverloadErrors 
+	prereq "SFoo struct { m_n: int } fooA, fooB: SFoo"
+	input "operator $op(lhs:SFoo, rhs:SFoo)->int {return 1}"
+	typecheck "(operator$op(SFoo, SFoo)->int operator$op (Params (SFoo lhs SFoo) (SFoo rhs SFoo)) int ({} (int Literal:Int64)))"
+	{
+		// seperate error test so we can split errors for defining a bad overload, and errors from calling a non-existent overload
+
+		$op("="$errid(2013)),
+		//$op("?"$errid(1003))
+	}
+
+test PrefixUnaryOpOverload
+	prereq "SFoo struct { m_n: int } fooA: SFoo"
+	input "operator $op(lhs:SFoo)->int {return 1} n := $op fooA"
+	typecheck "(operator$op(SFoo)->int operator$op (Params (SFoo lhs SFoo)) int ({} (int Literal:Int64))) (int n (int SFoo))"
+	{
+		$op("-"|"+"|"!"|"~"|"@"|"&")
+	}
+
+test PostfixUnaryOpOverload
+	prereq "SFoo struct { m_n: int } fooA: SFoo"
+	input "operator $op(lhs:&SFoo)->SFoo {return @lhs} fooA $op"
+	typecheck "(operator$op(&SFoo)->SFoo operator$op (Params (&SFoo lhs (&SFoo SFoo))) SFoo ({} (SFoo (SFoo &SFoo)))) (SFoo SFoo)"
+	{
+		$op("++"|"--")
+	}
+
+test RelationalOpOverload
+	prereq "SFoo struct { m_n: int } fooA, fooB: SFoo"
+	input "operator $op(lhs:SFoo, rhs:SFoo)->bool {return true} f := fooA $op fooB"
+	typecheck "(operator$op(SFoo, SFoo)->bool operator$op (Params (SFoo lhs SFoo) (SFoo rhs SFoo)) bool ({} (bool Literal:Bool8))) (bool f (bool SFoo SFoo))"
+	{
+		$op("<"|"<="|">"|">="),
+		$op("=="|"!=")
+	}
+
+test AssignmentOpOverload
+	prereq "SFoo struct { m_n: int } fooA, fooB: SFoo"
+	input "operator $op(pLhs:&SFoo, rhs:SFoo) {} fooA $op fooB"
+	typecheck "(operator$op(&SFoo, SFoo)->void operator$op (Params (&SFoo pLhs (&SFoo SFoo)) (SFoo rhs SFoo)) void ({} (void))) (= SFoo SFoo)"
+	{
+		$op("="|"+="|"-="|"*="|"/=")
+	}
+
+test DeclOpOverload
+	prereq "SFoo struct { m_n: int } fooA: SFoo"
+	input "operator $op(pLhs:&SFoo, rhs:SFoo) {} fooB $op fooA"
+	typecheck "(operator$op(&SFoo, SFoo)->void operator$op (Params (&SFoo pLhs (&SFoo SFoo)) (SFoo rhs SFoo)) void ({} (void))) (SFoo fooB SFoo)"
+	{
+		$op(":=")
+	}
+	
 // Procedures:
 
 test ProcDef
@@ -445,6 +597,16 @@ test ProcDef
 	typecheck "(AddNums($type, $type)->$type AddNums (Params ($type a $type) ($type b $type)) $type ({} ($type ($type $type $type))))"
 	{
 		$type(int|s32|s8|f32)
+	}
+
+test ProcArgs
+	prereq "SFoo struct { m_n: int }"
+	input "ParamFunc proc (a : $typeA, b : $typeB) { a2 := a; b2 := b }"
+	parse "(func ParamFunc (params (decl a $typeA) (decl b (ptr $ptypeB))) void ({} (decl a2 a) (decl b2 b) (return)))"
+	typecheck "(ParamFunc($typeA, $typeB)->void ParamFunc (Params ($typeA a $typeA) ($typeB b ($typeB $ptypeB))) void ({} ($typeA a2 $typeA) ($typeB b2 $typeB) (void)))"
+	
+	{
+		$typeA(int|s8|float|SFoo) + $ptypeB(int|s8|float|SFoo) + $typeB("&$ptypeB")
 	}
 
 test ProcDefVoid
@@ -470,6 +632,11 @@ test ProcCallIsRval
 	{
 		$type(int$errid(2009))
 	}
+
+test ProcSelfRef
+	input "SelfRef proc () { pFn := SelfRef }"
+	parse "(func SelfRef void ({} (decl pFn SelfRef) (return)))"
+	typecheck "(SelfRef()->void SelfRef void ({} (SelfRef()->void pFn SelfRef()->void) (void)))" 	
 
 test ProcForeign
 	input "ForeignFunc proc () -> int #foreign; ForeignFunc()"
@@ -504,9 +671,15 @@ test ProcRefDecl
 
 test ProcRefCall
 	prereq "Somefunc proc(n: int) { }"
-	input "pFn := somefunc; pFn(2)"
-	parse "(decl pFn (procref (params (decl v $ptype)) $ptype)) (procCall pFn 2)"
-	typecheck ""
+	input "pFn := Somefunc; pFn(2)"
+	parse "(decl pFn Somefunc) (procCall pFn 2)"
+	typecheck "(Somefunc(int)->void pFn Somefunc(int)->void) (void Somefunc(int)->void Literal:Int##)"
+
+test ProcRefRefCall
+	prereq "Somefunc proc(n: int) { }"
+	input "ppFn := &Somefunc; (@ppFn)(2)"
+	parse "(decl ppFn (unary[&] Somefunc)) (procCall (unary[@] ppFn) 2)"
+	typecheck "(&Somefunc(int)->void ppFn (&Somefunc(int)->void Somefunc(int)->void)) (void (Somefunc(int)->void &Somefunc(int)->void) Literal:Int##)"
 
 test ProcRefArray
 	input "apFn: [$atype] (n: s32)$ret;   apFn[1](33)"
@@ -527,8 +700,37 @@ test ProcRefArray
 		},
 	}
 
-// Here Strings:
+// Strings:
+test StringLliteral
+		input "pChz $decl \"hello\""
+		parse "(decl pChz $pdecl\"hello\")"
+		typecheck "(&const.u8 pChz $tcdecl)"
+		{
+			$decl(":=") + $pdecl("") + $tcdecl(Literal:String),
+			$decl(": &const u8 =") + $pdecl("(ptr (const u8)) ") + $tcdecl("(&const.u8 (const.u8 u8)) Literal:String")
+		}
+
+test HereString
+	// UGH! these are so fragile, the first string delimeter needs to end a line and the second delimiter needs to be on it's own line
+	input "g_pChz :: #string END\nmultiline\n test string \"with quotes\"\nEND"
+	parse "(const g_pChz \"multiline\n test string \"with quotes\"\n\")"
+	typecheck "(Literal:String g_pChz Literal:String)"
+	{
+	}
+
+
 // For Loops:
+
+test ForLoopBasic
+	prereq "cLoop :: 5; n:s64 = 2"
+	input "for i:=0; $cond; ++i; { --n }"
+	parse "(for (decl i 0) $pcond (unary[++] i) ({} (unary[--] n)))"
+	typecheck "(for (int i Literal:Int64) $tccond (int int) ({} (s64 s64)))"
+	{
+		$cond("i<cLoop") + $pcond("(< i cLoop)") + $tccond("(bool int Literal:Int64)"),
+		$cond(i) + $pcond(i) + $tccond(int),
+		$cond(true) + $pcond(true) + $tccond("Literal:Bool8")
+	}
 
 // Loops:
 
@@ -544,11 +746,31 @@ test WhileLoop
 
 // Break & Continue:
 
+test BreakContinue
+	prereq "n:s64 = 5"
+	input "while $cond { $jump }"
+	parse "(while $cond ({} ($jump)))"
+	typecheck "(bool $tccond ({} ($jump)))"
+	{
+		$cond(true|1) + $jump(break|continue) + $tccond(Literal:Bool8),
+		$cond(n) + $jump(break|continue) + $tccond(s64)
+	}
+
+test BreakContinueLabel
+	prereq "n:s64 = 5"
+	input "#label $label while $cond { $jump $label}"
+	parse "(while $cond ({} ($jump)))"
+	typecheck "(bool $tccond ({} ($jump)))"
+	{
+		$cond(true|1) + $jump(break|continue) + $tccond(Literal:Bool8) + $label(ack|ick),
+		$cond(n) + $jump(break|continue) + $tccond(s64) + $label(ack|ick)
+	}
+
 // Switch:
 
 test EmptyCase
 	prereq "n: s32"
-	input "switch n {$cond: $statement\n}"
+	input "switch n {$cond: $statement}"
 	{
 		$cond("case 1"|"case 1, 2"|default)
 		{
@@ -564,3 +786,12 @@ test UnicodeIdent
 	{
 		$name("😁✂"|"エヌマ"|"Übengrößeren"|"Γαζέες")
 	}
+
+//test Typeof
+//	prereq "SFoo struct { m_n: int }"
+//	input "x: $type; tin := typeof(x)"
+//	parse "()"
+//	{
+//		$type(int|float|bool|SFoo|&int|&sFoo)
+//	}
+
