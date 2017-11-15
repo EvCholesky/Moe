@@ -29,10 +29,6 @@
 
 using namespace EWC;
 
-extern void TestParse();
-extern void TestTypeCheck();
-extern void TestCodeGen();
-
 extern void PathSplitDestructive(char * pCozFull, size_t cBMax, const char ** ppCozPath, const char ** ppCozFile, const char ** ppCozExt);
 
 class CCommandLine // tag = comline
@@ -531,14 +527,6 @@ int main(int cpChzArg, const char * apChzArg[])
 		FUnitTestFile(&work, comline.m_pChzFilename);
 
 		StaticShutdownStrings(&allocString);
-/*
-		TestUnicode();
-		TestLexing();
-		TestParse();
-		TestTypeCheck();
-		TestCodeGen();
-		printf("passed unit tests\n");
-		*/
 	}
 	return 0;
 }
