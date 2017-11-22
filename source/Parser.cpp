@@ -25,7 +25,7 @@ using namespace EWC;
 
 enum FPDECL
 {
-	FPDECL_AllowCompoundDecl		= 0x1,	// allow comma-separated declaration of multiple variables.
+	FPDECL_AllowCompoundDecl	= 0x1,	// allow comma-separated declaration of multiple variables.
 	FPDECL_AllowVariadic		= 0x2,	// allow the list to end with variadic arguments (..)
 	FPDECL_AllowUninitializer	= 0x4,	// allow decls to specify explicit uninitializers (n:int=---;}
 
@@ -40,7 +40,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pLex);
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc);
+CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload);
 CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex);
@@ -87,6 +87,7 @@ const char * PChzFromPark(PARK park)
 		"Enum Constant",
 		"Variadic Argument",
 		"Array Literal",
+		"Argument Label",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpParkPChz) == PARK_Max, "missing PARK string");
 	if (park == PARK_Nil)
@@ -809,7 +810,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 
 						pStnodLabel = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 						pStnodLabel->m_tok = TOK_Label;
-						pStnodLabel->m_park = PARK_Label;
+						pStnodLabel->m_park = PARK_ArgumentLabel;
 
 						CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
 						if (!pStnodIdent)
@@ -819,6 +820,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 						else
 						{
 							pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
+							pStnodLAbel->IAppendChild(pStnodIdent);
 						}
 					}
 					*/
@@ -1328,7 +1330,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		pStnodProc->m_pStproc = pStproc;
 
 		CSymbolTable * pSymtabProc = nullptr; //null symbol table as the we're a forward reference
-		CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pLex, pSymtabProc);
+		CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabProc, false);
 		pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 		FExpect(pParctx, pLex, TOK(')'));
 
@@ -1794,7 +1796,7 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex)
 	}
 }
 
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc)
+CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload)
 {
 	SLexerLocation lexloc(pLex);
 	if (pSymtabProc)
@@ -1815,6 +1817,7 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymb
 		pStnodList->m_pSymtab = pSymtabProc;
 		pStnodList->IAppendChild(pStnodParam);
 
+		bool fNeedsDefaultArg = pStnodParam->m_pStdecl && pStnodParam->m_pStdecl->m_iStnodInit >= 0;
 		while (FConsumeToken(pLex, TOK(',')))
 		{
 			pStnodParam = PStnodParseParameter(pParctx, pLex, pSymtabProc, grfpdecl);
@@ -1824,6 +1827,26 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymb
 				auto strUnexpected = StrUnexpectedToken(pLex);
 				ParseError(pParctx, pLex, "expected parameter declaration before '%s'", strUnexpected.PCoz());
 				break;
+			}
+
+			CSTDecl * pStdecl = pStnodParam->m_pStdecl;
+			if (pStnodParam->m_park == PARK_Decl && EWC_FVERIFY(pStdecl, "expected parameter to be PARK_Decl"))
+			{
+				bool fHasDefaultArg = pStdecl->m_iStnodInit >= 0;
+				if (fNeedsDefaultArg && !fHasDefaultArg)
+				{
+					CString strIdent(StrFromIdentifier(pStnodParam->PStnodChildSafe(pStdecl->m_iStnodIdentifier)));
+					ParseError(pParctx, &lexloc, ERRID_MissingDefaultArgs, 
+						"parameter '%s' must have a default argument because earlier arguments have defaults.", strIdent.PCoz());
+				}
+				if (fHasDefaultArg && fIsOpOverload)
+				{
+					CString strIdent(StrFromIdentifier(pStnodParam->PStnodChildSafe(pStdecl->m_iStnodIdentifier)));
+					ParseError(pParctx, &lexloc, ERRID_DefaultParamOpOverload, 
+						"default values for parameter '%s' is not allowed on an operator overload", strIdent.PCoz());
+				}
+
+				fNeedsDefaultArg |= fHasDefaultArg;
 			}
 
 			fHasVarArgs |= pStnodParam->m_park == PARK_VariadicArg;
@@ -2230,7 +2253,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				// BB - don't mangle the main function so the linker can find it. yuck.
 				pStproc->m_fUseUnmangledName |= (strName == "main");
 
-				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pLex, pSymtabProc);
+				CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabProc, rword == RWORD_Operator);
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 				FExpect(pParctx, pLex, TOK(')'));
 
@@ -2325,7 +2348,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSTNode ** ppStnodReturn = &pStnodReturns;
 				int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
 
-				auto pTinproc =  PTinprocAlloc(pSymtabParent, cStnodParams, cStnodReturns, strName.PCoz());
+				auto pTinproc = PTinprocAlloc(pSymtabParent, cStnodParams, cStnodReturns, strName.PCoz());
 
 				if (rword == RWORD_Operator && FOperatorOverloadMustTakeReference(pStnodIdent->m_tok))
 				{

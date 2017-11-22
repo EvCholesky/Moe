@@ -529,6 +529,13 @@ test BinaryCommutativeOpOverload
 		$op(+|-|*|/|"|"|"&"|"^"),
 	}
 
+test OpOverloadNoDefaultParam
+	prereq "SFoo struct { m_n: int } fooA: SFoo; g: float"
+	input "operator $op(lhs:SFoo, rhs:float = 2.2)->int #commutative {return 1}"
+	{
+		$op("+"$errid(1006)),
+	}
+
 test BinaryOpNonCommutativeOverload
 	prereq "SFoo struct { m_n: int } fooA, fooB: SFoo"
 	input "operator $op(lhs:SFoo, rhs:SFoo)->int {return 1} n := fooA $op fooB"
@@ -700,15 +707,92 @@ test ProcRefArray
 		},
 	}
 
+test DefaultArgsDef
+	input "OneArg proc (x: $type = $def) {}"
+	parse "(func OneArg (params (decl x $ptype $pdef)) void ({} (return)))"
+	typecheck "(OneArg($tctype)->void OneArg (Params ($tctype x $tcdeftype $tcdef)) void ({} (void)))"
+	{
+		$type(bool) + $def(false) + $pdef("$def") + $ptype("$type") + $tctype("$type") + $tcdeftype("$tctype") + $tcdef(Literal:Bool),
+		$type(int) + $def(2) + $pdef("$def") + $ptype("$type") + $tctype("$type") + $tcdeftype("$tctype") + $tcdef(Literal:Int),
+		$type(int) + $def(-22) + $pdef("(unary[-] 22)") + $ptype("$type") + $tctype("$type") + $tcdeftype("$tctype") + $tcdef("(Literal:Int Literal:Int)"),
+		$type(float) + $def(17.3) + $pdef(17.300000) + $ptype("$type") + $tctype("$type") + $tcdeftype("$tctype") + $tcdef(Literal:Float),
+		$type(& const u8) + $def("\"woo\"") + $pdef("$def") + $ptype("(ptr (const u8))") + $tctype(&const.u8) + $tcdeftype("($tctype (const.u8 u8))") + $tcdef(Literal:String),
+		$type(& void) + $def(null) + $pdef("$def") + $ptype("(ptr void)") + $tctype(&void) + $tcdeftype("($tctype void)") + $tcdef(Literal:Null)
+	}
+
+test DefaultArgsDefInfer
+	input "OneArg proc (x:= $def) {}"
+	parse "(func OneArg (params (decl x $pdef)) void ({} (return)))"
+	typecheck "(OneArg($tctype)->void OneArg (Params ($tctype x $tcdef)) void ({} (void)))"
+	{
+		$type(bool) + $def(false) + $pdef("$def") + $tctype("$type") + $tcdef(Literal:Bool),
+		$type(int) + $def(2) + $pdef("$def") + $tctype("$type") + $tcdef(Literal:Int),
+		$type(int) + $def(-22) + $pdef("(unary[-] 22)") + $tctype("$type") + $tcdef("(Literal:Int Literal:Int)"),
+		$type(float) + $def(17.3) + $pdef(17.300000) + $tctype("$type") + $tcdef(Literal:Float),
+		$type(& const u8) + $def("\"woo\"") + $pdef("$def") + $tctype(&const.u8) + $tcdef(Literal:String),
+		$type(& void) + $def(null) + $pdef("$def") + $tctype(&void) + $tcdef(Literal:Null)
+	}
+
+test DefaultArgInvalid
+	prereq "ENK enum {Ack}"
+	input "OneArg proc (x :$type = $init) {}"
+	{
+		$type(int) + $init("\"whaa\""$errid(2001)),
+		$type(int) + $init("3.14"$errid(2001)),
+		$type(ENK) + $init("12"$errid(2001)),
+	}
+
+//ToTest, no default args on operator overloads
+//ToTest, no named args with pFn? no default args with pFn?
+//ToTest, parameters that are reported twice, ordered and named
+// do named arguments disamiguate overloaded functions?
+
+test DefaultArgsCallNoArg
+	prereq "OneArg proc (x: $type = $def) {} ENK enum {Ack}"
+	input "OneArg()"
+	parse "(procCall OneArg)"
+	typecheck "(void OneArg($tctype)->void $tcdef)"
+	{
+		$type(bool) + $def(false) + $pdef("$def") + $tctype("$type") + $tcdef(Literal:Bool8),
+		$type(int) + $def(2) + $pdef("$def") + $tctype("$type") + $tcdef(Literal:Int64),
+		$type(int) + $def(-22) + $pdef("(unary[-] 22)") + $tctype("$type") + $tcdef("(Literal:Int64 Literal:Int)"),
+		$type(float) + $def(17.3) + $pdef(17.300000) + $tctype("$type") + $tcdef(Literal:Float32),
+		$type(& const u8) + $def("\"woo\"") + $pdef("$def") + $tctype(&const.u8) + $tcdef(Literal:String),
+		$type(ENK) + $memb(Ack|nil|min) + $def("ENK.$memb"|"ENK.$memb") + $pdef("$def") + $tctype("ENK_enum") + $tcdef("(Literal:Int8 ENK_enum $memb)"),
+		$type(& void) + $def(null) + $pdef("$def") + $tctype(&void) + $tcdef(Literal:Null)
+	}
+
+test DefaultArgsCallArg
+	prereq "OneArg proc (x: $type = $def) {} ENK enum {Ack}"
+	input "OneArg($def)"
+	parse "(procCall OneArg $pdef)"
+	typecheck "(void OneArg($tctype)->void $tcdef)"
+	{
+		$type(bool) + $def(false) + $pdef("$def") + $tctype("$type") + $tcdef(Literal:Bool8),
+		$type(int) + $def(2) + $pdef("$def") + $tctype("$type") + $tcdef(Literal:Int64),
+		$type(int) + $def(-22) + $pdef("(unary[-] 22)") + $tctype("$type") + $tcdef("(Literal:Int64 Literal:Int)"),
+		$type(float) + $def(17.3) + $pdef(17.300000) + $tctype("$type") + $tcdef(Literal:Float32),
+		$type(& const u8) + $def("\"woo\"") + $pdef("$def") + $tctype(&const.u8) + $tcdef(Literal:String),
+		$type(ENK) + $memb(Ack|nil|min) + $def("ENK.$memb") + $pdef("(member ENK $memb)") + $tctype("ENK_enum") + $tcdef("(Literal:Int8 ENK_enum $memb)"),
+		$type(& void) + $def(null) + $pdef("$def") + $tctype(&void) + $tcdef(Literal:Null)
+	}
+
+test DefaultArgMissingSubsequentArgs
+	input "NoArgs proc ($argline) {}"
+	{
+		$argline("n: int = 2, n2: int"$errid(1007)),
+		$argline("n:= 2, n2: int"$errid(1007))
+	}
+
 // Strings:
-test StringLliteral
-		input "pChz $decl \"hello\""
-		parse "(decl pChz $pdecl\"hello\")"
-		typecheck "(&const.u8 pChz $tcdecl)"
-		{
-			$decl(":=") + $pdecl("") + $tcdecl(Literal:String),
-			$decl(": &const u8 =") + $pdecl("(ptr (const u8)) ") + $tcdecl("(&const.u8 (const.u8 u8)) Literal:String")
-		}
+test StringLiteral
+	input "pChz $decl \"hello\""
+	parse "(decl pChz $pdecl\"hello\")"
+	typecheck "(&const.u8 pChz $tcdecl)"
+	{
+		$decl(":=") + $pdecl("") + $tcdecl(Literal:String),
+		$decl(": &const u8 =") + $pdecl("(ptr (const u8)) ") + $tcdecl("(&const.u8 (const.u8 u8)) Literal:String")
+	}
 
 test HereString
 	// UGH! these are so fragile, the first string delimeter needs to end a line and the second delimiter needs to be on it's own line

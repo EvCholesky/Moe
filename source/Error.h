@@ -26,6 +26,8 @@ enum ERRID
 	ERRID_InvalidOpOverload			= 1003,
 	ERRID_OldCStyle					= 1004,
 	ERRID_EmptyCase					= 1005,
+	ERRID_DefaultParamOpOverload	= 1006, 
+	ERRID_MissingDefaultArgs		= 1007,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,

@@ -39,6 +39,7 @@ struct STypeCheckStackEntry // tag = tcsent
 	CSTNode *		m_pStnodProcedure;	// definition node for current procedure
 	SSymbol	*		m_pSymContext;		// Procedure or struct 
 	GRFSYMLOOK		m_grfsymlook;
+	PARK 			m_parkDeclContext;
 	bool			m_fAllowForwardDecl;
 	TCCTX			m_tcctx;
 };
@@ -65,7 +66,6 @@ struct STypeCheckWorkspace // tag = tcwork
 					STypeCheckWorkspace(CAlloc * pAlloc, SErrorManager * pErrman, int cTcfram)
 					:m_pAlloc(pAlloc)
 					,m_pErrman(pErrman)
-					,m_nIdNext(0)
 					,m_mang(pAlloc)
 					,m_aryTcfram()
 					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
@@ -85,7 +85,6 @@ struct STypeCheckWorkspace // tag = tcwork
 						}
 	CAlloc *								m_pAlloc;
 	SErrorManager *							m_pErrman;
-	int										m_nIdNext;
 	CNameMangler							m_mang;
 	CAry<STypeCheckFrame>					m_aryTcfram;
 	CHash<const SSymbol *, SUnknownType>	m_hashPSymUntype;
@@ -1367,11 +1366,15 @@ inline STypeInfo * PTinFromLiteralFinalized(
 		{
 			EWC_ASSERT(false, "enum literals should not be finalized");
 		} break;
+	case LITK_Null:
+		{
+			return pTinlit->m_pTinSource;
+		} break;
 	default:
 		break;
 	}
 
-		EWC_ASSERT(false, "Unknown literal kind");
+	EWC_ASSERT(false, "Unknown literal kind %d", litty.m_litk);
 	return nullptr;
 }
 
@@ -2779,7 +2782,8 @@ enum PROCMATCH
 	PROCMATCH_None,
 	PROCMATCH_Exact,
 	PROCMATCH_ImplicitCast,
-	PROCMATCH_Max
+
+	EWC_MAX_MIN_NIL(PROCMATCH)
 };
 
 enum ERREP // ERror REPorting
@@ -2796,6 +2800,15 @@ enum ARGORD // ARGument ORDer
 	EWC_MAX_MIN_NIL(ARGORD)
 };
 
+enum ARGSRC // ARGument SouRCe
+{
+	ARGSRC_Ordered,
+	ARGSRC_Named,
+	ARGSRC_Default,
+
+	EWC_MAX_MIN_NIL(ARGSRC)
+};
+
 void AdjustArgumentOrder(ARGORD argord, CSTNode * pStnod, SOpTypes * pOptype)
 {
 	if (argord != ARGORD_Reversed)
@@ -2807,18 +2820,44 @@ void AdjustArgumentOrder(ARGORD argord, CSTNode * pStnod, SOpTypes * pOptype)
 	pOptype->m_pTinRhs = pTin;
 }
 
+struct SProcMatchFit // tag pmfit
+{
+						SProcMatchFit(CAlloc * pAlloc)
+						:m_mpIArgPStnod(pAlloc, BK_TypeCheck)
+						,m_mpIArgArgsrc(pAlloc, BK_TypeCheck)
+							{ ; }
+
+	CDynAry<CSTNode *>	m_mpIArgPStnod;		// calling arguments with named arg and defaults resolved
+	CDynAry<ARGSRC>		m_mpIArgArgsrc;
+};
+
 struct SProcMatchParam // tag = pmparam
 {
-						SProcMatchParam()
-						:m_pLexloc(nullptr)
+						SProcMatchParam(CAlloc * pAlloc, SLexerLocation * pLexloc)
+						:m_pAlloc(pAlloc)
+						,m_pLexloc(pLexloc)
 						,m_ppStnodCall(nullptr)
 						,m_cpStnodCall(0)
+						,m_pPmfit(nullptr)
 						,m_fMustFindMatch(false)
 							{ ; }
 
+						~SProcMatchParam()
+							{
+								if (m_pPmfit)
+								{
+									m_pAlloc->EWC_DELETE(m_pPmfit);	
+									m_pPmfit = nullptr;
+								}
+							}
+
+	CAlloc *			m_pAlloc;
 	SLexerLocation *	m_pLexloc;
-	CSTNode **			m_ppStnodCall;
-	size_t				m_cpStnodCall;
+	CSTNode **			m_ppStnodCall;		// actual arguments passed to the call, no default/named args
+	size_t				m_cpStnodCall;		// no default/named args
+
+	SProcMatchFit *		m_pPmfit;
+
 	bool				m_fMustFindMatch;
 };
 
@@ -2841,21 +2880,8 @@ PROCMATCH ProcmatchCheckArguments(
 	ARGORD argord,
 	SSymbol * pSymProc)
 {
-	size_t cArg = pPmparam->m_cpStnodCall;
-	if (cArg < pTinproc->m_arypTinParams.C())
-	{
-		if (errep == ERREP_ReportErrors)
-		{
-			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_TooFewArgs,
-				"Too few arguments to procedure '%s'. Expected %d but encountered %d",
-				PChzProcName(pTinproc, pSymProc),
-				pTinproc->m_arypTinParams.C(),
-				cArg);
-		}
-		return PROCMATCH_None;
-	}
-
-	if 	(pTinproc->m_fHasVarArgs == false && cArg > pTinproc->m_arypTinParams.C())
+	size_t cArgCall = pPmparam->m_cpStnodCall;
+	if 	(pTinproc->m_fHasVarArgs == false && cArgCall > pTinproc->m_arypTinParams.C())
 	{
 		if (errep == ERREP_ReportErrors)
 		{
@@ -2863,7 +2889,70 @@ PROCMATCH ProcmatchCheckArguments(
 				"Too many arguments to procedure '%s'. Expected %d but encountered %d",
 				PChzProcName(pTinproc, pSymProc),
 				pTinproc->m_arypTinParams.C(),
-				cArg);
+				cArgCall);
+		}
+		return PROCMATCH_None;
+	}
+
+	// loop over the arguments and find a stnode for each argument
+	size_t cArgTinproc = pTinproc->m_arypTinParams.C();
+	size_t cArg = ewcMax(cArgCall, cArgTinproc); 
+	CDynAry<CSTNode *> mpIArgPStnod(pTcwork->m_pAlloc, BK_TypeCheck, cArg);
+	CDynAry<ARGSRC> mpIArgArgsrc(pTcwork->m_pAlloc, BK_TypeCheck, cArg);
+	mpIArgPStnod.AppendFill(cArg, nullptr);
+	mpIArgArgsrc.AppendFill(cArg, ARGSRC_Nil);
+
+	CDynAry<CString> aryStrArgName(pTcwork->m_pAlloc, BK_TypeCheck, cArg);
+	aryStrArgName.AppendFill(cArgTinproc, "unknown");
+
+	// Fill out default arguments and build list of names
+	CSTProcedure * pStproc = nullptr;
+	if (EWC_FVERIFY(pTinproc->m_pStnodDefinition, "expected procedure definition node"))
+	{
+		pStproc = pTinproc->m_pStnodDefinition->m_pStproc;
+
+		if (pStproc && pStproc->m_iStnodParameterList >= 0)
+		{
+			CSTNode * pStnodParamList = pTinproc->m_pStnodDefinition->PStnodChild(pStproc->m_iStnodParameterList);
+			for (int iArg = 0; iArg < cArgTinproc; ++iArg)
+			{
+				CSTNode * pStnodParamDef = pStnodParamList->PStnodChildSafe(iArg);
+				if (!pStnodParamDef || !pStnodParamDef->m_pStdecl)
+					continue;
+
+				CSTDecl * pStdecl = pStnodParamDef->m_pStdecl;
+				if (!pStdecl)
+					continue;
+
+				auto pStnodInit = pStnodParamDef->PStnodChildSafe(pStdecl->m_iStnodInit);
+				if (pStnodInit)
+				{
+					mpIArgPStnod[iArg] = pStnodInit;
+					mpIArgArgsrc[iArg] = ARGSRC_Default;
+				}
+				aryStrArgName[iArg] = StrFromIdentifier(pStnodParamDef->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
+			}
+		}
+	}
+
+	// fill in ordered args and search for named arguments
+	for (int iArg = 0; iArg < cArgCall; ++iArg)
+	{
+		mpIArgPStnod[iArg] = pPmparam->m_ppStnodCall[iArg];
+		mpIArgArgsrc[iArg] = ARGSRC_Ordered;
+	}
+
+	for (int iArg = 0; iArg < cArg; ++iArg)
+	{
+		if (mpIArgPStnod[iArg] != nullptr)
+			continue;
+		if (errep == ERREP_ReportErrors)
+		{
+			EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_TooFewArgs,
+				"Too few arguments to procedure '%s'. cannot find value for parameter #%d: '%s'",
+				PChzProcName(pTinproc, pSymProc),
+				iArg + 1,
+				aryStrArgName[iArg].PCoz());
 		}
 		return PROCMATCH_None;
 	}
@@ -2872,7 +2961,7 @@ PROCMATCH ProcmatchCheckArguments(
 	for (int iStnodArg = 0; iStnodArg < cArg; ++iStnodArg)
 	{
 		int iStnodArgAdj = (argord == ARGORD_Reversed) ? ((int)cArg - 1 - iStnodArg) : iStnodArg;
-		CSTNode * pStnodArg = pPmparam->m_ppStnodCall[iStnodArgAdj];
+		CSTNode * pStnodArg = mpIArgPStnod[iStnodArgAdj];
 
 		if (FIsType(pStnodArg))
 		{
@@ -2963,8 +3052,70 @@ PROCMATCH ProcmatchCheckArguments(
 			break;
 		}
 	}
+	if (procmatch == PROCMATCH_Exact || procmatch == PROCMATCH_ImplicitCast)
+	{
+		EWC_ASSERT(pPmparam->m_pPmfit == nullptr, "leaking proc match fit struct");
+		auto pPmfit = EWC_NEW(pPmparam->m_pAlloc, SProcMatchFit) SProcMatchFit(pPmparam->m_pAlloc);
+
+		pPmparam->m_pPmfit = pPmfit;
+		pPmfit->m_mpIArgPStnod.Swap(&mpIArgPStnod);
+		pPmfit->m_mpIArgArgsrc.Swap(&mpIArgArgsrc);
+	}
 
 	return procmatch;
+}
+
+// replace exlicit argument list with named/default arg resolved values
+void ResolveProcCallArguments(CSTNode * pStnodCall, CAlloc * pAlloc, SProcMatchFit * pPmfit, int ipStnodCallMin, int ipStnodCallMax)
+{
+	if (!EWC_FVERIFY(pStnodCall->m_park == PARK_ProcedureCall, "node passed to ResolveProcCallArguments is not a procedure call"))
+		return;
+
+	// we can't be agnostic about how the arguments are stored in pStnodCall, we're gonna modify pStnodCall's children
+
+	// clean up any explicit arguments that aren't used (should have emitted errors about this earlier, but we can't leak them)
+	size_t cArg = pPmfit->m_mpIArgPStnod.C();
+	for (int ipStnod = ipStnodCallMin; ipStnod < ipStnodCallMax; ++ipStnod)
+	{
+		CSTNode * pStnodExplicit = pStnodCall->PStnodChild(ipStnod);
+
+		bool fFound = false;
+		for (int iArg = 0; iArg < cArg; ++iArg)
+		{
+			if (pPmfit->m_mpIArgPStnod[iArg] == pStnodExplicit)
+			{
+				fFound = true;
+				break;
+			}
+		}
+
+		if (!fFound)
+		{
+			pAlloc->EWC_DELETE(pStnodExplicit);
+			pStnodCall->m_arypStnodChild[ipStnod] = nullptr;
+		}
+	}
+
+	int cpStnod = cArg + ipStnodCallMin;
+	pStnodCall->m_arypStnodChild.AppendFill(cpStnod - pStnodCall->m_arypStnodChild.C(), nullptr);
+
+	for (int iArg = 0; iArg < cArg; ++iArg)
+	{
+		ARGSRC argsrc = pPmfit->m_mpIArgArgsrc[iArg];
+		CSTNode * pStnodFit = pPmfit->m_mpIArgPStnod[iArg];
+
+		if (argsrc == ARGSRC_Default)
+		{
+			pStnodFit = PStnodCopy(pAlloc, pStnodFit);
+		}
+
+		pStnodCall->m_arypStnodChild[iArg + ipStnodCallMin] = pStnodFit;
+	}
+
+	for (int ipStnod = ipStnodCallMin; ipStnod < cpStnod; ++ipStnod)
+	{
+		EWC_ASSERT(pStnodCall->m_arypStnodChild[ipStnod] != nullptr, "missing argument %d after resolve", ipStnod);
+	}
 }
 
 TCRET TcretTryFindMatchingProcedureCall(
@@ -3005,7 +3156,9 @@ TCRET TcretTryFindMatchingProcedureCall(
 	};
 	CFixAry<SSymMatch, 32> arySymmatch;
 	int	mpProcmatchCSymmatch[PROCMATCH_Max];
+	SProcMatchFit * mpProcmatchPPmfit[PROCMATCH_Max];
 	ZeroAB(mpProcmatchCSymmatch, sizeof(mpProcmatchCSymmatch));
+	ZeroAB(mpProcmatchPPmfit, sizeof(mpProcmatchPPmfit));
 
 	SSymbol * pSymProc;
 	while ((pSymProc = symiter.PSymNext()))
@@ -3052,12 +3205,37 @@ TCRET TcretTryFindMatchingProcedureCall(
 					pSymmatch->m_pSym = pSymProc;
 					pSymmatch->m_procmatch = procmatch;
 					pSymmatch->m_argord = (ARGORD)argord;
+
+					if (mpProcmatchPPmfit[procmatch] == nullptr)
+					{
+						mpProcmatchPPmfit[procmatch] = pPmparam->m_pPmfit;
+					}
+					else
+					{
+						// we won't use this struct if there's more than one procmatch, so just delete the extra fit struct
+						pPmparam->m_pAlloc->EWC_DELETE(pPmparam->m_pPmfit);
+					}
+					pPmparam->m_pPmfit = nullptr;
 				}
 			}
 		}
 	}
 
 	PROCMATCH procmatchFinal = (mpProcmatchCSymmatch[PROCMATCH_Exact] > 0) ? PROCMATCH_Exact : PROCMATCH_ImplicitCast;
+
+	// set pPmparam to point to the final SProcMatchFit struct and clean up the rest
+	for (int procmatch = PROCMATCH_Min; procmatch < PROCMATCH_Max; ++procmatch)
+	{
+		if (procmatch == (int)procmatchFinal)
+		{
+			pPmparam->m_pPmfit = mpProcmatchPPmfit[procmatch];	
+		}
+		else if (mpProcmatchPPmfit[procmatch])	
+		{
+			pPmparam->m_pAlloc->EWC_DELETE(mpProcmatchPPmfit[procmatch]);
+		}
+		mpProcmatchPPmfit[procmatch] = nullptr;
+	}
 
 	int cSysmatch = mpProcmatchCSymmatch[procmatchFinal];
 	if (cSysmatch == 0)
@@ -3284,7 +3462,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							PushTcsent(pTcfram, &pTcsentTop, pStnodReturn);
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
-
 						}
 					}break;
 				case 2:
@@ -3492,6 +3669,41 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
 			} break;
+			case PARK_ArgumentLabel:
+			{
+				// children should be (identifier, argument)
+
+				if (pTcsentTop->m_nState == 0)
+				{
+					if (pStnod->CStnodChild() != 2)
+					{
+						EmitError(pTcwork, pStnod, 
+							"Invalid argument label in type checker, expected 2 children (label, arg) but encountered %d", 
+							pStnod->CStnodChild());
+					}
+					else
+					{
+						auto pStnodIdent = pStnod->PStnodChild(0);
+						if (pStnodIdent->m_park != PARK_Identifier)
+						{
+							EmitError(pTcwork, pStnod, 
+								"Argument label was parsed incorrectly, expected label identifier but encountered %s", 
+								PChzFromPark(pStnodIdent->m_park));
+						}
+
+						int ipStnodArg = 1; // actual argument
+						PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(ipStnodArg));
+						++pTcsentTop->m_nState;
+						break;
+					}
+				}
+
+				auto pStnodArg = pStnod->PStnodChild(1);
+				pStnod->m_pTin = pStnodArg->m_pTin;
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
+
+			} break;
 			case PARK_ProcedureCall:
 			{
 				// The first child is either 
@@ -3515,8 +3727,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				CSTNode * pStnodCallee = pStnod->PStnodChild(0);
 				if (pStnodCallee->m_park == PARK_Identifier)
 				{
-					SProcMatchParam pmparam;
-					pmparam.m_pLexloc = &pStnodCallee->m_lexloc;
+					SProcMatchParam pmparam(pTcwork->m_pAlloc, &pStnodCallee->m_lexloc);
 					pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C() - 1;
 					pmparam.m_ppStnodCall = (pmparam.m_cpStnodCall) ? &pStnod->m_arypStnodChild[1] : nullptr;
 					pmparam.m_fMustFindMatch = true;
@@ -3533,6 +3744,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					case TCRET_WaitingForSymbolDefinition:
 						{
 							// wait for this procedure's signature to be type checked.
+							// BB - We'll redo the work to find our matching procedure once this definition is checked. 
 							SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymProc);
 							pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
 							return tcret;
@@ -3543,7 +3755,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						{
 							pStnod->m_pSym = pSymProc;
 
-							// Note: The callee's sym and pTin are set by type checking the identifier, this may pick the wrong
+							ResolveProcCallArguments(pStnod, pTcwork->m_pAlloc, pmparam.m_pPmfit, 1, pStnod->m_arypStnodChild.C());
+
+							// Note: The callee's symbol and pTin are set by type checking the identifier, this may pick the wrong
 							//  overload, clean it up here.
 							pStnodCallee->m_pSym = pSymProc;
 
@@ -3579,8 +3793,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					auto pTinprocSym = PTinRtiCast<STypeInfoProcedure  *>(pStnodCallee->m_pTin);
 					if (EWC_FVERIFY(pTinprocSym, "expected type info procedure"))
 					{
-						SProcMatchParam pmparam;
-						pmparam.m_pLexloc = &pStnodCallee->m_lexloc;
+						SProcMatchParam pmparam(pTcwork->m_pAlloc, &pStnodCallee->m_lexloc);
 						pmparam.m_ppStnodCall = &pStnod->m_arypStnodChild[1];
 						pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C() - 1;
 						pmparam.m_fMustFindMatch = true;
@@ -4137,6 +4350,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pTcsentPushed->m_pSymtab = pStnod->m_pSymtab;
 					}
 				}
+				if (pStnod->m_park == PARK_ParameterList)
+				{
+					pTcsentPushed->m_parkDeclContext = pStnod->m_park;
+				}
 				if (pStnod->m_park == PARK_ReferenceDecl)
 				{
 					pTcsentPushed->m_fAllowForwardDecl = true;
@@ -4440,8 +4657,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					break;
 				}
 
-
-
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 					if (pStdecl->m_iStnodType >= 0)
@@ -4483,7 +4698,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (!pTinInitDefault && pStnodInit->m_park != PARK_Uninitializer)
 						{
 							CString strIdent = StrFromIdentifier(pStnodIdent);
-
 							CSymbolTable::CSymbolIterator symiter(pSymtab, strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook);
 							auto pSymPrior = symiter.PSymNext();
 
@@ -4555,8 +4769,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							apStnod[0] = pStnodOpLhs;
 							apStnod[1] = pStnodInit;
 							
-							SProcMatchParam pmparam;
-							pmparam.m_pLexloc = &pStnod->m_lexloc;
+							SProcMatchParam pmparam(pTcwork->m_pAlloc, &pStnod->m_lexloc);
 							pmparam.m_cpStnodCall = 2;
 							pmparam.m_ppStnodCall = apStnod;
 
@@ -4584,6 +4797,11 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						}
 						else
 						{
+							// don't finalize the literal for init here if it's actually a default argument.
+							//  enum values finalize to the loose int types and it causes the default argument type checking to fail
+
+							bool fAllowFinalizing = pTcsentTop->m_parkDeclContext != PARK_ParameterList;
+
 							if (pStnod->m_pTin && pStnodInit->m_park != PARK_Uninitializer)
 							{
 								// just make sure the init type fits the specified one
@@ -4594,13 +4812,22 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								auto pTinInstance = PTinQualifyAfterAssignment(pStnod->m_pTin, pSymtab);
 								if (FCanImplicitCast(pTinInit, pTinInstance))
 								{
-									FinalizeLiteralType(pSymtab, pStnod->m_pTin, pStnodInit);
+									if (fAllowFinalizing)
+									{
+										FinalizeLiteralType(pSymtab, pStnod->m_pTin, pStnodInit);
+									}
 									pTinInit = pStnod->m_pTin;
 								}
 								else
 								{
+									const char * pChzFormat = (pTcsentTop->m_parkDeclContext == PARK_ParameterList) ? 
+									"parameter '%s' is type '%s', but default argument is '%s'" :
+									"Cannot initialize variable '%s' of type '%s' with '%s'";
+
+									CString strIdent = StrFromIdentifier(pStnodIdent);
 									EmitError(pTcwork, pStnod, ERRID_InitTypeMismatch, 
-										"Cannot initialize variable of type '%s' with '%s'",
+										pChzFormat,
+										strIdent.PCoz(),
 										StrFromTypeInfo(pStnod->m_pTin).PCoz(),
 										StrFromTypeInfo(pTinInit).PCoz());
 								}
@@ -4608,7 +4835,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							else if (pTinInitDefault)
 							{
 								pStnod->m_pTin = pTinInitDefault;
-								FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pTin, pStnodInit);
+								if (fAllowFinalizing)
+								{
+									FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pTin, pStnodInit);
+								}
 							}
 						}
 					}
@@ -4758,8 +4988,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					if (!FVerifyIvalk(pTcwork, pStnodLhs, IVALK_LValue) || !FVerifyIvalk(pTcwork, pStnodRhs, IVALK_RValue))
 						return TCRET_StoppingError;
 
-					SProcMatchParam pmparam;
-					pmparam.m_pLexloc = &pStnod->m_lexloc;
+					SProcMatchParam pmparam(pTcwork->m_pAlloc, &pStnod->m_lexloc);
 					pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C();
 					pmparam.m_ppStnodCall = (pmparam.m_cpStnodCall) ? &pStnod->m_arypStnodChild[0] : nullptr;
 
@@ -5642,8 +5871,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 					else
 					{
-						SProcMatchParam pmparam;
-						pmparam.m_pLexloc = &pStnod->m_lexloc;
+						SProcMatchParam pmparam(pTcwork->m_pAlloc, &pStnod->m_lexloc);
 						pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C();
 						pmparam.m_ppStnodCall = (pmparam.m_cpStnodCall) ? &pStnod->m_arypStnodChild[0] : nullptr;
 
@@ -5719,8 +5947,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					CSTNode * pStnodOperand = pStnod->PStnodChild(0);
 					STypeInfo * pTinOperand = pStnodOperand->m_pTin;
 
-					SProcMatchParam pmparam;
-					pmparam.m_pLexloc = &pStnod->m_lexloc;
+					SProcMatchParam pmparam(pTcwork->m_pAlloc, &pStnod->m_lexloc);
 					pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C();
 					pmparam.m_ppStnodCall = (pmparam.m_cpStnodCall) ? &pStnod->m_arypStnodChild[0] : nullptr;
 
@@ -6165,6 +6392,7 @@ void PerformTypeCheck(
 		pTcsent->m_pStnodProcedure = nullptr;
 		pTcsent->m_pSymContext = pSymRoot;
 		pTcsent->m_grfsymlook = FSYMLOOK_Default;
+		pTcsent->m_parkDeclContext = PARK_Nil;
 		pTcsent->m_fAllowForwardDecl = false;
 		pTcsent->m_tcctx = TCCTX_Normal;
 

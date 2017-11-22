@@ -127,8 +127,9 @@ enum PARK // PARse Kind
 	PARK_ArrayElement,		// [array, index]
 	PARK_MemberLookup,		// [struct, child]
 	PARK_ProcedureCall,		// [procedure, arg0, arg1, ...]
-	PARK_List,
-	PARK_ParameterList,		// comma separated declarations, used by structs, argument lists and one line compound decls
+
+	PARK_List,				// declarations used by structs
+	PARK_ParameterList,		// comma separated declarations used by argument lists
 	PARK_ExpressionList,	// list of expressions, used by array literals - doesn't error on rhs only values.
 	PARK_If,
 	PARK_Else,
@@ -148,6 +149,7 @@ enum PARK // PARse Kind
 	PARK_EnumConstant,
 	PARK_VariadicArg,
 	PARK_ArrayLiteral,
+	PARK_ArgumentLabel,
 	
 	EWC_MAX_MIN_NIL(PARK)
 };
