@@ -15,7 +15,7 @@
 
 #include "LlvmcDIBuilder.h"
 
-#ifdef WIN32
+#ifdef _WINDOWS
 #pragma warning ( push )
 #pragma warning(disable : 4141)
 #pragma warning(disable : 4244)
@@ -34,7 +34,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Target/TargetMachine.h"
-#ifdef WIN32
+#ifdef _WINDOWS
 #pragma warning ( push )
 #endif
 
@@ -449,6 +449,21 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 	DIType * pDitype = cast<DIType>(PMdnodeExtract(pLvalType));
 
+	llvm::GlobalVariable * pLglobvar = unwrap<GlobalVariable>(pLvalValue);
+
+	llvm::DIGlobalVariableExpression * pLglobexp = unwrap(pDib)->createGlobalVariableExpression(
+																	pDiscope,
+																	strrName,
+																	strrMangled,
+																	pDifile,
+																	nLine,
+																	pDitype,
+																	fIsLocalToUnit);
+
+	pLglobvar->addDebugInfo(pLglobexp);
+	return wrap(pLglobexp);
+
+	/*
 	return wrap(unwrap(pDib)->createGlobalVariableExpression(
 								pDiscope,
 								strrName,
@@ -457,10 +472,11 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 								nLine,
 								pDitype,
 								fIsLocalToUnit,
-								nullptr,
+//								nullptr,
 								PMdnodeExtract(pLvalValue)));
 //								unwrap<MDNode>(pLvalValue)));
 //								mdconst::extract<Constant>(pLvalValue)));
+*/
 }
 
 

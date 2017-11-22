@@ -22,7 +22,7 @@
 
 using namespace EWC;
 
-#ifdef WIN32
+#ifdef _WINDOWS
 #pragma warning ( push )
 #pragma warning(disable : 4141)
 #pragma warning(disable : 4146)
@@ -37,7 +37,7 @@ using namespace EWC;
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Program.h"
 #include "llvm/BinaryFormat/Dwarf.h"
-#ifdef WIN32
+#ifdef _WINDOWS
 #pragma warning ( pop )
 #endif
 
@@ -1108,7 +1108,7 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *parypValMan
 	case OPTLEVEL_Release:	loptlevel = LLVMCodeGenLevelAggressive;		break; // -O2
 	}
 
-	#if !WIN32
+	#if !_WINDOWS
 	// BB - Mac builds want position independent relocation, should be a command line arg
 	LLVMRelocMode lrelocmode = LLVMRelocPIC;
 	#else
@@ -1129,6 +1129,7 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *parypValMan
 
 	m_pLbuild = LLVMCreateBuilder();
 	m_pLmoduleCur = LLVMModuleCreateWithName("MoeModule");
+
 #if 0
 #if EWC_X64
 	const char * pChzDataLayout = "p:64:64";
@@ -1142,6 +1143,7 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *parypValMan
 #else
 
 	m_pTargd = LLVMCreateTargetDataLayout(m_pLtmachine);
+	LLVMSetTarget(m_pLmoduleCur, pChzTriple);
 	LLVMSetModuleDataLayout(m_pLmoduleCur, m_pTargd);
 	
 #endif
@@ -6165,6 +6167,7 @@ void CompileToObjectFile(CWorkspace * pWork, CIRBuilder * pBuild, const char * p
 
 	char * pChzError = nullptr;
 	LLVMBool fFailed = LLVMTargetMachineEmitToFile(pBuild->m_pLtmachine, pBuild->m_pLmoduleCur, aChFilenameOut, LLVMObjectFile, &pChzError);
+	//auto arch = llvm::Triple(MMI->getModule()->getTargetTriple()).getArch();
 
 	if (fFailed)
 	{
