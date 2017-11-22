@@ -23,9 +23,11 @@ enum ERRID
 	ERRID_ParserMin					= 1000,
 	ERRID_EnumRepeat				= 1001,
 	ERRID_ShadowedDefine			= 1002,
-	ERRID_BadOverloadSig			= 1003,
+	ERRID_InvalidOpOverload			= 1003,
 	ERRID_OldCStyle					= 1004,
 	ERRID_EmptyCase					= 1005,
+	ERRID_DefaultParamOpOverload	= 1006, 
+	ERRID_MissingDefaultArgs		= 1007,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,
@@ -40,6 +42,8 @@ enum ERRID
 	ERRID_IncorrectIvalk			= 2009,
 	ERRID_BadArrayIndex				= 2010,
 	ERRID_NotYetSupported			= 2011,
+	ERRID_AmbiguousOverload			= 2012,
+	ERRID_BadOverloadSig			= 2013,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

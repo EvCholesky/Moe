@@ -25,7 +25,7 @@ using namespace EWC;
 
 enum FPDECL
 {
-	FPDECL_AllowCompoundDecl		= 0x1,	// allow comma-separated declaration of multiple variables.
+	FPDECL_AllowCompoundDecl	= 0x1,	// allow comma-separated declaration of multiple variables.
 	FPDECL_AllowVariadic		= 0x2,	// allow the list to end with variadic arguments (..)
 	FPDECL_AllowUninitializer	= 0x4,	// allow decls to specify explicit uninitializers (n:int=---;}
 
@@ -40,7 +40,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pLex);
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc);
+CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload);
 CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex);
@@ -87,6 +87,7 @@ const char * PChzFromPark(PARK park)
 		"Enum Constant",
 		"Variadic Argument",
 		"Array Literal",
+		"Argument Label",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpParkPChz) == PARK_Max, "missing PARK string");
 	if (park == PARK_Nil)
@@ -809,7 +810,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 
 						pStnodLabel = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 						pStnodLabel->m_tok = TOK_Label;
-						pStnodLabel->m_park = PARK_Label;
+						pStnodLabel->m_park = PARK_ArgumentLabel;
 
 						CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
 						if (!pStnodIdent)
@@ -819,6 +820,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 						else
 						{
 							pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
+							pStnodLAbel->IAppendChild(pStnodIdent);
 						}
 					}
 					*/
@@ -1328,7 +1330,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		pStnodProc->m_pStproc = pStproc;
 
 		CSymbolTable * pSymtabProc = nullptr; //null symbol table as the we're a forward reference
-		CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pLex, pSymtabProc);
+		CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabProc, false);
 		pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 		FExpect(pParctx, pLex, TOK(')'));
 
@@ -1794,7 +1796,7 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex)
 	}
 }
 
-CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc)
+CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload)
 {
 	SLexerLocation lexloc(pLex);
 	if (pSymtabProc)
@@ -1815,6 +1817,7 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymb
 		pStnodList->m_pSymtab = pSymtabProc;
 		pStnodList->IAppendChild(pStnodParam);
 
+		bool fNeedsDefaultArg = pStnodParam->m_pStdecl && pStnodParam->m_pStdecl->m_iStnodInit >= 0;
 		while (FConsumeToken(pLex, TOK(',')))
 		{
 			pStnodParam = PStnodParseParameter(pParctx, pLex, pSymtabProc, grfpdecl);
@@ -1824,6 +1827,26 @@ CSTNode * PStnodParseParameterList(CParseContext * pParctx, SLexer * pLex, CSymb
 				auto strUnexpected = StrUnexpectedToken(pLex);
 				ParseError(pParctx, pLex, "expected parameter declaration before '%s'", strUnexpected.PCoz());
 				break;
+			}
+
+			CSTDecl * pStdecl = pStnodParam->m_pStdecl;
+			if (pStnodParam->m_park == PARK_Decl && EWC_FVERIFY(pStdecl, "expected parameter to be PARK_Decl"))
+			{
+				bool fHasDefaultArg = pStdecl->m_iStnodInit >= 0;
+				if (fNeedsDefaultArg && !fHasDefaultArg)
+				{
+					CString strIdent(StrFromIdentifier(pStnodParam->PStnodChildSafe(pStdecl->m_iStnodIdentifier)));
+					ParseError(pParctx, &lexloc, ERRID_MissingDefaultArgs, 
+						"parameter '%s' must have a default argument because earlier arguments have defaults.", strIdent.PCoz());
+				}
+				if (fHasDefaultArg && fIsOpOverload)
+				{
+					CString strIdent(StrFromIdentifier(pStnodParam->PStnodChildSafe(pStdecl->m_iStnodIdentifier)));
+					ParseError(pParctx, &lexloc, ERRID_DefaultParamOpOverload, 
+						"default values for parameter '%s' is not allowed on an operator overload", strIdent.PCoz());
+				}
+
+				fNeedsDefaultArg |= fHasDefaultArg;
 			}
 
 			fHasVarArgs |= pStnodParam->m_park == PARK_VariadicArg;
@@ -1966,14 +1989,14 @@ static const SOverloadInfo s_aOvinf[] = {
 	{ "operator/", TOK('/'),			{ PARK_MultiplicativeOp, PARK_Nil} },
 	{ "operator%", TOK('%'),			{ PARK_MultiplicativeOp, PARK_Nil} },
 	{ "operator|", TOK('|'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
-	{ "operator|", TOK('&'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
-	{ "operator|", TOK('^'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
+	{ "operator&", TOK('&'),			{ PARK_BitwiseAndOrOp, PARK_UnaryOp} },
+	{ "operator^", TOK('^'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
 	{ "operator<<", TOK_ShiftLeft,		{ PARK_ShiftOp, PARK_Nil} },
 	{ "operator>>", TOK_ShiftRight,		{ PARK_ShiftOp, PARK_Nil} },
 	{ "operator>", TOK('>'),			{ PARK_RelationalOp, PARK_Nil} },
-	{ "operator>", TOK('<'),			{ PARK_RelationalOp, PARK_Nil} },
-	{ "operator>", TOK_LessEqual,		{ PARK_RelationalOp, PARK_Nil} },
-	{ "operator>", TOK_GreaterEqual,	{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator<", TOK('<'),			{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator<=", TOK_LessEqual,		{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator>=", TOK_GreaterEqual,	{ PARK_RelationalOp, PARK_Nil} },
 	{ "operator==", TOK_EqualEqual,		{ PARK_EqualityOp, PARK_Nil} },
 	{ "operator!=", TOK_NotEqual,		{ PARK_EqualityOp, PARK_Nil} },
 	{ "operator+=", TOK_PlusEqual,		{ PARK_AssignmentOp, PARK_Nil} },
@@ -1985,7 +2008,6 @@ static const SOverloadInfo s_aOvinf[] = {
 	{ "operator++", TOK_PlusPlus,		{ PARK_PostfixUnaryOp, PARK_Nil} },
 	{ "operator--", TOK_MinusMinus,		{ PARK_PostfixUnaryOp, PARK_Nil} },
 	{ "operator@", TOK_Dereference,		{ PARK_UnaryOp, PARK_Nil} },
-	{ "operator&", TOK_Reference,		{ PARK_UnaryOp, PARK_Nil} },
 	{ "operator~", TOK('~'),			{ PARK_UnaryOp, PARK_Nil} },
 	{ "operator!", TOK('!'),			{ PARK_UnaryOp, PARK_Nil} },
 };
@@ -2110,7 +2132,7 @@ bool FCheckOverloadSignature(PARK park, STypeInfoProcedure * pTinproc)
 	return false;
 }
 
-bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc)
+ERRID ErridCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc)
 {
 	auto pOvinfMax = EWC_PMAC(s_aOvinf);
 	for (auto pOvinf = s_aOvinf; pOvinf != pOvinfMax; ++pOvinf)
@@ -2127,9 +2149,10 @@ bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManag
 				{
 					EmitError(pErrman, pLexloc, ERRID_UnknownError, 
 						"'%s' is not allowed when overloading '%s'", PCozFromRword(RWORD_Commutative), PCozFromTok(tok));
-					return false;
+					return ERRID_UnknownError;
 				}
-				return true;
+
+				return ERRID_Nil;
 			}
 		}
 
@@ -2144,11 +2167,11 @@ bool FCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManag
 				PrintErrorLine(&error, "", pLexloc, "\toperator%s%s'", PCozFromTok(tok), PChzOverloadSignature(park));
 			}
 		}
-		return false;
+		return ERRID_BadOverloadSig;
 	}
 
-	EWC_ASSERT(false, "unknown overload signature");
-	return false;
+	EmitError(pErrman, pLexloc, ERRID_UnknownError, "no supported overload signature for operator '%s'", PCozFromTok(tok));
+	return ERRID_UnknownError;
 }
 
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
@@ -2192,7 +2215,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				const char * pCozOverloadName = PCozOverloadNameFromTok((TOK)pLex->m_tok);
 				if (!pCozOverloadName)
 				{
-					ParseError(pParctx, pLex, "Cannot overload operator '%s'", PCozFromTok((TOK)pLex->m_tok));
+					ParseError(pParctx, &lexloc, ERRID_InvalidOpOverload, "Cannot overload operator '%s'", PCozFromTok((TOK)pLex->m_tok));
 					pCozOverloadName = "OverloadError";
 				}
 
@@ -2230,7 +2253,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				// BB - don't mangle the main function so the linker can find it. yuck.
 				pStproc->m_fUseUnmangledName |= (strName == "main");
 
-				CSTNode * pStnodParams = PStnodParseParameterList(pParctx, pLex, pSymtabProc);
+				CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabProc, rword == RWORD_Operator);
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 				FExpect(pParctx, pLex, TOK(')'));
 
@@ -2325,7 +2348,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSTNode ** ppStnodReturn = &pStnodReturns;
 				int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
 
-				auto pTinproc =  PTinprocAlloc(pSymtabParent, cStnodParams, cStnodReturns, strName.PCoz());
+				auto pTinproc = PTinprocAlloc(pSymtabParent, cStnodParams, cStnodReturns, strName.PCoz());
 
 				if (rword == RWORD_Operator && FOperatorOverloadMustTakeReference(pStnodIdent->m_tok))
 				{
@@ -4526,287 +4549,4 @@ CString StrFromIdentifier(CSTNode * pStnod)
 	}
 
 	return CString();
-}
-
-void AssertParseMatchTailRecurse(
-	CWorkspace * pWork,
-	const char * pCozIn,
-	const char * pCozExpected,
-	const char * apCozExpectedImport[] = nullptr,
-	const char * apCozExpectedLibrary[] = nullptr)
-{
-
-#ifdef EWC_TRACK_ALLOCATION
-	u8 aBAltrac[1024 * 100];
-	CAlloc allocAltrac(aBAltrac, sizeof(aBAltrac));
-
-	CAllocTracker * pAltrac = PAltracCreate(&allocAltrac);
-	pWork->m_pAlloc->SetAltrac(pAltrac);
-#endif
-
-	SLexer lex;
-	BeginWorkspace(pWork);
-	BeginParse(pWork, &lex, pCozIn);
-
-	EWC_ASSERT(!pWork->m_pErrman->FHasErrors(), "parse errors detected");
-	pWork->m_pErrman->Clear();
-
-	ParseGlobalScope(pWork, &lex, true);
-
-	char aCh[1024];
-	char * pCh = aCh;
-	char * pChMax = &aCh[EWC_DIM(aCh)];
-
-	WriteDebugStringForEntries(pWork, pCh, pChMax, FDBGSTR_Name);
-
-	EWC_ASSERT(FAreCozEqual(aCh, pCozExpected), "parse debug string doesn't match expected value");
-
-	if (apCozExpectedImport)
-	{
-		int ipCoz;
-		for (ipCoz = 0; ; ++ipCoz)
-		{
-			const char * pCoz= apCozExpectedImport[ipCoz];
-			if (!pCoz)
-				break;
-
-			EWC_ASSERT(pWork->PFileLookup(pCoz, CWorkspace::FILEK_Source), "expected import %s", pCoz);
-		}
-		EWC_ASSERT(pWork->CFile(CWorkspace::FILEK_Source), "missing import");
-	}
-	
-	if (apCozExpectedLibrary)
-	{
-		int ipCoz;
-		for (ipCoz = 0; ; ++ipCoz)
-		{
-			const char * pCoz= apCozExpectedLibrary[ipCoz];
-			if (!pCoz)
-				break;
-
-			EWC_ASSERT(pWork->PFileLookup(pCoz, CWorkspace::FILEK_Library), "expected import %s", pCoz);
-		}
-		EWC_ASSERT(pWork->CFile(CWorkspace::FILEK_Library) == ipCoz, "missing import");
-	}
-
-	EndParse(pWork, &lex);
-	EndWorkspace(pWork);
-
-#ifdef EWC_TRACK_ALLOCATION
-	DeleteAltrac(&allocAltrac, pAltrac);
-	pWork->m_pAlloc->SetAltrac(nullptr);
-#endif
-}
-
-void TestParse()
-{
-	u8 aBString[1024 * 100];
-	CAlloc allocString(aBString, sizeof(aBString));
-
-	StaticInitStrings(&allocString);
-
-	u8 aB[1024 * 100];
-	CAlloc alloc(aB, sizeof(aB));
-
-	const char * pCozIn;
-	const char * pCozOut;
-	{
-		SErrorManager errman(&alloc);
-		CWorkspace work(&alloc, &errman);
-
-		pCozIn = "n1: const int; pN: & const int";
-		pCozOut = "(decl $n1 (const $int)) (decl $pN (ptr (const $int)))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "operator * (lhs: SFoo, nRhs: int) -> int { return lhs.m_n + nRhs }";
-		pCozOut = "(func $operator* (params (decl $lhs $SFoo) (decl $nRhs $int)) $int ({} (return (+ (member $lhs $m_n) $nRhs))))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "switch (i) { case 1, 2: foo(); default: foo() }";
-		pCozOut = "(switch $i (case 1 2 ({} (procCall $foo))) (default ({} (procCall $foo))))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "switch (i) { case 1: { foo(); bar() } default: foo() }";
-		pCozOut = "(switch $i (case 1 ({} ({} (procCall $foo) (procCall $bar)))) (default ({} (procCall $foo))))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "ick[2] == ack";
-		pCozOut = "(== (elem $ick 2) $ack)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "for_each it := iterMake(foo) { }";
-		pCozOut = "(for_each (decl $it (procCall $iterMake $foo)) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "for_each it = iterMake(foo) { }";
-		pCozOut = "(for_each $it (procCall $iterMake $foo) (procCall $iterIsDone (unary[&] $it)) (procCall $iterNext (unary[&] $it)) ({}))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = u8"😁+✂";
-		pCozOut = u8"(+ $😁 $✂)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "n1: int, g1, g2: float = ---";
-		//pCozOut = "(decl (decl $n1 $int) (decl $g1 $float) (decl $g2 $float) (---))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "n1, n2: int, g: float";
-		//pCozOut = "(decl (decl $n1 $int) (decl $n2 $int) (decl $g $float))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "(@ppFunc)(2)";
-		pCozOut = "(procCall (unary[@] $ppFunc) 2)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "func: (n: s32)->s64 = fooFunc";		// procedure reference declaration
-		//pCozOut = "(decl $func (procref (params (decl $n $s32)) $s64) $fooFunc)";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "apFunc[2](2)";
-		pCozOut = "(procCall (elem $apFunc 2) 2)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "pN = cast(& int) pG";
-		//pCozOut = "(= $pN (cast (ptr $int) $pG))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "aN := {:int: 2, 4, 5} ";
-		pCozOut = "(decl $aN (arrayLit $int ({} 2 4 5)))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "{ ENUMK enum int { ENUMK_Nil : -1, ENUMK_Foo, ENUMK_Bah : 3 } enumk := ENUMK.Foo }";
-		pCozOut = "({} (enum $ENUMK $int ({} (enumConst $nil) (enumConst $min) (enumConst $last) (enumConst $max) (arrayLit $names) (arrayLit $values) (enumConst $ENUMK_Nil (unary[-] 1)) (enumConst $ENUMK_Foo) (enumConst $ENUMK_Bah 3)))"
-			" (decl $enumk (member $ENUMK $Foo)))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "SOut struct { SIn struct { ConstTwo :: 2 }} n := SOut.SIn.ConstTwo ";
-		pCozOut = "(struct $SOut ({} (struct $SIn ({} (const $ConstTwo 2))))) (decl $n (member (member $SOut $SIn) $ConstTwo))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "PtrType typedef & s16; ArrayType typedef [2] s8 ";
-		pCozOut = "(typedef $PtrType (ptr $s16)) (typedef $ArrayType ([] 2 $s8))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "SomeConst :: 0xFF ";
-		//pCozOut = "(const $SomeConst 255)";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "SomeConst : s16 : 0xFF ";
-		//pCozOut = "(const $SomeConst $s16 255)";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "SFoo struct { m_n := 2 } foo : SFoo; foo.m_n = 1 ";
-		//pCozOut = "(struct $SFoo ({} (decl $m_n 2))) (decl $foo $SFoo) (= (member $foo $m_n) 1)";
-		//ssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "paN : & [4] int";
-		//pCozOut = "(decl $paN (ptr ([] 4 $int)))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "aN : [4] int; n := aN[0]";
-		//pCozOut = "(decl $aN ([] 4 $int)) (decl $n (elem $aN 0))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "x + 3*5";
-		//pCozOut = "(+ $x (* 3 5))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "(ugh + foo) / ((x + 3)*5)";
-		//pCozOut = "(/ (+ $ugh $foo) (* (+ $x 3) 5))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-//		pCozIn = "ugh/foo/guh/ack";
-//		pCozOut = "(/ (/ (/ $ugh $foo) $guh) $ack)";
-//		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-//		pCozIn = "(5 + -x) * -(3 / foo)";
-//		pCozOut = "(* (+ 5 (unary[-] $x)) (unary[-] (/ 3 $foo)))";
-//		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-//		pCozIn = "ick * ack * -(3 / foo)";
-//		pCozOut = "(* (* $ick $ack) (unary[-] (/ 3 $foo)))";
-//		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "ick & (ack&&foo | 123) || guh";
-		pCozOut = "(|| (& $ick (&& $ack (| $foo 123))) $guh)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "ick == ack < foo\n != 123 >= guh";
-		pCozOut = "(!= (== $ick (< $ack $foo)) (>= 123 $guh))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		// NOTE - weird ordering shouldn't matter as we will ensure lhs is l-value
-		pCozIn = "ick = 5 += foo *= guh";
-		pCozOut = "(*= (+= (= $ick 5) $foo) $guh)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "++foo.bah[23]";
-		pCozOut = "(unary[++] (elem (member $foo $bah) 23))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "{ i=5; foo.bah = ack }";
-		pCozOut = "({} (= $i 5) (= (member $foo $bah) $ack))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "{ if i==foo.bar.fug { ick = 3 } else { ick = 7 } }";
-		pCozOut = "({} (if (== $i (member (member $foo $bar) $fug)) ({} (= $ick 3)) (else ({} (= $ick 7)))))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "{ while x > 0 { --x } }";
-		pCozOut = "({} (while (> $x 0) ({} (unary[--] $x))))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "{ break; continue; return foo=\"test\" }";
-		pCozOut = "({} (break) (continue) (return (= $foo \"test\")))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "VarArgs proc (a : int, ..) #foreign";
-		//pCozOut = "(func $VarArgs (params (decl $a $int) (..)) $void)";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "{ AddNums proc (a : int, b := 1) -> int { return a + b } bah := 3 }";
-		pCozOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
-			" ({} (decl $bah 3))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "AddLocal proc (nA : int) -> int { nLocal := 2; return nA + nLocal }";
-		pCozOut = "(func $AddLocal (params (decl $nA $int)) $int ({} (decl $nLocal 2) (return (+ $nA $nLocal))))";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-//		pCozIn = "{ AddNums proc (a : int, b := 1) -> int { return a + b }	AddNums(2, 3) }";
-//		pCozOut = "(func $AddNums (params (decl $a $int) (decl $b 1)) $int ({} (return (+ $a $b))))"
-//			" ({} (procCall $AddNums 2 3))";
-//		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "{ FooFunc(); n:=BarFunc(x+(ack)) }";
-		//pCozOut = "({} (procCall $FooFunc) (decl $n (procCall $BarFunc (+ $x $ack))))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "{ NopFunc proc () { guh := 2 } wha : & int }";
-		//pCozOut = "(func $NopFunc $void ({} (decl $guh 2) (return))) ({} (decl $wha (ptr $int)))";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "STest struct { m_a := 2; m_b : int } boo : int = 3";
-		//pCozOut = "(struct $STest ({} (decl $m_a 2) (decl $m_b $int))) (decl $boo $int 3)";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		pCozIn = "pChz := foo; guh : gur = 5; bah : s32 = woo";
-		pCozOut = "(decl $pChz $foo) (decl $guh $gur 5) (decl $bah $s32 $woo)";
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-
-		//pCozIn = "ForeignFunc proc () -> int #foreign";
-		//pCozOut = "(func $ForeignFunc $int)";
-		//AssertParseMatchTailRecurse(&work, pCozIn, pCozOut);
-			
-		pCozIn = "#import \"foo/blah/ack\" #foreign_library \"foo/blah/ack\" "
-				"#import \"test\\wha\\huh\" #foreign_library \"test\\wha\\huh\" "
-				"#import \"basic\" ";
-
-		pCozOut = "";
-		const char * apChzExpectedImport[] = { "foo/blah/ack.moe", "test\\wha\\huh.moe", "basic.moe",nullptr };
-		const char * apChzExpectedLibrary[] = { "foo/blah/ack", "test\\wha\\huh", nullptr };
-		AssertParseMatchTailRecurse(&work, pCozIn, pCozOut, apChzExpectedImport, apChzExpectedLibrary);
-
-		StaticShutdownStrings(&allocString);
-	}
 }

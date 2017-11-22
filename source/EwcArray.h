@@ -260,7 +260,7 @@ public:
 	void		AppendFill(size_t c, const Type t)
 					{
 						EnsureSize(m_c + c);
-						CopyConstructN(m_a, c, t);
+						CopyConstructN(&m_a[m_c], c, t);
 						m_c += c;
 					}
 
@@ -424,7 +424,7 @@ public:
 	void		AppendFill(s32 c, const Type t)
 					{
 						EWC_ASSERT(m_c < m_cMax, "CFixAry overflow");
-						CopyConstructN(m_a, c, t);
+						CopyConstructN(&m_a[m_c], c, t);
 						m_c += c;
 					}
 
