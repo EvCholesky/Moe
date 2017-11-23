@@ -449,7 +449,11 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 	DIFile * pDifile = cast<DIFile>(PMdnodeExtract(pLvalFile));
 	DIType * pDitype = cast<DIType>(PMdnodeExtract(pLvalType));
 
-	return wrap(unwrap(pDib)->createGlobalVariableExpression(
+	MDNode * pMd = PMdnodeExtract(pLvalValue);
+	(void)pMd;
+
+//	return wrap(unwrap(pDib)->createGlobalVariableExpression(
+	return wrap(unwrap(pDib)->createTempGlobalVariableFwdDecl(
 								pDiscope,
 								strrName,
 								strrMangled,
@@ -457,7 +461,8 @@ LLVMValueRef LLVMDIBuilderCreateGlobalVariable(
 								nLine,
 								pDitype,
 								fIsLocalToUnit,
-								nullptr,
+//								nullptr,
+//								nullptr));
 								PMdnodeExtract(pLvalValue)));
 //								unwrap<MDNode>(pLvalValue)));
 //								mdconst::extract<Constant>(pLvalValue)));

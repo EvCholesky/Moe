@@ -246,7 +246,7 @@ enum FPARMQ	// Flags for ARGument Qualifiers
 
 EWC_DEFINE_GRF(GRFPARMQ, FPARMQ, u8);
 
-struct STypeInfoProcedure : public STypeInfo	// tag = tinproc
+struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
 

@@ -2809,6 +2809,24 @@ enum ARGSRC // ARGument SouRCe
 	EWC_MAX_MIN_NIL(ARGSRC)
 };
 
+const char * PCozFromArgsrc(ARGSRC argsrc)
+{
+	static const char * s_mpArgsrcPChz[] =
+	{
+		"Ordered",
+		"Named",
+		"Default",
+	};
+	EWC_CASSERT(EWC_DIM(s_mpArgsrcPChz) == ARGSRC_Max, "missing ARGSRC string");
+	if (argsrc == ARGSRC_Nil)
+		return "Nil";
+
+	if ((argsrc < ARGSRC_Nil) | (argsrc >= ARGSRC_Max))
+		return "Unknown ARGSRC";
+
+	return s_mpArgsrcPChz[argsrc];
+}
+
 void AdjustArgumentOrder(ARGORD argord, CSTNode * pStnod, SOpTypes * pOptype)
 {
 	if (argord != ARGORD_Reversed)
@@ -2869,6 +2887,34 @@ inline const char * PChzProcName(STypeInfoProcedure * pTinproc, SSymbol * pSym)
 	if (pSym)
 		return pSym->m_strName.PCoz();
 	return "unnamed";
+}
+
+void PrintHexDigit(u8 b)
+{
+	const char * str = "0123456789ABCDEF";
+	printf("%c", str[(b & 0x0F)]);
+}
+
+void PrintMem(void * pV, size_t cB)
+{
+	u8 * pB = (u8 *)pV;
+	u8 * pBEnd = pB + cB;
+	while (pB != pBEnd)
+	{
+		//BB - this is completely backwards, reversed byte order, reversed word order
+		printf(" 0x%p:", pB);
+		for (int iWord = 0; iWord < 4 && pB != pBEnd; ++iWord)
+		{
+			printf(" ");
+			for (int iByte = 0; iByte < 4 && pB != pBEnd; ++iByte)
+			{
+				u8 b = *pB++;
+				PrintHexDigit((b & 0xF0)>>4);
+				PrintHexDigit(b);
+			}
+		}
+		printf("\n");
+	}
 }
 
 PROCMATCH ProcmatchCheckArguments(
@@ -2938,8 +2984,61 @@ PROCMATCH ProcmatchCheckArguments(
 	// fill in ordered args and search for named arguments
 	for (int iArg = 0; iArg < cArgCall; ++iArg)
 	{
-		mpIArgPStnod[iArg] = pPmparam->m_ppStnodCall[iArg];
-		mpIArgArgsrc[iArg] = ARGSRC_Ordered;
+		int iArgDest = iArg;
+		ARGSRC argsrc = ARGSRC_Ordered;
+		auto pStnodExp = pPmparam->m_ppStnodCall[iArg];
+
+		if (pStnodExp->m_park == PARK_ArgumentLabel && 
+			EWC_FVERIFY(pStnodExp->CStnodChild() == 2, "argument label node children should be (name, arg)"))
+		{
+			CSTNode * pStnodIdentifier = pStnodExp->PStnodChild(0);
+			CString strIdentifier(StrFromIdentifier(pStnodIdentifier));
+
+			int iArgNamed = -1;
+			for (int iArgIt = 0; iArgIt < aryStrArgName.C(); ++iArgIt)
+			{
+				if (aryStrArgName[iArgIt] == strIdentifier)
+				{
+					iArgNamed = iArgIt;
+					break;
+				}
+			}
+
+			if (iArgNamed < 0)
+			{
+				if (errep == ERREP_ReportErrors)
+				{
+					EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_NamedArgumentNotFound,
+						"Cannot find argument named %s to procedure %s",
+						strIdentifier.PCoz(),
+						PChzProcName(pTinproc, pSymProc));
+				}
+				return PROCMATCH_None;
+			}
+			else
+			{
+				iArgDest = iArgNamed;
+				argsrc = ARGSRC_Named;
+			}
+		}
+
+		if (mpIArgArgsrc[iArgDest] != ARGSRC_Nil && mpIArgArgsrc[iArgDest] != ARGSRC_Default)
+		{
+			if (errep == ERREP_ReportErrors)
+			{
+				EmitError(pTcwork->m_pErrman, pPmparam->m_pLexloc, ERRID_ArgumentSuppliedTwice,
+					"Argument %d '%s' to procedure %s was supplied both as a %s argument and as %s argument",
+					iArgDest + 1,
+					aryStrArgName[iArgDest].PCoz(),
+					PChzProcName(pTinproc, pSymProc),
+					PCozFromArgsrc(mpIArgArgsrc[iArgDest]),
+					PCozFromArgsrc(argsrc));
+			}
+			return PROCMATCH_None;
+		}
+
+		mpIArgPStnod[iArgDest] = pStnodExp; 
+		mpIArgArgsrc[iArgDest] = argsrc;
 	}
 
 	for (int iArg = 0; iArg < cArg; ++iArg)
@@ -2962,6 +3061,10 @@ PROCMATCH ProcmatchCheckArguments(
 	{
 		int iStnodArgAdj = (argord == ARGORD_Reversed) ? ((int)cArg - 1 - iStnodArg) : iStnodArg;
 		CSTNode * pStnodArg = mpIArgPStnod[iStnodArgAdj];
+		if (mpIArgArgsrc[iStnodArgAdj] == ARGSRC_Named)
+		{
+			pStnodArg = pStnodArg->PStnodChildSafe(1);
+		}
 
 		if (FIsType(pStnodArg))
 		{
@@ -3107,6 +3210,15 @@ void ResolveProcCallArguments(CSTNode * pStnodCall, CAlloc * pAlloc, SProcMatchF
 		if (argsrc == ARGSRC_Default)
 		{
 			pStnodFit = PStnodCopy(pAlloc, pStnodFit);
+		}
+		else if (argsrc == ARGSRC_Named)
+		{
+			CSTNode * pStnodLabel = pPmfit->m_mpIArgPStnod[iArg];
+			pStnodFit = pStnodLabel->PStnodChildSafe(1);
+			pPmfit->m_mpIArgPStnod[iArg] = pStnodFit;
+			pStnodLabel->m_arypStnodChild.RemoveFastByI(1);
+
+			pAlloc->EWC_DELETE(pStnodLabel);
 		}
 
 		pStnodCall->m_arypStnodChild[iArg + ipStnodCallMin] = pStnodFit;
@@ -3878,6 +3990,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				pStnod->m_pTin = pTinReturn;
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
+
 			}break;
 			case PARK_EnumDefinition:
 			{

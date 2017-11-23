@@ -279,13 +279,16 @@ Procedure Qualifiers are placed after the return type, but before the procedure 
   - `#foreign`: Used to declare a foreign function that should be found by the linker. (This will prevent name mangling so it won't work with overloaded procedures)
   - `#stdcall`: Used to specify the stdcall calling convention.
 
-Procedures will support default parameters and named arguments:
 
+Procedures support default argument values using the same initialization and inference syntax as variable declarations.
 ```
-DoThing proc (nFoo: int = 10, nBar: int = 11) -> int
+DoThing proc (nFoo: int = 10, nBar := 11)
 { }
+```
 
-DoThing(.nFoo=20)
+Parameters can be specified by name at the procedure call.
+```
+foo := SFoo(`nBar 45, `nFoo 22)
 ```
 
 Procedure references are declared with the same syntax as declaring them.
@@ -298,6 +301,7 @@ Support for variadic arguments is currently limited to foreign functions (*Cough
 ```
 printf (pChzFormat: & u8, ..) #foreign -> s32
 ```
+
 
 Coming soon: Structure literals with syntax like a procedure call. (including support for default values.)
 To Do: structure literal syntax is just like a procedure call - with default values as specified in the definition
@@ -359,7 +363,7 @@ short term tasks:
 longer term tasks:
 - [ ] first class string type
 - [ ] array bounds checking
-- [ ] named default arguments
+- [x] named default arguments
 - [ ] struct literal support
 - [ ] support for inheritance, protocols
 - [ ] first class bitfield type

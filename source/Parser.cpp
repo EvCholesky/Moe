@@ -802,7 +802,6 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 				{
 					CSTNode * pStnodLabel = nullptr;
 					const char * pCozLabel = "error";
-					/* wip, being developed on other branch
 					if (pLex->m_tok == TOK_Label)
 					{
 						TokNext(pLex);
@@ -820,17 +819,17 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 						else
 						{
 							pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
-							pStnodLAbel->IAppendChild(pStnodIdent);
+							pStnodLabel->IAppendChild(pStnodIdent);
 						}
 					}
-					*/
 
 					CSTNode * pStnodArg = PStnodParseLogicalAndOrExpression(pParctx, pLex);
 					if (pStnodLabel)
 					{
 						if (!pStnodArg)
 						{
-							ParseError(pParctx, pLex, "Labeled argument '%s' does not specify a value", pCozLabel);
+							CSTNode * pStnodIdent = pStnodLabel->PStnodChildSafe(0);
+							ParseError(pParctx, pLex, "Labeled argument '%s' does not specify a value", StrFromIdentifier(pStnodIdent).PCoz());
 						}
 						else
 						{
@@ -4392,6 +4391,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_VariadicArg:			AppendCoz(pStrbuf, "..");					return;
 	case PARK_ArrayLiteral:			AppendCoz(pStrbuf, "arrayLit");				return;
 	case PARK_Cast:					AppendCoz(pStrbuf, "cast");					return;
+	case PARK_ArgumentLabel:		AppendCoz(pStrbuf, "`"); 					return;
 	case PARK_Error:
 	default:						AppendCoz(pStrbuf, "error");				return;
 	}

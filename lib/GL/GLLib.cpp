@@ -2,8 +2,12 @@
 
 #include "EwcTypes.h"
 
+#ifdef _WINDOWS
 #include <WindowsStub.h>
 #include <mmsystem.h>
+#elif _OSX
+#include <mach/mach_time.h>
+#endif
 #include <GLFW/glfw3.h>
 
 
@@ -289,7 +293,7 @@ KEYCODE KeycodeFromGlfwKey(int nKey)
 
 static void GlfwKeyboardCallback(GLFWwindow * pWindow, int nKey, int nScancode, int nAction, int nMods)
 {
-	KEYCODE keycode = KeycodeFromGlfwKey(nKey);
+	//KEYCODE keycode = KeycodeFromGlfwKey(nKey);
 
 	EDGES edges;
 	switch (nAction)
@@ -614,16 +618,28 @@ extern "C" s32 GetMonitorRefresh(void * pVHwnd)
 
 extern "C" s64 CTickPerSecond()
 {
+#if _WINDOWS
     LARGE_INTEGER lrgintFrequency;
     QueryPerformanceFrequency(&lrgintFrequency);
     return lrgintFrequency.QuadPart;
+#elif _OSX
+    mach_timebase_info_data_t timeinfo;
+	mach_timebase_info(&timeinfo);
+
+	// cTicks * (numer/denom) -> ticks per nanosecond
+	return ((s64)timeinfo.numer * 1000000) / (s64)timeinfo.denom;
+#endif
 }
 
 extern "C" s64 CTickWallClock()
 {
+#if _WINDOWS
     LARGE_INTEGER lrgint;
     QueryPerformanceCounter(&lrgint);
     return lrgint.QuadPart;
+#elif _OSX
+    return mach_absolute_time();
+#endif
 }
 
 extern "C" bool FTrySetTimerResolution(u32 msResolution)
@@ -661,5 +677,4 @@ extern "C" uint32_t NTimeSeed()
 					((uint32_t)systime.wMinute * 60000) + 
 					((uint32_t)systime.wHour * 3600000);
 	return nRet;
-
 }

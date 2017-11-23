@@ -44,6 +44,8 @@ enum ERRID
 	ERRID_NotYetSupported			= 2011,
 	ERRID_AmbiguousOverload			= 2012,
 	ERRID_BadOverloadSig			= 2013,
+	ERRID_ArgumentSuppliedTwice		= 2014,
+	ERRID_NamedArgumentNotFound		= 2015,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,
