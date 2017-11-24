@@ -80,7 +80,7 @@ struct SPermutation // tag = perm
 								m_arypPermChild.Clear();
 							}
 
-	CString					m_strVar;			// substitution name '$type' (excluding the '$')
+	CString					m_strVar;			// substitution name '?type' (excluding the 's')
 	CDynAry<SOption *>		m_arypOpt;
 	CDynAry<SPermutation *>	m_arypPermChild;	// other variable to permute for this option
 	SLexerLocation			m_lexloc;
@@ -349,7 +349,7 @@ char * PCozAllocateSubstitution(
 	const char * pCozIt = pCozInput;
 	while (*pCozIt != '\0')
 	{
-		if (*pCozIt == '$')
+		if (*pCozIt == '?')
 		{
 			++pCozIt;
 
@@ -375,12 +375,12 @@ char * PCozAllocateSubstitution(
 			if (!pSub)
 			{
 				CString strName(pCozIt, pCozEnd - pCozIt +1);
-				ParseError(pTesctx, pLexloc, "Unable to find substitution for $%s in string %s", strName.PCoz(), pCozInput);
+				ParseError(pTesctx, pLexloc, "Unable to find substitution for ?%s in string %s", strName.PCoz(), pCozInput);
 				return nullptr;
 			}
 			else if (pSub == pSubSelf)
 			{
-				ParseError(pTesctx, pLexloc, "Cannot substitute $%s recursively in option %s", pSubSelf->m_strVar.PCoz(), pCozInput);
+				ParseError(pTesctx, pLexloc, "Cannot substitute ?%s recursively in option %s", pSubSelf->m_strVar.PCoz(), pCozInput);
 				return nullptr;
 			}
 
@@ -406,7 +406,7 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 	ERRID errid = ERRID_Nil;
 	while (pLex->m_tok != TOK('|') && pLex->m_tok != TOK(')'))
 	{
-		if (pLex->m_tok == TOK('$'))
+		if (pLex->m_tok == TOK('?'))
 		{
 			pCozErridMin = pLex->m_pChBegin;
 
@@ -414,7 +414,7 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 
 			if (!FConsumeIdentifier(pTesctx, pLex, "errid"))
 			{
-				ParseError(pTesctx, pLex, "expected $errid, encountered '%s'", PCozCurrentToken(pLex));
+				ParseError(pTesctx, pLex, "expected ?errid, encountered '%s'", PCozCurrentToken(pLex));
 				break;
 			}
 			
@@ -422,7 +422,7 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 			{
 				if (pLex->m_tok != TOK_Literal)
 				{
-					ParseError(pTesctx, pLex, "expected $errid number, encountered '%s'", PCozCurrentToken(pLex));
+					ParseError(pTesctx, pLex, "expected ?errid number, encountered '%s'", PCozCurrentToken(pLex));
 				}
 				else
 				{
@@ -484,7 +484,7 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 static SPermutation * PPermParse(STestContext * pTesctx, SLexer * pLex)
 {
 	SLexerLocation lexloc(pLex);
-	if (pLex->m_tok != TOK('$'))
+	if (pLex->m_tok != TOK('?'))
 	{
 		return nullptr;
 	}
@@ -493,7 +493,7 @@ static SPermutation * PPermParse(STestContext * pTesctx, SLexer * pLex)
 
 	if (pLex->m_tok != TOK_Identifier)
 	{
-		ParseError(pTesctx, pLex, "Expected variable name (following '$'), but encountered '%s'", PCozCurrentToken(pLex));
+		ParseError(pTesctx, pLex, "Expected variable name (following '?'), but encountered '%s'", PCozCurrentToken(pLex));
 		return nullptr;
 	}
 
@@ -941,7 +941,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 			auto pSubMax = pTesctx->m_arySubStack.PMac();
 			for (auto pSubIt = pTesctx->m_arySubStack.A(); pSubIt != pSubMax; ++pSubIt)
 			{
-				//printf("$%s:%s, ", pSubIt->m_strVar.PCoz(), (pSubIt->m_pCozOption) ? pSubIt->m_pCozOption : "null");
+				//printf("?%s:%s, ", pSubIt->m_strVar.PCoz(), (pSubIt->m_pCozOption) ? pSubIt->m_pCozOption : "null");
 
 				if (pSubIt->m_pOpt->m_erridExpected != ERRID_Nil)
 				{

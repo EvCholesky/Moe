@@ -372,7 +372,7 @@ int main(int cpChzArg, const char * apChzArg[])
 				static const char * s_pChzLibOption = "-l";
 				static const char * s_pChzLibPathOption = "-L";
 				static const char * s_pChzLibExtension = "";
-				static const char * s_pChzOutputFileOption = "-o";
+				//static const char * s_pChzOutputFileOption = "-o";
 
 				arypChzOptions.Append((work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug);
 			#endif

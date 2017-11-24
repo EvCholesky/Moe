@@ -168,7 +168,6 @@ void PrintErrorLine(SError * pError, const char * pChzPrefix, const SLexerLocati
 	if (pError->m_errs == ERRS_Hidden)
 		return;
 
-
 	if (pLexloc && pLexloc->FIsValid())
 	{
 		s32 iLine;

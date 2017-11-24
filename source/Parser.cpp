@@ -4190,7 +4190,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 		case PARK_Nop:				AppendCoz(pStrbuf, "Nop");		return;
 		case PARK_Uninitializer:	AppendCoz(pStrbuf, "---");		return;
 		case PARK_AssignmentOp:		AppendCoz(pStrbuf, "=");		return;
-		default:					AppendCoz(pStrbuf, "???");		return;
+		default:					AppendCoz(pStrbuf, "unk");		return;
 		}
 	}
 
