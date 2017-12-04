@@ -59,7 +59,26 @@ struct SUnknownType // tag = untype
 
 #define VALIDATE_NAME_MANGLING 1
 
+struct SInstantiateRequest // tag = insreq
+{
+								SInstantiateRequest()
+								:m_pStnodDefinition(nullptr)
+								,m_pSym(nullptr)
+								,m_pGenmap(nullptr)
+								,m_arypInsctx(BK_TypeCheckGenerics)
+									{ ; }
+								~SInstantiateRequest()
+								{
+									printf("~SInstantiateRequest() this = %p, %p\n", this, m_arypInsctx.m_pAlloc);
+								}
 
+
+	CSTNode 	* 				m_pStnodDefinition;
+	SSymbol *					m_pSym;				// instantiated type, tin proc with resolved argument types
+	SGenericMap * 				m_pGenmap;
+
+	CDynAry<SInstantiateContext *> m_arypInsctx; // code that instantiated this generic
+};
 
 struct STypeCheckWorkspace // tag = tcwork
 {
@@ -71,6 +90,8 @@ struct STypeCheckWorkspace // tag = tcwork
 					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
 					,m_arypTcframPending()
 					,m_arypTcframWaiting()
+					,m_aryInsreq(pAlloc, EWC::BK_TypeCheck)
+					,m_arypInsctxManaged(pAlloc, EWC::BK_TypeCheck)
 						{
 							m_aryTcfram.AllocArray(m_pAlloc, cTcfram);
 							m_arypTcframPending.AllocArray(m_pAlloc, cTcfram);
@@ -79,6 +100,12 @@ struct STypeCheckWorkspace // tag = tcwork
 
 					~STypeCheckWorkspace()
 						{
+							for (auto ppInsctx = m_arypInsctxManaged.A(); ppInsctx != m_arypInsctxManaged.PMac(); ++ppInsctx)
+							{
+								m_pAlloc->EWC_DELETE(*ppInsctx);
+							}
+							m_arypInsctxManaged.Clear();
+
 							m_pAlloc->EWC_FREE(m_arypTcframWaiting.A());
 							m_pAlloc->EWC_FREE(m_arypTcframPending.A());
 							m_pAlloc->EWC_FREE(m_aryTcfram.A());
@@ -92,15 +119,18 @@ struct STypeCheckWorkspace // tag = tcwork
 	CAry<STypeCheckFrame *>					m_arypTcframPending;	// frames ready to be run again (may stop 
 																	//  during check, not guaranteed to have all types)
 	CAry<STypeCheckFrame *>					m_arypTcframWaiting;	// frames waiting for one specific symbol
+
+	CDynAry<SInstantiateRequest>			m_aryInsreq;			// generics that need to be instantiated -> typechecked
+	CDynAry<SInstantiateContext *>			m_arypInsctxManaged;	// instantiate contexts that need to be deleted
 };
 
 
 extern bool FDoesOperatorExist(TOK tok, const SOpTypes * pOptype);
 bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst, CSymbolTable * pSymtab);
-void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
+void OnTypeResolve(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
 STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit);
 bool FDoesOperatorReturnBool(PARK park);
-void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit);
+void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit);
 
 CNameMangler::CNameMangler(EWC::CAlloc * pAlloc, size_t cBStartingMax)
 :m_pAlloc(pAlloc)
@@ -368,6 +398,29 @@ STypeInfoProcedure * PTinprocAlloc(
 
 	pSymtab->AddManagedTin(pTinproc);
 	return pTinproc;
+}
+
+STypeInfoProcedure * PTinprocCopy(CSymbolTable * pSymtab, STypeInfoProcedure * pTinprocSrc)
+{
+	STypeInfoProcedure * pTinprocNew = PTinprocAlloc(
+										pSymtab,
+										pTinprocSrc->m_arypTinParams.C(),
+										pTinprocSrc->m_arypTinReturns.C(),
+										pTinprocSrc->m_strName.PCoz());
+
+	pTinprocNew->m_pStnodDefinition = pTinprocSrc->m_pStnodDefinition;
+	pTinprocNew->m_fHasVarArgs = pTinprocSrc->m_fHasVarArgs;
+	pTinprocNew->m_fHasGenericArgs = pTinprocSrc->m_fHasGenericArgs;
+	pTinprocNew->m_fIsCommutative = pTinprocSrc->m_fIsCommutative;
+	pTinprocNew->m_inlinek = pTinprocSrc->m_inlinek;
+	pTinprocNew->m_callconv = pTinprocSrc->m_callconv;
+
+	pTinprocNew->m_arypTinParams.Append(pTinprocSrc->m_arypTinParams.A(), pTinprocSrc->m_arypTinParams.C());
+	pTinprocNew->m_arypTinReturns.Append(pTinprocSrc->m_arypTinReturns.A(), pTinprocSrc->m_arypTinReturns.C());
+
+	pTinprocNew->m_mpIptinGrfparmq.Clear();
+	pTinprocNew->m_mpIptinGrfparmq.Append(pTinprocSrc->m_mpIptinGrfparmq.A(), pTinprocSrc->m_mpIptinGrfparmq.C());
+	return pTinprocNew;
 }
 
 STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
@@ -1142,7 +1195,7 @@ inline bool FComputeBinaryOpOnLiterals(
 }
 
 
-void FinalizeArrayLiteralType(CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit, CSTNode * pStnodLit)
+void FinalizeArrayLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit, CSTNode * pStnodLit)
 {
 	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "finalizing array with non-array literal"))
 		return;
@@ -1162,12 +1215,12 @@ void FinalizeArrayLiteralType(CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit
 	{
 		for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
 		{
-			FinalizeLiteralType(pSymtab, pTinlit->m_pTinSource, pStnodList->PStnodChild(iStnod));
+			FinalizeLiteralType(pTcwork, pSymtab, pTinlit->m_pTinSource, pStnodList->PStnodChild(iStnod));
 		}
 	}
 }
 
-void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit)
+void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit)
 {
 	if (!pStnodLit->m_pTin || pStnodLit->m_pTin->m_tink != TINK_Literal)
 		return;
@@ -1242,7 +1295,7 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 				} break;
 			case LITK_Array:
 				{
-					FinalizeArrayLiteralType(pSymtab, pTinlitPrev, pStnodLit);
+					FinalizeArrayLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
 				} break;
 			default: EWC_ASSERT(false, "unexpected literal type");
 			}
@@ -1265,9 +1318,13 @@ void FinalizeLiteralType(CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * 
 	case TINK_Array:
 		{
 			STypeInfoLiteral * pTinlitPrev = PTinDerivedCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
-			FinalizeArrayLiteralType(pSymtab, pTinlitPrev, pStnodLit);
+			FinalizeArrayLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
 
 		} break;
+	case TINK_Generic:
+		{
+			(void) PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit);
+		}break;
 	case TINK_Null: // fall through
 	case TINK_Void: // fall through
 	default:
@@ -1731,7 +1788,6 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 				if (!FTypesAreSame(*ppTinLhs, *ppTinRhs))
 					return false;
 			}
-
 			ppTinLhs = pTinprocLhs->m_arypTinReturns.A();
 			ppTinRhs = pTinprocRhs->m_arypTinReturns.A();
 			for (STypeInfo ** ppTinLhsMax = pTinprocLhs->m_arypTinReturns.PMac() ; ppTinLhs != ppTinLhsMax; ++ppTinLhs, ++ppTinRhs)
@@ -1741,10 +1797,166 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 			}
 			return true;
 		}
-	default :			
+	default:			
 		EWC_ASSERT(false, "unhandled TINK");
 		return false;
 	}
+
+}
+
+bool FIsGenericType(STypeInfo * pTin)
+{
+	// This may happen with a type that's not done typechecking...
+	if (!EWC_FVERIFY(pTin != nullptr, "null type in FIsGenericType"))
+		return false;
+
+	switch (pTin->m_tink)
+	{
+	case TINK_Generic:
+		return true;
+    case TINK_Integer:
+    case TINK_Float:
+    case TINK_Bool:
+	case TINK_Literal:
+    case TINK_Null:
+    case TINK_Enum:
+    case TINK_Any:
+    case TINK_Void:
+    	return false;
+    case TINK_Pointer: 		return FIsGenericType(((STypeInfoPointer *)pTin)->m_pTinPointedTo);
+    case TINK_Array:	 	return FIsGenericType(((STypeInfoArray *)pTin)->m_pTin);
+	case TINK_Qualifier:	return FIsGenericType(((STypeInfoQualifier *)pTin)->m_pTin);
+    case TINK_Procedure:
+    	{
+    		auto pTinproc = (STypeInfoProcedure *)pTin;
+
+    		if (EWC_FVERIFY(pTinproc->m_pStnodDefinition->m_strees >= STREES_SignatureTypeChecked, "pTinproc isn't typechecked yet in FIsGenericType()"))
+    			return false;
+
+    		int iParam = 0;
+    		for (STypeInfo ** ppTin = pTinproc->m_arypTinParams.A(); ppTin != pTinproc->m_arypTinParams.PMac(); ++ppTin, ++iParam)
+    		{
+    			if (FIsGenericType(*ppTin))
+    				return true;
+    		}
+
+    		for (STypeInfo ** ppTin = pTinproc->m_arypTinReturns.A(); ppTin != pTinproc->m_arypTinReturns.PMac(); ++ppTin)
+    		{
+    			if (FIsGenericType(*ppTin))
+    				return true;
+    		}
+    		return false;
+    	}
+    case TINK_Struct:
+    	{
+    		auto pTinstruct = (STypeInfoStruct *)pTin;
+			EWC::CAry<STypeStructMember>	m_aryTypemembField;
+
+
+    		for (STypeStructMember * pTypememb = pTinstruct->m_aryTypemembField.A();
+    		 	pTypememb != pTinstruct->m_aryTypemembField.PMac();
+    		  	++pTypememb)
+    		{
+    			if (FIsGenericType(pTypememb->m_pTin))
+    				return true;
+    		}
+    		return false;
+    	}
+	default:
+		EWC_ASSERT(false, "unhandled TINK");
+		return false;
+	}
+}
+
+bool FCanGenericBeInstantiatedAs(STypeInfo * pTinParameter, STypeInfo * pTinInstance, SGenericMap * pGenmap)
+{
+	switch (pTinParameter->m_tink)
+	{
+	case TINK_Generic:
+	{
+		return true;
+	}
+    case TINK_Integer:
+    case TINK_Float:
+    case TINK_Bool:
+	case TINK_Literal:
+    case TINK_Null:
+    case TINK_Enum:
+    case TINK_Any:
+    case TINK_Void:
+	    // Allow non-generic types to be passed into this function so we don't have to walk the typeinfo
+    	//  twice, checking if generic - then if can be instanciated.
+
+    	return FTypesAreSame(pTinParameter, pTinInstance);
+    case TINK_Pointer:
+	    {
+	    	if (pTinInstance->m_tink != TINK_Pointer)
+	    		return false;
+	    	return FCanGenericBeInstantiatedAs(
+	    			((STypeInfoPointer*)pTinParameter)->m_pTinPointedTo, 
+			    	((STypeInfoPointer*)pTinInstance)->m_pTinPointedTo,
+			    	pGenmap);
+     	}
+    case TINK_Array:
+	    {
+	    	if (pTinInstance->m_tink != TINK_Array)
+	    		return false;
+	    	return FCanGenericBeInstantiatedAs(
+	    			((STypeInfoArray*)pTinParameter)->m_pTin, 
+			    	((STypeInfoArray*)pTinInstance)->m_pTin,
+			    	pGenmap);
+     	}
+	case TINK_Qualifier:
+	    {
+	    	if (pTinInstance->m_tink != TINK_Qualifier)
+	    		return false;
+	    	return FCanGenericBeInstantiatedAs(
+	    			((STypeInfoQualifier*)pTinParameter)->m_pTin, 
+			    	((STypeInfoQualifier*)pTinInstance)->m_pTin,
+			    	pGenmap);
+     	}
+    case TINK_Procedure:
+    	{
+    		// both types need to be procedures and non generic types must match for a procedure call
+    		if (pTinInstance->m_tink != TINK_Procedure)
+    			return false;
+
+    		auto pTinprocParameter = (STypeInfoProcedure *)pTinParameter;
+    		auto pTinprocInstance = (STypeInfoProcedure *)pTinInstance;
+
+    		auto cpTinParams = pTinprocParameter->m_arypTinParams.C();
+    		if (cpTinParams != pTinprocInstance->m_arypTinParams.C())
+    			return false;
+
+    		auto cpTinReturns = pTinprocParameter->m_arypTinReturns.C();
+    		if (pTinprocParameter->m_arypTinReturns.C() != pTinprocInstance->m_arypTinReturns.C())
+    			return false;
+
+    		for (int ipTin = 0; ipTin < cpTinParams; ++ipTin)
+    		{
+    			if (!FCanGenericBeInstantiatedAs(
+    					pTinprocParameter->m_arypTinParams[ipTin], 
+    					pTinprocInstance->m_arypTinParams[ipTin],
+    					pGenmap))
+    				return false;
+    		}
+
+    		for (int ipTin = 0; ipTin < cpTinReturns; ++ipTin)
+    		{
+    			if (!FCanGenericBeInstantiatedAs(
+    					pTinprocParameter->m_arypTinReturns[ipTin],
+    				 	pTinprocInstance->m_arypTinReturns[ipTin],
+    					pGenmap))
+    				return false;
+    		}
+    		return true;
+    	}
+    case TINK_Struct:
+    	return FTypesAreSame(pTinParameter, pTinInstance); // generic structs TBD
+    default:
+    	EWC_ASSERT(false, "Unhandled TINK");
+    	return false;
+    }
 }
 
 inline STypeInfo * PTinElement(STypeInfo * pTin)
@@ -2300,10 +2512,16 @@ STypeInfo * PTinFromTypeSpecification(
 		case PARK_ProcedureReferenceDecl:
 			{
 				pTinFinal = pStnodIt->m_pTin;
-				EWC_ASSERT(pTinFinal, "expected pTinproc before PTinFromTypeSpecification");
+				EWC_ASSERT(pTinFinal, "Expected pTinproc before PTinFromTypeSpecification");
 				pStnodIt = nullptr;
 			} break;
-		default: EWC_ASSERT(false, "unexpected parse node %s in PTinFromTypeSpecification", PChzFromPark(pStnod->m_park));
+		case PARK_GenericDecl:
+			{ 
+				pTinFinal = pStnodIt->m_pTin;
+				EWC_ASSERT(pTinFinal, "Expected pTingen before PTinFromTypeSpecification");
+				pStnodIt = nullptr;
+			} break;
+		default: EWC_ASSERT(false, "Unexpected parse node %s in PTinFromTypeSpecification", PChzFromPark(pStnod->m_park));
 			break;
 		}
 	}
@@ -2384,7 +2602,7 @@ STypeInfo * PTinFromTypeSpecification(
 						}
 						else
 						{
-							FinalizeLiteralType(pSymtab, pTinCount, pStnodDim);
+							FinalizeLiteralType(pTcwork, pSymtab, pTinCount, pStnodDim);
 							pStvalDim = pStnodDim->m_pStval;
 						}
 					}
@@ -2417,6 +2635,7 @@ STypeInfo * PTinFromTypeSpecification(
 				pStnodIt = pStnodIt->PStnodChild(1);
 			} break;
 		case PARK_ProcedureReferenceDecl:
+		case PARK_GenericDecl:
 			{
 				*ppTinCur = pTinFinal;
 				ppTinCur = nullptr;
@@ -2690,7 +2909,7 @@ void ResolveSpoofTypedef(
 	EWC_ASSERT(pSym->m_pTin == nullptr, "spoof typedef already resolved");
 	pSym->m_pTin = pTin;
 
-	OnTypeComplete(pTcwork, pSym);
+	OnTypeResolve(pTcwork, pSym);
 }
 
 void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodArray, int cElements, STypeInfo * pTinElement)
@@ -2841,12 +3060,14 @@ void AdjustArgumentOrder(ARGORD argord, CSTNode * pStnod, SOpTypes * pOptype)
 struct SProcMatchFit // tag pmfit
 {
 						SProcMatchFit(CAlloc * pAlloc)
-						:m_mpIArgPStnod(pAlloc, BK_TypeCheck)
-						,m_mpIArgArgsrc(pAlloc, BK_TypeCheck)
+						:m_mpIArgPStnod(pAlloc, BK_TypeCheckProcmatch)
+						,m_mpIArgArgsrc(pAlloc, BK_TypeCheckProcmatch)
+						,m_pGenmap(nullptr)
 							{ ; }
 
 	CDynAry<CSTNode *>	m_mpIArgPStnod;		// calling arguments with named arg and defaults resolved
 	CDynAry<ARGSRC>		m_mpIArgArgsrc;
+	SGenericMap *		m_pGenmap;
 };
 
 struct SProcMatchParam // tag = pmparam
@@ -2943,12 +3164,15 @@ PROCMATCH ProcmatchCheckArguments(
 	// loop over the arguments and find a stnode for each argument
 	size_t cArgTinproc = pTinproc->m_arypTinParams.C();
 	size_t cArg = ewcMax(cArgCall, cArgTinproc); 
-	CDynAry<CSTNode *> mpIArgPStnod(pTcwork->m_pAlloc, BK_TypeCheck, cArg);
-	CDynAry<ARGSRC> mpIArgArgsrc(pTcwork->m_pAlloc, BK_TypeCheck, cArg);
+	CDynAry<CSTNode *> mpIArgPStnod(pTcwork->m_pAlloc, BK_TypeCheckProcmatch, cArg);
+	CDynAry<ARGSRC> mpIArgArgsrc(pTcwork->m_pAlloc, BK_TypeCheckProcmatch, cArg);
 	mpIArgPStnod.AppendFill(cArg, nullptr);
 	mpIArgArgsrc.AppendFill(cArg, ARGSRC_Nil);
 
-	CDynAry<CString> aryStrArgName(pTcwork->m_pAlloc, BK_TypeCheck, cArg);
+	auto pStnodDefinition = pTinproc->m_pStnodDefinition;
+	SGenericMap genmap(pTcwork->m_pAlloc, pStnodDefinition->m_pSym);
+
+	CDynAry<CString> aryStrArgName(pTcwork->m_pAlloc, BK_TypeCheckProcmatch, cArg);
 	aryStrArgName.AppendFill(cArgTinproc, "unknown");
 
 	// Fill out default arguments and build list of names
@@ -3108,6 +3332,7 @@ PROCMATCH ProcmatchCheckArguments(
 		}
 
 		STypeInfo * pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, pTinParam);
+
 		if (fIsArgOutsideRange)
 		{
 			if (!pTinproc->m_fHasVarArgs)
@@ -3127,8 +3352,21 @@ PROCMATCH ProcmatchCheckArguments(
 			pTinParam = PTinPromoteVarArg(pTcwork, pSymtab, pTinCall);
 		}
 
+		if (pTinParam && FIsGenericType(pTinParam))
+		{
+			if (FCanGenericBeInstantiatedAs(pTinParam, pTinCallDefault, &genmap))
+			{
+				CString strType = StrFromTypeInfo(pTinCallDefault);
+				//printf("mapping %s -> %s\n", pTinParam->m_strName.PCoz(), strType.PCoz());
+
+				genmap.m_mpPTingenPTinRemapped.Insert((STypeInfoGeneric *)pTinParam, pTinCallDefault);
+				continue;
+			}
+			return PROCMATCH_None;
+		}
+
 		// This behavior can be a bit confusing when we're calling an overloaded function with a numeric literal
-		//  we consider the overload an exact match when the default promotion matches exactly, we can't use the tightes
+		//  we consider the overload an exact match when the default promotion matches exactly, we can't use the tightest
 		//  promotion because that would exact match all implicit numeric conversions (ie. 2 tightest matches to both int and float)
 
 		if (FTypesAreSame(pTinCallDefault, pTinParam))
@@ -3163,6 +3401,12 @@ PROCMATCH ProcmatchCheckArguments(
 		pPmparam->m_pPmfit = pPmfit;
 		pPmfit->m_mpIArgPStnod.Swap(&mpIArgPStnod);
 		pPmfit->m_mpIArgArgsrc.Swap(&mpIArgArgsrc);
+
+		if (!genmap.FIsEmpty())
+		{
+			pPmfit->m_pGenmap = EWC_NEW(pTcwork->m_pAlloc, SGenericMap) SGenericMap(pPmparam->m_pAlloc, nullptr);
+			pPmfit->m_pGenmap->Swap(&genmap);
+		}
 	}
 
 	return procmatch;
@@ -3228,6 +3472,273 @@ void ResolveProcCallArguments(CSTNode * pStnodCall, CAlloc * pAlloc, SProcMatchF
 	{
 		EWC_ASSERT(pStnodCall->m_arypStnodChild[ipStnod] != nullptr, "missing argument %d after resolve", ipStnod);
 	}
+}
+
+SInstantiateContext * PInsctxNew(STypeCheckWorkspace * pTcwork)
+{
+	SInstantiateContext * pInsctx = EWC_NEW(pTcwork->m_pAlloc, SInstantiateContext) SInstantiateContext();
+	pTcwork->m_arypInsctxManaged.Append(pInsctx);
+	return pInsctx;
+}
+
+SInstantiateRequest * PInsreqLookup(
+	STypeCheckWorkspace * pTcwork,
+	CSTNode * pStnodDefinition,
+	SGenericMap * pGenmap,
+	SInstantiateContext * pInsctx)
+{
+	CAry<SInstantiateContext *> m_arypInsctx;
+	for (SInstantiateRequest * pInsreq = pTcwork->m_aryInsreq.A(); pInsreq != pTcwork->m_aryInsreq.PMac(); ++pInsreq)
+	{
+		if (pInsreq->m_pStnodDefinition != pStnodDefinition)
+			continue;
+
+		auto pmpPTingenPTinRemappedIt = &pInsreq->m_pGenmap->m_mpPTingenPTinRemapped;
+		auto pmpPTingenPTinRemappedArg = &pGenmap->m_mpPTingenPTinRemapped;
+		if (pmpPTingenPTinRemappedIt->C() != pmpPTingenPTinRemappedArg->C())
+			continue;
+
+		EWC::CHash<STypeInfoGeneric *, STypeInfo *>::CIterator iterIt(pmpPTingenPTinRemappedIt);
+		EWC::CHash<STypeInfoGeneric *, STypeInfo *>::CIterator iterArg(pmpPTingenPTinRemappedArg);
+
+		bool fAreTheSame = true;
+		STypeInfoGeneric ** ppTingenIt;
+		STypeInfoGeneric ** ppTingenArg;
+		STypeInfo ** ppTinIt;
+		STypeInfo ** ppTinArg;
+		while ((ppTinIt = iterIt.Next(&ppTingenIt)))
+		{
+			ppTinArg = iterArg.Next(&ppTingenArg);
+			if (!EWC_FVERIFY(ppTinArg, "hash value mismatch"))
+				break;	
+
+			STypeInfo * pTinIt = *ppTinIt;
+			STypeInfo * pTinArg = *ppTinArg;
+			fAreTheSame &= (*ppTingenIt != *ppTingenArg || !FTypesAreSame(pTinIt, pTinArg));
+			if (!fAreTheSame)
+				break;
+		}
+
+		if (fAreTheSame)
+		{
+			pInsreq->m_arypInsctx.Append(pInsctx);
+			return pInsreq;
+		}
+	}
+
+	return nullptr;
+}
+
+static inline STypeInfo * PTinRemapGeneric(
+	STypeCheckWorkspace * pTcwork,
+	SLexerLocation * pLexloc,
+	STypeInfo * pTin,
+	SGenericMap * pGenmap)
+{
+	if (!pTin || pTin->m_tink != TINK_Generic)
+		return pTin;
+
+	auto pTingen = (STypeInfoGeneric *)pTin;
+	STypeInfo ** ppTin = pGenmap->m_mpPTingenPTinRemapped.Lookup((STypeInfoGeneric *)pTingen);
+	if (ppTin)
+	{
+		return *ppTin;
+	}
+	else
+	{
+		EmitError(pTcwork->m_pErrman, pLexloc, ERRID_GenericLookupFail,
+			"failed looking up generic type $%s", pTingen->m_strName.PCoz());
+	}
+
+	return pTin;
+}
+
+static inline SSymbol * PSymRemapGeneric(
+	STypeCheckWorkspace * pTcwork,
+	SLexerLocation * pLexloc,
+	SSymbol * pSymSrc,
+	EWC::CHash<SSymbol *, SSymbol *> * pmpPSymGenericPSymRemapped)
+{
+	if (!pSymSrc)
+		return nullptr;
+
+	SSymbol ** ppSymRemapped = pmpPSymGenericPSymRemapped->Lookup(pSymSrc);
+	if (ppSymRemapped)
+	{
+		return *ppSymRemapped;
+	}
+	else
+	{
+		EmitError(pTcwork->m_pErrman, pLexloc, ERRID_GenericLookupFail,
+			"failed looking up generic symbol $%s", pSymSrc->m_strName.PCoz());
+	}
+
+	return pSymSrc;
+}
+
+void RemapGenericStnodCopy(
+	STypeCheckWorkspace * pTcwork,
+	CSTNode * pStnodEntry,
+	SGenericMap * pGenmap,
+	EWC::CHash<SSymbol *, SSymbol *> * pmpSymGenericPSymRemapped,
+	CSymbolTable * pSymtabSrc,
+	CSymbolTable * pSymtabNew)
+{
+	CDynAry<CSTNode *> arypStnodStack(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
+	arypStnodStack.Append(pStnodEntry);
+
+	while (arypStnodStack.C())
+	{
+		auto pStnod	= arypStnodStack.Last();
+		arypStnodStack.PopLast();
+
+		auto pTinPrev = pStnod->m_pTin;
+		auto pSymPrev = pStnod->m_pSym;
+		pStnod->m_pTin = PTinRemapGeneric(pTcwork, &pStnod->m_lexloc, pStnod->m_pTin, pGenmap);
+		pStnod->m_pSym = PSymRemapGeneric(pTcwork, &pStnod->m_lexloc, pStnod->m_pSym, pmpSymGenericPSymRemapped);
+
+		if (pStnod->m_pSym && pStnod->m_pSym->m_pTin)
+		{
+			EWC_ASSERT(!FIsGenericType(pStnod->m_pSym->m_pTin), "symbol pTin was not remapped!");
+		}
+
+		for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
+		{
+			arypStnodStack.Append(pStnod->PStnodChild(iStnod));
+		}
+
+		if (pStnod->m_pSymtab)
+		{
+			EWC_ASSERT(pStnod->m_pSymtab != pSymtabSrc, "embedded link to old symbol table from PARK_%s, %p", PChzFromPark(pStnod->m_park), pStnod);
+			EWC_ASSERT(!pStnod->m_pSymtab || pStnod->m_pSymtab->m_pSymtabParent != pSymtabSrc,
+														"embeded parent link to old symbol table from PARK_%s, %p", 
+														PChzFromPark(pStnod->m_park), pStnod);
+		}
+	}
+}
+
+SInstantiateRequest * PInsreqInstantiateGenericProcedure(
+	STypeCheckWorkspace * pTcwork,
+	CSTNode * pStnodDefinition,
+	SGenericMap * pGenmap, 
+	SInstantiateContext * pInsctx)
+{
+	CSTProcedure * pStprocSrc = pStnodDefinition->m_pStproc;
+	if (!EWC_FVERIFY(pStprocSrc, "expected procedure def"))
+		return nullptr;
+
+	// remap the types for the argument list and build symbols for them
+	CSTNode * pStnodParameterList = pStnodDefinition->PStnodChildSafe(pStprocSrc->m_iStnodParameterList);
+	CSTNode * pStnodBody = pStnodDefinition->PStnodChildSafe(pStprocSrc->m_iStnodBody);
+
+	auto pStnodProcCopy = PStnodCopy(pTcwork->m_pAlloc, pStnodDefinition);
+
+	auto pInsreq = pTcwork->m_aryInsreq.AppendNew();
+	pInsreq->m_pGenmap = pGenmap;
+	pInsreq->m_pStnodDefinition = pStnodDefinition;
+	pInsreq->m_arypInsctx.AllocArray(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
+	pInsreq->m_arypInsctx.Append(pInsctx);
+
+	pTcwork->m_pErrman->PushInsctx(pInsctx);
+
+	// copy the symbol table, but replace generic types from the map
+
+	// BB - is this really the right way to get the proc's symtab? might have a param list, might not.
+	CSymbolTable * pSymtabSrc = nullptr;
+	if (EWC_FVERIFY(pStnodBody, "no body? %s\n", pStnodDefinition->m_pTin->m_strName.PCoz()))
+	{
+		pSymtabSrc = pStnodBody->m_pSymtab;
+	}
+
+	if (!EWC_FVERIFY(pSymtabSrc, "generic procedure source has no symbol table"))
+		return nullptr;
+
+	CSymbolTable * pSymtabNew = PSymtabNew(pTcwork->m_pAlloc, pSymtabSrc, pSymtabSrc->m_strNamespace);	
+	pSymtabNew->m_pSymtabParent = pSymtabSrc->m_pSymtabParent;
+
+	EWC::CHash<SSymbol *, SSymbol *> mpPSymGenericPSymRemapped(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
+	EWC::CHash<HV, SSymbol *>::CIterator iterSrc(&pSymtabSrc->m_hashHvPSym);
+	SSymbol ** ppSymSrc;
+	while ((ppSymSrc = iterSrc.Next()))
+	{
+		SSymbol * pSymSrc = *ppSymSrc;
+		CSTNode * pStnodDefArg = pSymSrc->m_pStnodDefinition;
+		if (pStnodParameterList)	
+		{
+			for (int ipStnod = 0; ipStnod < pStnodParameterList->CStnodChild(); ++ipStnod)
+			{
+				CSTNode * pStnodChild = pStnodParameterList->PStnodChild(ipStnod);
+				if (pStnodChild->m_pTin == pSymSrc->m_pTin)
+				{
+					pStnodDefArg = pStnodChild;	
+				}
+			}
+		}
+
+		auto pSymNew = pSymtabNew->PSymEnsure(
+			pTcwork->m_pErrman,
+			pSymSrc->m_strName,
+			pStnodDefArg,
+			pSymSrc->m_grfsym);
+
+		pSymNew->m_pTin = PTinRemapGeneric(pTcwork, &pSymSrc->m_pStnodDefinition->m_lexloc, pSymSrc->m_pTin, pGenmap);
+		mpPSymGenericPSymRemapped.Insert(pSymSrc, pSymNew);
+
+		pStnodDefArg->m_pSym = pSymNew;
+		pStnodDefArg->m_pTin = pSymNew->m_pTin;
+	}
+
+	// build pTinproc for the instantiated procedure
+
+	auto pTinprocSrc = PTinDerivedCast<STypeInfoProcedure *>(pStnodDefinition->m_pTin);
+	auto pTinprocNew = PTinprocCopy(pSymtabSrc, pTinprocSrc);
+	pInsreq->m_pSym = pSymtabNew->PSymGenericInstantiate(pStnodDefinition->m_pSym, pTinprocNew);
+
+	for (STypeInfo ** ppTin = pTinprocNew->m_arypTinParams.A(); ppTin != pTinprocNew->m_arypTinParams.PMac(); ++ ppTin)
+	{
+		*ppTin = PTinRemapGeneric(pTcwork, &pStnodDefinition->m_lexloc, *ppTin, pGenmap);
+	}
+
+	for (STypeInfo ** ppTin = pTinprocNew->m_arypTinReturns.A(); ppTin != pTinprocNew->m_arypTinReturns.PMac(); ++ ppTin)
+	{
+		*ppTin = PTinRemapGeneric(pTcwork, &pStnodDefinition->m_lexloc, *ppTin, pGenmap);
+	}
+	/*
+	printf("Instantiating generic:\npSyntabSrc\n");
+	pSymtabSrc->PrintDump();
+
+	printf("pSymtabNew\n");
+	pSymtabNew->PrintDump();
+	*/
+
+	// type check the body with the new values
+
+
+	if (!EWC_FVERIFY(pStnodDefinition->m_pStproc && pStnodDefinition->m_pStproc->m_iStnodBody >= 0, "bad pStnodDefinition"))
+		return nullptr;	
+
+	CSTNode * pStnodBodyCopy = pStnodProcCopy->PStnodChildSafe(pStprocSrc->m_iStnodBody);
+	pStnodBodyCopy->m_pSymtab = pSymtabNew;
+
+	RemapGenericStnodCopy(pTcwork, pStnodBodyCopy, pGenmap, &mpPSymGenericPSymRemapped, pSymtabSrc, pSymtabNew);
+
+	STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
+	pTcfram->m_ipTcframQueue = pTcwork->m_arypTcframPending.C();
+	pTcwork->m_arypTcframPending.Append(pTcfram);
+
+	pTcfram->m_aryTcsent.SetAlloc(pTcwork->m_pAlloc, EWC::BK_TypeCheckStack);
+	STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
+	pTcsent->m_nState = 0;
+	pTcsent->m_pStnod = pStnodBodyCopy;
+	pTcsent->m_pSymtab = pSymtabNew;
+	pTcsent->m_pStnodProcedure = pStnodProcCopy;
+	pTcsent->m_pSymContext = pStnodDefinition->m_pSym;
+	pTcsent->m_grfsymlook = FSYMLOOK_Default;
+	pTcsent->m_parkDeclContext = PARK_Nil;
+	pTcsent->m_fAllowForwardDecl = false;
+	pTcsent->m_tcctx = TCCTX_Normal;
+
+	return pInsreq;
 }
 
 TCRET TcretTryFindMatchingProcedureCall(
@@ -3389,7 +3900,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 			symiter = CSymbolTable::CSymbolIterator(pSymtab, strProcName, *pPmparam->m_pLexloc, grfsymlook);
 			while (SSymbol * pSym = symiter.PSymNext())
 			{
-				auto pTinproc = PTinDerivedCast<STypeInfoProcedure  *>(pSym->m_pTin);
+				auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pSym->m_pTin);
 				CString strProc = StrFromTypeInfo(pTinproc);
 
 				PrintErrorLine(&error, "   ", &pSym->m_pStnodDefinition->m_lexloc, "%s", strProc.PCoz());
@@ -3634,22 +4145,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 						}
 
-						// push the body subtree
-						if (pStproc->m_iStnodBody >= 0)
-						{
-							CSTNode * pStnodBody = pStnod->PStnodChild(pStproc->m_iStnodBody);
-							PushTcsent(pTcfram, &pTcsentTop, pStnodBody);
-
-							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
-							pTcsentPushed->m_pStnodProcedure = pStnod;
-							pTcsentPushed->m_pSymtab = pStnodBody->m_pSymtab;
-						}
-					}break;
-				case 3:
-					{
-						SSymbol * pSymProc = pStnod->m_pSym;
-						CString strProcName;
-
 						if (pStproc->m_iStnodParameterList >= 0)
 						{
 							CSTNode * pStnodParams = pStnod->PStnodChild(pStproc->m_iStnodParameterList);
@@ -3678,14 +4173,44 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 						}
 
-						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", strProcName.PCoz()))
+						SSymbol * pSymProc = pStnod->m_pSym;
+						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", pTinproc->m_strName.PCoz()))
 							return TCRET_StoppingError;
 						if (!EWC_FVERIFY(pSymProc->m_pTin, "expected procedure type info to be created during parse"))
 							return TCRET_StoppingError;
 
-						pStnod->m_pSym = pSymProc;
 						EWC_ASSERT(pStnod->m_pSym, "null symbol");
 
+						if (pTinproc && FIsGenericType(pTinproc))
+						{
+							SSymbol * pSymProc = pStnod->m_pSym;
+							auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pSymProc->m_pTin);
+							pTinproc->m_fHasGenericArgs = true;
+
+							OnTypeResolve(pTcwork, pSymProc);
+
+							for (int ipTin = 0; ipTin < pTinproc->m_arypTinParams.C(); ++ipTin)
+							{
+								EWC_ASSERT(pTinproc->m_arypTinParams[ipTin], "null parameter type? arg %d", ipTin);
+							}
+
+							PopTcsent(pTcfram, &pTcsentTop, pStnod);
+							return TCRET_Complete;
+						}
+
+						// push the body subtree
+						if (pStproc->m_iStnodBody >= 0)
+						{
+							CSTNode * pStnodBody = pStnod->PStnodChild(pStproc->m_iStnodBody);
+							PushTcsent(pTcfram, &pTcsentTop, pStnodBody);
+
+							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
+							pTcsentPushed->m_pStnodProcedure = pStnod;
+							pTcsentPushed->m_pSymtab = pStnodBody->m_pSymtab;
+						}
+					}break;
+				case 3:
+					{
 						// compute name mangling
 						auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
 
@@ -3720,8 +4245,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
+						SSymbol * pSymProc = pStnod->m_pSym;
 						pStnod->m_strees = STREES_TypeChecked;
-						OnTypeComplete(pTcwork, pSymProc);
+						OnTypeResolve(pTcwork, pSymProc);
 					}break;
 				}
 			} break;
@@ -3869,6 +4395,30 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							ResolveProcCallArguments(pStnod, pTcwork->m_pAlloc, pmparam.m_pPmfit, 1, pStnod->m_arypStnodChild.C());
 
+							if (pmparam.m_pPmfit->m_pGenmap)
+							{
+								auto pInsctxNew = PInsctxNew(pTcwork);
+								pInsctxNew->m_pGenmap = pmparam.m_pPmfit->m_pGenmap;
+								pInsctxNew->m_lexlocCall = pStnod->m_lexloc;
+
+								auto pInsreq = PInsreqLookup(pTcwork, pSymProc->m_pStnodDefinition, pmparam.m_pPmfit->m_pGenmap, pInsctxNew);
+
+								if (!pInsreq)
+								{
+									pInsreq = PInsreqInstantiateGenericProcedure(
+												pTcwork,
+												pSymProc->m_pStnodDefinition,
+												pmparam.m_pPmfit->m_pGenmap,
+												pInsctxNew);
+								}
+
+								if (!pInsreq)
+									return TCRET_StoppingError;
+
+								pSymProc = pInsreq->m_pSym;
+								EWC_ASSERT(!FIsGenericType(pSymProc->m_pTin), "remap failed");
+							}
+
 							// Note: The callee's symbol and pTin are set by type checking the identifier, this may pick the wrong
 							//  overload, clean it up here.
 							pStnodCallee->m_pSym = pSymProc;
@@ -3884,6 +4434,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								EWC_ASSERT(
 									pStnodDefinition->m_strees >= STREES_SignatureTypeChecked,
 									"expected definition to be type checked");
+
 								EWC_ASSERT(pStnodDefinition->m_pTin == pTinproc, "tin mismatch");
 
 								CSTProcedure * pStproc = pStnodDefinition->m_pStproc;
@@ -3959,7 +4510,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					//  set the implicit cast type on the argument node
 					if (pStnodArg->m_pTin->m_tink == TINK_Literal)
 					{
-						FinalizeLiteralType(pSymtab, pTinParam, pStnodArg);
+						FinalizeLiteralType(pTcwork, pSymtab, pTinParam, pStnodArg);
 					}
 					else
 					{
@@ -4222,7 +4773,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "loose", pTinenum->m_pTinLoose, grfsymlook);
 				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "strict", pTinenum, grfsymlook);
 
-				OnTypeComplete(pTcwork, pSymEnum);
+				OnTypeResolve(pTcwork, pSymEnum);
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			}break;
@@ -4294,7 +4845,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pSymIdent->m_pTin = pStnod->m_pTin;
 					}
 				}
-				OnTypeComplete(pTcwork, pSymIdent);
+				OnTypeResolve(pTcwork, pSymIdent);
 
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
@@ -4346,12 +4897,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
 				pStnod->m_strees = STREES_TypeChecked;
-				OnTypeComplete(pTcwork, pSymStruct);
+				OnTypeResolve(pTcwork, pSymStruct);
 			}break;
 			case PARK_Identifier:
 			{
 				// Note: we're only expecting to get here for identifiers within statements.
-				//  Identifiers for function names, declaration names and types, should do their own type checking.
+				//  Identifiers for function names, declaration names*, should do their own type checking.
+				//      * declaration type identifiers will be type checked here
 
 				CString strIdent = StrFromIdentifier(pStnod);
 				if (EWC_FVERIFY(!strIdent.FIsEmpty(), "identifier node with no value"))
@@ -4374,6 +4926,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
 						if (pStnodDefinition->m_park == PARK_Decl ||
 							pStnodDefinition->m_park == PARK_ConstantDecl ||
+							pStnodDefinition->m_park == PARK_GenericDecl ||
 							pStnodDefinition->m_park == PARK_ArrayLiteral ||
 							pStnodDefinition->m_park == PARK_Typedef ||
 							pStnodDefinition->m_park == PARK_EnumDefinition ||
@@ -4417,6 +4970,49 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 				pStnod->m_strees = STREES_TypeChecked;
 			}break;
+
+			case PARK_GenericDecl:
+			{
+				// Don't push the identifier
+
+				auto pStnodIdent = pStnod->PStnodChild(0);
+				if (!EWC_FVERIFY(pStnodIdent->m_park == PARK_Identifier, "generic decl has no identifier"))
+					return TCRET_StoppingError;
+
+				CString strIdent = StrFromIdentifier(pStnodIdent).PCoz();
+				auto pSymtab = pTcsentTop->m_pSymtab;
+				SSymbol * pSymIdent = pSymtab->PSymLookup(
+												strIdent,
+												pStnodIdent->m_lexloc,
+												pTcsentTop->m_grfsymlook);
+
+				if (!pSymIdent || pSymIdent->m_pStnodDefinition != pStnod)
+				{
+					EmitError(pTcwork, pStnod, "symbol lookup failed for '%s'", strIdent.PCoz());
+					return TCRET_StoppingError;
+				}
+				else
+				{
+					pStnod->m_pSym = pSymIdent;
+					if (pSymIdent->m_pTin == nullptr)
+					{
+						pSymIdent->m_pTin = pStnod->m_pTin;
+					}
+				}
+
+				STypeInfoGeneric * pTingen = EWC_NEW(pSymtab->m_pAlloc, STypeInfoGeneric) 
+												STypeInfoGeneric(strIdent, StrUniqueName(pSymtab->m_pUnsetTin, strIdent));
+				pSymtab->AddManagedTin(pTingen);
+
+				pStnod->m_pTin = pTingen;				
+				pSymIdent->m_pTin = pTingen;
+
+				OnTypeResolve(pTcwork, pSymIdent);
+
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
+				break;
+			} break;
 
 			case PARK_ArrayDecl:
 			case PARK_ReferenceDecl:
@@ -4539,7 +5135,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodInit, pTinType);
 					if (FCanImplicitCast(pTinInit, pTinType))
 					{
-						FinalizeLiteralType(pSymtab, pTinType, pStnodInit);
+						FinalizeLiteralType(pTcwork, pSymtab, pTinType, pStnodInit);
 					}
 					else
 					{
@@ -4579,7 +5175,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pSymIdent->m_pTin = pStnod->m_pTin;
 						}
 					}
-					OnTypeComplete(pTcwork, pSymIdent);
+					OnTypeResolve(pTcwork, pSymIdent);
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
@@ -4653,7 +5249,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 						}
 					}
-					OnTypeComplete(pTcwork, pSym);
+					OnTypeResolve(pTcwork, pSym);
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;
@@ -4722,7 +5318,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodInit, pStnod->m_pTin);
 					if (FCanExplicitCast(pTinInit, pStnod->m_pTin, pSymtab))
 					{
-						FinalizeLiteralType(pSymtab, pStnod->m_pTin, pStnodInit);
+						FinalizeLiteralType(pTcwork, pSymtab, pStnod->m_pTin, pStnodInit);
 						pTinInit = pStnod->m_pTin;
 					}
 					else
@@ -4906,7 +5502,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							EWC_ASSERT(ovcheck.m_argord == ARGORD_Normal, "Decl arguments cannot be commutative");
 
 							pStnod->m_pTin = pTinInitDefault;
-							FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodInit);
+							FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodInit);
 						}
 						else
 						{
@@ -4927,7 +5523,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								{
 									if (fAllowFinalizing)
 									{
-										FinalizeLiteralType(pSymtab, pStnod->m_pTin, pStnodInit);
+										FinalizeLiteralType(pTcwork, pSymtab, pStnod->m_pTin, pStnodInit);
 									}
 									pTinInit = pStnod->m_pTin;
 								}
@@ -4950,7 +5546,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								pStnod->m_pTin = pTinInitDefault;
 								if (fAllowFinalizing)
 								{
-									FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pTin, pStnodInit);
+									FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pStnod->m_pTin, pStnodInit);
 								}
 							}
 						}
@@ -4978,7 +5574,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								auto pSymIdent = pStnodIdent->m_pSym;
 								pSymIdent->m_pTin = pStnod->m_pTin;
 								pStnod->m_pSym = pSymIdent;
-								OnTypeComplete(pTcwork, pSymIdent);
+								OnTypeResolve(pTcwork, pSymIdent);
 							}
 						}
 					}
@@ -5121,7 +5717,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pStnod->m_pOptype->m_pTinprocOverload = pTinproc;
 
 						EWC_ASSERT(ovcheck.m_argord == ARGORD_Normal, "Assignment arguments cannot be commutative");
-						FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodRhs);
+						FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodRhs);
 
 						pStnod->m_strees = STREES_TypeChecked;
 						PopTcsent(pTcfram, &pTcsentTop, pStnod);
@@ -5174,7 +5770,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						*pStnod->m_pOptype = optype;
 					}
 
-					FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodRhs);
+					FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodRhs);
 
 					EWC_ASSERT(pStnod->m_pTin == nullptr, "assignment op has no 'return' value");
 
@@ -5213,7 +5809,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					else if (pTinLhs->m_tink == TINK_Literal)
 					{
 						pTinLhs = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodLhs);
-						FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
+						FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
 					}
 				}
 
@@ -5363,7 +5959,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto pStnodLhs = pStnod->PStnodChild(0);
 
 				auto pTinLhs = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLhs);
-				FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
+				FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
 
 				CSTNode * pStnodIndex = pStnod->PStnodChild(1);
 				if (!EWC_FVERIFY(pStnodLhs && pStnodLhs->m_pTin, "Array element LHS has no type") ||
@@ -5401,7 +5997,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					EmitError(pTcwork, pStnod, ERRID_BadArrayIndex, "Cannot convert %s to integer for array index", strTinIndex.PCoz());
 				}
 
-				FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinIndex, pStnodIndex);
+				FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinIndex, pStnodIndex);
 				
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
@@ -5504,7 +6100,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									CString strTin = StrFromTypeInfo(pTinPredPromoted);
 									EmitError(pTcwork, pStnod, "Cannot convert predicate from %s to bool", strTin.PCoz());
 								}
-								FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinBool, pStnodPredicate);
+								FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinBool, pStnodPredicate);
 							}
 
 							pStnod->m_strees = STREES_TypeChecked;
@@ -5561,7 +6157,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 																		pTinIterator);
 										if (FCanImplicitCast(pTinRhsPromoted, pTinIterator))
 										{
-											FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinIterator, pStnodInit);
+											FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinIterator, pStnodInit);
 										}
 										else
 										{
@@ -5739,7 +6335,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 											EmitError(pTcwork, pStnod, "No conversion between %s and %s", strTinCase.PCoz(), strTinExp.PCoz());
 										}
 
-										FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinExpPromoted, pStnodLit);
+										FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinExpPromoted, pStnodLit);
 
 										auto pTinLit = pStnodLit->m_pTin;
 										if (!pTinLit || pTinLit->m_tink != TINK_Literal)
@@ -5825,7 +6421,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							pStnod->m_pTin = pTinBool;
-							FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinBool, pStnodPred);
+							FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinBool, pStnodPred);
 
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
@@ -5885,7 +6481,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									if (FCanImplicitCast(pTinRhsPromoted, pTinInstance))
 									{
 										pStnod->m_pTin = pTinReturn;
-										FinalizeLiteralType(pTcsentTop->m_pSymtab, pTinReturn, pStnodRhs);
+										FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinReturn, pStnodRhs);
 									}
 									else
 									{
@@ -6039,8 +6635,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 						pStnod->m_pTin = pStnod->m_pOptype->m_pTinResult;
 
-						FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodLhs);
-						FinalizeLiteralType(pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinRhs, pStnodRhs);
+						FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinLhs, pStnodLhs);
+						FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pStnod->m_pOptype->m_pTinRhs, pStnodRhs);
 					}
 
 					pStnod->m_strees = STREES_TypeChecked;
@@ -6321,7 +6917,7 @@ void RelocateTcfram(
 	}
 }
 
-void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
+void OnTypeResolve(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 {
 	EWC_ASSERT(pSym->m_pTin, "expected type for completed symbol");
 
@@ -6337,7 +6933,7 @@ void OnTypeComplete(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	{
 		STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
 
-		if (EWC_FVERIFY(pTcwork->m_arypTcframWaiting[tcfram.m_ipTcframQueue] == &tcfram, "bookkeeping error (onTypeComplete)"))
+		if (EWC_FVERIFY(pTcwork->m_arypTcframWaiting[tcfram.m_ipTcframQueue] == &tcfram, "bookkeeping error (OnTypeResolve)"))
 		{
 			RelocateTcfram(&tcfram, &pTcwork->m_arypTcframWaiting, &pTcwork->m_arypTcframPending);
 		}
@@ -6477,10 +7073,11 @@ void PerformTypeCheck(
 	SErrorManager * pErrman,
 	CSymbolTable * pSymtabTop,
 	CAry<SWorkspaceEntry> * paryEntry,
-	CAry<int> * paryiEntryChecked, 
+	CDynAry<int> * paryiEntryChecked, 
 	GLOBMOD globmod)
 {
-	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, (s32)paryEntry->C());
+	// BB - Don't check in!! allocating 2x cEntry space to give generics some breathing room, need an actual solution
+	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, (s32)paryEntry->C() * 2);
 
 	SSymbol * pSymRoot = nullptr;
 	// if we're in a unit test we spoof a top level implicit function symbol
@@ -6497,7 +7094,7 @@ void PerformTypeCheck(
 		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
 		pTcfram->m_ipTcframQueue = ipTcfram;
 
-		pTcfram->m_aryTcsent.SetAlloc(pAlloc, EWC::BK_TypeCheck);
+		pTcfram->m_aryTcsent.SetAlloc(pAlloc, EWC::BK_TypeCheckStack);
 		STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
 		pTcsent->m_nState = 0;
 		pTcsent->m_pStnod = pEntry->m_pStnod;
@@ -6577,14 +7174,12 @@ void PerformTypeCheck(
 
 				EmitError(pTcwork, pTcsent->m_pStnod, "Unresolved type '%s' reference found here", (*ppSym)->m_strName.PCoz());
 			}
-			else
+
+			// clean up the tcsent array for frames that are waiting on a symbol hidden by an error
+			while (pTcfram->m_aryTcsent.C())
 			{
-				// clean up the tcsent array for frames that are waiting on a symbol hidden by an error
-				while (pTcfram->m_aryTcsent.C())
-				{
-					STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
-					PopTcsent(pTcfram, &pTcsentTop, nullptr);
-				}
+				STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
+				PopTcsent(pTcfram, &pTcsentTop, nullptr);
 			}
 		}
 	}
@@ -6592,7 +7187,6 @@ void PerformTypeCheck(
 	//PerformFlushResolvedLiteralsPass(pTcwork, paryEntry);
 
 	//check for top level collisions
-
 	{
 		EWC::CHash<HV, SSymbol *>::CIterator iterSym(&pSymtabTop->m_hashHvPSym);
 		SSymbol ** ppSym;

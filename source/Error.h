@@ -28,6 +28,7 @@ enum ERRID
 	ERRID_EmptyCase					= 1005,
 	ERRID_DefaultParamOpOverload	= 1006, 
 	ERRID_MissingDefaultArgs		= 1007,
+	ERRID_MissingName				= 1008,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,
@@ -46,6 +47,7 @@ enum ERRID
 	ERRID_BadOverloadSig			= 2013,
 	ERRID_ArgumentSuppliedTwice		= 2014,
 	ERRID_NamedArgumentNotFound		= 2015,
+	ERRID_GenericLookupFail			= 2016,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

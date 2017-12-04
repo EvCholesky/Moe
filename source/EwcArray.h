@@ -129,9 +129,19 @@ public:
 	// Note - These allocation routines are here so that we can operate on CFixAry without passing the template argument C_MAX
 	void		Append(const Type t)
 					{
-						EWC_ASSERT(m_c + 1 <= m_cMax, "fixed array overflow");
+						EWC_ASSERT(m_c + 1 <= m_cMax, "fixed array overflow, %d + 1 > %d", m_c, m_cMax);
 						T * retValue = &m_a[m_c++];
 						CopyConstruct(retValue, t);
+					}
+	void		Append(const Type * pTArray, size_t cT)
+					{
+						if (!cT)
+							return;
+
+						EWC_ASSERT(m_c + cT <= m_cMax, "fixed array overflow. %d + %d > %d", m_c, cT, m_cMax);
+						T * pTEnd = &m_a[m_c];
+						CopyConstructArray(pTEnd, cT, pTArray);
+						m_c += cT;
 					}
 
 	void		AppendFill(s32 c, const Type t)
@@ -252,9 +262,9 @@ public:
 							return;
 
 						EnsureSize(m_c + cT);
-						T * pTEnd = &m_a[m_c++];
+						T * pTEnd = &m_a[m_c];
 						CopyConstructArray(pTEnd, cT, pTArray);
-						m_c += (cT-1);
+						m_c += cT;
 					}
 
 	void		AppendFill(size_t c, const Type t)

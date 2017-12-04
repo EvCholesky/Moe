@@ -73,6 +73,7 @@ enum TINK : s8
 
 	TINK_ForwardDecl= TINK_ReflectedMax,	// Type info added for resolving pointers to self during the type-check phase.
 	TINK_Literal,							// literal that hasn't been resolved to a specific type yet
+	TINK_Generic,
 
 	EWC_MAX_MIN_NIL(TINK)
 };
@@ -258,6 +259,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 						,m_arypTinReturns()
 						,m_mpIptinGrfparmq()
 						,m_fHasVarArgs(false)
+						,m_fHasGenericArgs(false)
 						,m_fIsCommutative(false)
 						,m_inlinek(INLINEK_Nil)
 						,m_callconv(CALLCONV_Nil)
@@ -268,7 +270,10 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 	EWC::CAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAry<STypeInfo *>	m_arypTinReturns;
 	EWC::CAry<GRFPARMQ>		m_mpIptinGrfparmq;
+
+	// BB - should convert bool fields to flags 
 	bool					m_fHasVarArgs;
+	bool					m_fHasGenericArgs;
 	bool					m_fIsCommutative;	// two argument operator overload, arguments can be passed in either order
 	INLINEK					m_inlinek;
 	CALLCONV				m_callconv;
@@ -287,6 +292,13 @@ struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 	EWC::CDynAry<STypeInfo *>	m_arypTinReferences;
 };
 
+struct STypeInfoGeneric : public STypeInfo // tag = tingen
+{
+	static const TINK s_tink = TINK_Generic;
+						STypeInfoGeneric(const EWC::CString & strName, const EWC::CString & strUnique)
+						:STypeInfo(strName, strUnique, s_tink)
+							{ ; }
+};
 
 // NOTE: just documenting a subtle relationship: CSTVal stores a literal value and is enough to determine 
 // what the STypeInfoLiteral *could* be, (ie PTinlitDefault, PTinlitTightest) but the actual type is determined

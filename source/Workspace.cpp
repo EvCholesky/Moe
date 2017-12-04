@@ -29,6 +29,7 @@ SErrorManager::SErrorManager(CAlloc * pAlloc)
 :m_pWork(nullptr)
 ,m_aryErrid(pAlloc, BK_Workspace, 0)
 ,m_paryErrcExpected(nullptr)
+,m_pInsctxTop(nullptr)
 { 
 
 }
@@ -86,6 +87,21 @@ bool SErrorManager::FTryHideError(ERRID errid)
 	return false;
 }
 
+void SErrorManager::PushInsctx(SInstantiateContext * pInsctx)
+{
+	pInsctx->m_pInsctxLeaf = m_pInsctxTop;
+	m_pInsctxTop = pInsctx;
+}
+
+void SErrorManager::PopInsctx(SInstantiateContext * pInsctx)
+{
+	if (!EWC_FVERIFY(m_pInsctxTop, "instantiate context underflow in error manager") ||
+		!EWC_FVERIFY(m_pInsctxTop != pInsctx, "push/pop mismatch for instantate context"))
+		return;
+
+	m_pInsctxTop = pInsctx->m_pInsctxLeaf;
+}
+
 
 
 SError::SError(SErrorManager * pErrman, ERRID errid)
@@ -93,6 +109,38 @@ SError::SError(SErrorManager * pErrman, ERRID errid)
 ,m_errid(errid)
 ,m_errs(ERRS_Unreported)
 {
+}
+
+void PrintGenericInstantiateContext(SErrorManager * pErrman, SInstantiateContext * pInsctx)
+{
+	auto pInsctxIt = pInsctx;
+	while (pInsctxIt)
+	{
+		const char * pCozName = "unknown";
+		auto pGenmap = pInsctxIt->m_pGenmap;
+		if (pGenmap->m_pSymDefinition)
+		{
+			pCozName = pGenmap->m_pSymDefinition->m_strName.PCoz();
+		}
+
+		printf("  while instantiating generic '%s': ", pCozName);	
+		EWC::CHash<STypeInfoGeneric *, STypeInfo *>::CIterator iter(&pInsctxIt->m_pGenmap->m_mpPTingenPTinRemapped);
+
+		STypeInfoGeneric ** ppTingen;
+		STypeInfo ** ppTin;
+		while ((ppTin = iter.Next(&ppTingen)))
+		{
+			CString strTin = StrFromTypeInfo(*ppTin);
+			printf("`%s %s, ", (*ppTingen)->m_strName.PCoz(), strTin.PCoz());
+		}
+		s32 iLine;
+		s32 iCol;
+		CalculateLinePosition(pErrman->m_pWork, &pInsctxIt->m_lexlocCall, &iLine, &iCol);
+
+		printf("\n  at %s(%d, %d)\n", pInsctxIt->m_lexlocCall.m_strFilename.PCoz(), iLine, iCol);
+
+		pInsctxIt = pInsctxIt->m_pInsctxLeaf;
+	}
 }
 
 void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, va_list ap)
@@ -120,6 +168,11 @@ void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID 
 		vprintf(pCoz, ap);
 		printf("\n");
 	}
+
+	if (pErrman->m_pInsctxTop)
+	{
+		PrintGenericInstantiateContext(pErrman, pErrman->m_pInsctxTop);
+	}
 }
 
 void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)
@@ -133,6 +186,11 @@ void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID er
 {
 	SError error(pErrman, errid);
 	PrintErrorLine(&error, "Error:", pLexloc, pCoz, ap);
+
+	if (pErrman->m_pInsctxTop)
+	{
+		PrintGenericInstantiateContext(pErrman, pErrman->m_pInsctxTop);
+	}
 }
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)
@@ -309,15 +367,28 @@ void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 	pEntry->m_fHideDebugString = false;
 }
 
-CSymbolTable * CWorkspace::PSymtabNew(const EWC::CString & strNamespace, SUniqueNameSet * pUnsetTin)
+CSymbolTable * PSymtabNew(
+	CAlloc * pAlloc,
+	 CSymbolTable * pSymtabParent,
+	  const EWC::CString & strNamespace,
+	   SUniqueNameSet * pUnsetTin,
+	    EWC::CHash<HV, STypeInfo *> * pHashHvPTin)
 {
-	CSymbolTable * pSymtabNew = EWC_NEW(m_pAlloc, CSymbolTable) CSymbolTable(strNamespace, m_pAlloc, &m_hashHvPTin, pUnsetTin);
-	if (m_pSymtab)
+	CSymbolTable * pSymtabNew = EWC_NEW(pAlloc, CSymbolTable) CSymbolTable(strNamespace, pAlloc, pHashHvPTin, pUnsetTin);
+	if (pSymtabParent)
 	{
-		m_pSymtab->AddManagedSymtab(pSymtabNew);
+		pSymtabParent->AddManagedSymtab(pSymtabNew);
 	}
 
 	return pSymtabNew;
+}
+
+CSymbolTable * PSymtabNew(CAlloc * pAlloc, CSymbolTable * pSymtabParent, const EWC::CString & strNamespace)
+{
+	if (!EWC_FVERIFY(pSymtabParent, "Null parent passed into pSymtabNew, use other overload for root."))
+		return nullptr;
+
+	return PSymtabNew(pAlloc, pSymtabParent, strNamespace, pSymtabParent->m_pUnsetTin, pSymtabParent->m_phashHvPTinUnique);
 }
 
 void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCozOut, size_t cBOutMax)
@@ -479,7 +550,7 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_unset.Clear(0);
 	pWork->m_unsetTin.Clear(0);
 
-	pWork->m_pSymtab = pWork->PSymtabNew("global", &pWork->m_unsetTin);
+	pWork->m_pSymtab = PSymtabNew(pAlloc, nullptr, "global", &pWork->m_unsetTin, &pWork->m_hashHvPTin);
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork);
 }
 

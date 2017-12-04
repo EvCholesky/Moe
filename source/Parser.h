@@ -104,7 +104,7 @@ inline void SetBoolValue(CSTValue * pStval, bool f)
 
 
 
-enum PARK // PARse Kind
+enum PARK : s16 // PARse Kind
 {
 	PARK_Error,
 	PARK_Identifier,
@@ -150,6 +150,7 @@ enum PARK // PARse Kind
 	PARK_VariadicArg,
 	PARK_ArrayLiteral,
 	PARK_ArgumentLabel,
+	PARK_GenericDecl,
 	
 	EWC_MAX_MIN_NIL(PARK)
 };
@@ -271,7 +272,7 @@ public:
 	EWC::CString		m_str;
 };
 
-enum STREES
+enum STREES : s8
 {
 	STREES_Parsed,
 	STREES_SignatureTypeChecked,	// function's signature has been type checked, but not it's body. it's enough to type check
@@ -446,10 +447,36 @@ enum FSHADOW
 	FShadow_ShadowingAllowed,
 };
 
+struct SGenericMap // tag = genmap
+{
+							SGenericMap(EWC::CAlloc * pAlloc, SSymbol * pSymDefinition)
+							:m_pSymDefinition(pSymDefinition)	
+							,m_mpPTingenPTinRemapped(pAlloc, EWC::BK_TypeCheckGenerics)
+								{ ; }
+
+	void 					Swap(SGenericMap * pGenmapOther)
+								{ 
+									auto pSymDefinitionTemp = m_pSymDefinition;
+									m_pSymDefinition = pGenmapOther->m_pSymDefinition;
+									pGenmapOther->m_pSymDefinition = pSymDefinitionTemp;
+
+									m_mpPTingenPTinRemapped.Swap(&pGenmapOther->m_mpPTingenPTinRemapped);
+								}
+
+	bool					FIsEmpty() const
+								{
+									return m_mpPTingenPTinRemapped.FIsEmpty();// && m_mpPSymGenericPSymRemapped.FIsEmpty();
+								}
+
+
+	SSymbol *									m_pSymDefinition; 
+	EWC::CHash<STypeInfoGeneric *, STypeInfo *> m_mpPTingenPTinRemapped;
+};
+
 class CSymbolTable		// tag = symtab
 {
 protected:
-	friend class CWorkspace;
+	friend CSymbolTable * PSymtabNew(EWC::CAlloc *, CSymbolTable *, const EWC::CString &, SUniqueNameSet *, EWC::CHash<HV, STypeInfo *> *);
 
 							// protected constructor to force use of CWorkspace::PSymtabNew()
 							CSymbolTable(
@@ -464,6 +491,7 @@ protected:
 							,m_phashHvPTinUnique(phashHvPTinUnique)
 							,m_hashHvPTinfwd(pAlloc, EWC::BK_Symbol)
 							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
+							,m_arypSymGenerics(pAlloc, EWC::BK_Symbol)	
 							,m_pUnsetTin(pUnsetTin)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
@@ -507,6 +535,8 @@ public:
 								GRFSYM grfsym = FSYM_None, 
 	 							FSHADOW fshadow = FShadow_ShadowingAllowed);
 
+	SSymbol * 				PSymGenericInstantiate(SSymbol * pSym, STypeInfo * pTinInstance);
+
 	SSymbol *				PSymLookup(
 								const EWC::CString & str,
 								const SLexerLocation & lexloc, 
@@ -547,6 +577,7 @@ public:
 	EWC::CHash<HV, STypeInfoForwardDecl *>
 								m_hashHvPTinfwd;	// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.
+	EWC::CDynAry<SSymbol *>		m_arypSymGenerics;	// symbol copies for generics, not mapped to an identifier
 	SUniqueNameSet *			m_pUnsetTin;		// set of unique names for types (created during parse)
 	EWC::CDynAry<STypeInfoLiteral *>	
 								m_mpLitkArypTinlit[LITK_Max];
@@ -594,7 +625,7 @@ void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntri
 
 
 
-enum IVALK // Instance VALue flags
+enum IVALK // Instance VALue Kind
 {
 	IVALK_Error,	
 	IVALK_Type,		// not an expression value: either a type or Type.m_nonConstantMember

@@ -495,12 +495,35 @@ public:
 						}
 					}
 
+	void 		Swap(CHash<K, V, LOAD_FACTOR_PERCENT> * pHashOther)
+					{
+						auto pAllocTemp = m_pAlloc;
+						auto aEntryTemp = m_aEntry;
+						auto cUsedTemp = m_cUsed;
+						auto cCapacityTemp = m_cCapacity;
+						auto bkTemp = m_bk;
+
+						m_pAlloc = pHashOther->m_pAlloc;
+						m_aEntry = pHashOther->m_aEntry;
+						m_cUsed = pHashOther->m_cUsed;
+						m_cCapacity = pHashOther->m_cCapacity;
+						m_bk = pHashOther->m_bk;
+
+						pHashOther->m_pAlloc = pAllocTemp;
+						pHashOther->m_aEntry = aEntryTemp;
+						pHashOther->m_cUsed = cUsedTemp;
+						pHashOther->m_cCapacity = cCapacityTemp;
+						pHashOther->m_bk = bkTemp;
+					}
+
 	CAlloc *	PAlloc()
 					{ return m_pAlloc; } 
 	u32			C() const
 					{ return m_cUsed; }
 	u32			CCapacity() const
 					{ return m_cCapacity; }
+	bool		FIsEmpty() const
+					{ return m_cUsed == 0; }
 
 protected:
 	struct SEntry // tag=entry

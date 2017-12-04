@@ -60,6 +60,7 @@ enum TOK
 	TOK_DoubleReference = TOK_AndAnd,
 	TOK_Dereference = '@',
 	TOK_Label = '`',
+	TOK_Generic = '$',
 
 	TOK_SimpleMax = TOK_Eof,
 };

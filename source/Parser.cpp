@@ -28,6 +28,7 @@ enum FPDECL
 	FPDECL_AllowCompoundDecl	= 0x1,	// allow comma-separated declaration of multiple variables.
 	FPDECL_AllowVariadic		= 0x2,	// allow the list to end with variadic arguments (..)
 	FPDECL_AllowUninitializer	= 0x4,	// allow decls to specify explicit uninitializers (n:int=---;}
+	FPDECL_AllowGenerics		= 0x8, 	// allow unspecified generic types (aka $T)
 
 	FPDECL_None			= 0x0,
 	FPDECL_All			= 0x7,
@@ -43,7 +44,7 @@ CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * 
 CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload);
 CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex);
-CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex);
+CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const char * pCozErrorContext, GRFPDECL grfpdecl);
 
 const char * PChzFromPark(PARK park)
 {
@@ -88,6 +89,7 @@ const char * PChzFromPark(PARK park)
 		"Variadic Argument",
 		"Array Literal",
 		"Argument Label",
+		"Generic Decl",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpParkPChz) == PARK_Max, "missing PARK string");
 	if (park == PARK_Nil)
@@ -186,6 +188,7 @@ const char * PChzFromTink(TINK tink)
 		"qualifier",
 		"forwardDecl",
 		"literal",
+		"generic"
 	};
 	EWC_CASSERT(EWC_DIM(s_mpTinkPChz) == TINK_Max, "missing TINK string");
 	if (tink == TINK_Nil)
@@ -722,7 +725,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 
 				if (FConsumeToken(pLex, TOK(':')))
 				{
-					auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
+					auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "array literal", FPDECL_None);
 					pStdecl->m_iStnodType = pStnodLit->IAppendChild(pStnodType);
 
 					FExpect(pParctx, pLex, TOK(':'));
@@ -1013,7 +1016,7 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SLexer * pLex)
 	{
 		FExpect(pParctx, pLex, TOK('('));
 
-		auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
+		auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "cast", FPDECL_None);
 		pStdecl->m_iStnodType = pStnodCast->IAppendChild(pStnodType);
 
 		FExpect(pParctx, pLex, TOK(')'));
@@ -1392,6 +1395,36 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 	return nullptr;
 }
 
+CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
+{
+	if (FConsumeToken(pLex, TOK_Generic))
+	{
+		SLexerLocation lexloc(pLex);
+		CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+
+		pStnod->m_tok = TOK_Generic;
+		pStnod->m_park = PARK_GenericDecl;
+
+		auto pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+		if (!pStnodIdent)
+		{
+			ParseError(pParctx, &lexloc, ERRID_MissingName, "Generic type is missing it's name");
+			return nullptr;
+		}
+
+		auto pSymtab = pParctx->m_pSymtab;
+		if (pSymtab)
+		{
+			pStnod->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnod, FSYM_IsType);
+		}
+
+		(void) pStnod->IAppendChild(pStnodIdent);
+		return pStnod;
+	}
+
+	return nullptr;
+}
+
 CSTNode * PStnodParsePointerDecl(CParseContext * pParctx, SLexer * pLex)
 {
 	// handle the mis-lexing of '&&' as one token here
@@ -1436,7 +1469,7 @@ CSTNode * PStnodParseQualifierDecl(CParseContext * pParctx, SLexer * pLex)
 	return nullptr;
 }
 
-CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const char * pCozErrorContext, GRFPDECL grfpdecl)
 {
 	CSTNode * pStnod = PStnodParseIdentifier(pParctx, pLex);
 	if (pStnod)
@@ -1468,6 +1501,16 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex)
 	if (pStnod)
 		return pStnod;
 
+	pStnod = PStnodParseGenericDecl(pParctx, pLex);
+	if (pStnod)
+	{
+		if (!grfpdecl.FIsSet(FPDECL_AllowGenerics))
+		{
+			ParseError(pParctx, pLex, "Generic types not allowed in %s", pCozErrorContext);
+		}
+		return pStnod;
+	}
+
 	pStnod = PStnodParsePointerDecl(pParctx, pLex);
 	if (!pStnod)
 	{
@@ -1481,7 +1524,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex)
 	if (!pStnod)
 		return nullptr;
 
-	CSTNode * pStnodChild = PStnodParseTypeSpecifier(pParctx, pLex);
+	CSTNode * pStnodChild = PStnodParseTypeSpecifier(pParctx, pLex, pCozErrorContext, grfpdecl);
 	if (!pStnodChild)
 	{
 		ParseError(pParctx, pLex, "Expected type type name before '%s'", PCozFromTok(TOK(pLex->m_tok)));
@@ -1660,7 +1703,7 @@ CSTNode * PStnodParseParameter(
 			{
 				EWC_ASSERT(cTypeNeeded, "No compound children?");
 
-				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
+				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "declaration", grfpdecl);
 
 				int iStnodChild = pStnodCompound->m_pStdecl->m_iStnodChildMax - cTypeNeeded;
 				int iChild = 0;
@@ -1680,7 +1723,7 @@ CSTNode * PStnodParseParameter(
 			}
 			else
 			{
-				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
+				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "declaration", grfpdecl);
 				pStdecl->m_iStnodType = pStnodDecl->IAppendChild(pStnodType);
 				cTypeNeeded = 0;
 			}
@@ -1777,7 +1820,7 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex)
 	{
 		// TODO : handle multiple return types
 
-		return PStnodParseTypeSpecifier(pParctx, pLex);
+		return PStnodParseTypeSpecifier(pParctx, pLex, "return value", FPDECL_AllowGenerics);
 	}
 	else
 	{
@@ -1804,7 +1847,7 @@ CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, C
 		PushSymbolTable(pParctx, pSymtabProc, lexloc);
 	}
 
-	GRFPDECL grfpdecl = FPDECL_AllowVariadic;
+	GRFPDECL grfpdecl = FPDECL_AllowVariadic | FPDECL_AllowGenerics;
 	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pLex, pSymtabProc, grfpdecl);
 	CSTNode * pStnodList = nullptr;
 	bool fHasVarArgs = pStnodParam && pStnodParam->m_park == PARK_VariadicArg;
@@ -2247,7 +2290,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				const CString & strName = StrFromIdentifier(pStnodIdent);
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
-				CSymbolTable * pSymtabProc = pParctx->m_pWork->PSymtabNew(strName, pSymtabParent->m_pUnsetTin);
+				CSymbolTable * pSymtabProc = PSymtabNew(pParctx->m_pAlloc, pSymtabParent, strName);
 
 				// BB - don't mangle the main function so the linker can find it. yuck.
 				pStproc->m_fUseUnmangledName |= (strName == "main");
@@ -2454,7 +2497,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				
 				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
-				CSymbolTable * pSymtabEnum = pParctx->m_pWork->PSymtabNew(strIdent, pSymtabParent->m_pUnsetTin);
+				CSymbolTable * pSymtabEnum = PSymtabNew(pParctx->m_pAlloc, pSymtabParent, strIdent);
 				CSTNode * pStnodConstantList = nullptr;
 
 				auto pErrman = pParctx->m_pWork->m_pErrman;
@@ -2541,7 +2584,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				SLexerLocation lexlocChild(pLex);
-				CSymbolTable * pSymtabStruct = pParctx->m_pWork->PSymtabNew(strIdent, pSymtabParent->m_pUnsetTin);
+				CSymbolTable * pSymtabStruct = PSymtabNew(pParctx->m_pAlloc, pSymtabParent, strIdent);
 
 				// NOTE: struct symbol tables at the global scope should be unordered.
 //				if (!pParctx->m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered))
@@ -2659,7 +2702,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			}
 			else if (rword == RWORD_Typedef)
 			{
-				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex);
+				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "typedef", FPDECL_None);
 				ExpectEndOfStatement(pParctx, pLex);
 				
 				CString strIdent = StrFromIdentifier(pStnodIdent);
@@ -2760,7 +2803,7 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pLex, C
 
 		if (!pSymtab)
 		{
-			pSymtab = pParctx->m_pWork->PSymtabNew("anon", &pParctx->m_pWork->m_unsetTin);
+			pSymtab = PSymtabNew(pParctx->m_pAlloc, pParctx->m_pSymtab, "anon");
 		}
 		pStnodList->m_pSymtab = pSymtab;
 		PushSymbolTable(pParctx, pSymtab, lexloc);
@@ -2820,7 +2863,7 @@ void CreateSwitchList(CParseContext * pParctx, SLexer * pLex, CSTNode ** ppStnod
 	pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 	pStnodList->m_tok = TOK('{');
 	pStnodList->m_park = PARK_List;
-	pStnodList->m_pSymtab = pParctx->m_pWork->PSymtabNew("case", &pParctx->m_pWork->m_unsetTin);
+	pStnodList->m_pSymtab = PSymtabNew(pParctx->m_pAlloc, pParctx->m_pSymtab, "case");
 	PushSymbolTable(pParctx, pStnodList->m_pSymtab, lexloc);
 	*ppStnodList = pStnodList;
 }
@@ -3082,7 +3125,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 			*ppStidentLabel = nullptr;
 		}
 
-		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for", &pParctx->m_pWork->m_unsetTin);
+		CSymbolTable * pSymtabLoop = PSymtabNew(pParctx->m_pAlloc, pParctx->m_pSymtab, "for");
 		pStnodFor->m_pSymtab = pSymtabLoop;
 
 		PushSymbolTable(pParctx, pSymtabLoop, lexloc);
@@ -3139,7 +3182,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 		}
 
 		SLexerLocation lexloc(pLex);
-		CSymbolTable * pSymtabLoop = pParctx->m_pWork->PSymtabNew("for", &pParctx->m_pWork->m_unsetTin);
+		CSymbolTable * pSymtabLoop = PSymtabNew(pParctx->m_pAlloc, pParctx->m_pSymtab, "for");
 		pStnodFor->m_pSymtab = pSymtabLoop;
 
 		PushSymbolTable(pParctx, pSymtabLoop, lexloc);
@@ -3530,6 +3573,11 @@ CSymbolTable::~CSymbolTable()
 		*ppSym = nullptr;
 	}
 
+	for (SSymbol ** ppSym = m_arypSymGenerics.A(); ppSym != m_arypSymGenerics.PMac(); ++ppSym)
+	{
+		m_pAlloc->EWC_DELETE(*ppSym);
+	}
+
 	CHash<HV, STypeInfoForwardDecl *>::CIterator iterPTinfwd(&m_hashHvPTinfwd);
 	while (STypeInfoForwardDecl ** ppTinfwd = iterPTinfwd.Next())
 	{
@@ -3679,7 +3727,18 @@ void CSymbolTable::AddBuiltInSymbols(CWorkspace * pWork)
 	AddBuiltInLiteral(pWork, this, "__void_Literal", LITK_Null, -1, true);
 }
 
+SSymbol * CSymbolTable::PSymGenericInstantiate(SSymbol * pSymGeneric, STypeInfo * pTinInstance)
+{
+	auto pSymNew = EWC_NEW(m_pAlloc, SSymbol) SSymbol;
+	m_arypSymGenerics.Append(pSymNew);
 
+	pSymNew->m_strName = pSymGeneric->m_strName;
+	pSymNew->m_pStnodDefinition = pSymGeneric->m_pStnodDefinition;
+	pSymNew->m_grfsym = pSymGeneric->m_grfsym;
+	pSymNew->m_pTin = pTinInstance;
+	pSymNew->m_pVal = pSymGeneric->m_pVal;
+	return pSymNew;
+}
 
 SSymbol * CSymbolTable::PSymEnsure(
 	SErrorManager * pErrman,
@@ -4247,6 +4306,12 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			
 			AppendCoz(pStrbuf, "Literal");
 			return;
+		}
+	case TINK_Generic:
+		{
+			auto pTingen = (STypeInfoGeneric *)pTin;
+			FormatCoz(pStrbuf, "$%s", pTingen->m_strName.PCoz());
+			return;	
 		}
     case TINK_Procedure:
 		{

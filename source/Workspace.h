@@ -32,6 +32,7 @@ class CSTNode;
 class CSymbolTable;
 class CWorkspace;
 struct SDIFile;
+struct SGenericMap;
 struct SLexerLocation;
 struct STypeInfo;
 struct STypeInfoProcedure;
@@ -45,6 +46,21 @@ struct SErrorCount	// tag = errc
 
 	ERRID	m_errid;
 	int		m_c;
+};
+
+// save the context for instantiation of generics so we can report meaningful errors
+struct SInstantiateContext // insctx
+{
+							SInstantiateContext()
+							:m_pGenmap(nullptr)
+							,m_lexlocCall()
+							,m_pInsctxLeaf(nullptr)
+								{ ; }
+
+	SGenericMap *			m_pGenmap;
+	SLexerLocation 			m_lexlocCall;
+
+	SInstantiateContext * 	m_pInsctxLeaf;
 };
 
 struct SErrorManager	//  // tag = errman
@@ -82,11 +98,14 @@ struct SErrorManager	//  // tag = errman
 	void		ComputeErrorCounts(int * pCError, int * pCWarning);
 	bool		FTryHideError(ERRID errid);
 
-	CWorkspace *		m_pWork;			// back pointer for SFile lookup inside EmitError
-	EWC::CDynAry<ERRID>	m_aryErrid;			// numbered errors (for expected unit test errors)
+	void		PushInsctx(SInstantiateContext * pInsctx);
+	void		PopInsctx(SInstantiateContext * pInsctx);
 
-	EWC::CDynAry<SErrorCount> *
-						m_paryErrcExpected;
+	CWorkspace *				m_pWork;			// back pointer for SFile lookup inside EmitError
+	EWC::CDynAry<ERRID>			m_aryErrid;			// numbered errors (for expected unit test errors)
+
+	EWC::CDynAry<SErrorCount> * m_paryErrcExpected;
+	SInstantiateContext *		m_pInsctxTop;
 };
 
 
@@ -240,7 +259,6 @@ public:
 
 	char *					PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * pAlloc);
 	void					AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab);
-	CSymbolTable *			PSymtabNew(const EWC::CString & strNamespace, SUniqueNameSet * pUnset);
 
 	SFile *					PFileEnsure(const char * pCozFile, FILEK filek);
 	EWC::CHash<HV, int> *	PHashHvIPFile(FILEK filek);
@@ -280,6 +298,8 @@ void BeginParse(CWorkspace * pWork, SLexer * pLex, const char * pCozIn, const ch
 void EndParse(CWorkspace * pWork, SLexer * pLex);
 void EndWorkspace(CWorkspace * pWork);
 
+CSymbolTable * PSymtabNew(EWC::CAlloc * pAlloc, CSymbolTable * pSymtabParent, const EWC::CString & strNamespace);
+
 const char * PCozSkipUnicodeBOM(const char * pCozFile);
 
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint);
@@ -290,7 +310,7 @@ void PerformTypeCheck(
 	SErrorManager * pErrman, 
 	CSymbolTable * pSymtabTop,
 	EWC::CAry<SWorkspaceEntry> * paryEntry,
-	EWC::CAry<int> * paryiEntryChecked,
+	EWC::CDynAry<int> * paryiEntryChecked,
 	GLOBMOD globmod);
 
 

@@ -535,6 +535,9 @@ enum BK // block kind
 	BK_WorkspaceFile,
 	BK_Parse,
 	BK_TypeCheck,
+	BK_TypeCheckProcmatch,
+	BK_TypeCheckStack,
+	BK_TypeCheckGenerics,
 	BK_Dependency,
 	BK_CodeGen,
 	BK_CodeGenReflect,
@@ -1204,7 +1207,8 @@ inline bool FIsPowerOfTwo(size_t value)
 	return (value & (value-1)) == 0;
 }
 
-// container insertion flags
+// container insertion
+//  BB - why is this using hungarian for flags? not a flag, should be INSK or  INSRES
 enum FINS
 {
 	FINS_Nil = -1,

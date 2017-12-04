@@ -11,10 +11,16 @@
 // Note: Int## is a stand in for platform specific int sizes (any ## will be replaced with 32 or 64 depending on the platform)
 
 // [X] Document permute string format
-// [ ] Finish porting tests and delete old code
+// [X] Finish porting tests and delete old code
 // [ ] Add support for named test command line arg
 // [X] Add support for built-in tests
 // [X] Finish work on expected errors
+
+
+// ToTest: sizeof operator
+// ToTest: typedefs
+
+
 
 // Built in tests
 
