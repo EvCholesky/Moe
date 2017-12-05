@@ -66,6 +66,8 @@ public:
 				CAry(const CAry&) = delete;
 	CAry &		operator=(const CAry&) = delete;
 
+				/*
+				This is dangerous because it can be called on CDynAry and it won't set m_pAlloc so the destructor will fail.
 	void		SetArray(T * a, size_t c, size_t cMax)
 				{
 					EWC_ASSERT((m_a == nullptr) | (a == nullptr), "overwriting nonzero buffer, leaking memory");
@@ -82,7 +84,7 @@ public:
 
 					m_c    = 0;
 					m_cMax = cMax;
-				}
+				}*/
 
 	const T &	operator[](size_t i) const	{ EWC_ASSERT((i>=0) & (i<m_c), "array overflow"); return m_a[i]; }
 	T &			operator[](size_t i)		{ EWC_ASSERT((i>=0) & (i<m_c), "array overflow"); return m_a[i]; }
@@ -186,6 +188,59 @@ public:
 	size_t		m_c;
 	size_t		m_cMax;
 	BK			m_bk;
+};
+
+
+// heap allocated array that will NOT resize itself
+template <typename T>
+class CAllocAry : public CAry<T>
+{
+public:
+	typedef T Type;
+	using CAry<T>::m_a;		// workaround for templated base class dependent names 
+	using CAry<T>::m_c;	
+	using CAry<T>::m_cMax;	
+	using CAry<T>::m_bk;
+
+				CAllocAry(CAlloc * pAlloc, BK bk, s32 cMaxStarting = 16)
+				:CAry<T>(nullptr, 0, 0, BK_Nil)
+					{ SetAlloc(pAlloc, bk, cMaxStarting); }
+
+				CAllocAry(BK bk = BK_Nil)
+				:CAry<T>(nullptr, 0, 0, bk)
+				,m_pAlloc(nullptr)
+					{ ; }
+
+				~CAllocAry()
+					{ 
+						if (m_pAlloc)
+						{
+							m_pAlloc->EWC_FREE(m_a);
+						}
+					}
+
+	void		SetArray(T * a, size_t c, size_t cMax)
+				{
+					EWC_ASSERT((m_a == nullptr) | (a == nullptr), "overwriting nonzero buffer, leaking memory");
+					m_a    = a;
+					m_c    = c;
+					m_cMax = cMax;
+				}
+
+	void		SetAlloc(CAlloc * pAlloc, BK bk, s32 cMax)
+				{
+					EWC_ASSERT(m_a == nullptr, "overwriting nonzero buffer, leaking memory");
+					m_pAlloc = pAlloc;
+
+					size_t cB = sizeof(T) * cMax;
+					m_a = (T *)pAlloc->EWC_ALLOC_BK(cB, EWC_ALIGN_OF(T), m_bk);
+
+					m_c    = 0;
+					m_cMax = cMax;
+					m_bk = bk;
+				}
+
+	CAlloc * 	m_pAlloc;
 };
 
 

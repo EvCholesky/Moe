@@ -265,11 +265,11 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 						,m_callconv(CALLCONV_Nil)
 							{ ; }
 
-	EWC::CString			m_strMangled;
-	CSTNode *				m_pStnodDefinition;
-	EWC::CAry<STypeInfo *>	m_arypTinParams;
-	EWC::CAry<STypeInfo *>	m_arypTinReturns;
-	EWC::CAry<GRFPARMQ>		m_mpIptinGrfparmq;
+	EWC::CString				m_strMangled;
+	CSTNode *					m_pStnodDefinition;
+	EWC::CAllocAry<STypeInfo *>	m_arypTinParams;
+	EWC::CAllocAry<STypeInfo *>	m_arypTinReturns;
+	EWC::CAllocAry<GRFPARMQ>	m_mpIptinGrfparmq;
 
 	// BB - should convert bool fields to flags 
 	bool					m_fHasVarArgs;
@@ -342,22 +342,22 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 {
 	static const TINK s_tink = TINK_Struct;
 
-									STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
-									:STypeInfo(strName, strUnique, s_tink)
-									,m_pGlobInit(nullptr)
-									,m_pLvalInitMethod(nullptr)
-									,m_pLtype(nullptr)
-									,m_pStnodStruct(nullptr)
-									,m_aryTypemembField()
-										{ ; }
+										STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
+										:STypeInfo(strName, strUnique, s_tink)
+										,m_pGlobInit(nullptr)
+										,m_pLvalInitMethod(nullptr)
+										,m_pLtype(nullptr)
+										,m_pStnodStruct(nullptr)
+										,m_aryTypemembField()
+											{ ; }
 	
-	CIRGlobal *						m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
-	LLVMOpaqueValue *				m_pLvalInitMethod;
-	LLVMOpaqueType *				m_pLtype;			// llvm type reference, here to avoid infinite recursion in
-														//  self referential member pointers
+	CIRGlobal *							m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
+	LLVMOpaqueValue *					m_pLvalInitMethod;
+	LLVMOpaqueType *					m_pLtype;			// llvm type reference, here to avoid infinite recursion in
+															//  self referential member pointers
 
-	CSTNode *						m_pStnodStruct;
-	EWC::CAry<STypeStructMember>	m_aryTypemembField;
+	CSTNode *							m_pStnodStruct;
+	EWC::CAllocAry<STypeStructMember>	m_aryTypemembField;
 };
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
@@ -387,7 +387,7 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 	SBigInt				m_bintLatest;
 	STypeInfoStruct 	m_tinstructProduced;
 
-	EWC::CAry<STypeInfoEnumConstant>	
+	EWC::CAllocAry<STypeInfoEnumConstant>	
 						m_aryTinecon;
 };
 

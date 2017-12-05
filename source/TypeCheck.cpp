@@ -67,10 +67,6 @@ struct SInstantiateRequest // tag = insreq
 								,m_pGenmap(nullptr)
 								,m_arypInsctx(BK_TypeCheckGenerics)
 									{ ; }
-								~SInstantiateRequest()
-								{
-									printf("~SInstantiateRequest() this = %p, %p\n", this, m_arypInsctx.m_pAlloc);
-								}
 
 
 	CSTNode 	* 				m_pStnodDefinition;
@@ -86,17 +82,13 @@ struct STypeCheckWorkspace // tag = tcwork
 					:m_pAlloc(pAlloc)
 					,m_pErrman(pErrman)
 					,m_mang(pAlloc)
-					,m_aryTcfram()
+					,m_aryTcfram(pAlloc, EWC::BK_TypeCheck, cTcfram)
 					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
-					,m_arypTcframPending()
-					,m_arypTcframWaiting()
+					,m_arypTcframPending(pAlloc, EWC::BK_TypeCheck, cTcfram)
+					,m_arypTcframWaiting(pAlloc, EWC::BK_TypeCheck, cTcfram)
 					,m_aryInsreq(pAlloc, EWC::BK_TypeCheck)
 					,m_arypInsctxManaged(pAlloc, EWC::BK_TypeCheck)
-						{
-							m_aryTcfram.AllocArray(m_pAlloc, cTcfram);
-							m_arypTcframPending.AllocArray(m_pAlloc, cTcfram);
-							m_arypTcframWaiting.AllocArray(m_pAlloc, cTcfram);
-						}
+						{ ; }
 
 					~STypeCheckWorkspace()
 						{
@@ -105,20 +97,16 @@ struct STypeCheckWorkspace // tag = tcwork
 								m_pAlloc->EWC_DELETE(*ppInsctx);
 							}
 							m_arypInsctxManaged.Clear();
-
-							m_pAlloc->EWC_FREE(m_arypTcframWaiting.A());
-							m_pAlloc->EWC_FREE(m_arypTcframPending.A());
-							m_pAlloc->EWC_FREE(m_aryTcfram.A());
 						}
 	CAlloc *								m_pAlloc;
 	SErrorManager *							m_pErrman;
 	CNameMangler							m_mang;
-	CAry<STypeCheckFrame>					m_aryTcfram;
+	CAllocAry<STypeCheckFrame>				m_aryTcfram;
 	CHash<const SSymbol *, SUnknownType>	m_hashPSymUntype;
 
-	CAry<STypeCheckFrame *>					m_arypTcframPending;	// frames ready to be run again (may stop 
+	CAllocAry<STypeCheckFrame *>			m_arypTcframPending;	// frames ready to be run again (may stop 
 																	//  during check, not guaranteed to have all types)
-	CAry<STypeCheckFrame *>					m_arypTcframWaiting;	// frames waiting for one specific symbol
+	CAllocAry<STypeCheckFrame *>			m_arypTcframWaiting;	// frames waiting for one specific symbol
 
 	CDynAry<SInstantiateRequest>			m_aryInsreq;			// generics that need to be instantiated -> typechecked
 	CDynAry<SInstantiateContext *>			m_arypInsctxManaged;	// instantiate contexts that need to be deleted
@@ -1830,7 +1818,7 @@ bool FIsGenericType(STypeInfo * pTin)
     	{
     		auto pTinproc = (STypeInfoProcedure *)pTin;
 
-    		if (EWC_FVERIFY(pTinproc->m_pStnodDefinition->m_strees >= STREES_SignatureTypeChecked, "pTinproc isn't typechecked yet in FIsGenericType()"))
+    		if (!EWC_FVERIFY(pTinproc->m_pStnodDefinition->m_strees >= STREES_SignatureTypeChecked, "pTinproc isn't typechecked yet in FIsGenericType()"))
     			return false;
 
     		int iParam = 0;
@@ -3592,8 +3580,6 @@ void RemapGenericStnodCopy(
 		auto pStnod	= arypStnodStack.Last();
 		arypStnodStack.PopLast();
 
-		auto pTinPrev = pStnod->m_pTin;
-		auto pSymPrev = pStnod->m_pSym;
 		pStnod->m_pTin = PTinRemapGeneric(pTcwork, &pStnod->m_lexloc, pStnod->m_pTin, pGenmap);
 		pStnod->m_pSym = PSymRemapGeneric(pTcwork, &pStnod->m_lexloc, pStnod->m_pSym, pmpSymGenericPSymRemapped);
 
@@ -3636,7 +3622,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	auto pInsreq = pTcwork->m_aryInsreq.AppendNew();
 	pInsreq->m_pGenmap = pGenmap;
 	pInsreq->m_pStnodDefinition = pStnodDefinition;
-	pInsreq->m_arypInsctx.AllocArray(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
+	pInsreq->m_arypInsctx.SetAlloc(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
 	pInsreq->m_arypInsctx.Append(pInsctx);
 
 	pTcwork->m_pErrman->PushInsctx(pInsctx);
@@ -4435,7 +4421,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									pStnodDefinition->m_strees >= STREES_SignatureTypeChecked,
 									"expected definition to be type checked");
 
-								EWC_ASSERT(pStnodDefinition->m_pTin == pTinproc, "tin mismatch");
+								//EWC_ASSERT(pStnodDefinition->m_pTin == pTinproc, "tin mismatch");
 
 								CSTProcedure * pStproc = pStnodDefinition->m_pStproc;
 
