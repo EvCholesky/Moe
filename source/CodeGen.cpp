@@ -4265,6 +4265,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check, (implicit function?)"))
 				return nullptr;
 
+			if (EWC_FVERIFY(pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Procedure, "expected tinproc"))
+			{
+				auto pTinproc = (STypeInfoProcedure *)pStnod->m_pTin;
+				if (pTinproc->m_fHasGenericArgs)
+					return nullptr;
+			}
+
 			CIRProcedure * pProc = nullptr;
 			if (!pStnod->m_pSym->m_pVal)
 			{
@@ -5729,11 +5736,10 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	}
 
 	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
+	EWC_ASSERT(pTinproc, "Exected procedure type");
 
 	char aCh[256];
 	const char * pChzMangled = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());
-
-	EWC_ASSERT(pTinproc, "Exected procedure type");
 
 	if (pStproc->m_fIsForeign)
 	{

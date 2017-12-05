@@ -256,7 +256,7 @@ public:
 	using CAry<T>::m_cMax;	
 	using CAry<T>::m_bk;
 
-				CDynAry(CAlloc * pAlloc, BK bk, s32 cMaxStarting = 16)
+				CDynAry(CAlloc * pAlloc, BK bk, size_t cMaxStarting = 16)
 				:CAry<T>(nullptr, 0, 0, BK_Nil)
 					{ SetAlloc(pAlloc, bk, cMaxStarting); }
 

@@ -46,7 +46,7 @@ struct STypeCheckStackEntry // tag = tcsent
 
 struct STypeCheckFrame // tag = tcfram
 {
-	int								m_ipTcframQueue;	// index in the pending/waiting queue
+	size_t								m_ipTcframQueue;	// index in the pending/waiting queue
 	CDynAry<STypeCheckStackEntry>	m_aryTcsent;
 };
 
@@ -3401,7 +3401,7 @@ PROCMATCH ProcmatchCheckArguments(
 }
 
 // replace exlicit argument list with named/default arg resolved values
-void ResolveProcCallArguments(CSTNode * pStnodCall, CAlloc * pAlloc, SProcMatchFit * pPmfit, int ipStnodCallMin, int ipStnodCallMax)
+void ResolveProcCallArguments(CSTNode * pStnodCall, CAlloc * pAlloc, SProcMatchFit * pPmfit, int ipStnodCallMin, size_t ipStnodCallMax)
 {
 	if (!EWC_FVERIFY(pStnodCall->m_park == PARK_ProcedureCall, "node passed to ResolveProcCallArguments is not a procedure call"))
 		return;
@@ -3431,7 +3431,7 @@ void ResolveProcCallArguments(CSTNode * pStnodCall, CAlloc * pAlloc, SProcMatchF
 		}
 	}
 
-	int cpStnod = cArg + ipStnodCallMin;
+	size_t cpStnod = cArg + ipStnodCallMin;
 	pStnodCall->m_arypStnodChild.AppendFill(cpStnod - pStnodCall->m_arypStnodChild.C(), nullptr);
 
 	for (int iArg = 0; iArg < cArg; ++iArg)
@@ -3696,6 +3696,9 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	printf("pSymtabNew\n");
 	pSymtabNew->PrintDump();
 	*/
+
+	pTinprocNew->m_strMangled = pTcwork->m_mang.StrMangleMethodName(pTinprocNew);
+	pTinprocNew->m_fHasGenericArgs = false;
 
 	// type check the body with the new values
 
@@ -6886,7 +6889,7 @@ void RelocateTcfram(
 	EWC_ASSERT((*parypTcframOld)[pTcfram->m_ipTcframQueue] == pTcfram, "bookkeeping error");
 
 	s32 cOld = (s32)parypTcframOld->C() - 1; 
-	int ipTcfram = pTcfram->m_ipTcframQueue;
+	size_t ipTcfram = pTcfram->m_ipTcframQueue;
 	if (cOld != ipTcfram)
 	{
 		STypeCheckFrame * pTcframTop = (*parypTcframOld)[cOld];
