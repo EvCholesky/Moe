@@ -288,9 +288,10 @@ enum FSTNOD
 	FSTNOD_ImplicitMember = 0x2,	// this node was created as an implicit member, did not come directly from the source
 	FSTNOD_Fallthrough = 0x4,		// this node (should be a case/default statement) falls through - BB, need a better place to store this
 	FSTNOD_CommutativeCall = 0x8,	// this function is an overloaded operator with arguments reversed.
+	FSTNOD_NoCodeGeneration = 0x10, // skip this node for codegen - used by generic definitions
 
 	FSTNOD_None			= 0x0,
-	FSTNOD_All			= 0xF,
+	FSTNOD_All			= 0x1F,
 };
 EWC_DEFINE_GRF(GRFSTNOD, FSTNOD, u8);
 

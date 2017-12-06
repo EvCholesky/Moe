@@ -194,6 +194,13 @@ extern EWC::CString	StrUniqueName(SUniqueNameSet * pUnset, const EWC::CString & 
 
 struct SWorkspaceEntry // tag = entry
 {
+							SWorkspaceEntry()
+							:m_pStnod(nullptr)
+							,m_pSymtab(nullptr)
+							,m_pProc(nullptr)
+							,m_fHideDebugString(false)
+								{ ; }
+
 	CSTNode *				m_pStnod;
 	CSymbolTable *		 	m_pSymtab;	// symbol table for this entry, local symbols for lambdas 
 
@@ -202,7 +209,7 @@ struct SWorkspaceEntry // tag = entry
 	bool					m_fHideDebugString;	// don't print during WriteDebugStringForEntries()
 };
 
-	
+typedef EWC::CBlockList<SWorkspaceEntry, 128> BlockListEntry;
 
 class CWorkspace	// tag = work
 {
@@ -269,11 +276,11 @@ public:
 	SFile *					PFileLookup(const char * pCozFile, FILEK filek);
 	void					SetObjectFilename(const char * pChzObjectFilename, size_t cB = 0);
 
-	EWC::CAlloc *					m_pAlloc;
-	CParseContext *					m_pParctx;
-	EWC::CDynAry<SWorkspaceEntry> 	m_aryEntry;
-	EWC::CDynAry<int> 				m_aryiEntryChecked;		// order in which entry points were successfully type checked
-	EWC::CDynAry<CIRValue *>		m_arypValManaged;
+	EWC::CAlloc *						m_pAlloc;
+	CParseContext *						m_pParctx;
+	BlockListEntry 						m_blistEntry;
+	EWC::CDynAry<SWorkspaceEntry *> 	m_arypEntryChecked;		// order in which entry points were successfully type checked
+	EWC::CDynAry<CIRValue *>			m_arypValManaged;
 
 	typedef EWC::CHash<HV, int> HashHvIPFile;
 	EWC::CHash<HV, int> *			m_mpFilekPHashHvIPFile[FILEK_Max];
@@ -309,8 +316,8 @@ void PerformTypeCheck(
 	EWC::CAlloc * pAlloc,
 	SErrorManager * pErrman, 
 	CSymbolTable * pSymtabTop,
-	EWC::CAry<SWorkspaceEntry> * paryEntry,
-	EWC::CDynAry<int> * paryiEntryChecked,
+	BlockListEntry * pblistEntry,
+	EWC::CDynAry<SWorkspaceEntry *> * parypEntryChecked,
 	GLOBMOD globmod);
 
 

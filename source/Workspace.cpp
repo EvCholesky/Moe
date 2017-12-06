@@ -334,8 +334,8 @@ const char * CWorkspace::s_pCozUnitTestExtension = ".moetest";
 CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 :m_pAlloc(pAlloc)
 ,m_pParctx(nullptr)
-,m_aryEntry(pAlloc, EWC::BK_Workspace)
-,m_aryiEntryChecked(pAlloc, EWC::BK_Workspace) 
+,m_blistEntry(pAlloc, EWC::BK_Workspace)
+,m_arypEntryChecked(pAlloc, EWC::BK_Workspace) 
 ,m_arypValManaged(pAlloc, EWC::BK_WorkspaceVal, 0)
 ,m_arypFile(pAlloc, EWC::BK_WorkspaceFile, 200)
 ,m_pChzObjectFilename(nullptr)
@@ -360,11 +360,9 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 {
 	EWC_ASSERT(pStnod, "null entry point");
-	SWorkspaceEntry * pEntry = m_aryEntry.AppendNew();
+	SWorkspaceEntry * pEntry = m_blistEntry.AppendNew();
 	pEntry->m_pStnod = pStnod;
 	pEntry->m_pSymtab = pSymtab;
-	pEntry->m_pProc = nullptr;
-	pEntry->m_fHideDebugString = false;
 }
 
 CSymbolTable * PSymtabNew(
@@ -534,8 +532,8 @@ void BeginWorkspace(CWorkspace * pWork)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 
-	pWork->m_aryiEntryChecked.Clear();
-	pWork->m_aryEntry.Clear();
+	pWork->m_arypEntryChecked.Clear();
+	pWork->m_blistEntry.Clear();
 
 	EWC_ASSERT(pWork->m_arypValManaged.C() == 0, "Unexpected managed values in workspace");
 
@@ -584,7 +582,7 @@ void EndParse(CWorkspace * pWork, SLexer * pLex)
 	pAlloc->EWC_DELETE(pWork->m_pParctx);
 	pWork->m_pParctx = nullptr;
 
-	pWork->m_aryiEntryChecked.EnsureSize(pWork->m_aryEntry.C());
+	pWork->m_arypEntryChecked.EnsureSize(pWork->m_blistEntry.C());
 }
 
 void EndWorkspace(CWorkspace * pWork)
@@ -604,8 +602,8 @@ void EndWorkspace(CWorkspace * pWork)
 		pWork->m_pSymtab = nullptr;
 	}
 
-	SWorkspaceEntry * pEntryMac = pWork->m_aryEntry.PMac();
-	for (SWorkspaceEntry * pEntry = pWork->m_aryEntry.A(); pEntry != pEntryMac; ++pEntry)
+	BlockListEntry::CIterator iter(&pWork->m_blistEntry);
+	while (SWorkspaceEntry * pEntry = iter.Next())
 	{
 		pAlloc->EWC_DELETE(pEntry->m_pStnod);
 		pEntry->m_pStnod = nullptr;
@@ -625,8 +623,8 @@ void EndWorkspace(CWorkspace * pWork)
 	}
 	pWork->m_arypValManaged.Clear();
 
-	pWork->m_aryEntry.Clear();
-	pWork->m_aryiEntryChecked.Clear();
+	pWork->m_blistEntry.Clear();
+	pWork->m_arypEntryChecked.Clear();
 	for (int filek = CWorkspace::FILEK_Min; filek < CWorkspace::FILEK_Max; ++filek)
 	{
 		pWork->m_mpFilekPHashHvIPFile[filek]->Clear(0);

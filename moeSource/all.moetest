@@ -28,6 +28,7 @@ test builtin Lexer
 test builtin Signed65
 test builtin Unicode
 test builtin UniqueNames
+test builtin BlockList
 
 // Declaration Tests:
 

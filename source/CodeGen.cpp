@@ -4265,12 +4265,13 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (!EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check, (implicit function?)"))
 				return nullptr;
 
+			/*
 			if (EWC_FVERIFY(pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Procedure, "expected tinproc"))
 			{
 				auto pTinproc = (STypeInfoProcedure *)pStnod->m_pTin;
 				if (pTinproc->m_fHasGenericArgs)
 					return nullptr;
-			}
+			}*/
 
 			CIRProcedure * pProc = nullptr;
 			if (!pStnod->m_pSym->m_pVal)
@@ -4942,6 +4943,8 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			if (fIsDirectCall)
 			{
 				CIRProcedure * pProc = (CIRProcedure *)pSym->m_pVal;
+				EWC_ASSERT(pProc, "missing proc codegen");
+
 				auto pLvalFunction = pProc->m_pLvalFunction;
 				if (LLVMCountParams(pLvalFunction) != cStnodArgs)
 				{
@@ -5910,20 +5913,25 @@ void CodeGenEntryPoint(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild, 
 	CSymbolTable * pSymtabTop,
-	CAry<SWorkspaceEntry> * paryEntry,
-	CAry<int> * paryiEntryOrder)
+	CAry<SWorkspaceEntry *> * parypEntryOrder)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 	CIRProcedure * pProcImplicit = nullptr;
 
-	int * piEntryMax = paryiEntryOrder->PMac();
-
-	CDynAry<CSTNode *> arypStnodUnitTest(pWork->m_pAlloc, BK_UnitTest, (int)paryiEntryOrder->C());	// entry points from unit tests that are not procedure definitions
-	for (int * piEntry = paryiEntryOrder->A(); piEntry != piEntryMax; ++piEntry)
+	CDynAry<CSTNode *> arypStnodUnitTest(pWork->m_pAlloc, BK_UnitTest, (int)parypEntryOrder->C());	// entry points from unit tests that are not procedure definitions
+	SWorkspaceEntry ** ppEntryMac = parypEntryOrder->PMac();
+	for (SWorkspaceEntry ** ppEntry = parypEntryOrder->A(); ppEntry != ppEntryMac; ++ppEntry)
 	{
-		SWorkspaceEntry *pEntry = &(*paryEntry)[*piEntry];
+		SWorkspaceEntry * pEntry = *ppEntry;
 		CSTNode * pStnod = pEntry->m_pStnod;
 
+		if (pStnod->m_grfstnod.FIsSet(FSTNOD_NoCodeGeneration))
+		{
+			printf("skipping pStnod %p PARK_%s\n", pStnod, PChzFromPark(pStnod->m_park));
+			continue;
+		}
+
+		printf("next PARK_%s %s\n", PChzFromPark(pStnod->m_park), (pStnod->m_pSym) ? pStnod->m_pSym->m_strName.PCoz() : "unknown");
 		EWC_ASSERT(pBuild->m_pProcCur == nullptr, "expected null procedure for entry point.");
 
 		bool fGlobalTypeDeclaration = false;
@@ -6250,8 +6258,8 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 			pWork->m_pAlloc,
 			pWork->m_pErrman,
 			pWork->m_pSymtab,
-			&pWork->m_aryEntry,
-			&pWork->m_aryiEntryChecked,
+			&pWork->m_blistEntry,
+			&pWork->m_arypEntryChecked,
 			pWork->m_globmod);
 
 		if (!pWork->m_pErrman->FHasErrors())
@@ -6264,7 +6272,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 #endif
 			CIRBuilder build(pWork, &pWork->m_arypValManaged, pChzFilenameIn, grfcompile);
 			
-			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_aryEntry, &pWork->m_aryiEntryChecked);
+			CodeGenEntryPoint(pWork, &build, pWork->m_pSymtab, &pWork->m_arypEntryChecked);
 
 			CompileToObjectFile(pWork, &build, pChzFilenameIn);
 

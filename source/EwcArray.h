@@ -66,26 +66,6 @@ public:
 				CAry(const CAry&) = delete;
 	CAry &		operator=(const CAry&) = delete;
 
-				/*
-				This is dangerous because it can be called on CDynAry and it won't set m_pAlloc so the destructor will fail.
-	void		SetArray(T * a, size_t c, size_t cMax)
-				{
-					EWC_ASSERT((m_a == nullptr) | (a == nullptr), "overwriting nonzero buffer, leaking memory");
-					m_a    = a;
-					m_c    = c;
-					m_cMax = cMax;
-				}
-	void		AllocArray(CAlloc * pAlloc, s32 cMax)
-				{
-					EWC_ASSERT(m_a == nullptr, "overwriting nonzero buffer, leaking memory");
-
-					size_t cB = sizeof(T) * cMax;
-					m_a = (T *)pAlloc->EWC_ALLOC_BK(cB, EWC_ALIGN_OF(T), m_bk);
-
-					m_c    = 0;
-					m_cMax = cMax;
-				}*/
-
 	const T &	operator[](size_t i) const	{ EWC_ASSERT((i>=0) & (i<m_c), "array overflow"); return m_a[i]; }
 	T &			operator[](size_t i)		{ EWC_ASSERT((i>=0) & (i<m_c), "array overflow"); return m_a[i]; }
 
@@ -244,6 +224,156 @@ public:
 };
 
 
+template <typename T, int C_PER_BLOCK>
+class CBlockList //tag=blist
+{
+public:
+	struct SBlock // tag = block
+	{
+		SAlignedBytes<sizeof(T) * C_PER_BLOCK, EWC_ALIGN_OF(T)>		m_alby;
+		size_t 														m_c;
+		SBlock *													m_pBlockNext;
+
+		T * 				A()	
+							{ return (T*)m_alby.A(); }
+	};
+
+	typedef T Type;
+
+	class CIterator // tag=iter
+	{
+	public:
+				CIterator(CBlockList<T, C_PER_BLOCK> * pBlist)
+				:m_pBlock(&pBlist->m_blockRoot)
+				,m_pT(nullptr)
+					{ ; }
+								
+		T *		Next() 
+					{
+						while (m_pBlock)
+						{
+							if (!m_pT)
+							{
+								m_pT = m_pBlock->A();
+							}
+							else
+							{
+								++m_pT;
+							}
+
+							T * pMac = &m_pBlock->A()[m_pBlock->m_c];
+							if (m_pT == pMac)
+							{
+								m_pBlock = m_pBlock->m_pBlockNext;
+								m_pT = nullptr;
+							}
+							else
+							{
+								return m_pT;
+							}
+						}
+
+						m_pBlock = nullptr; // don't loop around the last block
+						return nullptr;
+					}
+
+		SBlock *	m_pBlock;
+		T * 		m_pT;
+	};
+
+				CBlockList(CAlloc * pAlloc, BK bk)
+				:m_blockRoot()
+				,m_c()
+				,m_bk(bk)
+				,m_pAlloc(nullptr)
+					{ SetAlloc(pAlloc, bk); }
+
+				CBlockList(BK bk = BK_Nil)
+				:m_blockRoot()
+				,m_c()
+				,m_bk(bk)
+				,m_pAlloc(nullptr)
+					{ ; }
+
+				~CBlockList()
+					{ Clear(); }
+
+	void		SetAlloc(CAlloc * pAlloc, BK bk)
+					{
+						FreeAll();
+
+						m_pAlloc = pAlloc;
+						m_bk = bk;
+					}
+
+	void		Clear()
+					{ FreeAll(); }
+
+	void		Append(const Type & t)
+					{
+						auto pT = AllocateUnconstructed();
+						CopyConstruct(pT, t);
+					}
+	T *			AppendNew()
+					{
+						auto pT = AllocateUnconstructed();
+						Construct(pT);
+						return pT;
+					}
+
+	T * 		AllocateUnconstructed()
+					{
+						++m_c;
+						SBlock * pBlockIt = &m_blockRoot;
+						while (1)
+						{
+							if (pBlockIt->m_c < C_PER_BLOCK)
+							{
+								return &pBlockIt->A()[pBlockIt->m_c++];		
+							}
+
+							if (pBlockIt->m_pBlockNext == nullptr)
+								break;
+
+							pBlockIt = pBlockIt->m_pBlockNext;
+						}
+
+						EWC_ASSERT(m_pAlloc, "null allocator in Block List");
+
+						auto pBlockNew = (SBlock *)m_pAlloc->EWC_ALLOC_BK(sizeof(SBlock), EWC_ALIGN_OF(SBlock), m_bk);
+						pBlockNew->m_c = 1;
+						pBlockNew->m_pBlockNext = nullptr;
+						pBlockIt->m_pBlockNext = pBlockNew;
+
+						return &pBlockNew->A()[0];
+					}
+
+	void			FreeAll()
+					{
+						SBlock * pBlockIt	= m_blockRoot.m_pBlockNext;
+						while (pBlockIt)
+						{
+							SBlock * pBlockFree = pBlockIt;
+							pBlockIt = pBlockIt->m_pBlockNext;
+
+							DestructN(pBlockFree->A(), pBlockFree->m_c);
+							m_pAlloc->EWC_FREE(pBlockFree);
+						}
+
+						DestructN(m_blockRoot.A(), m_blockRoot.m_c);
+						m_blockRoot.m_c = 0;
+						m_blockRoot.m_pBlockNext = nullptr;
+					}
+	size_t			C() const					{ return m_c; }
+	bool			FIsEmpty() const			{ return m_c == 0; }
+
+
+	SBlock 			m_blockRoot;
+	size_t			m_c;
+	BK 				m_bk;
+	CAlloc *		m_pAlloc;
+};
+
 
 // resizable array (aka std::vector)
 template <typename T>
@@ -265,9 +395,6 @@ public:
 				,m_pAlloc(nullptr)
 					{ ; }
 
-				~CDynAry()
-					{ Clear(); }
-
 				CDynAry(const CDynAry & rhs)
 					{
 						m_pAlloc = rhs.m_pAlloc;
@@ -279,6 +406,9 @@ public:
 							Append(*pT);
 						}
 					}
+
+				~CDynAry()
+					{ Clear(); }
 
 	CDynAry<T> & operator= (const CDynAry & rhs)
 					{

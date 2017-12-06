@@ -4549,8 +4549,8 @@ void HideDebugStringForEntries(CWorkspace * pWork, size_t cBHiddenMax)
 {
 	// hide entrys before a given point (for omitting the prereq from a unit test)
 
-	auto pEntryMax = pWork->m_aryEntry.PMac();
-	for (auto pEntry = pWork->m_aryEntry.A(); pEntry != pEntryMax; ++pEntry)
+	BlockListEntry::CIterator iter(&pWork->m_blistEntry);
+	while (SWorkspaceEntry * pEntry = iter.Next())
 	{
 		auto pStnod = pEntry->m_pStnod;
 		if (pStnod && pStnod->m_lexloc.m_dB < cBHiddenMax)
@@ -4571,15 +4571,21 @@ void WriteDebugStringForEntries(CWorkspace * pWork, char * pCo, char * pCoMax, G
 #endif
 
 	EWC::SStringBuffer strbuf(pCo, cB);
-	for (size_t ipStnod = 0; ipStnod < pWork->m_aryEntry.C(); ++ipStnod)
+
+	int ipStnod = 0;
+	int cEntry = pWork->m_blistEntry.C();
+
+	BlockListEntry::CIterator iter(&pWork->m_blistEntry);
+	while (SWorkspaceEntry * pEntry = iter.Next())
 	{
-		if (pWork->m_aryEntry[ipStnod].m_fHideDebugString)
+		++ipStnod;
+		if (pEntry->m_fHideDebugString)
 			continue;
 
-		CSTNode * pStnod = pWork->m_aryEntry[ipStnod].m_pStnod;
+		CSTNode * pStnod = pEntry->m_pStnod;
 		pStnod->WriteDebugString(&strbuf, grfdbgstr);
 
-		if ((CBFree(strbuf) > 0) & (ipStnod+1 != pWork->m_aryEntry.C()))
+		if ((CBFree(strbuf) > 0) & (ipStnod != cEntry))
 		{
 			*strbuf.m_pCozAppend++ = ' ';
 		}
@@ -4589,7 +4595,7 @@ void WriteDebugStringForEntries(CWorkspace * pWork, char * pCo, char * pCoMax, G
 		pStnodCopy->WriteDebugString(&strbufCopy, grfdbgstr);
 		pWork->m_pAlloc->EWC_DELETE(pStnodCopy);
 
-		if ((CBFree(strbufCopy) > 0) & (ipStnod+1 != pWork->m_aryEntry.C()))
+		if ((CBFree(strbufCopy) > 0) & (ipStnod != cEntry))
 		{
 			*strbufCopy.m_pCozAppend++ = ' ';
 		}

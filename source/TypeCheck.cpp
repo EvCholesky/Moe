@@ -46,7 +46,8 @@ struct STypeCheckStackEntry // tag = tcsent
 
 struct STypeCheckFrame // tag = tcfram
 {
-	size_t								m_ipTcframQueue;	// index in the pending/waiting queue
+	size_t							m_ipTcframQueue;	// index in the pending/waiting queue
+	SWorkspaceEntry *				m_pEntry;
 	CDynAry<STypeCheckStackEntry>	m_aryTcsent;
 };
 
@@ -78,14 +79,15 @@ struct SInstantiateRequest // tag = insreq
 
 struct STypeCheckWorkspace // tag = tcwork
 {
-					STypeCheckWorkspace(CAlloc * pAlloc, SErrorManager * pErrman, int cTcfram)
+					STypeCheckWorkspace(CAlloc * pAlloc, SErrorManager * pErrman, BlockListEntry * pblistEntry)
 					:m_pAlloc(pAlloc)
 					,m_pErrman(pErrman)
 					,m_mang(pAlloc)
-					,m_aryTcfram(pAlloc, EWC::BK_TypeCheck, cTcfram)
+					,m_pblistEntry(pblistEntry)
+					,m_aryTcfram(pAlloc, EWC::BK_TypeCheck, pblistEntry->C()*2)
 					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
-					,m_arypTcframPending(pAlloc, EWC::BK_TypeCheck, cTcfram)
-					,m_arypTcframWaiting(pAlloc, EWC::BK_TypeCheck, cTcfram)
+					,m_arypTcframPending(pAlloc, EWC::BK_TypeCheck, pblistEntry->C()*2)
+					,m_arypTcframWaiting(pAlloc, EWC::BK_TypeCheck, pblistEntry->C()*2)
 					,m_aryInsreq(pAlloc, EWC::BK_TypeCheck)
 					,m_arypInsctxManaged(pAlloc, EWC::BK_TypeCheck)
 						{ ; }
@@ -101,6 +103,7 @@ struct STypeCheckWorkspace // tag = tcwork
 	CAlloc *								m_pAlloc;
 	SErrorManager *							m_pErrman;
 	CNameMangler							m_mang;
+	BlockListEntry * 						m_pblistEntry;
 	CAllocAry<STypeCheckFrame>				m_aryTcfram;
 	CHash<const SSymbol *, SUnknownType>	m_hashPSymUntype;
 
@@ -3618,6 +3621,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	CSTNode * pStnodBody = pStnodDefinition->PStnodChildSafe(pStprocSrc->m_iStnodBody);
 
 	auto pStnodProcCopy = PStnodCopy(pTcwork->m_pAlloc, pStnodDefinition);
+	pStnodProcCopy->m_grfstnod.Clear(FSTNOD_NoCodeGeneration);
 
 	auto pInsreq = pTcwork->m_aryInsreq.AppendNew();
 	pInsreq->m_pGenmap = pGenmap;
@@ -3715,6 +3719,11 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	pTcfram->m_ipTcframQueue = pTcwork->m_arypTcframPending.C();
 	pTcwork->m_arypTcframPending.Append(pTcfram);
 
+	SWorkspaceEntry * pEntry = pTcwork->m_pblistEntry->AppendNew();
+	pEntry->m_pStnod = pStnodBodyCopy;
+	pEntry->m_pSymtab = pSymtabNew;
+	pTcfram->m_pEntry = pEntry;
+
 	pTcfram->m_aryTcsent.SetAlloc(pTcwork->m_pAlloc, EWC::BK_TypeCheckStack);
 	STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
 	pTcsent->m_nState = 0;
@@ -3726,6 +3735,8 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	pTcsent->m_parkDeclContext = PARK_Nil;
 	pTcsent->m_fAllowForwardDecl = false;
 	pTcsent->m_tcctx = TCCTX_Normal;
+
+
 
 	return pInsreq;
 }
@@ -4183,6 +4194,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								EWC_ASSERT(pTinproc->m_arypTinParams[ipTin], "null parameter type? arg %d", ipTin);
 							}
 
+							pStnod->m_grfstnod.AddFlags(FSTNOD_NoCodeGeneration);
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 							return TCRET_Complete;
 						}
@@ -7061,12 +7073,12 @@ void PerformTypeCheck(
 	CAlloc * pAlloc,
 	SErrorManager * pErrman,
 	CSymbolTable * pSymtabTop,
-	CAry<SWorkspaceEntry> * paryEntry,
-	CDynAry<int> * paryiEntryChecked, 
+	BlockListEntry * pblistEntry,
+	CDynAry<SWorkspaceEntry *> * parypEntryChecked, 
 	GLOBMOD globmod)
 {
-	// BB - Don't check in!! allocating 2x cEntry space to give generics some breathing room, need an actual solution
-	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, (s32)paryEntry->C() * 2);
+	// BB - Don't check in!! allocating 2x cEntry space to give generics some breathing room, need to switch to a block list
+	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, pblistEntry);
 
 	SSymbol * pSymRoot = nullptr;
 	// if we're in a unit test we spoof a top level implicit function symbol
@@ -7075,13 +7087,14 @@ void PerformTypeCheck(
 		pSymRoot = pSymtabTop->PSymEnsure(pErrman, "__ImplicitMethod", nullptr);
 	}
 
-	SWorkspaceEntry * pEntryMax = paryEntry->PMac();
 	int ipTcfram = 0;
-	for (SWorkspaceEntry * pEntry = paryEntry->A(); pEntry != pEntryMax; ++pEntry, ++ipTcfram)
+	BlockListEntry::CIterator iterEntry(pblistEntry);
+	while (SWorkspaceEntry * pEntry = iterEntry.Next())
 	{
 		EWC_ASSERT(pEntry->m_pSymtab, "entry point without symbol table");
 		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
 		pTcfram->m_ipTcframQueue = ipTcfram;
+		pTcfram->m_pEntry = pEntry;
 
 		pTcfram->m_aryTcsent.SetAlloc(pAlloc, EWC::BK_TypeCheckStack);
 		STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
@@ -7096,6 +7109,7 @@ void PerformTypeCheck(
 		pTcsent->m_tcctx = TCCTX_Normal;
 
 		pTcwork->m_arypTcframPending.Append(pTcfram);
+		++ipTcfram;
 	}
 
 	int cStoppingError = 0;
@@ -7125,9 +7139,10 @@ void PerformTypeCheck(
 		else if (tcret == TCRET_Complete)
 		{
 			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframPending, nullptr);
-
-			size_t iEntry = pTcwork->m_aryTcfram.IFromP(pTcfram);
-			paryiEntryChecked->Append(S32Coerce(iEntry));
+			if (EWC_FVERIFY(pTcfram->m_pEntry, "type check frame missing workspace entry"))
+			{
+				parypEntryChecked->Append(pTcfram->m_pEntry);
+			}
 		}
 		else if (tcret == TCRET_WaitingForSymbolDefinition)
 		{

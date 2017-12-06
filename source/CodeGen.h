@@ -447,8 +447,7 @@ void CodeGenEntryPoint(
 	CWorkspace * pWork,
 	CIRBuilder * pBuild, 
 	CSymbolTable * pSymtabTop,
-	EWC::CAry<SWorkspaceEntry> * paryEntry,
-	EWC::CAry<int> * paryiEntryOrder);
+	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder);
 
 int NExecuteAndWait(
 	const char * pChzProgram,

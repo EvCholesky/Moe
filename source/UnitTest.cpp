@@ -699,6 +699,19 @@ void PrintTestError(const char * pCozIn, const char * pCozOut, const char * pCoz
 		pChExp += cBExp;
 	}
 
+	while (*pChOut != '\0' || *pChExp != '\0')
+	{
+		printf("^");
+		if (*pChOut != '\0')
+		{
+			pChOut += CBCodepoint(pChOut);
+		}
+		if (*pChExp != '\0')
+		{
+			pChExp += CBCodepoint(pChExp);
+		}
+	}
+
 	printf("\n\n");
 }
 
@@ -837,7 +850,7 @@ TESTRES TestresRunUnitTest(
 	if (testres == TESTRES_Success)
 	{
 		// Type Check
-		PerformTypeCheck(work.m_pAlloc, work.m_pErrman, work.m_pSymtab, &work.m_aryEntry, &work.m_aryiEntryChecked, work.m_globmod);
+		PerformTypeCheck(work.m_pAlloc, work.m_pErrman, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, work.m_globmod);
 		if (work.m_pErrman->FHasErrors())
 		{
 			printf("Unexpected error during type check test %s\n", pUtest->m_strName.PCoz());
@@ -868,7 +881,7 @@ TESTRES TestresRunUnitTest(
 	if (testres == TESTRES_Success)
 	{
 		CIRBuilder build(&work, &work.m_arypValManaged, sebFilename.PCoz(), FCOMPILE_None);
-		CodeGenEntryPoint(&work, &build, work.m_pSymtab, &work.m_aryEntry, &work.m_aryiEntryChecked);
+		CodeGenEntryPoint(&work, &build, work.m_pSymtab, &work.m_arypEntryChecked);
 
 		if (work.m_pErrman->FHasErrors())
 		{
@@ -990,6 +1003,97 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 	pTesctx->m_arySubStack.PopLast();
 }
 
+struct SCounter
+{
+				SCounter()
+				{
+					++s_cCtor;				
+				}
+
+				~SCounter()
+				{
+					++s_cDtor;
+				}
+
+	static void	Reset()
+				{
+					s_cCtor = 0;
+					s_cDtor = 0;
+				}
+
+	static int s_cCtor;
+	static int s_cDtor;
+};
+
+int SCounter::s_cCtor = 0;
+int SCounter::s_cDtor = 0;
+
+bool FTestBlockList(CAlloc * pAlloc)
+{
+	int aN[] = {1, 2, 3, 5, 6, 7, 8, 9, 10, 1111, 2222, 3333, 4444, -1, 0 };	
+
+	CBlockList<int, 1> blistA(pAlloc, BK_UnitTest);
+	CBlockList<int, 2> blistB(pAlloc, BK_UnitTest);
+	CBlockList<int, 5> blistC(pAlloc, BK_UnitTest);
+	CBlockList<int, 100> blistD(pAlloc, BK_UnitTest);
+
+	int * pNMac = EWC_PMAC(aN);
+	for (int * pN = aN; pN != pNMac; ++pN)
+	{
+		blistA.Append(*pN);	
+		blistB.Append(*pN);	
+		blistC.Append(*pN);	
+		blistD.Append(*pN);	
+	}
+
+	if (blistA.C() != EWC_DIM(aN)) { printf("wrong count A\n"); return false; }
+	if (blistB.C() != EWC_DIM(aN)) { printf("wrong count B\n"); return false; }
+	if (blistC.C() != EWC_DIM(aN)) { printf("wrong count C\n"); return false; }
+	if (blistD.C() != EWC_DIM(aN)) { printf("wrong count D\n"); return false; }
+
+	CBlockList<int, 1>::CIterator iterA(&blistA);
+	CBlockList<int, 2>::CIterator iterB(&blistB);
+	CBlockList<int, 5>::CIterator iterC(&blistC);
+	CBlockList<int, 100>::CIterator iterD(&blistD);
+
+	for (int iN = 0; iN < EWC_DIM(aN); ++iN)
+	{
+		auto pNA = iterA.Next();
+		auto pNB = iterB.Next();
+		auto pNC = iterC.Next();
+		auto pND = iterD.Next();
+
+		if (!pNA || *pNA != aN[iN]) { printf ("mismatch A[%d] %d != %d\n", iN, *pNA, aN[iN]); return false; }
+		if (!pNB || *pNB != aN[iN]) { printf ("mismatch B[%d] %d != %d\n", iN, *pNB, aN[iN]); return false; }
+		if (!pNC || *pNC != aN[iN]) { printf ("mismatch C[%d] %d != %d\n", iN, *pNC, aN[iN]); return false; }
+		if (!pND || *pND != aN[iN]) { printf ("mismatch D[%d] %d != %d\n", iN, *pND, aN[iN]); return false; }
+	}
+// TODO: Test Ctor, Dtors
+
+	SCounter::Reset();
+	CBlockList<SCounter, 2> blistCounter(pAlloc, BK_UnitTest);
+	for (int i=0; i< 8; ++i)
+	{
+		SCounter counter;
+		blistCounter.Append(counter);
+		blistCounter.AppendNew();
+	}
+
+	blistCounter.Clear();
+	if (SCounter::s_cCtor != 16)
+	{
+		printf("wrong ctor count %d\n", SCounter::s_cCtor);
+		return false;
+	}
+	if (SCounter::s_cDtor != 24) // 8 during the loop, 16 from the blists
+	{
+		printf("wrong dtor count %d\n", SCounter::s_cDtor);
+		return false;
+	}
+
+	return true;
+}
+
 bool FRunBuiltinTest(const CString & strName, CAlloc * pAlloc)
 {
 	bool fReturn;
@@ -1008,6 +1112,10 @@ bool FRunBuiltinTest(const CString & strName, CAlloc * pAlloc)
 	else if (strName == "UniqueNames")
 	{
 		fReturn = FTestUniqueNames(pAlloc);
+	}
+	else if (strName == "BlockList")
+	{
+		fReturn = FTestBlockList(pAlloc);
 	}
 	else
 	{
