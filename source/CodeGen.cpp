@@ -53,6 +53,8 @@ static constexpr const char * OPNAME(const char * pChz) { return pChz; }
 static constexpr const char * OPNAME(const char * pChz) { return ""; }
 #endif
 
+#define LLVM_ENABLE_DUMP 1
+
 #define ASSERT_STNOD(PWORK, PSTNOD, PREDICATE, ... ) do { if (!(PREDICATE)) { \
 		EWC::AssertHandler(__FILE__, __LINE__, #PREDICATE, __VA_ARGS__); \
 		s32 iLine, iCol; \
@@ -198,7 +200,17 @@ static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
 	printf("%s: ", pChzLabel);
 
 #ifdef LLVM_ENABLE_DUMP
-	LLVMDumpType(pLtype);
+	if (pVal)
+	{
+		auto pLtype = LLVMTypeOf(pVal->m_pLval);
+		LLVMDumpType(pLtype);
+	}
+	else
+	{
+		printf("null value");
+	}
+#else
+	printf("LLVM_ENABLE_DUMP is not defined.")
 #endif
 }
 
@@ -459,6 +471,11 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 
 			LLVMStructSetBody(pLtype, apLtypeMember, cTypemembField, false);
 			return pLtype;
+		}
+		case TINK_Generic:
+		{
+			EWC_ASSERT(false, "encountered non-instantiated generic type '%s' during codegen", pTin->m_strName.PCoz());
+			return nullptr;
 		}
 		default: return nullptr;
 	}
@@ -4902,10 +4919,10 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			auto pSym = pStnod->m_pSym;
 			if (fIsDirectCall)
 			{
-				if (!EWC_FVERIFY(pStnod->m_pSym, "calling function without generated code"))
+				if (!EWC_FVERIFY(pSym, "calling function without generated code"))
 					return nullptr;
 
-				EWC_ASSERT(pStnod->m_pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused");
+				EWC_ASSERT(pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused %p %s", pSym, pSym->m_strName.PCoz());
 
 				PProcTryEnsure(pWork, pBuild, pSym);
 
@@ -4962,7 +4979,6 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 									arypLvalArgs.A(),
 									(u32)arypLvalArgs.C(),
 									"");
-
 
 				if (pTinproc->m_callconv != CALLCONV_Nil)
 				{
@@ -5742,6 +5758,8 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	EWC_ASSERT(pTinproc, "Exected procedure type");
 
 	char aCh[256];
+	EWC_ASSERT(!pTinproc->m_fHasGenericArgs, "generic arg should not make it to codegen");
+	EWC_ASSERT(pTinproc->m_strMangled.PCoz(), "missing procedure mangled name in tinproc '%s', pStnod = %p", pTinproc->m_strName.PCoz(), pStnod);
 	const char * pChzMangled = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());
 
 	if (pStproc->m_fIsForeign)
@@ -5763,6 +5781,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 
 	auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, arypLtype.A(), (u32)arypLtype.C(), fHasVarArgs);
+
 	pProc->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, pChzMangled, pLtypeFunction);
 	if (!pStproc->m_fIsForeign && !pStproc->m_fUseUnmangledName)
 	{
@@ -5926,12 +5945,8 @@ void CodeGenEntryPoint(
 		CSTNode * pStnod = pEntry->m_pStnod;
 
 		if (pStnod->m_grfstnod.FIsSet(FSTNOD_NoCodeGeneration))
-		{
-			printf("skipping pStnod %p PARK_%s\n", pStnod, PChzFromPark(pStnod->m_park));
 			continue;
-		}
 
-		printf("next PARK_%s %s\n", PChzFromPark(pStnod->m_park), (pStnod->m_pSym) ? pStnod->m_pSym->m_strName.PCoz() : "unknown");
 		EWC_ASSERT(pBuild->m_pProcCur == nullptr, "expected null procedure for entry point.");
 
 		bool fGlobalTypeDeclaration = false;

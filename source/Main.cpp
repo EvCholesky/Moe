@@ -353,6 +353,14 @@ int main(int cpChzArg, const char * apChzArg[])
 			// current moe object file
 			arypChzOptions.Append(work.m_pChzObjectFilename);
 
+			// output filename
+			char aCozOutput[1024];
+			const char * pChzOutputPath;	
+			const char * pChzOutputFile;	
+			const char * pChzOutputExt;	
+			(void) EWC::CBCopyCoz(work.m_pChzObjectFilename, aCozOutput, EWC_DIM(aCozOutput));
+			PathSplitDestructive(aCozOutput, EWC_DIM(aCozOutput), &pChzOutputPath, &pChzOutputFile, &pChzOutputExt);
+
 			#if _WINDOWS
 				static const char * s_pChzMoeLibPath = "c:/Code/moe";
 				static const char * s_pChzCRTLibraryDebug = "msvcrtd.lib";
@@ -372,18 +380,13 @@ int main(int cpChzArg, const char * apChzArg[])
 				static const char * s_pChzLibOption = "-l";
 				static const char * s_pChzLibPathOption = "-L";
 				static const char * s_pChzLibExtension = "";
-				//static const char * s_pChzOutputFileOption = "-o";
+				static const char * s_pChzOutputFileOption = "-o";
 
 				arypChzOptions.Append((work.m_optlevel == OPTLEVEL_Release) ? s_pChzCRTLibraryRelease  : s_pChzCRTLibraryDebug);
-			#endif
 
-			// output filename
-			char aCozOutput[1024];
-			const char * pChzOutputPath;	
-			const char * pChzOutputFile;	
-			const char * pChzOutputExt;	
-			(void) EWC::CBCopyCoz(work.m_pChzObjectFilename, aCozOutput, EWC_DIM(aCozOutput));
-			PathSplitDestructive(aCozOutput, EWC_DIM(aCozOutput), &pChzOutputPath, &pChzOutputFile, &pChzOutputExt);
+				arypChzOptions.Append(s_pChzOutputFileOption);	
+				arypChzOptions.Append(pChzOutputFile);
+			#endif
 
 			//arypChzOptions.Append(s_pChzOutputFileOption);	
 			//arypChzOptions.Append("\"testall\"");
@@ -413,7 +416,11 @@ int main(int cpChzArg, const char * apChzArg[])
 			// build the path for moe libraries			
 
 			EWC::SStringBuffer strbufMoeLib(pCozWorking, pCozWorkingMac - pCozWorking);
+			#if _WINDOWS
 			FormatCoz(&strbufMoeLib, "%s%s%s%s", s_pChzLibPathOption, s_pChzMoeLibPath, s_pChzMoeLibBit, pChzMoeLibOpt);
+			#else
+			FormatCoz(&strbufMoeLib, "%s%s%s%s", s_pChzLibPathOption, s_pChzMoeLibPath, pChzMoeLibOpt, s_pChzMoeLibBit);
+			#endif
 
 			//arypChzOptions.Append(s_pChzLibPathOption);
 			arypChzOptions.Append(strbufMoeLib.m_pCozBegin);
@@ -451,87 +458,23 @@ int main(int cpChzArg, const char * apChzArg[])
 			}
 			printf("\n");
 
-			#if 0 //_WINDOWS
-				STARTUPINFOA startupinfo = {};
-				startupinfo.cb = sizeof(startupinfo);
-				startupinfo.dwFlags = STARTF_USESHOWWINDOW;
-				startupinfo.wShowWindow = SW_HIDE;
+			EWC::CString strError;
+			bool fFailed;
 
-				PROCESS_INFORMATION processinfo = {};
-
-				printf("Linking:\n");
-
-				// BB - Should switch CreateProcess and GetCurrentDirectory to wide char versions.
-				if (CreateProcessA(
-						pChzLinkerFull,
-						aCozCommandLine,
-						0,
-						0,
-						false,
-						0,
-						0,
-						aChzCwd,
-						&startupinfo,
-						&processinfo))
-				{
-					WaitForSingleObject(processinfo.hProcess, INFINITE);
-
-					DWORD nExitCode;
-					(void) GetExitCodeProcess(processinfo.hProcess, &nExitCode);
-					CloseHandle(processinfo.hProcess);
-					CloseHandle(processinfo.hThread);
-				}
-				else
-				{
-					DWORD nErrorCode = GetLastError();
-				}
-			#elif 0 // !_WINDOWS so... POSIX?
-
-				// Could actually work, was reporting invalid permissions, but I think that's just a bad path.
-				//  I think having llvm::Command do all the work is better tho, just checking it in once for a backup.
-				pid_t nPid = 	0;
-			    char * apChzArgv[] = {(char *)pChzLinkerFile, NULL}; // gonna take some tweaking to get the args right for posix
-
-			    posix_spawn_file_actions_t fileact;
-			    posix_spawn_file_actions_t * pFileact = &fileact;
-		      	posix_spawn_file_actions_init(pFileact);
-
-				int nStatus = posix_spawn(&nPid, (char *)pChzLinkerPath, pFileact, NULL, apChzArgv, environ);
-			    if (nStatus == 0) 
-			    {
-			        printf("Child pid: %i\n", nPid);
-			        if (waitpid(nPid, &nStatus, 0) != -1) 
-			        {
-			            printf("Child exited with status %i\n", nStatus);
-        			} 
-        			else 
-        			{
-			            perror("waitpid");
-			        }
-			    } 
-			    else 
-			    {
-			        printf("posix_spawn moe error: %s\n", strerror(nStatus));
-			    }// POSIX
-		    #else // let llvm do the non-portable stuff.
-				EWC::CString strError;
-				bool fFailed;
-
-		    	int nResult = NExecuteAndWait(
-					    		pChzLinkerFull,
-								arypChzOptions.A(),
-								nullptr, // ppChzEnvp,
-								0,	// no timeout
-								0,	// no memory limit
-								&strError,
-								&fFailed);
-					
-				if (nResult < 0 || fFailed)
-				{
-					printf("Linker process failed, %s\n", strError.PCoz());
-				}
-
-			#endif 
+			arypChzOptions.Append(nullptr);
+	    	int nResult = NExecuteAndWait(
+				    		pChzLinkerFull,
+							arypChzOptions.A(),
+							nullptr, // ppChzEnvp,
+							0,	// no timeout
+							0,	// no memory limit
+							&strError,
+							&fFailed);
+				
+			if (nResult < 0 || fFailed)
+			{
+				printf("Linker process failed, %s\n", strError.PCoz());
+			}
 		}
 
 		EndWorkspace(&work);

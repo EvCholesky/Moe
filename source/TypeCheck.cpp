@@ -63,14 +63,14 @@ struct SUnknownType // tag = untype
 struct SInstantiateRequest // tag = insreq
 {
 								SInstantiateRequest()
-								:m_pStnodDefinition(nullptr)
+								:m_pStnodGeneric(nullptr)
 								,m_pSym(nullptr)
 								,m_pGenmap(nullptr)
 								,m_arypInsctx(BK_TypeCheckGenerics)
 									{ ; }
 
 
-	CSTNode 	* 				m_pStnodDefinition;
+	CSTNode 	* 				m_pStnodGeneric;
 	SSymbol *					m_pSym;				// instantiated type, tin proc with resolved argument types
 	SGenericMap * 				m_pGenmap;
 
@@ -3056,6 +3056,16 @@ struct SProcMatchFit // tag pmfit
 						,m_pGenmap(nullptr)
 							{ ; }
 
+						~SProcMatchFit()
+						{
+							CAlloc * pAlloc = m_mpIArgPStnod.m_pAlloc;
+							if (m_pGenmap)
+							{
+								pAlloc->EWC_DELETE(m_pGenmap);	
+								m_pGenmap = nullptr;
+							}
+						}
+
 	CDynAry<CSTNode *>	m_mpIArgPStnod;		// calling arguments with named arg and defaults resolved
 	CDynAry<ARGSRC>		m_mpIArgArgsrc;
 	SGenericMap *		m_pGenmap;
@@ -3481,7 +3491,7 @@ SInstantiateRequest * PInsreqLookup(
 	CAry<SInstantiateContext *> m_arypInsctx;
 	for (SInstantiateRequest * pInsreq = pTcwork->m_aryInsreq.A(); pInsreq != pTcwork->m_aryInsreq.PMac(); ++pInsreq)
 	{
-		if (pInsreq->m_pStnodDefinition != pStnodDefinition)
+		if (pInsreq->m_pStnodGeneric != pStnodDefinition)
 			continue;
 
 		auto pmpPTingenPTinRemappedIt = &pInsreq->m_pGenmap->m_mpPTingenPTinRemapped;
@@ -3558,74 +3568,129 @@ static inline SSymbol * PSymRemapGeneric(
 	{
 		return *ppSymRemapped;
 	}
-	else
-	{
-		EmitError(pTcwork->m_pErrman, pLexloc, ERRID_GenericLookupFail,
-			"failed looking up generic symbol $%s", pSymSrc->m_strName.PCoz());
-	}
-
 	return pSymSrc;
 }
 
 void RemapGenericStnodCopy(
 	STypeCheckWorkspace * pTcwork,
-	CSTNode * pStnodEntry,
+	CSTNode * pStnodGen,
+	CSTNode * pStnodNew,
 	SGenericMap * pGenmap,
 	EWC::CHash<SSymbol *, SSymbol *> * pmpSymGenericPSymRemapped,
 	CSymbolTable * pSymtabSrc,
 	CSymbolTable * pSymtabNew)
 {
-	CDynAry<CSTNode *> arypStnodStack(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
-	arypStnodStack.Append(pStnodEntry);
+	CDynAry<CSTNode *> arypStnodStackGen(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
+	CDynAry<CSTNode *> arypStnodStackNew(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
+	arypStnodStackGen.Append(pStnodGen);
+	arypStnodStackNew.Append(pStnodNew);
 
-	while (arypStnodStack.C())
+	while (arypStnodStackGen.C())
 	{
-		auto pStnod	= arypStnodStack.Last();
-		arypStnodStack.PopLast();
+		EWC_ASSERT(arypStnodStackNew.C(),"remap stack mismatch!");
+		auto pStnodGen	= arypStnodStackGen.TPopLast();
+		auto pStnodNew	= arypStnodStackNew.TPopLast();
 
-		pStnod->m_pTin = PTinRemapGeneric(pTcwork, &pStnod->m_lexloc, pStnod->m_pTin, pGenmap);
-		pStnod->m_pSym = PSymRemapGeneric(pTcwork, &pStnod->m_lexloc, pStnod->m_pSym, pmpSymGenericPSymRemapped);
+		pStnodNew->m_pTin = PTinRemapGeneric(pTcwork, &pStnodNew->m_lexloc, pStnodNew->m_pTin, pGenmap);
+		auto pSymNew = PSymRemapGeneric(pTcwork, &pStnodNew->m_lexloc, pStnodNew->m_pSym, pmpSymGenericPSymRemapped);
 
-		if (pStnod->m_pSym && pStnod->m_pSym->m_pTin)
+		pStnodNew->m_pSym = pSymNew;
+		if (pSymNew)
 		{
-			EWC_ASSERT(!FIsGenericType(pStnod->m_pSym->m_pTin), "symbol pTin was not remapped!");
+			if (pSymNew->m_pStnodDefinition == pStnodGen)
+			{
+				pSymNew->m_pStnodDefinition = pStnodNew;
+				pSymNew->m_grfsym.Clear(FSYM_NeedsGenericRemap);
+			}
+
+			if (pStnodNew->m_pSym->m_pTin)
+			{
+				EWC_ASSERT(!FIsGenericType(pSymNew->m_pTin), "symbol pTin was not remapped!");
+			}
 		}
 
-		for (int iStnod = 0; iStnod < pStnod->CStnodChild(); ++iStnod)
+		EWC_ASSERT(pStnodNew->CStnodChild() == pStnodGen->CStnodChild(), "copy child mismatch");
+		for (int iStnod = 0; iStnod < pStnodNew->CStnodChild(); ++iStnod)
 		{
-			arypStnodStack.Append(pStnod->PStnodChild(iStnod));
+			arypStnodStackGen.Append(pStnodGen->PStnodChild(iStnod));
+			arypStnodStackNew.Append(pStnodNew->PStnodChild(iStnod));
 		}
 
-		if (pStnod->m_pSymtab)
+		if (pStnodNew->m_pSymtab)
 		{
-			EWC_ASSERT(pStnod->m_pSymtab != pSymtabSrc, "embedded link to old symbol table from PARK_%s, %p", PChzFromPark(pStnod->m_park), pStnod);
-			EWC_ASSERT(!pStnod->m_pSymtab || pStnod->m_pSymtab->m_pSymtabParent != pSymtabSrc,
+			EWC_ASSERT(pStnodNew->m_pSymtab != pSymtabSrc, "embedded link to old symbol table from PARK_%s, %p", PChzFromPark(pStnodNew->m_park), pStnodNew);
+			EWC_ASSERT(!pStnodNew->m_pSymtab || pStnodNew->m_pSymtab->m_pSymtabParent != pSymtabSrc,
 														"embeded parent link to old symbol table from PARK_%s, %p", 
-														PChzFromPark(pStnod->m_park), pStnod);
+														PChzFromPark(pStnodNew->m_park), pStnodNew);
 		}
+	}
+}
+
+CString StrComputeMangled(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSymbolTable * pSymtab)
+{
+	CSTProcedure * pStproc = pStnod->m_pStproc;
+	STypeInfoProcedure * pTinproc = nullptr;
+	if (pStnod->m_pSym)
+	{
+		pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
+	}
+
+	if (!EWC_FVERIFY(pStproc && pTinproc, "bad procedure definition in StrComputeMangled"))
+		return CString();
+
+	if (pStproc->m_fUseUnmangledName)
+	{
+		return pTinproc->m_strName;
+	}
+	else
+	{
+		auto strMangled = pTcwork->m_mang.StrMangleMethodName(pTinproc);
+
+#if VALIDATE_NAME_MANGLING
+		char aCh[1024];
+		EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+		PrintTypeInfo(&strbuf, pTinproc, PARK_Nil, FDBGSTR_UseSizedNumerics);
+
+		STypeInfoProcedure * pTinprocDemangled = pTcwork->m_mang.PTinprocDemangle(strMangled, pSymtab);
+		if (EWC_FVERIFY(pTinprocDemangled, "Name demangling failed - null procedure type"))
+		{
+			char aChAfter[1024];
+			EWC::SStringBuffer strbufAfter(aChAfter, EWC_DIM(aChAfter));
+			PrintTypeInfo(&strbufAfter, pTinprocDemangled, PARK_Nil, FDBGSTR_UseSizedNumerics);
+			EWC_ASSERT(FAreCozEqual(aCh, aChAfter), "Unmangled type info doesn't match initial info");
+		}
+#endif
+		return strMangled;
 	}
 }
 
 SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	STypeCheckWorkspace * pTcwork,
-	CSTNode * pStnodDefinition,
+	CSTNode * pStnodGeneric,
 	SGenericMap * pGenmap, 
 	SInstantiateContext * pInsctx)
 {
-	CSTProcedure * pStprocSrc = pStnodDefinition->m_pStproc;
+	CSTProcedure * pStprocSrc = pStnodGeneric->m_pStproc;
 	if (!EWC_FVERIFY(pStprocSrc, "expected procedure def"))
 		return nullptr;
 
-	// remap the types for the argument list and build symbols for them
-	CSTNode * pStnodParameterList = pStnodDefinition->PStnodChildSafe(pStprocSrc->m_iStnodParameterList);
-	CSTNode * pStnodBody = pStnodDefinition->PStnodChildSafe(pStprocSrc->m_iStnodBody);
+	if (pStprocSrc->m_fIsForeign)
+	{
+		EmitError(pTcwork, pStnodGeneric, "generic procedures cannot be marked foreign '%s'", pStnodGeneric->m_pTin->m_strName.PCoz());
+		return nullptr;
+	}
 
-	auto pStnodProcCopy = PStnodCopy(pTcwork->m_pAlloc, pStnodDefinition);
+	// remap the types for the argument list and build symbols for them
+//	CSTNode * pStnodParameterListGen = pStnodGeneric->PStnodChildSafe(pStprocSrc->m_iStnodParameterList);
+	CSTNode * pStnodBody = pStnodGeneric->PStnodChildSafe(pStprocSrc->m_iStnodBody);
+
+	auto pStnodProcCopy = PStnodCopy(pTcwork->m_pAlloc, pStnodGeneric);
 	pStnodProcCopy->m_grfstnod.Clear(FSTNOD_NoCodeGeneration);
+//	CSTNode * pStnodParameterListCopy = pStnodProcCopy->PStnodChildSafe(pStprocSrc->m_iStnodParameterList);
 
 	auto pInsreq = pTcwork->m_aryInsreq.AppendNew();
 	pInsreq->m_pGenmap = pGenmap;
-	pInsreq->m_pStnodDefinition = pStnodDefinition;
+	pInsreq->m_pStnodGeneric = pStnodGeneric;
 	pInsreq->m_arypInsctx.SetAlloc(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
 	pInsreq->m_arypInsctx.Append(pInsctx);
 
@@ -3635,7 +3700,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 
 	// BB - is this really the right way to get the proc's symtab? might have a param list, might not.
 	CSymbolTable * pSymtabSrc = nullptr;
-	if (EWC_FVERIFY(pStnodBody, "no body? %s\n", pStnodDefinition->m_pTin->m_strName.PCoz()))
+	if (EWC_FVERIFY(pStnodBody, "no body? %s\n", pStnodGeneric->m_pTin->m_strName.PCoz()))
 	{
 		pSymtabSrc = pStnodBody->m_pSymtab;
 	}
@@ -3652,75 +3717,111 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	while ((ppSymSrc = iterSrc.Next()))
 	{
 		SSymbol * pSymSrc = *ppSymSrc;
-		CSTNode * pStnodDefArg = pSymSrc->m_pStnodDefinition;
-		if (pStnodParameterList)	
+
+#if 0
+		CSTNode * pStnodArgCopy = nullptr;
+		if (pStnodParameterListGen)
 		{
-			for (int ipStnod = 0; ipStnod < pStnodParameterList->CStnodChild(); ++ipStnod)
+			EWC_ASSERT(pStnodParameterListCopy, "bad pStnod copy");
+
+			for (int ipStnod = 0; ipStnod < pStnodParameterListGen->CStnodChild(); ++ipStnod)
 			{
-				CSTNode * pStnodChild = pStnodParameterList->PStnodChild(ipStnod);
+				CSTNode * pStnodChild = pStnodParameterListGen->PStnodChild(ipStnod);
 				if (pStnodChild->m_pTin == pSymSrc->m_pTin)
 				{
-					pStnodDefArg = pStnodChild;	
+					pStnodArgCopy = pStnodParameterListCopy->PStnodChild(ipStnod);
 				}
 			}
 		}
 
+		EWC_ASSERT(pStnodArgCopy, "couldn't find source pStnod for symbol '%s'", pSymSrc->m_strName.PCoz());
+
 		auto pSymNew = pSymtabNew->PSymEnsure(
 			pTcwork->m_pErrman,
 			pSymSrc->m_strName,
-			pStnodDefArg,
+			pStnodArgCopy,
 			pSymSrc->m_grfsym);
 
 		pSymNew->m_pTin = PTinRemapGeneric(pTcwork, &pSymSrc->m_pStnodDefinition->m_lexloc, pSymSrc->m_pTin, pGenmap);
 		mpPSymGenericPSymRemapped.Insert(pSymSrc, pSymNew);
 
-		pStnodDefArg->m_pSym = pSymNew;
-		pStnodDefArg->m_pTin = pSymNew->m_pTin;
+		pStnodArgCopy->m_pSym = pSymNew;
+		pStnodArgCopy->m_pTin = pSymNew->m_pTin;
+#else
+		auto pSymNew = pSymtabNew->PSymEnsure(
+			pTcwork->m_pErrman,
+			pSymSrc->m_strName,
+			pSymSrc->m_pStnodDefinition,
+			pSymSrc->m_grfsym);
+
+		// NOTE: This new symbol still points to the pStnod in the generic tree, we'll mark that it must be remapped
+		//  and make sure it was noticed after remapping 
+		pSymNew->m_grfsym.AddFlags(FSYM_NeedsGenericRemap);
+
+		pSymNew->m_pTin = PTinRemapGeneric(pTcwork, &pSymSrc->m_pStnodDefinition->m_lexloc, pSymSrc->m_pTin, pGenmap);
+		mpPSymGenericPSymRemapped.Insert(pSymSrc, pSymNew);
+
+		//pStnodArgCopy->m_pSym = pSymNew;
+		//pStnodArgCopy->m_pTin = pSymNew->m_pTin;
+#endif
 	}
 
 	// build pTinproc for the instantiated procedure
 
-	auto pTinprocSrc = PTinDerivedCast<STypeInfoProcedure *>(pStnodDefinition->m_pTin);
+	auto pTinprocSrc = PTinDerivedCast<STypeInfoProcedure *>(pStnodGeneric->m_pTin);
 	auto pTinprocNew = PTinprocCopy(pSymtabSrc, pTinprocSrc);
-	pInsreq->m_pSym = pSymtabNew->PSymGenericInstantiate(pStnodDefinition->m_pSym, pTinprocNew);
+	pInsreq->m_pSym = pSymtabNew->PSymGenericInstantiate(pStnodGeneric->m_pSym, pTinprocNew);
 
 	for (STypeInfo ** ppTin = pTinprocNew->m_arypTinParams.A(); ppTin != pTinprocNew->m_arypTinParams.PMac(); ++ ppTin)
 	{
-		*ppTin = PTinRemapGeneric(pTcwork, &pStnodDefinition->m_lexloc, *ppTin, pGenmap);
+		*ppTin = PTinRemapGeneric(pTcwork, &pStnodGeneric->m_lexloc, *ppTin, pGenmap);
 	}
 
 	for (STypeInfo ** ppTin = pTinprocNew->m_arypTinReturns.A(); ppTin != pTinprocNew->m_arypTinReturns.PMac(); ++ ppTin)
 	{
-		*ppTin = PTinRemapGeneric(pTcwork, &pStnodDefinition->m_lexloc, *ppTin, pGenmap);
+		*ppTin = PTinRemapGeneric(pTcwork, &pStnodGeneric->m_lexloc, *ppTin, pGenmap);
 	}
-	/*
-	printf("Instantiating generic:\npSyntabSrc\n");
-	pSymtabSrc->PrintDump();
 
-	printf("pSymtabNew\n");
-	pSymtabNew->PrintDump();
-	*/
+	pStnodProcCopy->m_pTin = pTinprocNew;
+	pStnodProcCopy->m_pSym = pInsreq->m_pSym;
+	pInsreq->m_pSym->m_pStnodDefinition = pStnodProcCopy;
 
-	pTinprocNew->m_strMangled = pTcwork->m_mang.StrMangleMethodName(pTinprocNew);
+	for (int ipStnod = 0; ipStnod < pStnodProcCopy->CStnodChild(); ++ipStnod)
+	{
+		CSTNode * pStnodChild = pStnodProcCopy->PStnodChild(ipStnod);
+		if (pStnodChild->m_pSymtab == pSymtabSrc)
+		{
+			pStnodChild->m_pSymtab = pSymtabNew;
+		}
+	}
+
+	pTinprocNew->m_strMangled = StrComputeMangled(pTcwork, pStnodProcCopy, pSymtabSrc->m_pSymtabParent);
+	EWC_ASSERT(pTinprocNew->m_strMangled.PCoz(), "failed computing mangled name");
 	pTinprocNew->m_fHasGenericArgs = false;
 
 	// type check the body with the new values
 
-
-	if (!EWC_FVERIFY(pStnodDefinition->m_pStproc && pStnodDefinition->m_pStproc->m_iStnodBody >= 0, "bad pStnodDefinition"))
+	if (!EWC_FVERIFY(pStnodGeneric->m_pStproc && pStnodGeneric->m_pStproc->m_iStnodBody >= 0, "bad pStnodGeneric"))
 		return nullptr;	
 
 	CSTNode * pStnodBodyCopy = pStnodProcCopy->PStnodChildSafe(pStprocSrc->m_iStnodBody);
 	pStnodBodyCopy->m_pSymtab = pSymtabNew;
 
-	RemapGenericStnodCopy(pTcwork, pStnodBodyCopy, pGenmap, &mpPSymGenericPSymRemapped, pSymtabSrc, pSymtabNew);
+	RemapGenericStnodCopy(pTcwork, pStnodGeneric, pStnodProcCopy, pGenmap, &mpPSymGenericPSymRemapped, pSymtabSrc, pSymtabNew);
+
+	EWC::CHash<HV, SSymbol *>::CIterator iterNew(&pSymtabSrc->m_hashHvPSym);
+	SSymbol ** ppSymNew;
+	while ((ppSymNew = iterNew.Next()))
+	{
+		EWC_ASSERT(!(*ppSymNew)->m_grfsym.FIsSet(FSYM_NeedsGenericRemap), "failed to remap symbol definition during generic instantiation");
+	}
 
 	STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
 	pTcfram->m_ipTcframQueue = pTcwork->m_arypTcframPending.C();
 	pTcwork->m_arypTcframPending.Append(pTcfram);
 
 	SWorkspaceEntry * pEntry = pTcwork->m_pblistEntry->AppendNew();
-	pEntry->m_pStnod = pStnodBodyCopy;
+	pEntry->m_pStnod = pStnodProcCopy;
 	pEntry->m_pSymtab = pSymtabNew;
 	pTcfram->m_pEntry = pEntry;
 
@@ -3730,13 +3831,11 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	pTcsent->m_pStnod = pStnodBodyCopy;
 	pTcsent->m_pSymtab = pSymtabNew;
 	pTcsent->m_pStnodProcedure = pStnodProcCopy;
-	pTcsent->m_pSymContext = pStnodDefinition->m_pSym;
+	pTcsent->m_pSymContext = pInsreq->m_pSym;
 	pTcsent->m_grfsymlook = FSYMLOOK_Default;
 	pTcsent->m_parkDeclContext = PARK_Nil;
 	pTcsent->m_fAllowForwardDecl = false;
 	pTcsent->m_tcctx = TCCTX_Normal;
-
-
 
 	return pInsreq;
 }
@@ -3924,7 +4023,12 @@ TCRET TcretTryFindMatchingProcedureCall(
 
 		SSymbol * pSymProc = pSymmatch->m_pSym;
 		STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
-		AddSymbolReference(pTcsentTop->m_pSymContext, pSymProc);
+
+		// mark the symbol used if not a generic (generics will be marked used during instantiation)
+		if (!pPmparam->m_pPmfit->m_pGenmap)
+		{
+			AddSymbolReference(pTcsentTop->m_pSymContext, pSymProc);
+		}
 
 		*ppSym = pSymProc;
 		*pArgord = pSymmatch->m_argord;
@@ -4212,37 +4316,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}break;
 				case 3:
 					{
-						// compute name mangling
-						auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
-
-						if (pStproc->m_fUseUnmangledName)
-						{
-							pTinproc->m_strMangled = pTinproc->m_strName;
-						}
-						else
-						{
-							pTinproc->m_strMangled = pTcwork->m_mang.StrMangleMethodName(pTinproc);
-#if VALIDATE_NAME_MANGLING
-							char aCh[1024];
-							EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-							PrintTypeInfo(&strbuf, pTinproc, PARK_Nil, FDBGSTR_UseSizedNumerics);
-
-							STypeInfoProcedure * pTinprocDemangled = pTcwork->m_mang.PTinprocDemangle(pTinproc->m_strMangled, pTcsentTop->m_pSymtab);
-
-							if (!pTinprocDemangled)
-							{
-								pTinprocDemangled = pTcwork->m_mang.PTinprocDemangle(pTinproc->m_strMangled, pTcsentTop->m_pSymtab);
-							}
-
-							if (EWC_FVERIFY(pTinprocDemangled, "Name demangling failed - null procedure type"))
-							{
-								char aChAfter[1024];
-								EWC::SStringBuffer strbufAfter(aChAfter, EWC_DIM(aChAfter));
-								PrintTypeInfo(&strbufAfter, pTinprocDemangled, PARK_Nil, FDBGSTR_UseSizedNumerics);
-								EWC_ASSERT(FAreCozEqual(aCh, aChAfter), "Unmangled type info doesn't match initial info");
-							}
-#endif
-						}
+						pTinproc->m_strMangled = StrComputeMangled(pTcwork, pStnod, pTcsentTop->m_pSymtab);
 
 						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
@@ -4403,7 +4477,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								pInsctxNew->m_lexlocCall = pStnod->m_lexloc;
 
 								auto pInsreq = PInsreqLookup(pTcwork, pSymProc->m_pStnodDefinition, pmparam.m_pPmfit->m_pGenmap, pInsctxNew);
-
 								if (!pInsreq)
 								{
 									pInsreq = PInsreqInstantiateGenericProcedure(
@@ -4417,7 +4490,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									return TCRET_StoppingError;
 
 								pSymProc = pInsreq->m_pSym;
+								AddSymbolReference(pTcsentTop->m_pSymContext, pSymProc);
+
 								EWC_ASSERT(!FIsGenericType(pSymProc->m_pTin), "remap failed");
+								CString strTin = StrFromTypeInfo(pSymProc->m_pTin);
 							}
 
 							// Note: The callee's symbol and pTin are set by type checking the identifier, this may pick the wrong
@@ -4426,6 +4502,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							pTinproc = (pSymProc) ? PTinRtiCast<STypeInfoProcedure*>(pSymProc->m_pTin) : nullptr;
 							pStnodCallee->m_pTin = pTinproc;
+
+							// make sure the instanced symbol is pushed to the PARK_ProcedureCall node
+							pStnod->m_pSym = pSymProc;
+							pStnod->m_pTin = pTinproc;
 
 							fIsDirectCall = FIsDirectCall(pStnod);
 							if (fIsDirectCall && pSymProc)
@@ -6999,6 +7079,53 @@ void MarkAllSymbolsUsed(CSymbolTable * pSymtab)
 	}
 }
 
+inline void ComputeSymbolUsage(SSymbol * pSym, CDynAry<SSymbol *> * parypSym)
+{
+	if (pSym->m_symdep != SYMDEP_Nil)
+		return;
+
+	parypSym->Append(pSym);
+	while (parypSym->C())
+	{
+		SSymbol * pSym = parypSym->Last();
+		size_t ipSym = parypSym->C() - 1;
+
+		int cSymdepNil = 0;
+		int cSymdepUsed = 0;
+		if (pSym->m_symdep == SYMDEP_Nil)
+		{
+			SSymbol ** ppSymMac = pSym->m_aryPSymReferencedBy.PMac();
+			for (SSymbol ** ppSymIt = pSym->m_aryPSymReferencedBy.A(); ppSymIt != ppSymMac; ++ppSymIt)
+			{
+				SSymbol * pSymRef = *ppSymIt;
+
+				switch (pSymRef->m_symdep)
+				{
+					case SYMDEP_Nil:	
+					{
+						parypSym->Append(pSymRef);
+						++cSymdepNil;
+						
+					} break;
+					case SYMDEP_Used:
+					{
+						++cSymdepUsed;
+					} break;
+					default:
+						break;
+				}
+			}
+
+			if (cSymdepUsed == 0 && cSymdepNil != 0)
+				break;
+
+			pSym->m_symdep = (cSymdepUsed > 0) ? SYMDEP_Used: SYMDEP_Unused;
+		}
+
+		parypSym->RemoveFastByI(ipSym);
+	}
+}
+
 void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbolTable * pSymtabRoot)
 {
 	CDynAry<SSymbol *> arypSym(pAlloc, BK_Dependency, 1024);
@@ -7017,55 +7144,20 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 	while (pSymtabIt)
 	{
 		EWC::CHash<HV, SSymbol *>::CIterator iterSym(&pSymtabIt->m_hashHvPSym);
-		pSymtabIt = pSymtabIt->m_pSymtabNextManaged;
-
 		SSymbol ** ppSym;
 		while ((ppSym = iterSym.Next()))
 		{
-			if ((*ppSym)->m_symdep != SYMDEP_Nil)
-				continue;
-
-			arypSym.Append(*ppSym);
-			while (arypSym.C())
-			{
-				SSymbol * pSym = arypSym.Last();
-				size_t ipSym = arypSym.C() - 1;
-
-				int cSymdepNil = 0;
-				int cSymdepUsed = 0;
-				if (pSym->m_symdep == SYMDEP_Nil)
-				{
-					SSymbol ** ppSymMac = pSym->m_aryPSymReferencedBy.PMac();
-					for (SSymbol ** ppSymIt = pSym->m_aryPSymReferencedBy.A(); ppSymIt != ppSymMac; ++ppSymIt)
-					{
-						SSymbol * pSymRef = *ppSymIt;
-
-						switch (pSymRef->m_symdep)
-						{
-							case SYMDEP_Nil:	
-							{
-								arypSym.Append(pSymRef);
-								++cSymdepNil;
-								
-							} break;
-							case SYMDEP_Used:
-							{
-								++cSymdepUsed;
-							} break;
-							default:
-								break;
-						}
-					}
-
-					if (cSymdepUsed == 0 && cSymdepNil != 0)
-						break;
-
-					pSym->m_symdep = (cSymdepUsed > 0) ? SYMDEP_Used: SYMDEP_Unused;
-				}
-
-				arypSym.RemoveFastByI(ipSym);
-			}
+			ComputeSymbolUsage(*ppSym, &arypSym);
 		}
+
+		SSymbol ** ppSymMac = pSymtabIt->m_arypSymGenerics.PMac();
+		for (ppSym = pSymtabIt->m_arypSymGenerics.A(); ppSym != ppSymMac; ++ppSym)
+		{
+			EWC_ASSERT(*ppSym, "null symbol");
+			ComputeSymbolUsage(*ppSym, &arypSym);
+		}
+
+		pSymtabIt = pSymtabIt->m_pSymtabNextManaged;
 	}
 }
 

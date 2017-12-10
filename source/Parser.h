@@ -396,8 +396,9 @@ enum FSYM		// SYMbol flags
 	FSYM_VisibleWhenNested	= 0x4,	// types, constants and procedures that are visible in a more deeply nested symbol table
 									// - ie. not an instance. Nested proceedure should be able to call peer procedure, but not
 									//   access variable from parent proc.
+	FSYM_NeedsGenericRemap	= 0x8,	// Temp Flag used during instantiation of generics
 
-	FSYM_All				= 0x7,
+	FSYM_All				= 0xF,
 };
 EWC_DEFINE_GRF(GRFSYM, FSYM, u32);
 

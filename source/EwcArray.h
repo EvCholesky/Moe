@@ -149,6 +149,13 @@ public:
 						}
 					}
 
+	T			TPopLast()
+					{
+						T last = Last();
+						PopLast();
+						return last;
+					}
+
 	void		Swap(CAry<T> * paryTOther)
 					{
 						T * m_aTemp    = m_a;

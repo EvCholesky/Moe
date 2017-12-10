@@ -3737,6 +3737,9 @@ SSymbol * CSymbolTable::PSymGenericInstantiate(SSymbol * pSymGeneric, STypeInfo 
 	pSymNew->m_grfsym = pSymGeneric->m_grfsym;
 	pSymNew->m_pTin = pTinInstance;
 	pSymNew->m_pVal = pSymGeneric->m_pVal;
+
+	pSymNew->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
+	pSymNew->m_symdep = SYMDEP_Nil;
 	return pSymNew;
 }
 
