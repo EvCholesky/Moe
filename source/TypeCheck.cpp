@@ -3965,12 +3965,12 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 
 	for (STypeInfo ** ppTin = pTinprocNew->m_arypTinParams.A(); ppTin != pTinprocNew->m_arypTinParams.PMac(); ++ ppTin)
 	{
-		*ppTin  = PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, *ppTin, pGenmap);
+		*ppTin = PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, *ppTin, pGenmap);
 	}
 
 	for (STypeInfo ** ppTin = pTinprocNew->m_arypTinReturns.A(); ppTin != pTinprocNew->m_arypTinReturns.PMac(); ++ ppTin)
 	{
-		*ppTin  = PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, *ppTin, pGenmap);
+		*ppTin = PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, *ppTin, pGenmap);
 	}
 
 	pStnodProcCopy->m_pTin = pTinprocNew;
@@ -4381,6 +4381,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							PushTcsent(pTcfram, &pTcsentTop, pStnodReturn);
 							STypeCheckStackEntry * pTcsentPushed = paryTcsent->PLast();
 							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+
+							// if we have a parameter list, use it's symbol table so we can return generic types 
+							//  defined in the arguments
+							CSTNode * pStnodParamList = pStnod->PStnodChildSafe(pStproc->m_iStnodParameterList);
+							if (pStnodParamList)
+							{
+								pTcsentPushed->m_pSymtab = pStnodParamList->m_pSymtab;
+							}
+
 						}
 					}break;
 				case 2:
