@@ -108,6 +108,29 @@ struct SErrorManager	//  // tag = errman
 	SInstantiateContext *		m_pInsctxTop;
 };
 
+struct SInstantiateContextScope // tag = insctxscope
+{
+							SInstantiateContextScope(SErrorManager * pErrman, SInstantiateContext * pInsctx)
+							:m_pErrman(pErrman)
+							,m_pInsctx(pInsctx)
+								{
+									if (m_pInsctx)
+									{
+										pErrman->PushInsctx(m_pInsctx);
+									}
+								}
+
+							~SInstantiateContextScope()
+								{
+									if (m_pInsctx)
+									{
+										m_pErrman->PopInsctx(m_pInsctx);
+									}
+								}
+
+	SErrorManager *			m_pErrman;
+	SInstantiateContext * 	m_pInsctx;
+};
 
 enum ERRS
 {

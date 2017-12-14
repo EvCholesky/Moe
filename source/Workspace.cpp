@@ -87,6 +87,7 @@ bool SErrorManager::FTryHideError(ERRID errid)
 	return false;
 }
 
+
 void SErrorManager::PushInsctx(SInstantiateContext * pInsctx)
 {
 	pInsctx->m_pInsctxLeaf = m_pInsctxTop;
@@ -96,7 +97,7 @@ void SErrorManager::PushInsctx(SInstantiateContext * pInsctx)
 void SErrorManager::PopInsctx(SInstantiateContext * pInsctx)
 {
 	if (!EWC_FVERIFY(m_pInsctxTop, "instantiate context underflow in error manager") ||
-		!EWC_FVERIFY(m_pInsctxTop != pInsctx, "push/pop mismatch for instantate context"))
+		!EWC_FVERIFY(m_pInsctxTop == pInsctx, "push/pop mismatch for instantate context"))
 		return;
 
 	m_pInsctxTop = pInsctx->m_pInsctxLeaf;
@@ -131,7 +132,7 @@ void PrintGenericInstantiateContext(SErrorManager * pErrman, SInstantiateContext
 		while ((ppTin = iter.Next(&ppTingen)))
 		{
 			CString strTin = StrFromTypeInfo(*ppTin);
-			printf("`%s %s, ", (*ppTingen)->m_strName.PCoz(), strTin.PCoz());
+			printf("$%s %s, ", (*ppTingen)->m_strName.PCoz(), strTin.PCoz());
 		}
 		s32 iLine;
 		s32 iCol;

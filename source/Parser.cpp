@@ -1413,9 +1413,16 @@ CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
 		}
 
 		auto pSymtab = pParctx->m_pSymtab;
-		if (pSymtab)
+		if (EWC_FVERIFY(pSymtab, "expected symbol table"))
 		{
-			pStnod->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnod, FSYM_IsType);
+			pStnod->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnod, FSYM_IsType | FSYM_VisibleWhenNested);
+
+			CString strIdent = StrFromIdentifier(pStnodIdent).PCoz();
+			STypeInfoGeneric * pTingen = EWC_NEW(pSymtab->m_pAlloc, STypeInfoGeneric) 
+											STypeInfoGeneric(strIdent, StrUniqueName(pSymtab->m_pUnsetTin, strIdent));
+			pSymtab->AddManagedTin(pTingen);
+			pStnod->m_pTin = pTingen;
+			pStnod->m_pSym->m_pTin = pTingen;
 		}
 
 		(void) pStnod->IAppendChild(pStnodIdent);
