@@ -3063,7 +3063,13 @@ void PrintMem(void * pV, size_t cB)
 	}
 }
 
-void ComputeDefinedGenerics(STypeCheckWorkspace * pTcwork, STypeInfo * pTinRef, CSTNode * pStnodDef, SGenericMap * pGenmap)
+ERRID ErridComputeDefinedGenerics(
+	STypeCheckWorkspace * pTcwork,
+	ERREP errep,
+	STypeInfo * pTinRef,
+	CSTNode * pStnodDef,
+	SGenericMap * pGenmap,
+	CHash<HV, CSTNode *> * pmpHvPStnodAnchor)
 {
 	// given a reference type and a generic type specification compute the anchored genric types
 
@@ -3081,7 +3087,7 @@ void ComputeDefinedGenerics(STypeCheckWorkspace * pTcwork, STypeInfo * pTinRef, 
 		pGenfram->m_pTinRef = pTinRef;
 	}
 
-	EWC::CHash<SSymbol *, STypeInfo *> 	mpPSymPTinRemapped(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
+	EWC::CHash<SSymbol *, STypeInfo *> mpPSymPTinRemapped(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
 
 	// walk through 
 	while (aryGenfram.C())
@@ -3108,16 +3114,33 @@ void ComputeDefinedGenerics(STypeCheckWorkspace * pTcwork, STypeInfo * pTinRef, 
 					if (!EWC_FVERIFY(pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Generic, "expected generic type"))
 						break;
 
-					auto fins = mpPSymPTinRemapped.FinsEnsureKey(pSym, &ppTinMapped);
+					CSTNode ** ppStnodAnchor;
+					auto fins = pmpHvPStnodAnchor->FinsEnsureKey(pTingen->m_strName.Hv(), &ppStnodAnchor);
+					printf("mapping generic %s\n",pTingen->m_strName.PCoz());
+
 					if (fins == FINS_AlreadyExisted)
 					{
-						EmitError(pTcwork, pStnodCur, "Generic type is 'anchored' more than once '%s'", pTingen->m_strName.PCoz());
+						if (errep == ERREP_ReportErrors)
+						{
+							s32 iLine;
+							s32 iCol;
+							auto pLexlocDefinition = &(*ppStnodAnchor)->m_lexloc;
+							CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocDefinition, &iLine, &iCol);
+
+							EmitError(pTcwork, pStnodCur, ERRID_MultipleAnchorDef, 
+								"Generic type $%s is was already 'anchored' here %s(%d,%d)",
+								pTingen->m_strName.PCoz(),
+								pLexlocDefinition->m_strFilename.PCoz(), iLine, iCol);
+						}
+
+						return ERRID_MultipleAnchorDef;
 					}
 					else
 					{
-						auto strTinRef = StrFromTypeInfo(genfram.m_pTinRef);
-						*ppTinMapped = genfram.m_pTinRef;
+						*ppStnodAnchor = pStnodCur;
 					}
+
+					mpPSymPTinRemapped.Insert(pSym, genfram.m_pTinRef);
 				} break;
 			case PARK_MemberLookup:
 				{
@@ -3177,7 +3200,7 @@ void ComputeDefinedGenerics(STypeCheckWorkspace * pTcwork, STypeInfo * pTinRef, 
 			case PARK_ProcedureReferenceDecl:
 				{
 					auto pTinprocRef = PTinRtiCast<STypeInfoProcedure *>(pTinRef);
-					auto pTinprocGen = PTinRtiCast<STypeInfoProcedure *>(pStnodIt->m_pTin);
+					auto pTinprocGen = PTinRtiCast<STypeInfoProcedure *>(pStnodCur->m_pTin);
 
 					EWC_ASSERT(!pTinprocRef->m_fHasGenericArgs, "using a non-instantiated procedure pointer as generic instantiation type");
 
@@ -3220,6 +3243,7 @@ void ComputeDefinedGenerics(STypeCheckWorkspace * pTcwork, STypeInfo * pTinRef, 
 		auto pTingen = PTinDerivedCast<STypeInfoGeneric *>((*ppSym)->m_pTin);
 		pGenmap->m_mpPTingenPTinRemapped.Insert(pTingen, *ppTin);
 	}
+	return ERRID_Nil;
 }
 
 STypeInfo * PTinSubstituteGenerics(
@@ -3227,7 +3251,8 @@ STypeInfo * PTinSubstituteGenerics(
 	CSymbolTable * pSymtab,
 	SLexerLocation * pLexloc,
 	STypeInfo * pTinUnsub,
-	SGenericMap * pGenmap)
+	SGenericMap * pGenmap,
+	ERREP errep = ERREP_ReportErrors)
 {
 	// given known generics and un-substituted type, generate an instantiated type
 	switch (pTinUnsub->m_tink)
@@ -3238,8 +3263,11 @@ STypeInfo * PTinSubstituteGenerics(
 				STypeInfo ** ppTin = pGenmap->m_mpPTingenPTinRemapped.Lookup(pTingen);
 				if (!ppTin)
 				{
-					EmitError(pTcwork->m_pErrman, pLexloc, ERRID_GenericLookupFail, 
-						"Unable to compute instanced type for generic value '%s'", pTingen->m_strName.PCoz());
+					if (errep == ERREP_ReportErrors)
+					{
+						EmitError(pTcwork->m_pErrman, pLexloc, ERRID_GenericLookupFail,
+							"Unable to compute instanced type for generic value '%s'", pTingen->m_strName.PCoz());
+					}
 					return pTingen;
 				}
 
@@ -3545,6 +3573,7 @@ PROCMATCH ProcmatchCheckArguments(
 		pMtin->m_pTinParam = pTinParam;
 	}
 
+	CHash<HV, CSTNode *> mpHvPStnodAnchor(pTcwork->m_pAlloc, BK_TypeCheckProcmatch);
 	if (pTinproc->m_fHasGenericArgs)
 	{
 		// compute types for generic type 'anchors'
@@ -3565,7 +3594,15 @@ PROCMATCH ProcmatchCheckArguments(
 					continue;
 
 				// given a reference type and a generic type specification compute the anchored genric types
-				ComputeDefinedGenerics(pTcwork, aryMtin[ipStnodParam].m_pTinCallDefault, pStnodType, &genmap);
+				ERRID errid = ErridComputeDefinedGenerics(
+					pTcwork,
+					errep,
+					aryMtin[ipStnodParam].m_pTinCallDefault,
+					pStnodType,
+					&genmap,
+					&mpHvPStnodAnchor);
+				if (errid != ERRID_Nil)
+					return PROCMATCH_None;
 			}
 		}
 
@@ -3584,7 +3621,7 @@ PROCMATCH ProcmatchCheckArguments(
 		for (int iMtin = 0; iMtin < cMtin; ++iMtin)
 		{
 			auto pMtin = &aryMtin[iMtin];
-			pMtin->m_pTinParam = PTinSubstituteGenerics(pTcwork, pSymtab, pPmparam->m_pLexloc, aryMtin[iMtin].m_pTinParam, &genmap);
+			pMtin->m_pTinParam = PTinSubstituteGenerics(pTcwork, pSymtab, pPmparam->m_pLexloc, aryMtin[iMtin].m_pTinParam, &genmap, errep);
 
 			auto strTinParam = StrFromTypeInfo(pMtin->m_pTinParam);
 
@@ -3809,7 +3846,7 @@ void RemapGenericStnodCopy(
 
 		if (pStnodNew->m_pSym)
 		{
-			bool fHasSymbolTin = pStnodNew->m_pTin = pStnodNew->m_pSym->m_pTin;
+			bool fHasSymbolTin = pStnodNew->m_pTin == pStnodNew->m_pSym->m_pTin;
 			auto pSymNew = PSymRemapGeneric(pTcwork, &pStnodNew->m_lexloc, pStnodNew->m_pSym, pmpSymGenericPSymRemapped);
 			if (fHasSymbolTin)
 			{
@@ -4384,12 +4421,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							// if we have a parameter list, use it's symbol table so we can return generic types 
 							//  defined in the arguments
+							CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
 							CSTNode * pStnodParamList = pStnod->PStnodChildSafe(pStproc->m_iStnodParameterList);
-							if (pStnodParamList)
+							if (pStnodParamList && pStnodParamList->m_pSymtab)
 							{
-								pTcsentPushed->m_pSymtab = pStnodParamList->m_pSymtab;
+								pSymtab = pStnodParamList->m_pSymtab;
 							}
 
+							pTcsentPushed->m_pSymtab = pSymtab;
+							pStnodReturn->m_pSymtab = pSymtab;
 						}
 					}break;
 				case 2:
@@ -4415,7 +4455,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								bool fIsValidTypeSpec;
 								STypeInfo * pTinReturn = PTinFromTypeSpecification(
 															pTcwork,
-															pTcsentTop->m_pSymtab,
+															pStnodReturn->m_pSymtab,
 															pStnodReturn,
 															pTcsentTop->m_grfsymlook,
 															nullptr, 
@@ -5269,7 +5309,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
-				break;
 			} break;
 
 			case PARK_ArrayDecl:

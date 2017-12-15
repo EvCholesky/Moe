@@ -48,6 +48,7 @@ enum ERRID
 	ERRID_ArgumentSuppliedTwice		= 2014,
 	ERRID_NamedArgumentNotFound		= 2015,
 	ERRID_GenericLookupFail			= 2016,
+	ERRID_MultipleAnchorDef			= 2017,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,
