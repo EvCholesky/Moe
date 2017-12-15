@@ -1835,7 +1835,9 @@ bool FIsGenericType(STypeInfo * pTin)
     case TINK_Procedure:
     	{
     		auto pTinproc = (STypeInfoProcedure *)pTin;
+    		return pTinproc->m_fHasGenericArgs;
 
+    		/*
     		if (!EWC_FVERIFY(pTinproc->m_pStnodDefinition->m_strees >= STREES_SignatureTypeChecked, "pTinproc isn't typechecked yet in FIsGenericType()"))
     			return false;
 
@@ -1852,6 +1854,7 @@ bool FIsGenericType(STypeInfo * pTin)
     				return true;
     		}
     		return false;
+    		*/
     	}
     case TINK_Struct:
     	{
@@ -3107,8 +3110,6 @@ ERRID ErridComputeDefinedGenerics(
 			case PARK_GenericDecl:
 				{ 
 					auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodCur->m_pTin);
-
-					STypeInfo ** ppTinMapped = nullptr;
 
 					auto pSym = pStnodCur->m_pSym;
 					if (!EWC_FVERIFY(pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Generic, "expected generic type"))
@@ -4530,7 +4531,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						{
 							SSymbol * pSymProc = pStnod->m_pSym;
 							auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pSymProc->m_pTin);
-							pTinproc->m_fHasGenericArgs = true;
 
 							OnTypeResolve(pTcwork, pSymProc);
 

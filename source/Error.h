@@ -29,6 +29,7 @@ enum ERRID
 	ERRID_DefaultParamOpOverload	= 1006, 
 	ERRID_MissingDefaultArgs		= 1007,
 	ERRID_MissingName				= 1008,
+	ERRID_NoGenericReturn			= 1009,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,

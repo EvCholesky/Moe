@@ -585,7 +585,7 @@ TestCasting proc ()
 	assert((cast (&SFoo)pN).m_a == 1234 && (cast (&SFoo)pN).m_b == 5678, "cast failed", #file, #line)
 
 	pFoo := cast(&SFoo) pN
-	assert(pFoo.m_a == 1234 && pFoo.m_b == 5678, "cast faled", #file, #line)
+	assert(pFoo.m_a == 1234 && pFoo.m_b == 5678, "cast failed", #file, #line)
 
 	gAcast : f32 = acast acast n
 	nAcast : int = acast acast g

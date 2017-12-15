@@ -1319,6 +1319,71 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SLexer * pLex)
 	return nullptr;
 }
 
+CSTNode * PStnodFindChildPark(CParseContext * pParctx, CSTNode * pStnodRoot, PARK park)
+{
+	CDynAry<CSTNode *> arypStnodStack(pParctx->m_pAlloc, BK_Parse);
+
+	arypStnodStack.Append(pStnodRoot);
+	while (arypStnodStack.C())
+	{
+		auto pStnodIt = arypStnodStack.TPopLast();
+		if (pStnodIt->m_park == park)
+			return pStnodIt;
+
+		int cpStnodChild = pStnodIt->CStnodChild();
+		for (int ipStnodChild = 0; ipStnodChild < cpStnodChild; ++ipStnodChild)
+		{
+			arypStnodStack.Append(pStnodIt->PStnodChild(ipStnodChild));
+		}
+	}
+	return nullptr;
+}
+
+void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeInfoProcedure * pTinproc)
+{
+	if (!EWC_FVERIFY(pStnodProc->m_pStproc, "expected stproc"))
+		return;
+
+	auto pStproc = pStnodProc->m_pStproc;
+	auto pStnodParameterList = pStnodProc->PStnodChildSafe(pStproc->m_iStnodParameterList);
+	if (pStnodParameterList)
+	{
+		int cpStnodParam = pStnodParameterList->CStnodChild();
+		for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
+		{
+			auto pStnodParam = pStnodParameterList->PStnodChild(ipStnodParam);
+			if (!pStnodParam->m_pStdecl)
+				continue;
+
+			auto pStnodType = pStnodParam->PStnodChildSafe(pStnodParam->m_pStdecl->m_iStnodType);
+			if (pStnodType && PStnodFindChildPark(pParctx, pStnodType, PARK_GenericDecl))
+			{
+				s32 iLine;
+				s32 iCol;
+				CalculateLinePosition(pParctx->m_pWork, &pTinproc->m_pStnodDefinition->m_lexloc, &iLine, &iCol);
+
+				printf("%s is generic %s: %d, %d\n", pTinproc->m_strName.PCoz(), 
+					pTinproc->m_pStnodDefinition->m_lexloc.m_strFilename.PCoz(), iLine, iCol);
+				pTinproc->m_fHasGenericArgs = true;	
+				break;
+			}
+		}
+	}
+
+	auto pStnodReturn = pStnodProc->PStnodChildSafe(pStproc->m_iStnodReturnType);
+	if (pStnodReturn)
+	{
+		auto pStnodGeneric = PStnodFindChildPark(pParctx, pStnodReturn, PARK_GenericDecl);
+		if (pStnodGeneric)
+		{
+			auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodGeneric->m_pTin);
+			EmitError(pParctx->m_pWork->m_pErrman, &pStnodReturn->m_lexloc, ERRID_NoGenericReturn,
+				 "Generic parameter anchor '$%s' is not allowed in procedure return",
+				 (pTingen) ? pTingen->m_strName.PCoz() : "unknown");
+		}
+	}
+}
+
 CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pLex)
 {
 	if (FConsumeToken(pLex, TOK('(')))
@@ -1348,6 +1413,8 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		pTinproc->m_arypTinReturns.AppendFill(cStnodReturns, nullptr);
 
 		pTinproc->m_pStnodDefinition = pStnodProc;
+
+		CheckTinprocGenerics(pParctx, pStnodProc, pTinproc);
 
 		INLINEK inlinek = INLINEK_Nil;
 		CALLCONV callconv = CALLCONV_Nil;
@@ -2417,6 +2484,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pTinproc->m_pStnodDefinition = pStnodProc;
 				pTinproc->m_callconv = callconv;
 				pTinproc->m_inlinek = inlinek;
+
+				CheckTinprocGenerics(pParctx, pStnodProc, pTinproc);
 
 				CSTNode ** ppStnodParamMax = &ppStnodParams[cStnodParams];
 				for ( ; ppStnodParams != ppStnodParamMax; ++ppStnodParams)
