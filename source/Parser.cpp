@@ -1358,12 +1358,6 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 			auto pStnodType = pStnodParam->PStnodChildSafe(pStnodParam->m_pStdecl->m_iStnodType);
 			if (pStnodType && PStnodFindChildPark(pParctx, pStnodType, PARK_GenericDecl))
 			{
-				s32 iLine;
-				s32 iCol;
-				CalculateLinePosition(pParctx->m_pWork, &pTinproc->m_pStnodDefinition->m_lexloc, &iLine, &iCol);
-
-				printf("%s is generic %s: %d, %d\n", pTinproc->m_strName.PCoz(), 
-					pTinproc->m_pStnodDefinition->m_lexloc.m_strFilename.PCoz(), iLine, iCol);
 				pTinproc->m_fHasGenericArgs = true;	
 				break;
 			}
@@ -1378,7 +1372,7 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 		{
 			auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodGeneric->m_pTin);
 			EmitError(pParctx->m_pWork->m_pErrman, &pStnodReturn->m_lexloc, ERRID_NoGenericReturn,
-				 "Generic parameter anchor '$%s' is not allowed in procedure return",
+				 "Generic type anchor '$%s' is not allowed in return type",
 				 (pTingen) ? pTingen->m_strName.PCoz() : "unknown");
 		}
 	}
