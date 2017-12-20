@@ -973,7 +973,7 @@ TestSwitch proc ()
 		{
 			case 'e': aCh[iCh] = '3'
 			case 'l': aCh[iCh] = '1'
-			default: aCh[iCh] = pChz[iCh]
+			else: aCh[iCh] = pChz[iCh]
 		}
 	}
 

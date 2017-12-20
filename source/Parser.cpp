@@ -2995,9 +2995,9 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 				pStnodCase->IAppendChild(pStnodList);
 
 			} break;
-			case RWORD_Default:
+			case RWORD_Else:
 			{
-				CSTNode * pStnodDefault = PStnodParseReservedWord(pParctx, pLex, RWORD_Default);
+				CSTNode * pStnodDefault = PStnodParseReservedWord(pParctx, pLex, RWORD_Else);
 				pStnodSwitch->IAppendChild(pStnodDefault);
 
 				FExpect(pParctx, pLex, TOK(':'));

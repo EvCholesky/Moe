@@ -208,7 +208,7 @@ switch m_foo
   case FOO.Other: 
     printf("next")
 
-  default:
+  else:
     printf("default")
 }
 ```

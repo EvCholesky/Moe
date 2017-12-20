@@ -30,6 +30,12 @@ enum TCCTX // tag = Type Check Context
 	TCCTX_TypeSpecification, // type checking is inside type spec, walking the tree to do literal op evaluation
 };
 
+enum ERREP // ERror REPorting
+{
+	ERREP_HideErrors,
+	ERREP_ReportErrors,	
+};
+
 struct STypeCheckStackEntry // tag = tcsent
 {
 	int				m_nState;
@@ -138,7 +144,11 @@ struct STypeCheckWorkspace // tag = tcwork
 extern bool FDoesOperatorExist(TOK tok, const SOpTypes * pOptype);
 bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst, CSymbolTable * pSymtab);
 void OnTypeResolve(STypeCheckWorkspace * pTcwork, const SSymbol * pSym);
-STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit);
+STypeInfo * PTinPromoteUntypedDefault(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodLit,
+	ERREP errep = ERREP_ReportErrors);
 bool FDoesOperatorReturnBool(PARK park);
 void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit);
 
@@ -1549,7 +1559,11 @@ static inline STypeInfo * PTinPromoteUntypedCommon(STypeCheckWorkspace * pTcwork
 }
 
 
-STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodLit)
+STypeInfo * PTinPromoteUntypedDefault(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodLit,
+	ERREP errep)
 {
 	if (pStnodLit->m_park == PARK_Cast)
 	{
@@ -1557,8 +1571,11 @@ STypeInfo * PTinPromoteUntypedDefault(STypeCheckWorkspace * pTcwork, CSymbolTabl
 		bool fIsAutoCast = pStdecl && pStdecl->m_iStnodType < 0;
 		if (fIsAutoCast)
 		{
-			EmitError(pTcwork, pStnodLit, "Cannot resolve acast when the left hand side is untyped.");
-			return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit));
+			if (errep == ERREP_ReportErrors)
+			{
+				EmitError(pTcwork, pStnodLit, "Cannot resolve acast when the left hand side is untyped.");
+			}
+			return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit), errep);
 		}
 	}
 
@@ -1617,7 +1634,8 @@ STypeInfo * PTinPromoteUntypedArgument(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLit,
-	STypeInfo * pTinArgument)
+	STypeInfo * pTinArgument,
+	ERREP errep)
 {
 	STypeInfoLiteral * pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
 	if (pTinlit)
@@ -1632,14 +1650,15 @@ STypeInfo * PTinPromoteUntypedArgument(
 		}
 	}
 
-	return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit);
+	return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit, errep);
 }
 
 inline STypeInfo * PTinPromoteUntypedTightest(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLit,	
-	STypeInfo * pTinDst)
+	STypeInfo * pTinDst,
+	ERREP errep = ERREP_ReportErrors)
 {
 	if (pStnodLit->m_park == PARK_Cast)
 	{
@@ -1657,7 +1676,7 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 					pStnodLit->m_pTin = pTinDst;
 					(void) PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodInit, pTinDst);
 				}
-				else
+				else if (errep == ERREP_ReportErrors)
 				{
 					EmitError(pTcwork, pStnodLit, "Cannot auto cast type '%s' to '%s'",
 						StrFromTypeInfo(pTinInit).PCoz(),
@@ -1767,7 +1786,10 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 		{
 			if (pTinDst && (pTinDst->m_tink == TINK_Pointer || pTinDst->m_tink == TINK_Procedure))
 				return pTinDst;
-			EmitError(pTcwork, pStnodLit, "Trying to initialize non pointer type with null value");
+			if (errep == ERREP_ReportErrors)
+			{
+				EmitError(pTcwork, pStnodLit, "Trying to initialize non pointer type with null value");
+			}
 		} break;
 	case LITK_Nil: 
 		EWC_ASSERT(false, "Cannot infer type for LITK_Nil");
@@ -2979,12 +3001,6 @@ enum PROCMATCH
 	EWC_MAX_MIN_NIL(PROCMATCH)
 };
 
-enum ERREP // ERror REPorting
-{
-	ERREP_HideErrors,
-	ERREP_ReportErrors,	
-};
-
 enum ARGORD // ARGument ORDer
 {
 	ARGORD_Normal,
@@ -3614,10 +3630,10 @@ PROCMATCH ProcmatchCheckArguments(
 				pTinParam = ((STypeInfoPointer*)pTinParam)->m_pTinPointedTo;
 			}
 
-			pTinCall = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodArg, pTinParam);
+			pTinCall = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodArg, pTinParam, errep);
 		}
 
-		STypeInfo * pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, pTinParam);
+		STypeInfo * pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, pTinParam, errep);
 
 		if (fIsArgOutsideRange)
 		{
@@ -3703,7 +3719,7 @@ PROCMATCH ProcmatchCheckArguments(
 			if (!fIsArgOutsideRange)
 			{
 				pMtin->m_pTinCall = PTinPromoteUntypedTightest(pTcwork, pSymtab, pMtin->m_pStnodArg, pMtin->m_pTinParam);
-				pMtin->m_pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pMtin->m_pStnodArg, pMtin->m_pTinParam);
+				pMtin->m_pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pMtin->m_pStnodArg, pMtin->m_pTinParam, errep);
 			}
 		}
 	}
@@ -4926,7 +4942,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "bad procedure match!"))
 							return TCRET_StoppingError;
 
-						pTinCall = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, nullptr);
+						pTinCall = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, nullptr, ERREP_ReportErrors);
 						pTinParam = PTinPromoteVarArg(pTcwork, pSymtab, pTinCall);
 					}
 
@@ -6613,7 +6629,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										if (!EWC_FVERIFY(pStnodIt->m_pStval, "bad reserved word."))
 											break;
 										RWORD rword = pStnodIt->m_pStval->m_rword;
-										if ((rword == RWORD_Case) | (rword == RWORD_Default))
+										if ((rword == RWORD_Case) | (rword == RWORD_Else))
 										{
 											pStnodIt->m_grfstnod.AddFlags(FSTNOD_Fallthrough);
 											fIsValidPosition = true;
@@ -6637,18 +6653,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					case RWORD_Break:
 						{
 							EWC_ASSERT(pStnod->CStnodChild() == 0, "did not expect child nodes");
-							pStnod->m_strees = STREES_TypeChecked;
-							PopTcsent(pTcfram, &pTcsentTop, pStnod);
-						} break;
-					case RWORD_Case:
-					case RWORD_Default:
-						{
-							if (pTcsentTop->m_nState < pStnod->CStnodChild())
-							{
-								PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState++));
-								break;
-							}
-
 							pStnod->m_strees = STREES_TypeChecked;
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;
@@ -6691,7 +6695,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									continue;
 
 								RWORD rword = pStnodIt->m_pStval->m_rword;
-								if (rword == RWORD_Default)
+								if (rword == RWORD_Else)
 								{
 									if (iStnodDefault >= 0)
 									{
@@ -6703,7 +6707,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 										EmitError(
 											pTcwork, pStnodIt,
-											"switch statement default case already defined. %s (%d,%d). ",
+											"switch statement else case already defined. %s (%d,%d). ",
 											pLexloc->m_strFilename.PCoz(),
 											iLine,
 											iCol);
@@ -6825,6 +6829,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							PopTcsent(pTcfram, &pTcsentTop, pStnod);
 						} break;
 					case RWORD_Else:
+					case RWORD_Case:
 						{
 							if (pTcsentTop->m_nState < pStnod->CStnodChild())
 							{

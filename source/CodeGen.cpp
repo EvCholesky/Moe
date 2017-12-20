@@ -4471,7 +4471,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 								cStnodCase += cStnodLit;
 
 							} break;
-							case RWORD_Default:	
+							case RWORD_Else:	
 								pBlockDefault = pBuild->PBlockCreate(pProc, "Default");
 								break;
 							default:
@@ -4512,7 +4512,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 								pBlockBody = pBlockCase;
 								pStnodBody = pStnodCase->PStnodChild(cStnodLit);
 							} break;
-							case RWORD_Default:
+							case RWORD_Else:
 							{
 								if (!EWC_FVERIFY(pStnodCase->CStnodChild() == 1, "expected default case to have one child (body)"))
 									break;

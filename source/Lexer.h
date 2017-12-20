@@ -70,7 +70,6 @@ enum TOK
 		RW(Else) STR(else), \
 		RW(Switch) STR(switch), \
 		RW(Case) STR(case), \
-		RW(Default) STR(default), \
 		RW(Fallthrough) STR(fallthrough), \
 		RW(Break) STR(break), \
 		RW(Continue) STR(continue), \

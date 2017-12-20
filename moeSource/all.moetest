@@ -874,7 +874,7 @@ test EmptyCase
 	prereq "n: s32"
 	input "switch n {?cond: ?statement}"
 	{
-		?cond("case 1"|"case 1, 2"|default)
+		?cond("case 1"|"case 1, 2"|else)
 		{
 			?statement(""?errid(1005)),
 			?statement("n = 2")
