@@ -69,7 +69,7 @@ const char * PChzFromPark(PARK park)
 		"Cast",
 		"Array Element",		// [array, index]
 		"Member Lookup",		// [struct, child]
-		"Argument Call",		// [procedure, arg0, arg1, ...]
+		"Procedure Call",		// [procedure, arg0, arg1, ...]
 		"List",
 		"Parameter List",
 		"Expression List",
@@ -1358,7 +1358,7 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 			auto pStnodType = pStnodParam->PStnodChildSafe(pStnodParam->m_pStdecl->m_iStnodType);
 			if (pStnodType && PStnodFindChildPark(pParctx, pStnodType, PARK_GenericDecl))
 			{
-				pTinproc->m_fHasGenericArgs = true;	
+				pTinproc->m_fHasGenericArgs = true;
 				break;
 			}
 		}
@@ -1372,8 +1372,8 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 		{
 			auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodGeneric->m_pTin);
 			EmitError(pParctx->m_pWork->m_pErrman, &pStnodReturn->m_lexloc, ERRID_NoGenericReturn,
-				 "Generic type anchor '$%s' is not allowed in return type",
-				 (pTingen) ? pTingen->m_strName.PCoz() : "unknown");
+				"Generic type anchor '$%s' is not allowed in return type",
+				(pTingen) ? pTingen->m_strName.PCoz() : "unknown");
 		}
 	}
 }
@@ -3799,17 +3799,13 @@ void CSymbolTable::AddBuiltInSymbols(CWorkspace * pWork)
 
 SSymbol * CSymbolTable::PSymGenericInstantiate(SSymbol * pSymGeneric, STypeInfo * pTinInstance)
 {
-	auto pSymNew = EWC_NEW(m_pAlloc, SSymbol) SSymbol;
+	auto pSymNew = PSymNewUnmanaged(pSymGeneric->m_strName, pSymGeneric->m_pStnodDefinition, pSymGeneric->m_grfsym);
 	m_arypSymGenerics.Append(pSymNew);
 
-	pSymNew->m_strName = pSymGeneric->m_strName;
-	pSymNew->m_pStnodDefinition = pSymGeneric->m_pStnodDefinition;
-	pSymNew->m_grfsym = pSymGeneric->m_grfsym;
 	pSymNew->m_pTin = pTinInstance;
 	pSymNew->m_pVal = pSymGeneric->m_pVal;
 
 	pSymNew->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
-	pSymNew->m_symdep = SYMDEP_Nil;
 	return pSymNew;
 }
 
@@ -3858,20 +3854,27 @@ SSymbol * CSymbolTable::PSymEnsure(
 	
 	if (!pSym)
 	{
-		pSym = EWC_NEW(m_pAlloc, SSymbol) SSymbol;
+		pSym = PSymNewUnmanaged(strName, pStnodDefinition, grfsym);
 		(void) m_hashHvPSym.FinsEnsureKeyAndValue(strName.Hv(), pSym);
-
-		pSym->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
-		pSym->m_symdep = SYMDEP_Nil;
 	}
+
+	pSym->m_pSymPrev = pSymPrev;
+	return pSym;
+}
+
+SSymbol * CSymbolTable::PSymNewUnmanaged(const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
+{
+	auto pSym = EWC_NEW(m_pAlloc, SSymbol) SSymbol;
+	pSym->m_symdep = SYMDEP_Nil;
+
+	pSym->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
 
 	pSym->m_strName = strName;
 	pSym->m_pStnodDefinition = pStnodDefinition;
 	pSym->m_grfsym = grfsym;
 	pSym->m_pTin = nullptr;
 	pSym->m_pVal = nullptr;
-	pSym->m_pSymPrev = pSymPrev;
-
+	pSym->m_pSymPrev = nullptr;
 	return pSym;
 }
 
@@ -4646,7 +4649,7 @@ void WriteDebugStringForEntries(CWorkspace * pWork, char * pCo, char * pCoMax, G
 	EWC::SStringBuffer strbuf(pCo, cB);
 
 	int ipStnod = 0;
-	int cEntry = pWork->m_blistEntry.C();
+	int cEntry = (int)pWork->m_blistEntry.C();
 
 	BlockListEntry::CIterator iter(&pWork->m_blistEntry);
 	while (SWorkspaceEntry * pEntry = iter.Next())

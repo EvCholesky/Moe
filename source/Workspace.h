@@ -329,6 +329,7 @@ void EndParse(CWorkspace * pWork, SLexer * pLex);
 void EndWorkspace(CWorkspace * pWork);
 
 CSymbolTable * PSymtabNew(EWC::CAlloc * pAlloc, CSymbolTable * pSymtabParent, const EWC::CString & strNamespace);
+CSymbolTable * PSymtabCopy(EWC::CAlloc * pAlloc, SErrorManager * pErrman, CSymbolTable * pSymtabSrc, const EWC::CString & strNamespace);
 
 const char * PCozSkipUnicodeBOM(const char * pCozFile);
 

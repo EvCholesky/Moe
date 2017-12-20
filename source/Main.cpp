@@ -246,34 +246,35 @@ int main(int cpChzArg, const char * apChzArg[])
 
 			#if EWC_X64
 				#if _WINDOWS
-					//static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
-					static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio/2017/Professional/VC/Tools/MSVC/14.11.25503/bin/Hostx64/x64/link.exe";
-					static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade64/bin/lld-link.exe";
+				#if _MSC_VER == 1900
+					static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64/link.exe";
 
-					/*
 					static const char * s_apChzDefaultPaths[] =
 					{
-						"\"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64\"",
-						"\"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64\"",
-						"\"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64\"",
-						"\"c:/code/moe/external/glfw/lib/x64\""
-					};*/
+						"c:/Program Files (x86)/Windows Kits/10/lib/10.0.10150.0/ucrt/x64",
+						"c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64",
+						"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
+						"c:/code/moe/external/glfw/lib/x64"
+					};
+				#else
+					static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio/2017/Professional/VC/Tools/MSVC/14.11.25503/bin/Hostx64/x64/link.exe";
+
+					static const char * s_apChzDefaultPaths[] =
+					{
+						"c:/PROGRA~2/WI3CF2~1/10/Lib/100162~1.0/ucrt/x64",
+						"C:/PROGRA~2/MIB055~1/2017/PROFES~1/VC/Tools/MSVC/1411~1.255/lib/x64",
+						"c:/PROGRA~2/WI3CF2~1/8.1/Lib/winv6.3/um/x64",
+						"c:/code/moe/external/glfw/lib/x64"
+					};
+				#endif
+					static const char * s_pChzCommandLld = "C:/Code/llvm38/cmade64/bin/lld-link.exe";
+
 
 
 					// Note: Don't string wrap paths with spaces - llvm will do that for us (and double wrap paths)
 
 					// use the following to generate the 8.3 dos path
 					//		cmd /c for %A in ("C:\somepathhere") do @echo %~sA
-					static const char * s_apChzDefaultPaths[] =
-					{
-						"c:/PROGRA~2/WI3CF2~1/10/Lib/100162~1.0/ucrt/x64",
-							//"c:/Program Files (x86)/Windows Kits/10/lib/10.0.16299.0/ucrt/x64",
-						"C:/PROGRA~2/MIB055~1/2017/PROFES~1/VC/Tools/MSVC/1411~1.255/lib/x64",
-							//"C:/Program Files (x86)/Microsoft Visual Studio/2017/Professional/VC/Tools/MSVC/14.11.25503/lib/x64",
-						"c:/PROGRA~2/WI3CF2~1/8.1/Lib/winv6.3/um/x64",
-							//"c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64",
-						"c:/code/moe/external/glfw/lib/x64"
-					};
 				#else
 					static const char * s_pChzCommand = "/usr/bin/ld";
 					static const char * s_pChzCommandLld = "/code/llvm50/cmade64/bin/lld";
@@ -308,8 +309,11 @@ int main(int cpChzArg, const char * apChzArg[])
 				arypChzOptions.Append(s_apChzCommand, EWC_DIM(s_apChzCommand));
 			#else
 				#if _WINDOWS
-					//static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
+				#if _MSC_VER == 1900
+					static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/link.exe";
+				#else
 					static const char * s_pChzCommand = "C:/Program Files (x86)/Microsoft Visual Studio/2017/Professional/VC/Tools/MSVC/14.11.25503/bin/Hostx64/x64/link.exe";
+				#endif
 
 					static const char * s_apChzDefaultPaths[] =
 					{

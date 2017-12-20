@@ -537,6 +537,7 @@ public:
 								GRFSYM grfsym = FSYM_None, 
 	 							FSHADOW fshadow = FShadow_ShadowingAllowed);
 
+	SSymbol *				PSymNewUnmanaged(const EWC::CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym);
 	SSymbol * 				PSymGenericInstantiate(SSymbol * pSym, STypeInfo * pTinInstance);
 
 	SSymbol *				PSymLookup(

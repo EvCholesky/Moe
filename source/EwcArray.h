@@ -56,7 +56,7 @@ public:
 				,m_bk(bk)
 					{ ; }
 
-				CAry(T * a, s32 c, s32 cMax, BK bk = BK_Nil)
+				CAry(T * a, size_t c, size_t cMax, BK bk = BK_Nil)
 				:m_a(a)
 				,m_c(c)
 				,m_cMax(cMax)
@@ -126,7 +126,7 @@ public:
 						m_c += cT;
 					}
 
-	void		AppendFill(s32 c, const Type t)
+	void		AppendFill(size_t c, const Type t)
 					{
 						EWC_ASSERT(m_c + c <= m_cMax, "fixed array overflow");
 						CopyConstructN(m_a, c, t);
@@ -189,7 +189,7 @@ public:
 	using CAry<T>::m_cMax;	
 	using CAry<T>::m_bk;
 
-				CAllocAry(CAlloc * pAlloc, BK bk, s32 cMaxStarting = 16)
+				CAllocAry(CAlloc * pAlloc, BK bk, size_t cMaxStarting = 16)
 				:CAry<T>(nullptr, 0, 0, BK_Nil)
 					{ SetAlloc(pAlloc, bk, cMaxStarting); }
 
@@ -214,7 +214,7 @@ public:
 					m_cMax = cMax;
 				}
 
-	void		SetAlloc(CAlloc * pAlloc, BK bk, s32 cMax)
+	void		SetAlloc(CAlloc * pAlloc, BK bk, size_t cMax)
 				{
 					EWC_ASSERT(m_a == nullptr, "overwriting nonzero buffer, leaking memory");
 					m_pAlloc = pAlloc;
@@ -623,7 +623,7 @@ public:
 						CopyConstruct(retValue, t);
 					}
 
-	void		AppendFill(s32 c, const Type t)
+	void		AppendFill(size_t c, const Type t)
 					{
 						EWC_ASSERT(m_c < m_cMax, "CFixAry overflow");
 						CopyConstructN(&m_a[m_c], c, t);
