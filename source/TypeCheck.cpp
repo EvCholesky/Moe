@@ -59,7 +59,7 @@ struct STypeCheckFrame // tag = tcfram
 
 struct SUnknownType // tag = untype
 {
-	CDynAry<int>	m_aryiTcframDependent;		// id for frames dependent on this type
+	CDynAry<STypeCheckFrame *>	m_arypTcframDependent;		// id for frames dependent on this type
 };
 
 
@@ -103,10 +103,10 @@ struct STypeCheckWorkspace // tag = tcwork
 					,m_pErrman(pErrman)
 					,m_mang(pAlloc)
 					,m_pblistEntry(pblistEntry)
-					,m_aryTcfram(pAlloc, EWC::BK_TypeCheck, pblistEntry->C()*2)
+					,m_blistTcfram(pAlloc, EWC::BK_TypeCheck)
 					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
-					,m_arypTcframPending(pAlloc, EWC::BK_TypeCheck, pblistEntry->C()*2)
-					,m_arypTcframWaiting(pAlloc, EWC::BK_TypeCheck, pblistEntry->C()*2)
+					,m_arypTcframPending(pAlloc, EWC::BK_TypeCheck, pblistEntry->C())
+					,m_arypTcframWaiting(pAlloc, EWC::BK_TypeCheck, pblistEntry->C())
 					,m_aryInsreq(pAlloc, EWC::BK_TypeCheck)
 					,m_arypInsctxManaged(pAlloc, EWC::BK_TypeCheck)
 						{ ; }
@@ -129,12 +129,12 @@ struct STypeCheckWorkspace // tag = tcwork
 	SErrorManager *							m_pErrman;
 	CNameMangler							m_mang;
 	BlockListEntry * 						m_pblistEntry;
-	CAllocAry<STypeCheckFrame>				m_aryTcfram;
+	CBlockList<STypeCheckFrame, 128>		m_blistTcfram;
 	CHash<const SSymbol *, SUnknownType>	m_hashPSymUntype;
 
-	CAllocAry<STypeCheckFrame *>			m_arypTcframPending;	// frames ready to be run again (may stop 
+	CDynAry<STypeCheckFrame *>				m_arypTcframPending;	// frames ready to be run again (may stop 
 																	//  during check, not guaranteed to have all types)
-	CAllocAry<STypeCheckFrame *>			m_arypTcframWaiting;	// frames waiting for one specific symbol
+	CDynAry<STypeCheckFrame *>				m_arypTcframWaiting;	// frames waiting for one specific symbol
 
 	CDynAry<SInstantiateRequest>			m_aryInsreq;			// generics that need to be instantiated -> typechecked
 	CDynAry<SInstantiateContext *>			m_arypInsctxManaged;	// instantiate contexts that need to be deleted
@@ -833,7 +833,7 @@ SUnknownType * PUntypeEnsure(STypeCheckWorkspace * pTcwork, const SSymbol * pSym
 	if (!pUntype)
 	{
 		pTcwork->m_hashPSymUntype.FinsEnsureKey(pSym, &pUntype);
-		pUntype->m_aryiTcframDependent.SetAlloc(pTcwork->m_pAlloc, EWC::BK_TypeCheck);
+		pUntype->m_arypTcframDependent.SetAlloc(pTcwork->m_pAlloc, EWC::BK_TypeCheck);
 	}
 	return pUntype;
 }
@@ -2949,7 +2949,7 @@ TCRET TcretWaitForTypeSymbol(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pT
 	{
 		// wait for this type to be resolved.
 		SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymType);
-		pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
+		pUntype->m_arypTcframDependent.Append(pTcfram);
 		return TCRET_WaitingForSymbolDefinition;
 	}
 }
@@ -4162,7 +4162,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 		EWC_ASSERT(!(*ppSymNew)->m_grfsym.FIsSet(FSYM_NeedsGenericRemap), "failed to remap symbol definition during generic instantiation");
 	}
 
-	STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
+	STypeCheckFrame * pTcfram = pTcwork->m_blistTcfram.AppendNew();
 	pTcfram->m_ipTcframQueue = pTcwork->m_arypTcframPending.C();
 	pTcwork->m_arypTcframPending.Append(pTcfram);
 
@@ -4237,6 +4237,14 @@ TCRET TcretTryFindMatchingProcedureCall(
 
 		if (pStnodDefinition->m_strees < STREES_SignatureTypeChecked)
 		{
+			for (auto ppPmfit = mpProcmatchPPmfit; ppPmfit != EWC_PMAC(mpProcmatchPPmfit); ++ppPmfit)
+			{
+				if (*ppPmfit)
+				{
+					pPmparam->m_pAlloc->EWC_DELETE(*ppPmfit);
+				}
+			}
+
 			// wait for this procedure's signature to be type checked.
 			*ppSym = pSymProc;
 			return TCRET_WaitingForSymbolDefinition;
@@ -4466,7 +4474,7 @@ SOverloadCheck OvcheckTryCheckOverload(
 	{
 		// wait for this procedure's signature to be type checked.
 		SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymProc);
-		pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
+		pUntype->m_arypTcframDependent.Append(pTcfram);
 
 		return SOverloadCheck(pTinproc, tcret, argord);
 	}
@@ -4815,7 +4823,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							// wait for this procedure's signature to be type checked.
 							// BB - We'll redo the work to find our matching procedure once this definition is checked. 
 							SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymProc);
-							pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
+							pUntype->m_arypTcframDependent.Append(pTcfram);
 							return tcret;
 						}
 					case TCRET_StoppingError:
@@ -5405,7 +5413,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								
 								SSymbol * pSymDepend = pSym;
 								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
-								pUntype->m_aryiTcframDependent.Append((int)pTcwork->m_aryTcfram.IFromP(pTcfram));
+								pUntype->m_arypTcframDependent.Append(pTcfram);
 								return TCRET_WaitingForSymbolDefinition;
 							}
 						}
@@ -6259,7 +6267,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								{
 									// wait for this type to be resolved.
 									SUnknownType * pUntype = PUntypeEnsure(pTcwork, pStnodStruct->m_pSym);
-									pUntype->m_aryiTcframDependent.Append((s32)pTcwork->m_aryTcfram.IFromP(pTcfram));
+									pUntype->m_arypTcframDependent.Append(pTcfram);
 									return TCRET_WaitingForSymbolDefinition;
 								}
 							}
@@ -7329,16 +7337,16 @@ void OnTypeResolve(STypeCheckWorkspace * pTcwork, const SSymbol * pSym)
 	if (!pUntype)
 		return;
 
-	int cTcframDependent = (s32)pUntype->m_aryiTcframDependent.C();
+	int cTcframDependent = (s32)pUntype->m_arypTcframDependent.C();
 	EWC_ASSERT(cTcframDependent > 0, "unknown type not cleaned up (empty dependent array)");
 
 	for (int iTcfram = 0; iTcfram < cTcframDependent; ++iTcfram)
 	{
-		STypeCheckFrame & tcfram = pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
+		STypeCheckFrame * pTcfram = pUntype->m_arypTcframDependent[iTcfram];
 
-		if (EWC_FVERIFY(pTcwork->m_arypTcframWaiting[tcfram.m_ipTcframQueue] == &tcfram, "bookkeeping error (OnTypeResolve)"))
+		if (EWC_FVERIFY(pTcwork->m_arypTcframWaiting[pTcfram->m_ipTcframQueue] == pTcfram, "bookkeeping error (OnTypeResolve)"))
 		{
-			RelocateTcfram(&tcfram, &pTcwork->m_arypTcframWaiting, &pTcwork->m_arypTcframPending);
+			RelocateTcfram(pTcfram, &pTcwork->m_arypTcframWaiting, &pTcwork->m_arypTcframPending);
 		}
 	}
 	pTcwork->m_hashPSymUntype.Remove(pSym);
@@ -7491,7 +7499,6 @@ void PerformTypeCheck(
 	CDynAry<SWorkspaceEntry *> * parypEntryChecked, 
 	GLOBMOD globmod)
 {
-	// BB - Don't check in!! allocating 2x cEntry space to give generics some breathing room, need to switch to a block list
 	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, pblistEntry);
 
 	SSymbol * pSymRoot = nullptr;
@@ -7506,7 +7513,7 @@ void PerformTypeCheck(
 	while (SWorkspaceEntry * pEntry = iterEntry.Next())
 	{
 		EWC_ASSERT(pEntry->m_pSymtab, "entry point without symbol table");
-		STypeCheckFrame * pTcfram = pTcwork->m_aryTcfram.AppendNew();
+		STypeCheckFrame * pTcfram = pTcwork->m_blistTcfram.AppendNew();
 		pTcfram->m_ipTcframQueue = ipTcfram;
 		pTcfram->m_pEntry = pEntry;
 
@@ -7579,12 +7586,12 @@ void PerformTypeCheck(
 	const SSymbol ** ppSym;
 	while (SUnknownType * pUntype = iter.Next(&ppSym))
 	{
-		EWC_ASSERT(pUntype->m_aryiTcframDependent.C() > 0, "unknown type not cleaned up (empty dependent array)");
+		EWC_ASSERT(pUntype->m_arypTcframDependent.C() > 0, "unknown type not cleaned up (empty dependent array)");
 
-		int cTcframDependent = (s32)pUntype->m_aryiTcframDependent.C();
+		int cTcframDependent = (s32)pUntype->m_arypTcframDependent.C();
 		for (size_t iTcfram = 0; iTcfram < cTcframDependent; ++iTcfram)
 		{
-			auto pTcfram = &pTcwork->m_aryTcfram[pUntype->m_aryiTcframDependent[iTcfram]];
+			auto pTcfram = pUntype->m_arypTcframDependent[iTcfram];
 			if (cStoppingError == 0)
 			{
 				// Note: we're assuming the top thing on the stack is the thing we're waiting for.
