@@ -4533,6 +4533,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_ArrayLiteral:			AppendCoz(pStrbuf, "arrayLit");				return;
 	case PARK_Cast:					AppendCoz(pStrbuf, "cast");					return;
 	case PARK_ArgumentLabel:		AppendCoz(pStrbuf, "`"); 					return;
+	case PARK_GenericDecl:			AppendCoz(pStrbuf, "gendecl"); 				return;
 	case PARK_Error:
 	default:						AppendCoz(pStrbuf, "error");				return;
 	}

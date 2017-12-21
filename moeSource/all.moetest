@@ -802,6 +802,40 @@ test NamedArgs
 		?namecall("22, `badname 11"?errid(2015)) + ?pnamecall("22 (` badname 11)") + ?def(":= 1")
 	}
 
+// Generic procedures
+test GenericArgs
+	input "SomeProc proc (?args) {}"
+	parse "(func SomeProc (params ?pdecl) void ({} (return)))"
+	typecheck "(SomeProc(?tcargs)->void SomeProc (Params ?tcdecl) void ({} (return)))"
+	{
+		?args("n: $T") + ?pdecl("(decl n (gendecl T))") + ?tcdecl("($T n ($T T))") + ?tcargs("$T"),
+		?args("n: $T, n2: T") + ?pdecl("(decl n (gendecl T)) (decl n2 T)") + ?tcdecl("($T n ($T T)) ($T n2 $T)") + ?tcargs("$T, $T"),
+		?args("n: T, n2: $T") + ?pdecl("(decl n T) (decl n2 (gendecl T))") + ?tcdecl("($T n $T) ($T n2 ($T T))") + ?tcargs("$T, $T"),
+		?args("n: $T, n2: $U") + ?pdecl("(decl n (gendecl T)) (decl n2 (gendecl U))") + ?tcdecl("($T n ($T T)) ($U n2 ($U U))") + ?tcargs("$T, $U"),
+
+		// embedded type
+		?args("n: & $T") + ?pdecl("(decl n (ptr (gendecl T)))") + ?tcdecl("(&$T n (&$T ($T T)))") + ?tcargs("&$T"),
+		?args("n: [] $T") + ?pdecl("(decl n ([] (gendecl T)))") + ?tcdecl("([]$T n ([]$T ($T T)))") + ?tcargs("[]$T"),
+	}
+
+test GenericReturn
+	input "SomeProc proc (?args)->?ret { return n }"
+	parse "(func SomeProc (params ?pdecl) ?ret ({} (return n)))"
+	typecheck "(SomeProc(?tcargs)->$?ret SomeProc (Params ?tcdecl) $?ret ({} (return n)))"
+	{
+		?args("n: $T") + ?ret("T") + ?pdecl("(decl n (gendecl T))") + ?tcdecl("($T n ($T T))") + ?tcargs("$T"),
+		?args("n: & $T") + ?ret("T") + ?pdecl("(decl n (ptr (gendecl T)))") + ?tcdecl("(&$T n (&$T ($T T)))") + ?tcargs("&$T"),
+		?args("n: [] $T") + ?ret("T") + ?pdecl("(decl n ([] (gendecl T)))") + ?tcdecl("([]$T n ([]$T ($T T)))") + ?tcargs("[]$T")
+	}
+
+test GenericInstantiate
+	prereq "SomeProc proc (x: $T) {}; n: int"
+	input "SomeProc(?arg)"
+	parse "(procCall SomeProc ?arg)"
+	{
+		?arg(2|2.2|"foo"|n|&n)
+	}
+
 // Strings:
 test StringLiteral
 	input "pChz ?decl \"hello\""
