@@ -1061,7 +1061,6 @@ CIRBuilder::CIRBuilder(CWorkspace * pWork, EWC::CDynAry<CIRValue *> *parypValMan
 ,m_pLvalScope(nullptr)
 ,m_pLvalFile(nullptr)
 ,m_pAlloc(pWork->m_pAlloc)
-,m_inspt()
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
 ,m_arypProcVerify(pWork->m_pAlloc, EWC::BK_CodeGen)
@@ -1734,8 +1733,6 @@ LLVMOpaqueValue * PLvalFromEnumConstant(CIRBuilder * pBuild, STypeInfo * pTinLoo
 
 struct SReflectTableEntry // reftent
 {
-	STypeInfo *			m_pTin;
-	LLVMOpaqueValue *	m_pVal;
 	s32					m_ipTinNative;
 	s32					m_cAliasChild;
 
@@ -2217,7 +2214,7 @@ void EnsureReftent(SReflectGlobalTable * pReftab, STypeInfo * pTin, CDynAry<STyp
 
 		} break;
 	default:
-		EWC_ASSERT(false, "Unhandled type info kind in EnsureReftent")
+		//EWC_ASSERT(false, "Unhandled type info kind in EnsureReftent, %s", PChzFromTink(pTin->m_tink));
 		break;
 	}
 }
@@ -2374,6 +2371,8 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 				return nullptr;
 
 			// string literals aren't really constants in the eyes of llvm, but it'll work for now
+			// because the global is a pointer - which it doesn't want to make constant - 
+
 			pLval = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pStval->m_str.PCoz(), "strlit");
 		} break;
 	case LITK_Null:
@@ -5983,7 +5982,7 @@ void CodeGenEntryPoint(
 			{
 				EWC_ASSERT(
 					pStnod->m_pSym->m_symdep == SYMDEP_Unused,
-					"unexpected symbol dependency type (%s)",
+					"unexpected symbol dependency type (%d)",
 					pStnod->m_pSym->m_symdep);
 
 				//printf("Skipping dead code %s\n", pStnod->m_pSym->m_strName.PCoz());

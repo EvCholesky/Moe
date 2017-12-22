@@ -232,17 +232,6 @@ public:
 						{ ; }
 };
 
-struct SInsertPoint		// tag = inspt
-{
-						SInsertPoint()
-						:m_pBlock(nullptr)
-						,m_iInst(0)
-							{ ; }
-
-	CIRBasicBlock *		m_pBlock;
-	s32					m_iInst;
-};
-
 class CIRProcedure	: public CIRValue // tag = proc;
 {
 public:
@@ -409,7 +398,6 @@ public:
 	LLVMOpaqueValue *					m_pLvalFile;
 
 	EWC::CAlloc *						m_pAlloc;
-	SInsertPoint						m_inspt;
 
 	CIRProcedure *						m_pProcCur;
 	CIRBasicBlock *						m_pBlockCur;

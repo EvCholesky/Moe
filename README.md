@@ -354,16 +354,20 @@ foo = 2.2 * foo // still ok!
 
 ## To Do
 
-short term tasks:
-- [x] run time type info
-- [x] typeinfo operator
+smallish tasks:
+- [ ] use quote for loop label
+- [x] fix typeinfo operator
 - [x] FTypesAreEquivalent function
-- [ ] 'Any' type-boxing
+- [ ] 'Boxed' type
 
 longer term tasks:
+- [ ] Generic structs
+- [ ] First class types
+- [ ] non-foreign variadic args
+- [ ] using struct members
+- [x] run time type info
 - [ ] first class string type
 - [ ] array bounds checking
-- [x] named default arguments
 - [ ] struct literal support
 - [ ] support for inheritance, protocols
 - [ ] first class bitfield type

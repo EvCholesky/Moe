@@ -831,9 +831,56 @@ test GenericReturn
 test GenericInstantiate
 	prereq "SomeProc proc (x: $T) {}; n: int"
 	input "SomeProc(?arg)"
-	parse "(procCall SomeProc ?arg)"
+	parse "(procCall SomeProc ?parg)"
+	typecheck "(void SomeProc(?tctype)->void ?littype) (SomeProc(?tctype)->void SomeProc (Params (?tctype x (?tctype T))) void ({} (void)))"
 	{
-		?arg(2|2.2|"foo"|n|&n)
+		?arg(2) + ?parg("?arg") + ?tctype(int) + ?littype(Literal:Int64),
+		?arg("\"foo\"") + ?parg("?arg") + ?tctype(&const.u8) + ?littype(Literal:String),
+		?arg(2.2) + ?parg("2.200000") + ?tctype(float) + ?littype(Literal:Float32),
+		?arg(n) + ?parg("?arg") + ?tctype(int) + ?littype(int),
+		?arg(&n) + ?parg("(unary[&] n)") + ?tctype(&int) + ?littype("(&int int)"),
+		?arg(true) + ?parg("?arg") + ?tctype(bool) + ?littype(Literal:Bool8)
+	}
+
+test GenericReturnInstantiate
+	prereq "SomeProc proc (x: $T)->T { return x }; n: int"
+	input "y := SomeProc(?arg)"
+	parse "(decl y (procCall SomeProc ?parg))"
+	typecheck "(?tctype y (?tctype SomeProc(?tctype)->?tctype ?littype)) (SomeProc(?tctype)->?tctype SomeProc (Params (?tctype x (?tctype T))) ?tctype ({} (?tctype ?tctype)))"
+	{
+		?arg(2) + ?parg("?arg") + ?tctype(int) + ?littype(Literal:Int64),
+		?arg("\"foo\"") + ?parg("?arg") + ?tctype(&const.u8) + ?littype(Literal:String),
+		?arg(2.2) + ?parg("2.200000") + ?tctype(float) + ?littype(Literal:Float32),
+		?arg(n) + ?parg("?arg") + ?tctype(int) + ?littype(int),
+		?arg(&n) + ?parg("(unary[&] n)") + ?tctype(&int) + ?littype("(&int int)"),
+		?arg(true) + ?parg("?arg") + ?tctype(bool) + ?littype(Literal:Bool8)
+	}
+
+// BB - This only emits the multi-anchor error when instantiating
+test GenericMultiAnchor
+	input "SomeProc proc(?arg) { }"
+	parse "()"
+	{
+		?arg("a: $T, b: $T"?errid(1010)),
+		?arg("a: $T, b: T, c: $T"?errid(1010)),
+	}
+
+test NoGenericReturn
+	input "SomeProc proc(a: $T)?ret { return a }"
+	{
+		?ret("->$T"?errid(1009)),
+	}
+
+test GenericPatternMatch
+	prereq "SomeProc proc (x: ?pat) {} ?var"
+	input "SomeProc(?arg)"
+	{
+		?var("n: int") + ?pat("& $T") + ?arg(&n),
+		?var("n: int") + ?pat("& $T"?errid(2006)) + ?arg("n"?errid(2016)),
+		?var("n: int") + ?pat("& $T"?errid(2006)) + ?arg("2"?errid(2016)),
+		?var("n: int") + ?pat("&& $T"?errid(2006)) + ?arg("n"?errid(2016)),
+		?var("twoInts proc (a: int, b: int) {}") + ?pat("(x: $T,y: T)->void") + ?arg("twoInts"),
+		?var("twoInts proc (a: int, b: int) {}") + ?pat("(x: $T,y: T)->void"?errid(2006)) + ?arg("2"?errid(2016)),
 	}
 
 // Strings:

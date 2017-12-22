@@ -21,7 +21,7 @@ extern "C" void FreeMalloc(void * pV)
 
 extern "C" void DebugBreak()
 {
-#ifdef WIN32
+#ifdef _WINDOWS
 	__debugbreak();
 #else
 	raise(SIGTRAP);

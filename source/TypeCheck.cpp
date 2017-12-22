@@ -3192,19 +3192,7 @@ ERRID ErridComputeDefinedGenerics(
 
 					if (fins == FINS_AlreadyExisted)
 					{
-						if (errep == ERREP_ReportErrors)
-						{
-							s32 iLine;
-							s32 iCol;
-							auto pLexlocDefinition = &(*ppStnodAnchor)->m_lexloc;
-							CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocDefinition, &iLine, &iCol);
-
-							EmitError(pTcwork, pStnodCur, ERRID_MultipleAnchorDef, 
-								"Generic type $%s is was already 'anchored' here %s(%d,%d)",
-								pTingen->m_strName.PCoz(),
-								pLexlocDefinition->m_strFilename.PCoz(), iLine, iCol);
-						}
-
+						EWC_ASSERT(false, "multiple anchor points should have been found during parse");
 						return ERRID_MultipleAnchorDef;
 					}
 					else
@@ -3281,6 +3269,9 @@ ERRID ErridComputeDefinedGenerics(
 					auto pTinprocRef = PTinRtiCast<STypeInfoProcedure *>(pTinRef);
 					auto pTinprocGen = PTinRtiCast<STypeInfoProcedure *>(pStnodCur->m_pTin);
 
+					if (!pTinprocRef)
+						break;
+				
 					if (pTinprocRef->m_fHasGenericArgs)
 					{
 						if (errep == ERREP_ReportErrors)
@@ -3341,7 +3332,7 @@ STypeInfo * PTinSubstituteGenerics(
 	SLexerLocation * pLexloc,
 	STypeInfo * pTinUnsub,
 	SGenericMap * pGenmap,
-	ERREP errep = ERREP_ReportErrors)
+	ERREP errep)
 {
 	// given known generics and un-substituted type, generate an instantiated type
 	switch (pTinUnsub->m_tink)
@@ -3355,7 +3346,7 @@ STypeInfo * PTinSubstituteGenerics(
 					if (errep == ERREP_ReportErrors)
 					{
 						EmitError(pTcwork->m_pErrman, pLexloc, ERRID_GenericLookupFail,
-							"Unable to compute instanced type for generic value '%s'", pTingen->m_strName.PCoz());
+							"Unable to pattern match instance type for generic value '$%s'", pTingen->m_strName.PCoz());
 					}
 					return pTingen;
 				}
@@ -3372,7 +3363,7 @@ STypeInfo * PTinSubstituteGenerics(
 	    case TINK_Pointer:
 		    {
 		    	auto pTinptr = (STypeInfoPointer *)pTinUnsub;
-		    	auto pTinTarget = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinptr->m_pTinPointedTo, pGenmap);
+		    	auto pTinTarget = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinptr->m_pTinPointedTo, pGenmap, errep);
 				return pSymtab->PTinptrAllocate(pTinTarget);
 		    }
 	    case TINK_Procedure:
@@ -3384,13 +3375,13 @@ STypeInfo * PTinSubstituteGenerics(
 		    	auto cpTinParams = pTinproc->m_arypTinParams.C();
 				for (int ipTin = 0; ipTin < cpTinParams; ++ipTin)
 				{
-					pTinproc->m_arypTinParams[ipTin] = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinproc->m_arypTinParams[ipTin], pGenmap);
+					pTinproc->m_arypTinParams[ipTin] = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinproc->m_arypTinParams[ipTin], pGenmap, errep);
 				}
 
 		    	auto cpTinReturn = pTinproc->m_arypTinReturns.C();
 				for (int ipTin = 0; ipTin < cpTinReturn; ++ipTin)
 				{
-					pTinproc->m_arypTinReturns[ipTin] = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinproc->m_arypTinReturns[ipTin], pGenmap);
+					pTinproc->m_arypTinReturns[ipTin] = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinproc->m_arypTinReturns[ipTin], pGenmap, errep);
 				}
 
 				return pTinproc;
@@ -3405,14 +3396,14 @@ STypeInfo * PTinSubstituteGenerics(
 		    	auto pTinaryUnsub = (STypeInfoArray *)pTinUnsub;
 
 		    	auto pTinaryNew = PTinaryCopy(pSymtab, pTinaryUnsub);
-		    	pTinaryNew->m_pTin = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinaryUnsub->m_pTin, pGenmap);
+		    	pTinaryNew->m_pTin = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinaryUnsub->m_pTin, pGenmap, errep);
 
 		    	return pTinaryNew;
 		    }
 		case TINK_Qualifier:
 		    {
 		    	auto pTinqual = (STypeInfoQualifier *)pTinUnsub;
-		    	auto pTinTarget = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinqual->m_pTin, pGenmap);
+		    	auto pTinTarget = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinqual->m_pTin, pGenmap, errep);
 				return pSymtab->PTinqualEnsure(pTinTarget, pTinqual->m_grfqualk);
 		    }
 		default:
@@ -4114,7 +4105,13 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 		pSymNew->m_grfsym.AddFlags(FSYM_NeedsGenericRemap);
 
 
-		pSymNew->m_pTin = PTinSubstituteGenerics(pTcwork, pSymtabNew, &pSymSrc->m_pStnodDefinition->m_lexloc, pSymSrc->m_pTin, pGenmap);
+		pSymNew->m_pTin = PTinSubstituteGenerics(
+							pTcwork,
+							pSymtabNew,
+							&pSymSrc->m_pStnodDefinition->m_lexloc,
+							pSymSrc->m_pTin,
+							pGenmap,
+							ERREP_ReportErrors);
 		mpPSymGenericPSymRemapped.Insert(pSymSrc, pSymNew);
 	}
 
@@ -4122,7 +4119,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 
 	auto pTinprocSrc = PTinDerivedCast<STypeInfoProcedure *>(pStnodGeneric->m_pTin);
 
-	auto pTinNew = 	PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, pTinprocSrc, pGenmap);
+	auto pTinNew = 	PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, pTinprocSrc, pGenmap, ERREP_ReportErrors);
 	auto pTinprocNew = PTinDerivedCast<STypeInfoProcedure *>(pTinNew);
 
 	pInsreq->m_pSym = pSymtabNew->PSymGenericInstantiate(pStnodGeneric->m_pSym, pTinprocNew);
@@ -7407,6 +7404,16 @@ void MarkAllSymbolsUsed(CSymbolTable * pSymtab)
 			pSymIt = pSymIt->m_pSymPrev;
 		}
 	}
+
+	for (ppSym = pSymtab->m_arypSymGenerics.A(); ppSym != pSymtab->m_arypSymGenerics.PMac(); ++ppSym)
+	{
+		SSymbol * pSymIt = *ppSym;
+		while (pSymIt)
+		{
+			pSymIt->m_symdep = SYMDEP_Used;
+			pSymIt = pSymIt->m_pSymPrev;
+		}
+	}
 }
 
 inline void ComputeSymbolUsage(SSymbol * pSym, CDynAry<SSymbol *> * parypSym)
@@ -7658,7 +7665,12 @@ void PerformTypeCheck(
 	
 	if (globmod == GLOBMOD_UnitTest)
 	{
-		MarkAllSymbolsUsed(pSymtabTop);
+		CSymbolTable * pSymtabIt = pSymtabTop;
+		while(pSymtabIt)
+		{
+			MarkAllSymbolsUsed(pSymtabIt);
+			pSymtabIt = pSymtabIt->m_pSymtabNextManaged;
+		}
 	}
 	else
 	{

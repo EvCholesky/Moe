@@ -1339,6 +1339,51 @@ CSTNode * PStnodFindChildPark(CParseContext * pParctx, CSTNode * pStnodRoot, PAR
 	return nullptr;
 }
 
+void CheckGenericParams(CParseContext * pParctx, CSTNode * pStnodRoot, CHash<HV, CSTNode *> * pmpHvPStnod)
+{
+	CDynAry<CSTNode *> arypStnodStack(pParctx->m_pAlloc, BK_Parse);
+
+	arypStnodStack.Append(pStnodRoot);
+	while (arypStnodStack.C())
+	{
+		auto pStnodIt = arypStnodStack.TPopLast();
+		if (pStnodIt->m_park == PARK_GenericDecl)
+		{
+			auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodIt->m_pTin);
+			if (!pTingen)
+				continue;
+
+			CSTNode ** ppStnodHash;
+			FINS fins = pmpHvPStnod->FinsEnsureKey(pTingen->m_strName.Hv(), &ppStnodHash);
+			if (fins == FINS_AlreadyExisted)
+			{
+				s32 iLine;
+				s32 iCol;
+				auto pLexlocDefinition = &(*ppStnodHash)->m_lexloc;
+				CalculateLinePosition(pParctx->m_pWork, pLexlocDefinition, &iLine, &iCol);
+
+				EmitError(pParctx->m_pWork->m_pErrman, &pStnodIt->m_lexloc, ERRID_MultipleAnchorDef, 
+					"Generic type $%s is was already anchored here %s(%d,%d)",
+					pTingen->m_strName.PCoz(),
+					pLexlocDefinition->m_strFilename.PCoz(), iLine, iCol);
+			}
+			else
+			{
+				*ppStnodHash = pStnodIt;
+			}
+
+			continue;
+		}
+
+		int cpStnodChild = pStnodIt->CStnodChild();
+		for (int ipStnodChild = 0; ipStnodChild < cpStnodChild; ++ipStnodChild)
+		{
+			arypStnodStack.Append(pStnodIt->PStnodChild(ipStnodChild));
+		}
+	}
+}
+
+
 void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeInfoProcedure * pTinproc)
 {
 	if (!EWC_FVERIFY(pStnodProc->m_pStproc, "expected stproc"))
@@ -1348,6 +1393,8 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 	auto pStnodParameterList = pStnodProc->PStnodChildSafe(pStproc->m_iStnodParameterList);
 	if (pStnodParameterList)
 	{
+		CHash<HV, CSTNode *> mpHvPStnod(pParctx->m_pAlloc, BK_Parse);
+
 		int cpStnodParam = pStnodParameterList->CStnodChild();
 		for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
 		{
@@ -1355,12 +1402,18 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 			if (!pStnodParam->m_pStdecl)
 				continue;
 
+
 			auto pStnodType = pStnodParam->PStnodChildSafe(pStnodParam->m_pStdecl->m_iStnodType);
-			if (pStnodType && PStnodFindChildPark(pParctx, pStnodType, PARK_GenericDecl))
+
+			if (pStnodType)
 			{
-				pTinproc->m_fHasGenericArgs = true;
-				break;
+				CheckGenericParams(pParctx, pStnodType, &mpHvPStnod);
 			}
+		}
+
+		if (!mpHvPStnod.FIsEmpty())
+		{
+			pTinproc->m_fHasGenericArgs = true;
 		}
 	}
 
