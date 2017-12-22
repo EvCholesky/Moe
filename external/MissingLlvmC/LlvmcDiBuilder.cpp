@@ -117,7 +117,30 @@ void LLVMDIBuilderFinalize(LLVMDIBuilderRef pDib)
 }
 
 
+LLVMValueRef LLVMGlobalStringPtr(LLVMBuilderRef pLbuild, LLVMModuleRef pMod, const char * pChzString, const char * pChzName)
+{
+	// replacing LLVMGlobalStringPTr as it seems to crash when outside of a BB because it tries to look up the module from a null.
 
+	LLVMContext &context = unwrap(pLbuild)->getContext();
+	Constant * strConstant = ConstantDataArray::getString(context, pChzString);
+	Module * pModule = unwrap(pMod);
+	unsigned AddressSpace = 0;
+	GlobalVariable * pLglob = new GlobalVariable(*pModule, strConstant->getType(),
+                                          true, GlobalValue::PrivateLinkage,
+                                          strConstant, pChzName, nullptr,
+                                          GlobalVariable::NotThreadLocal,
+                                          AddressSpace);
+
+	pLglob->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+
+	LLVMOpaqueValue * apLvalIndex[2] = {};
+	apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
+	apLvalIndex[1] = apLvalIndex[0];
+
+	return LLVMBuildInBoundsGEP(pLbuild, wrap(pLglob),
+                                  apLvalIndex, 2,
+                                  pChzName);
+}
 
 LLVMValueRef LLVMDIBuilderCreateCompileUnit(
 		LLVMDIBuilderRef pDib, 
