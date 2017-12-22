@@ -1757,7 +1757,7 @@ LLVMOpaqueValue * PLvalCreateReflectTin(CIRBuilder * pBuild, LLVMOpaqueType * pL
 		return nullptr;
 
 	LLVMOpaqueValue * apLval[4];
-	apLval[0] = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTin->m_strName.PCoz(), "pCozName");	// m_pCozName
+	apLval[0] = LLVMGlobalStringPtr(pBuild->m_pLbuild, pBuild->m_pLmoduleCur, pTin->m_strName.PCoz(), "pCozName");	// m_pCozName
 	apLval[1] = LLVMConstInt(LLVMInt8Type(), pTin->m_tink, true);	// m_tink
 	apLval[2] = LLVMConstInt(LLVMInt32Type(), pReftent->m_ipTinNative, true);	// m_ipTinNative
 	apLval[3] = LLVMConstInt(LLVMInt32Type(), pReftent->m_cAliasChild, true);	// m_cAliasTypeMax
@@ -1890,7 +1890,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 				auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 				CFixAry<LLVMOpaqueValue *, 3> arypLvalMember;
 
-				arypLvalMember.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTypememb->m_strName.PCoz(), "strMemb")); //m_pCozName
+				arypLvalMember.Append(LLVMGlobalStringPtr(pBuild->m_pLbuild, pBuild->m_pLmoduleCur, pTypememb->m_strName.PCoz(), "strMemb")); //m_pCozName
 				arypLvalMember.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTypememb->m_pTin, pReftab));
 
 				u64 dBMember = LLVMOffsetOfElement(pBuild->m_pTargd, pLtypeStruct, iTypememb);
@@ -1904,7 +1904,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 			// build the STypeInfoStruct
 			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));	//m_tin
 			arypLval.Append(pLvalAryMembers);	//m_aryMembers
-			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinstruct->m_strName.PCoz(), "strStruct")); //m_pCozName
+			arypLval.Append(LLVMGlobalStringPtr(pBuild->m_pLbuild, pBuild->m_pLmoduleCur, pTinstruct->m_strName.PCoz(), "strStruct")); //m_pCozName
 
 			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoStruct");
 			pLvalReflect = LLVMConstNamedStruct(pLtypeTinDerived, arypLval.A(), (unsigned)arypLval.C());
@@ -1932,7 +1932,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 					nUnsigned = pTinecon->m_bintValue.U64Coerce();
 				}
 
-				arypLvalEcon.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinecon->m_strName.PCoz(), "strStruct")); //m_pCozName
+				arypLvalEcon.Append(LLVMGlobalStringPtr(pBuild->m_pLbuild, pBuild->m_pLmoduleCur, pTinecon->m_strName.PCoz(), "strStruct")); //m_pCozName
 				arypLvalEcon.Append(LLVMConstInt(LLVMInt64Type(), nUnsigned, false)); // m_nUnsigned
 				arypLvalEcon.Append(LLVMConstInt(LLVMInt64Type(), nSigned, true)); // m_nSigned
 
@@ -1946,7 +1946,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 			auto pLtypePTin = LLVMPointerType(pLtypeTin, 0);
 
 			arypLval.Append(PLvalEnsureReflectStruct(pWork, pBuild, pLtypeTin, pLtypePTin, pTinenum->m_pTinLoose, pReftab));
-			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinenum->m_strName.PCoz(), "strEnum")); //m_pCozName
+			arypLval.Append(LLVMGlobalStringPtr(pBuild->m_pLbuild, pBuild->m_pLmoduleCur, pTinenum->m_strName.PCoz(), "strEnum")); //m_pCozName
 			arypLval.Append(pLvalAryEconArray);
 
 			pLtypeTinDerived = PLtypeForTypeInfo(pWork, "STypeInfoEnum");
@@ -1991,7 +1991,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 			auto pLvalAryReturn = PLvalBuildConstantGlobalArrayRef(pWork, pBuild, pLtypePTin, apLvalReturn, cReturn);
 
 			arypLval.Append(PLvalCreateReflectTin(pBuild, pLtypeTin, pTin, pReftab));	//m_tin
-			arypLval.Append(LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pTinproc->m_strName.PCoz(), "strEnum")); //m_pCozName
+			arypLval.Append(LLVMGlobalStringPtr(pBuild->m_pLbuild, pBuild->m_pLmoduleCur, pTinproc->m_strName.PCoz(), "strEnum")); //m_pCozName
 
 			arypLval.Append(pLvalAryParam); //m_arypTinParam
 			arypLval.Append(pLvalAryReturn); //m_arypTinReturn
@@ -2373,7 +2373,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 			// string literals aren't really constants in the eyes of llvm, but it'll work for now
 			// because the global is a pointer - which it doesn't want to make constant - 
 
-			pLval = LLVMBuildGlobalStringPtr(pBuild->m_pLbuild, pStval->m_str.PCoz(), "strlit");
+			pLval = LLVMGlobalStringPtr(pBuild->m_pLbuild, pBuild->m_pLmoduleCur, pStval->m_str.PCoz(), "strlit");
 		} break;
 	case LITK_Null:
 		{

@@ -42,6 +42,8 @@ LLVMDIBuilderRef LLVMCreateDIBuilder(LLVMModuleRef pMod);
 void LLVMDisposeDIBuilder(LLVMDIBuilderRef pDib);
 void LLVMDIBuilderFinalize(LLVMDIBuilderRef pDib);
 
+LLVMValueRef LLVMGlobalStringPtr(LLVMBuilderRef pLbuild, LLVMModuleRef pMod, const char * pChzString, const char * pChzName);
+
 LLVMValueRef LLVMDIBuilderCreateCompileUnit(
 				LLVMDIBuilderRef pDib, 
 				unsigned nLanguage,
