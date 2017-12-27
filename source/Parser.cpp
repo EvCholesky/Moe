@@ -321,28 +321,9 @@ CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc)
 		*pStnodDst->m_pStident = *pStnodSrc->m_pStident;
 	}
 
-	if (pStnodSrc->m_pStdecl)
+	if (pStnodSrc->m_pStmap)
 	{
-		pStnodDst->m_pStdecl = EWC_NEW(pAlloc, CSTDecl) CSTDecl();
-		*pStnodDst->m_pStdecl = *pStnodSrc->m_pStdecl;
-	}
-
-	if (pStnodSrc->m_pStproc)
-	{
-		pStnodDst->m_pStproc = EWC_NEW(pAlloc, CSTProcedure) CSTProcedure();
-		*pStnodDst->m_pStproc = *pStnodSrc->m_pStproc;
-	}
-
-	if (pStnodSrc->m_pStfor)
-	{
-		pStnodDst->m_pStfor = EWC_NEW(pAlloc, CSTFor) CSTFor();
-		*pStnodDst->m_pStfor = *pStnodSrc->m_pStfor;
-	}
-
-	if (pStnodSrc->m_pStenum)
-	{
-		pStnodDst->m_pStenum = EWC_NEW(pAlloc, CSTEnum) CSTEnum();
-		*pStnodDst->m_pStenum = *pStnodSrc->m_pStenum;
+		pStnodDst->m_pStmap = PStmapCopy(pAlloc, pStnodSrc->m_pStmap);
 	}
 
 	if (pStnodSrc->m_pOptype)
@@ -719,9 +700,8 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 				pStnodLit->m_tok = TOK(pLex->m_tok);
 				pStnodLit->m_park = PARK_ArrayLiteral;
 
-				// We're using a decl here... may need a custom value structure
-				auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-				pStnodLit->m_pStdecl = pStdecl;
+				// We're using a decl here... may need a custom SSyntaxTreeMap structure
+				auto pStdecl = pStnodLit->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
 				if (FConsumeToken(pLex, TOK(':')))
 				{
@@ -996,7 +976,6 @@ CSTNode * PStnodParseUnaryExpression(CParseContext * pParctx, SLexer * pLex)
 CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SLexer * pLex)
 {
 	CSTNode * pStnodCast = nullptr;
-	CSTDecl * pStdecl = nullptr;
 	auto rword = RwordLookup(pLex);
 	if (rword != RWORD_Cast && rword != RWORD_AutoCast)
 	{
@@ -1009,8 +988,7 @@ CSTNode * PStnodParseCastExpression(CParseContext * pParctx, SLexer * pLex)
 	pStnodCast = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 	pStnodCast->m_park = PARK_Cast;
 
-	pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-	pStnodCast->m_pStdecl = pStdecl;
+	auto pStdecl = pStnodCast->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
 	if (rword == RWORD_Cast)
 	{
@@ -1386,10 +1364,10 @@ void CheckGenericParams(CParseContext * pParctx, CSTNode * pStnodRoot, CHash<HV,
 
 void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeInfoProcedure * pTinproc)
 {
-	if (!EWC_FVERIFY(pStnodProc->m_pStproc, "expected stproc"))
+	auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnodProc->m_pStmap);
+	if (!pStproc)
 		return;
 
-	auto pStproc = pStnodProc->m_pStproc;
 	auto pStnodParameterList = pStnodProc->PStnodChildSafe(pStproc->m_iStnodParameterList);
 	if (pStnodParameterList)
 	{
@@ -1399,11 +1377,11 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 		for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
 		{
 			auto pStnodParam = pStnodParameterList->PStnodChild(ipStnodParam);
-			if (!pStnodParam->m_pStdecl)
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodParam->m_pStmap);
+			if (!pStdecl)
 				continue;
 
-
-			auto pStnodType = pStnodParam->PStnodChildSafe(pStnodParam->m_pStdecl->m_iStnodType);
+			auto pStnodType = pStnodParam->PStnodChildSafe(pStdecl->m_iStnodType);
 
 			if (pStnodType)
 			{
@@ -1440,8 +1418,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		pStnodProc->m_tok = (TOK)pLex->m_tok;
 		pStnodProc->m_park = PARK_ProcedureReferenceDecl;
 
-		CSTProcedure * pStproc = EWC_NEW(pParctx->m_pAlloc, CSTProcedure) CSTProcedure();
-		pStnodProc->m_pStproc = pStproc;
+		auto pStproc = pStnodProc->PStmapEnsure<CSTProcedure>(pParctx->m_pAlloc);
 
 		CSymbolTable * pSymtabProc = nullptr; //null symbol table as the we're a forward reference
 		CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabProc, false);
@@ -1679,7 +1656,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const
 
 void ValidateDeclaration(CParseContext * pParctx, SLexer * pLex, CSTNode * pStnodDecl)
 {
-	CSTDecl * pStdecl = pStnodDecl->m_pStdecl;
+	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
 	if (!EWC_FVERIFY(pStdecl, "bad declaration in ValidateDeclaration"))
 		return;
 
@@ -1697,7 +1674,7 @@ void ValidateDeclaration(CParseContext * pParctx, SLexer * pLex, CSTNode * pStno
 		fMissingTypeSpecifier = false;
 		for (int iStnodChild = pStdecl->m_iStnodChildMin; iStnodChild != pStdecl->m_iStnodChildMax; ++iStnodChild)
 		{
-			auto pStdeclChild = pStnodDecl->PStnodChild(iStnodChild)->m_pStdecl;
+			auto pStdeclChild = PStmapDerivedCast<CSTDecl *>(pStnodDecl->PStnodChild(iStnodChild)->m_pStmap);
 			EWC_ASSERT(pStdeclChild->m_iStnodIdentifier != -1, "declaration missing identifier");
 
 			if (pStdeclChild->m_iStnodInit != -1)
@@ -1782,8 +1759,7 @@ CSTNode * PStnodParseParameter(
 		pStnodDecl = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 		pStnodDecl->m_park = PARK_Decl;
 
-		auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-		pStnodDecl->m_pStdecl = pStdecl;
+		auto pStdecl = pStnodDecl->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 		++cTypeNeeded;
 
 		if (pStnodReturn)
@@ -1793,13 +1769,14 @@ CSTNode * PStnodParseParameter(
 				pStnodCompound = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodCompound->m_park = PARK_Decl;
 
-				auto * pStdeclCompound = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-				pStnodCompound->m_pStdecl = pStdeclCompound;
+				auto pStdeclCompound = pStnodCompound->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
 				pStdeclCompound->m_iStnodChildMin = pStnodCompound->IAppendChild(pStnodReturn);
 				pStnodReturn = pStnodCompound;
 			}
-			pStnodCompound->m_pStdecl->m_iStnodChildMax = pStnodCompound->IAppendChild(pStnodDecl) + 1;
+
+			auto pStdeclCompound = PStmapDerivedCast<CSTDecl *>(pStnodCompound->m_pStmap);
+			pStdeclCompound->m_iStnodChildMax = pStnodCompound->IAppendChild(pStnodDecl) + 1;
 		}
 		else
 		{
@@ -1826,18 +1803,20 @@ CSTNode * PStnodParseParameter(
 
 				auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "declaration", grfpdecl);
 
-				int iStnodChild = pStnodCompound->m_pStdecl->m_iStnodChildMax - cTypeNeeded;
+				auto pStdeclCompound = PStmapDerivedCast<CSTDecl *>(pStnodCompound->m_pStmap);
+				int iStnodChild = pStdeclCompound->m_iStnodChildMax - cTypeNeeded;
 				int iChild = 0;
-				for ( ; iStnodChild < pStnodCompound->m_pStdecl->m_iStnodChildMax; ++iStnodChild)
+				for ( ; iStnodChild < pStdeclCompound->m_iStnodChildMax; ++iStnodChild)
 				{
 					auto pStnodChild = pStnodCompound->PStnodChild(iStnodChild);
 
-					EWC_ASSERT(pStnodChild->m_pStdecl->m_iStnodType == -1, "shouldn't set the type child twice");
+					auto pStdeclChild = PStmapDerivedCast<CSTDecl *>(pStnodChild->m_pStmap);
+					EWC_ASSERT(pStdeclChild->m_iStnodType == -1, "shouldn't set the type child twice");
 
 					auto pStnodTypeCopy = (iChild == 0) ? pStnodType : PStnodCopy(pParctx->m_pAlloc, pStnodType);
 					++iChild;
 
-					pStnodChild->m_pStdecl->m_iStnodType = pStnodChild->IAppendChild(pStnodTypeCopy);
+					pStdeclChild->m_iStnodType = pStnodChild->IAppendChild(pStnodTypeCopy);
 				}
 
 				cTypeNeeded = 0;
@@ -1886,7 +1865,8 @@ CSTNode * PStnodParseParameter(
 
 	} while (fAllowCompoundDecl && FConsumeToken(pLex, TOK(',')));
 
-	pStnodReturn->m_pStdecl->m_iStnodInit = pStnodReturn->IAppendChild(pStnodInit);
+	auto pStdeclReturn = PStmapDerivedCast<CSTDecl *>(pStnodReturn->m_pStmap);
+	pStdeclReturn->m_iStnodInit = pStnodReturn->IAppendChild(pStnodInit);
 
 	ValidateDeclaration(pParctx, pLex, pStnodReturn);
 	return pStnodReturn;
@@ -1980,7 +1960,8 @@ CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, C
 		pStnodList->m_pSymtab = pSymtabProc;
 		pStnodList->IAppendChild(pStnodParam);
 
-		bool fNeedsDefaultArg = pStnodParam->m_pStdecl && pStnodParam->m_pStdecl->m_iStnodInit >= 0;
+		auto pStdeclParam = PStmapRtiCast<CSTDecl *>(pStnodParam->m_pStmap);
+		bool fNeedsDefaultArg = pStdeclParam && pStdeclParam->m_iStnodInit >= 0;
 		while (FConsumeToken(pLex, TOK(',')))
 		{
 			pStnodParam = PStnodParseParameter(pParctx, pLex, pSymtabProc, grfpdecl);
@@ -1992,7 +1973,7 @@ CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, C
 				break;
 			}
 
-			CSTDecl * pStdecl = pStnodParam->m_pStdecl;
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodParam->m_pStmap);
 			if (pStnodParam->m_park == PARK_Decl && EWC_FVERIFY(pStdecl, "expected parameter to be PARK_Decl"))
 			{
 				bool fHasDefaultArg = pStdecl->m_iStnodInit >= 0;
@@ -2041,8 +2022,7 @@ CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation 
 	pStnodConstant->m_park = park;
 	pStnodConstant->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
 
-	auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-	pStnodConstant->m_pStdecl = pStdecl;
+	auto pStdecl = pStnodConstant->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
 	auto pStnodIdent = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
 	pStnodIdent->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
@@ -2062,8 +2042,7 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SLexer * pLex)
 	CSTNode * pStnodConstant = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 	pStnodConstant->m_park = PARK_EnumConstant;
 
-	auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-	pStnodConstant->m_pStdecl = pStdecl;
+	auto pStdecl = pStnodConstant->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 	pStdecl->m_iStnodIdentifier = pStnodConstant->IAppendChild(pStnodIdent);
 
 	CSymbolTable * pSymtab = pParctx->m_pSymtab;
@@ -2404,8 +2383,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pStnodProc->m_park = PARK_ProcedureDefinition;
 				pStnodProc->m_grfstnod.AddFlags(FSTNOD_EntryPoint);
 
-				CSTProcedure * pStproc = EWC_NEW(pParctx->m_pAlloc, CSTProcedure) CSTProcedure();
-				pStnodProc->m_pStproc = pStproc;
+				auto pStproc = pStnodProc->PStmapEnsure<CSTProcedure>(pParctx->m_pAlloc);
 				pStproc->m_iStnodProcName = pStnodProc->IAppendChild(pStnodIdent);
 				pStproc->m_pStnodParentScope = pParctx->m_pStnodScope;
 
@@ -2611,8 +2589,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSTNode * pStnodEnum = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodEnum->m_park = PARK_EnumDefinition;
 
-				CSTEnum * pStenum = EWC_NEW(pParctx->m_pAlloc, CSTEnum) CSTEnum();
-				pStnodEnum->m_pStenum = pStenum;
+				auto pStenum = pStnodEnum->PStmapEnsure<CSTEnum>(pParctx->m_pAlloc);
 				pStenum->m_iStnodIdentifier = pStnodEnum->IAppendChild(pStnodIdent);
 
 				CSTNode * pStnodType = PStnodParseIdentifier(pParctx, pLex);
@@ -2697,17 +2674,25 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			}
 			else if (rword == RWORD_Struct)
 			{
-				FExpect(pParctx, pLex, TOK('{'));
-
 				CSTNode * pStnodStruct = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodStruct->m_park = PARK_StructDefinition;
-				pStnodStruct->IAppendChild(pStnodIdent);
+				auto pStstruct = pStnodStruct->PStmapEnsure<CSTStruct>(pParctx->m_pAlloc);
+				pStstruct->m_iStnodIdentifier = pStnodStruct->IAppendChild(pStnodIdent);
 
 				CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 
 				const CString & strIdent = StrFromIdentifier(pStnodIdent);
 				SLexerLocation lexlocChild(pLex);
 				CSymbolTable * pSymtabStruct = PSymtabNew(pParctx->m_pAlloc, pSymtabParent, strIdent);
+
+				if (FConsumeToken(pLex, TOK('(')))
+				{
+					CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabStruct, false);
+					pStstruct->m_iStnodParameterList = pStnodStruct->IAppendChild(pStnodParams);
+					FExpect(pParctx, pLex, TOK(')'));
+				}
+
+				FExpect(pParctx, pLex, TOK('{'));
 
 				// NOTE: struct symbol tables at the global scope should be unordered.
 //				if (!pParctx->m_pSymtab->m_grfsymtab.FIsSet(FSYMTAB_Ordered))
@@ -2724,7 +2709,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				if (pStnodDeclList)
 				{
-					pStnodStruct->IAppendChild(pStnodDeclList);
+					pStstruct->m_iStnodDeclList = pStnodStruct->IAppendChild(pStnodDeclList);
 				}
 
 				// type info struct
@@ -2740,7 +2725,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					{
 					case PARK_Decl:			
 						{
-							auto pStdecl = pStnodMemberIt->m_pStdecl;
+							auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodMemberIt->m_pStmap);
 							if (EWC_FVERIFY(pStdecl, "expected stdecl"))
 							{
 								if (pStdecl->m_iStnodChildMin == -1)	
@@ -2781,7 +2766,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					if (pStnodMember->m_park != PARK_Decl)
 						continue;
 
-					auto pStdecl = pStnodMember->m_pStdecl;
+					auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodMember->m_pStmap);
 					if (EWC_FVERIFY(pStdecl, "expected stdecl"))
 					{
 						if (pStdecl->m_iStnodChildMin == -1)	
@@ -2806,7 +2791,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 						auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 
 						auto pStnodChild = pTypememb->m_pStnod;
-						auto pStnodMemberIdent = pStnodChild->PStnodChildSafe(pStnodChild->m_pStdecl->m_iStnodIdentifier);
+						auto pStdeclChild = PStmapDerivedCast<CSTDecl *>(pStnodChild->m_pStmap);
+						auto pStnodMemberIdent = pStnodChild->PStnodChildSafe(pStdeclChild->m_iStnodIdentifier);
 						pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
 						pTypememb->m_pTin = pStnodChild->m_pTin;
 					}
@@ -2872,8 +2858,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSTNode * pStnodConst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodConst->m_park = PARK_ConstantDecl;
 
-				auto * pStdecl = EWC_NEW(pParctx->m_pAlloc, CSTDecl) CSTDecl();
-				pStnodConst->m_pStdecl = pStdecl;
+				auto pStdecl = pStnodConst->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
 				pStdecl->m_iStnodIdentifier = pStnodConst->IAppendChild(pStnodIdent);
 				pStdecl->m_iStnodInit = pStnodConst->IAppendChild(pStnodInit);
@@ -3239,8 +3224,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 			TokNext(pLex);
 		}
 
-		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
-		pStnodFor->m_pStfor = pStfor;
+		auto pStfor = pStnodFor->PStmapEnsure<CSTFor>(pParctx->m_pAlloc);
 
 		if (ppStidentLabel)
 		{
@@ -3295,8 +3279,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 
 		CSTNode * pStnodFor = PStnodParseReservedWord(pParctx, pLex, RWORD_ForEach);
 		
-		auto * pStfor = EWC_NEW(pParctx->m_pAlloc, CSTFor) CSTFor();
-		pStnodFor->m_pStfor = pStfor;
+		auto pStfor = pStnodFor->PStmapEnsure<CSTFor>(pParctx->m_pAlloc);
 
 		if (ppStidentLabel)
 		{
@@ -3315,7 +3298,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 		{
 			pStfor->m_iStnodDecl = pStnodFor->IAppendChild(pStnodDecl);
 
-			auto pStdecl = pStnodDecl->m_pStdecl;
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
 			if (EWC_FVERIFY(pStdecl, "bad declaration in for loop"))
 			{
 				pStnodIterator = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
@@ -4278,10 +4261,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_grfstnod()
 ,m_pStval(nullptr)
 ,m_pStident(nullptr)
-,m_pStdecl(nullptr)
-,m_pStproc(nullptr)
-,m_pStfor(nullptr)
-,m_pStenum(nullptr)
+,m_pStmap(nullptr)
 ,m_lexloc(lexLoc)
 ,m_pTin(nullptr)
 ,m_pOptype(nullptr)
@@ -4315,28 +4295,10 @@ CSTNode::~CSTNode()
 		m_pStident = nullptr;
 	}
 
-	if (m_pStdecl)
+	if (m_pStmap)
 	{
-		pAlloc->EWC_DELETE(m_pStdecl);
-		m_pStdecl = nullptr;
-	}
-
-	if (m_pStproc)
-	{
-		pAlloc->EWC_DELETE(m_pStproc);
-		m_pStproc = nullptr;
-	}
-
-	if (m_pStfor)
-	{
-		pAlloc->EWC_DELETE(m_pStfor);
-		m_pStfor = nullptr;
-	}
-
-	if (m_pStenum)
-	{
-		pAlloc->EWC_DELETE(m_pStenum);
-		m_pStenum = nullptr;
+		pAlloc->EWC_DELETE(m_pStmap);
+		m_pStmap = nullptr;
 	}
 
 	if (m_pOptype)

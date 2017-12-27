@@ -668,7 +668,7 @@ CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CIRBuilder * pBuild, SSymbol *
 
 LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnodProc, SDIFile * pDif)
 {
-	auto pStproc = pStnodProc->m_pStproc;
+	auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnodProc->m_pStmap);
 	if (EWC_FVERIFY(pStproc, "function missing procedure") && pStproc->m_pStnodParentScope)
 	{
 		CIRProcedure * pProc = nullptr;
@@ -2392,7 +2392,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 			}
 
 			CSTNode * pStnodList = nullptr;
-			CSTDecl * pStdecl = pStnodLit->m_pStdecl;
+			CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLit->m_pStmap);
 			if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "array literal with no values"))
 			{
 				pStnodList = pStnodLit->PStnodChild(pStdecl->m_iStnodInit);
@@ -2699,11 +2699,12 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CIRBuilder *
 		{
 			STypeStructMember * pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 			CSTNode * pStnodDecl = pTypememb->m_pStnod;
-			if (!EWC_FVERIFY(pStnodDecl->m_pStdecl, "expected decl"))
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
+			if (!EWC_FVERIFY(pStdecl, "expected decl"))
 				continue;
 
 			LLVMOpaqueValue * pLvalMember = nullptr;
-			auto pStnodInitMemb = pStnodDecl->PStnodChildSafe(pStnodDecl->m_pStdecl->m_iStnodInit);
+			auto pStnodInitMemb = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
 
 			if (pStnodInitMemb && pStnodInitMemb->m_park != PARK_Uninitializer)
 			{
@@ -2821,10 +2822,11 @@ CGINITK CginitkCompute(CIRBuilder * pBuild, STypeInfo * pTin, CSTNode * pStnodIn
 		for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb)
 		{
 			CSTNode * pStnodDecl = pTypememb->m_pStnod;
-			if (!EWC_FVERIFY(pStnodDecl->m_pStdecl, "expected decl"))
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
+			if (!EWC_FVERIFY(pStdecl, "expected decl"))
 				continue;
 
-			auto pStnodInitMemb = pStnodDecl->PStnodChildSafe(pStnodDecl->m_pStdecl->m_iStnodInit);
+			auto pStnodInitMemb = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
 			auto cginitkIt = CginitkCompute(pBuild, pStnodDecl->m_pTin, pStnodInitMemb);
 			if (cginitkIt > cginitkMax)
 			{
@@ -3939,7 +3941,7 @@ CIRValue * PValGenerateDecl(
 	CSTNode * pStnodInit,
 	VALGENK valgenk)
 {
-	CSTDecl * pStdecl = pStnod->m_pStdecl;
+	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
 	if (!pStdecl || !EWC_FVERIFY(pStnod->m_pSym, "declaration without symbol"))
 		return nullptr;
 
@@ -4038,7 +4040,7 @@ CIRValue * PValGenerateDecl(
 
 		if (FIsOverloadedOp(pStnod))
 		{
-			CSTDecl * pStdecl = pStnod->m_pStdecl;
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
 			if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodIdentifier >= 0 && pStdecl->m_iStnodInit >= 0,
 					"bad declaration"))
 			{
@@ -4302,7 +4304,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			}
 
 			CSTNode * pStnodBody = nullptr;
-			CSTProcedure * pStproc = pStnod->m_pStproc;
+			auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
 			if (!pStproc->m_fIsForeign && 
 				EWC_FVERIFY(pStproc && pProc->m_pBlockFirst, "Encountered procedure without CSTProcedure"))
 			{
@@ -4350,7 +4352,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		}break;
 	case PARK_Decl:
 		{
-			CSTDecl * pStdecl = pStnod->m_pStdecl;
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
 			auto pStnodInit = pStnod->PStnodChildSafe(pStdecl->m_iStnodInit);
 			if (pStdecl->m_iStnodChildMin != -1)
 			{
@@ -4369,7 +4371,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 		} break;
 	case PARK_Cast:
 		{
-			auto pStdecl = pStnod->m_pStdecl;
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
 			if (!EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "expected init child for cast"))
 				return nullptr;
 
@@ -4654,7 +4656,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				return nullptr;
 			case RWORD_For:
 				{
-					auto pStfor = pStnod->m_pStfor;
+					auto pStfor = PStmapRtiCast<CSTFor *>(pStnod->m_pStmap);
 					if (!EWC_FVERIFY(pStfor, "bad for loop"))
 						return nullptr;
 
@@ -4733,7 +4735,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				} break;
 			case RWORD_ForEach:
 				{
-					auto pStfor = pStnod->m_pStfor;
+					auto pStfor = PStmapRtiCast<CSTFor *>(pStnod->m_pStmap);
 					if (!EWC_FVERIFY(pStfor, "bad for_each loop"))
 						return nullptr;
 
@@ -5682,7 +5684,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 			CSTNode * pStnodDecl = pStnodList->PStnodChild(iTypememb);
 			if (EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl, "expected member declaration"))
 			{
-				CSTDecl * pStdecl = pStnodDecl->m_pStdecl;
+				auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnodDecl->m_pStmap);
 				pStnodInit = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
 			}
 		}
@@ -5702,12 +5704,12 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CIRBuilder * pBuild, 
 
 CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod)
 {
-	CSTProcedure * pStproc = pStnod->m_pStproc;
 	CSTNode * pStnodParamList = nullptr;
 	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodName = nullptr;
 	CSTNode * pStnodAlias = nullptr;
 	CSTNode * pStnodBody = nullptr;
+	auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
 	if (EWC_FVERIFY(pStproc, "Encountered procedure without CSTProcedure"))
 	{
 		pStnodParamList = pStnod->PStnodChildSafe(pStproc->m_iStnodParameterList);

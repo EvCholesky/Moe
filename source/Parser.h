@@ -23,8 +23,6 @@
 #include "Lexer.h"
 #include "TypeInfo.h"
 
-
-
 class CIRValue;
 class CParseContext;
 class CSTNode;
@@ -161,12 +159,36 @@ EWC::CString StrFromIdentifier(CSTNode * pStnod);
 EWC::CString StrFromTypeInfo(STypeInfo * pTin);
 
 
+// node type for mutually exlusive syntax tree nodes 
+enum STMAPK // Syntax Tree MAP  Kind
+{
+	STMAPK_Proc,
+	STMAPK_For,
+	STMAPK_Decl,
+	STMAPK_Enum,
+	STMAPK_Struct,
 
-class CSTDecl // tag = stdecl
+	EWC_MAX_MIN_NIL(STMAPK)
+};
+
+struct SSyntaxTreeMap // tag = stmap
+{
+				SSyntaxTreeMap(STMAPK stmapk)
+				:m_stmapk(stmapk)
+					{ ; }
+
+	STMAPK		m_stmapk;
+};
+
+
+class CSTDecl : public SSyntaxTreeMap // tag = stdecl
 {
 public:
+	static const STMAPK s_stmapk = STMAPK_Decl;
+
 					CSTDecl()
-					:m_iStnodIdentifier(-1)
+					:SSyntaxTreeMap(s_stmapk)
+					,m_iStnodIdentifier(-1)
 					,m_iStnodType(-1)
 					,m_iStnodInit(-1)
 					,m_iStnodChildMin(-1)
@@ -182,11 +204,14 @@ public:
 	STypeInfo * 	m_pTin;
 };
 
-class CSTFor // tag = stfor
+class CSTFor : public SSyntaxTreeMap // tag = stfor
 {
 public:
+	static const STMAPK s_stmapk = STMAPK_For;
+
 					CSTFor()
-					:m_iStnodDecl(-1)
+					:SSyntaxTreeMap(s_stmapk)
+					,m_iStnodDecl(-1)
 					,m_iStnodIterator(-1)
 					,m_iStnodInit(-1)
 					,m_iStnodBody(-1)
@@ -202,11 +227,14 @@ public:
 	int				m_iStnodIncrement;
 };
 
-class CSTProcedure // tag = stproc
+class CSTProcedure : public SSyntaxTreeMap // tag = stproc
 {
 public:
+	static const STMAPK s_stmapk = STMAPK_Proc;
+
 					CSTProcedure()
-					:m_iStnodProcName(-1)
+					:SSyntaxTreeMap(s_stmapk)
+					,m_iStnodProcName(-1)
 					,m_iStnodParameterList(-1)
 					,m_iStnodReturnType(-1)
 					,m_iStnodBody(-1)
@@ -228,11 +256,14 @@ public:
 	bool					m_fUseUnmangledName;
 };
 
-class CSTEnum // tag = stenum
+class CSTEnum : public SSyntaxTreeMap // tag = stenum
 {
 public:
+	static const STMAPK s_stmapk = STMAPK_Proc;
+
 					CSTEnum()
-					:m_iStnodIdentifier(-1)
+					:SSyntaxTreeMap(s_stmapk)
+					,m_iStnodIdentifier(-1)
 					,m_iStnodType(-1)
 					,m_iStnodConstantList(-1)
 					,m_pTinenum(nullptr)
@@ -243,6 +274,61 @@ public:
 	int				m_iStnodConstantList;
 	STypeInfoEnum * m_pTinenum;
 };
+
+class CSTStruct : public SSyntaxTreeMap // tag = ststruct
+{
+public:
+	static const STMAPK s_stmapk = STMAPK_Struct;
+
+					CSTStruct()
+					:SSyntaxTreeMap(s_stmapk)
+					,m_iStnodIdentifier(-1)
+					,m_iStnodParameterList(-1)
+					,m_iStnodDeclList(-1)
+						{ ; }
+
+	int				m_iStnodIdentifier;
+	int				m_iStnodParameterList;
+	int				m_iStnodDeclList;
+};
+
+
+
+template <typename T>
+T PStmapRtiCast(SSyntaxTreeMap * pStmap)
+{
+	if (pStmap && pStmap->m_stmapk == EWC::SStripPointer<T>::Type::s_stmapk)
+		return (T)pStmap;
+	return nullptr;
+}
+
+template <typename T>
+T PStmapDerivedCast(SSyntaxTreeMap * pStmap)
+{
+EWC_ASSERT(pStmap && pStmap->m_stmapk == EWC::SStripPointer<T>::Type::s_stmapk, "illegal type info derived cast");
+	return (T)pStmap;
+}
+
+inline SSyntaxTreeMap * PStmapCopy(EWC::CAlloc * pAlloc, SSyntaxTreeMap * pStmapSrc)
+{
+#define ALLOC_COPY_AND_RETURN(TYPE, PALLOC, SRC)	{auto pStmapDst = EWC_NEW(PALLOC, TYPE) TYPE(); \
+													*pStmapDst = *(TYPE *)pStmapSrc; \
+													return pStmapDst; }
+
+	switch (pStmapSrc->m_stmapk)
+	{
+		case STMAPK_Proc:	ALLOC_COPY_AND_RETURN(CSTProcedure, pAlloc, pStmapSrc);
+		case STMAPK_For:	ALLOC_COPY_AND_RETURN(CSTFor, pAlloc, pStmapSrc);
+		case STMAPK_Decl:	ALLOC_COPY_AND_RETURN(CSTDecl, pAlloc, pStmapSrc);
+		case STMAPK_Enum:	ALLOC_COPY_AND_RETURN(CSTEnum, pAlloc, pStmapSrc);
+		case STMAPK_Struct:	ALLOC_COPY_AND_RETURN(CSTStruct, pAlloc, pStmapSrc);
+		default: break;
+	}
+#undef ALLOC_COPY_AND_RETURN
+
+	EWC_ASSERT(false, "missing STMAPK");
+	return nullptr;
+}
 
 enum ENUMIMP	// implicit enum members (added as STNodes during parse)
 {
@@ -339,6 +425,31 @@ public:
 	CSTNode *			PStnodChildSafe(int iStnod)
 							{ return ((iStnod >= 0) & (iStnod < (int)m_arypStnodChild.C())) ? m_arypStnodChild[iStnod] : nullptr; }
 
+	SSyntaxTreeMap * 	PStmapEnsure(EWC::CAlloc * pAlloc, STMAPK stmapk)
+							{
+								if (m_pStmap)
+								{
+									EWC_ASSERT(m_pStmap->m_stmapk == stmapk, "CSTNode stmap collision %d and %d", stmapk, m_pStmap->m_stmapk);
+									return m_pStmap;
+								}
+
+								switch (stmapk)
+								{
+									case STMAPK_Proc:	m_pStmap = EWC_NEW(pAlloc, CSTProcedure) CSTProcedure();	break;
+									case STMAPK_For:	m_pStmap = EWC_NEW(pAlloc, CSTFor) CSTFor();				break;
+									case STMAPK_Decl:	m_pStmap = EWC_NEW(pAlloc, CSTDecl) CSTDecl();				break;
+									case STMAPK_Enum:	m_pStmap = EWC_NEW(pAlloc, CSTEnum) CSTEnum();				break;
+									case STMAPK_Struct:	m_pStmap = EWC_NEW(pAlloc, CSTStruct) CSTStruct();			break;
+									default: 
+										EWC_ASSERT(false, "missing STMAPK");
+								}
+								EWC_ASSERT(m_pStmap->m_stmapk == stmapk, "stmapk error");
+								return m_pStmap;
+							}
+	template <typename T>
+	T *					PStmapEnsure(EWC::CAlloc * pAlloc)
+							{ return (T *)PStmapEnsure(pAlloc, T::s_stmapk); }
+
 	TOK						m_tok;
 	PARK					m_park;
 	STREES					m_strees;
@@ -346,10 +457,7 @@ public:
 
 	CSTValue *				m_pStval;
 	CSTIdentifier *			m_pStident;
-	CSTDecl *				m_pStdecl;
-	CSTProcedure *			m_pStproc;
-	CSTFor *				m_pStfor;
-	CSTEnum *				m_pStenum;
+	SSyntaxTreeMap *		m_pStmap;
 	SLexerLocation			m_lexloc;
 	STypeInfo *				m_pTin;	
 	SOpTypes *				m_pOptype;

@@ -127,7 +127,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Debug32.e
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_WINDOWS;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\llvm39\src\include;..\llvm50\cmadeDebug64\include;external</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\llvm50\src\include;..\llvm50\cmadeDebug64\include;external</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

@@ -1278,7 +1278,7 @@ void FinalizeArrayLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSym
 		pStnodDef = pTinlit->m_pStnodDefinition;
 	}
 	
-	auto pStdecl = pStnodDef->m_pStdecl;
+	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDef->m_pStmap);
 	if (!pStdecl)
 		return;
 
@@ -1525,11 +1525,11 @@ static inline STypeInfo * PTinPromoteUntypedCommon(STypeCheckWorkspace * pTcwork
 			pStnodLit = pTinlit->m_pStnodDefinition;
 		}
 
-		auto pDecl = pStnodLit->m_pStdecl;
-		if (!EWC_FVERIFY(pDecl, "bad array literal"))
+		auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLit->m_pStmap);
+		if (!EWC_FVERIFY(pStdecl, "bad array literal"))
 			return nullptr;
 
-		auto pStnodValues = pStnodLit->PStnodChildSafe(pDecl->m_iStnodInit);
+		auto pStnodValues = pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit);
 
 		if (!pTinlit->m_pTinSource &&
 			EWC_FVERIFY(pStnodValues && pStnodValues->CStnodChild(), "Array literal has no child literals"))
@@ -1567,7 +1567,7 @@ STypeInfo * PTinPromoteUntypedDefault(
 {
 	if (pStnodLit->m_park == PARK_Cast)
 	{
-		auto pStdecl = pStnodLit->m_pStdecl;
+		auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLit->m_pStmap);
 		bool fIsAutoCast = pStdecl && pStdecl->m_iStnodType < 0;
 		if (fIsAutoCast)
 		{
@@ -1662,7 +1662,7 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 {
 	if (pStnodLit->m_park == PARK_Cast)
 	{
-		auto pStdecl = pStnodLit->m_pStdecl;
+		auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLit->m_pStmap);
 		bool fIsAutoCast = pStdecl && pStdecl->m_iStnodType < 0;
 		if (fIsAutoCast)
 		{
@@ -2663,9 +2663,9 @@ STypeInfo * PTinFromTypeSpecification(
 
 STypeInfo * PTinReturnFromStnodProcedure(CSTNode * pStnod)
 {
-	if (!EWC_FVERIFY(pStnod->m_park == PARK_ProcedureDefinition && pStnod->m_pStproc, "Bad procedure node"))
+	auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnod->m_pStmap);
+	if (!EWC_FVERIFY(pStnod->m_park == PARK_ProcedureDefinition && pStproc, "Bad procedure node"))
 		return nullptr;
-	CSTProcedure * pStproc = pStnod->m_pStproc;
 	if (pStproc->m_iStnodReturnType < 0)
 		return nullptr;
 	return pStnod->PStnodChild(pStproc->m_iStnodReturnType)->m_pTin;
@@ -2878,7 +2878,7 @@ void AddEnumNameValuePair(
 	auto pStvalName = EWC_NEW(pAlloc, CSTValue) CSTValue();
 	pStvalName->m_stvalk = STVALK_String;
 
-	CSTDecl * pStdecl = pStnodConstant->m_pStdecl;
+	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodConstant->m_pStmap);
 	CSTNode * pStnodIdent = (pStdecl) ? pStnodConstant->PStnodChildSafe(pStdecl->m_iStnodIdentifier) : nullptr;
 	if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStident, "Enum constant missing name"))
 	{
@@ -2910,7 +2910,8 @@ void ResolveSpoofTypedef(
 
 void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodArray, int cElements, STypeInfo * pTinElement)
 {
-	if (!EWC_FVERIFY(pStnodArray->m_pStdecl && pStnodArray->m_pSym, "bad spoofed literal array"))
+	auto pStdeclArray = PStmapRtiCast<CSTDecl *>(pStnodArray->m_pStmap);
+	if (!EWC_FVERIFY(pStdeclArray && pStnodArray->m_pSym, "bad spoofed literal array"))
 		return;
 
 	STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
@@ -2926,8 +2927,8 @@ void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CS
 	pStnodList->m_park = PARK_ExpressionList;
 	pStnodList->m_pTin = pTinlit;
 
-	EWC_ASSERT(pStnodArray->m_pStdecl->m_iStnodInit == -1, "expected empty array");
-	pStnodArray->m_pStdecl->m_iStnodInit = pStnodArray->IAppendChild(pStnodList);
+	EWC_ASSERT(pStdeclArray->m_iStnodInit == -1, "expected empty array");
+	pStdeclArray->m_iStnodInit = pStnodArray->IAppendChild(pStnodList);
 }
 
 TCRET TcretWaitForTypeSymbol(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram, SSymbol * pSymType, CSTNode * pStnodType)
@@ -3226,10 +3227,11 @@ ERRID ErridComputeDefinedGenerics(
 				} break;
 			case PARK_Decl:
 				{ 
-					if (!EWC_FVERIFY(pStnodCur->m_pStdecl, "expected declaration"))
+					auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodCur->m_pStmap);
+					if (!EWC_FVERIFY(pStdecl, "expected declaration"))
 						break;
 
-					pStnodIt = pStnodCur->PStnodChildSafe(pStnodCur->m_pStdecl->m_iStnodType);
+					pStnodIt = pStnodCur->PStnodChildSafe(pStdecl->m_iStnodType);
 				} break;
 			case PARK_ArrayDecl:
 				{
@@ -3284,7 +3286,7 @@ ERRID ErridComputeDefinedGenerics(
 						return ERRID_NoGenericRValue;
 					}
 
-					auto pStproc = pStnodCur->m_pStproc;
+					auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnodCur->m_pStmap);
 					if (EWC_FVERIFY(pStproc && pTinprocGen, "bad PARK_ProcedureReferenceDecl") &&
 						pTinprocRef && 
 						pTinprocGen->m_fHasGenericArgs &&
@@ -3455,7 +3457,7 @@ PROCMATCH ProcmatchCheckArguments(
 	CSTProcedure * pStproc = nullptr;
 	if (EWC_FVERIFY(pTinproc->m_pStnodDefinition, "expected procedure definition node"))
 	{
-		pStproc = pTinproc->m_pStnodDefinition->m_pStproc;
+		pStproc = PStmapRtiCast<CSTProcedure *>(pTinproc->m_pStnodDefinition->m_pStmap);
 
 		if (pStproc && pStproc->m_iStnodParameterList >= 0)
 		{
@@ -3463,10 +3465,10 @@ PROCMATCH ProcmatchCheckArguments(
 			for (int iArg = 0; iArg < cArgTinproc; ++iArg)
 			{
 				CSTNode * pStnodParamDef = pStnodParamList->PStnodChildSafe(iArg);
-				if (!pStnodParamDef || !pStnodParamDef->m_pStdecl)
+				if (!pStnodParamDef)
 					continue;
 
-				CSTDecl * pStdecl = pStnodParamDef->m_pStdecl;
+				auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodParamDef->m_pStmap);
 				if (!pStdecl)
 					continue;
 
@@ -3667,10 +3669,12 @@ PROCMATCH ProcmatchCheckArguments(
 			for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
 			{
 				auto pStnodDecl = pStnodParamList->PStnodChild(ipStnodParam);
-				if (pStnodDecl->m_park != PARK_Decl || pStnodDecl->m_pStdecl == nullptr)
+				auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
+
+				if (pStnodDecl->m_park != PARK_Decl || pStdecl == nullptr)
 					continue;
 
-				auto pStnodType = pStnodDecl->PStnodChildSafe(pStnodDecl->m_pStdecl->m_iStnodType);
+				auto pStnodType = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodType);
 				if (!EWC_FVERIFY(pStnodType, "Encountered decl without type syntax tree node"))
 					continue;
 
@@ -4005,7 +4009,7 @@ void RemapGenericStnodCopy(
 
 CString StrComputeMangled(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSymbolTable * pSymtab)
 {
-	CSTProcedure * pStproc = pStnod->m_pStproc;
+	auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnod->m_pStmap);
 	STypeInfoProcedure * pTinproc = nullptr;
 	if (pStnod->m_pSym)
 	{
@@ -4047,7 +4051,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	SGenericMap * pGenmap, 
 	SInstantiateContext * pInsctx)
 {
-	CSTProcedure * pStprocSrc = pStnodGeneric->m_pStproc;
+	auto pStprocSrc = PStmapRtiCast<CSTProcedure *>(pStnodGeneric->m_pStmap);
 	if (!EWC_FVERIFY(pStprocSrc, "expected procedure def"))
 		return nullptr;
 
@@ -4144,7 +4148,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 
 	// type check the body with the new values
 
-	if (!EWC_FVERIFY(pStnodGeneric->m_pStproc && pStnodGeneric->m_pStproc->m_iStnodBody >= 0, "bad pStnodGeneric"))
+	if (!EWC_FVERIFY(pStprocSrc && pStprocSrc->m_iStnodBody >= 0, "bad pStnodGeneric"))
 		return nullptr;	
 
 	CSTNode * pStnodBodyCopy = pStnodProcCopy->PStnodChildSafe(pStprocSrc->m_iStnodBody);
@@ -4505,7 +4509,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 		{
 			case PARK_ProcedureDefinition:
 			{
-				CSTProcedure * pStproc = pStnod->m_pStproc;
+				auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnod->m_pStmap);
 				if (!EWC_FVERIFY(pStproc, "missing procedure parse data"))
 					return TCRET_StoppingError;
 
@@ -4695,7 +4699,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					break;
 				}
 
-				CSTProcedure * pStproc = pStnod->m_pStproc;
+				auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnod->m_pStmap);
 				auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pTin);
 				if (!EWC_FVERIFY(pStproc && pTinproc, "expected procedure"))
 					return TCRET_StoppingError;
@@ -4882,8 +4886,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 								//EWC_ASSERT(pStnodDefinition->m_pTin == pTinproc, "tin mismatch");
 
-								CSTProcedure * pStproc = pStnodDefinition->m_pStproc;
-
+								auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnodDefinition->m_pStmap);
 								if (EWC_FVERIFY(pStproc, "bad procedure return info"))
 								{
 									if (pStproc->m_iStnodReturnType >= 0)
@@ -4966,9 +4969,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pStnodCast->m_park = PARK_Cast;
 							pStnodCast->m_pTin = pTinParam;
 
-							auto  pStdecl = EWC_NEW(pAlloc, CSTDecl) CSTDecl();
+							auto pStdecl = pStnodCast->PStmapEnsure<CSTDecl>(pAlloc);
 							pStdecl->m_iStnodInit = pStnodCast->IAppendChild(pStnodArg);
-							pStnodCast->m_pStdecl = pStdecl;
 
 							pStnod->ReplaceChild(pStnodArg, pStnodCast);
 
@@ -4991,7 +4993,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			case PARK_EnumDefinition:
 			{
 				auto pTinenum = PTinDerivedCast<STypeInfoEnum *>(pStnod->m_pTin);
-				auto pStenum = pStnod->m_pStenum;
+				auto pStenum = PStmapRtiCast<CSTEnum *>(pStnod->m_pStmap);
 				if (!EWC_FVERIFY(pTinenum && pStenum, "missing struct type info"))
 					return TCRET_StoppingError;
 
@@ -5157,10 +5159,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					STypeInfo * pTinString = pSymtab->PTinptrAllocate(pTinU8);
 
 					SpoofLiteralArray(pTcwork, pSymtab, pStnodNames, cStnodChild - ENUMIMP_Max, pTinString);
-					auto pStnodNameList = pStnodNames->PStnodChildSafe(pStnodNames->m_pStdecl->m_iStnodInit);
+					auto pStdeclNames = PStmapDerivedCast<CSTDecl *>(pStnodNames->m_pStmap);
+					auto pStnodNameList = pStnodNames->PStnodChildSafe(pStdeclNames->m_iStnodInit);
 
 					SpoofLiteralArray(pTcwork, pSymtab, pStnodValues, cStnodChild - ENUMIMP_Max, pTinenum->m_pTinLoose);
-					auto pStnodValueList = pStnodValues->PStnodChildSafe(pStnodValues->m_pStdecl->m_iStnodInit);
+					auto pStdeclValues = PStmapDerivedCast<CSTDecl *>(pStnodValues->m_pStmap);
+					auto pStnodValueList = pStnodValues->PStnodChildSafe(pStdeclValues->m_iStnodInit);
 
 					// assign pTin and finalize literals
 					for (int iStnodMember = 0; iStnodMember < cStnodChild; ++iStnodMember)
@@ -5187,7 +5191,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						auto pTinecon = pTinenum->m_aryTinecon.AppendNew();
 						pTinecon->m_bintValue = BintFromStval(pStnodMember->m_pStval);
 
-						CSTDecl * pStdecl = pStnodMember->m_pStdecl;
+						auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnodMember->m_pStmap);
 						CSTNode * pStnodIdent = (pStdecl) ? pStnodMember->PStnodChildSafe(pStdecl->m_iStnodIdentifier) : nullptr;
 						if (EWC_FVERIFY(pStnodIdent && pStnodIdent->m_pStident, "Enum constant missing name"))
 						{
@@ -5234,7 +5238,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					break;
 				}
 
-				auto pStdecl = pStnod->m_pStdecl;
+				auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
 				STypeInfoEnum * pTinenum = nullptr;
 				auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnod->m_pTin);
 				if (pTinlit)
@@ -5500,7 +5504,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			} break;
 			case PARK_ConstantDecl:
 			{
-				auto * pStdecl = pStnod->m_pStdecl;
+				auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnod->m_pStmap);
 				if (pTcsentTop->m_nState < 1)
 				{
 					pTcsentTop->m_nState = 1;	// skip the identifier
@@ -5679,7 +5683,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			} break;
 			case PARK_Cast:
 			{
-				auto * pStdecl = pStnod->m_pStdecl;
+				auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnod->m_pStmap);
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
 				{
 					PushTcsent(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
@@ -5756,8 +5760,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			} break;
 			case PARK_Decl:
 			{
-				auto * pStdecl = pStnod->m_pStdecl;
-				EWC_ASSERT(pStdecl, "missing decl parse data");
+				auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnod->m_pStmap);
 
 				auto pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 				if (pStnodIdent && pTcsentTop->m_pSymContext == nullptr)
@@ -6022,7 +6025,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					break;
 				}
 
-				auto pStdecl = pStnod->m_pStdecl;
+				auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
 				if (!EWC_FVERIFY(pStdecl, "invalid array literal"))
 					return TCRET_StoppingError;
 
@@ -6500,13 +6503,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								break;
 							}
 
-							if (pStnod->m_pStfor == nullptr)
+							auto pStfor = PStmapRtiCast<CSTFor *>(pStnod->m_pStmap);
+							if (pStfor == nullptr)
 							{
 								EmitError(pTcwork, pStnod, "for loop was improperly parsed.");
 								return TCRET_StoppingError;
 							}
 
-							auto pStfor = pStnod->m_pStfor;
 							auto pStnodPredicate = pStnod->PStnodChildSafe(pStfor->m_iStnodPredicate);
 							if (pStnodPredicate)
 							{
@@ -6538,14 +6541,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								break;
 							}
 
-							if (pStnod->m_pStfor == nullptr)
+							auto pStfor = PStmapRtiCast<CSTFor *>(pStnod->m_pStmap);
+							if (pStfor == nullptr)
 							{
 								EmitError(pTcwork, pStnod, "for_each loop was improperly parsed.");
 								return TCRET_StoppingError;
 							}
 
 							STypeInfo * pTinIterator = nullptr;
-							auto pStfor = pStnod->m_pStfor;
 							auto pStnodDecl = pStnod->PStnodChildSafe(pStfor->m_iStnodDecl);
 							if (pStnodDecl)
 							{
@@ -7180,7 +7183,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 												pStnodMember = pStnodMember->PStnodChildSafe(0);
 											else if (pStnodMember->m_park == PARK_Cast)
 											{
-												auto * pStdecl = pStnodMember->m_pStdecl;
+												auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnodMember->m_pStmap);
 												pStnodMember = pStnodMember->PStnodChild(pStdecl->m_iStnodInit);
 											}
 											else
