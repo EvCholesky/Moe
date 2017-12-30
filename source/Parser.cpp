@@ -90,6 +90,7 @@ const char * PChzFromPark(PARK park)
 		"Array Literal",
 		"Argument Label",
 		"Generic Decl",
+		"Struct Arg List",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpParkPChz) == PARK_Max, "missing PARK string");
 	if (park == PARK_Nil)
@@ -730,6 +731,57 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 	}
 }
 
+void ParseArgumentList(CParseContext * pParctx, SLexer * pLex, CSTNode * pStnodArgList)
+{
+	while (1)
+	{
+		CSTNode * pStnodLabel = nullptr;
+		const char * pCozLabel = "error";
+		if (pLex->m_tok == TOK_Label)
+		{
+			TokNext(pLex);
+			SLexerLocation lexloc(pLex);
+
+			pStnodLabel = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+			pStnodLabel->m_tok = TOK_Label;
+			pStnodLabel->m_park = PARK_ArgumentLabel;
+
+			CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+			if (!pStnodIdent)
+			{
+				ParseError(pParctx, pLex, "Argument label did not specify an argument name");
+			}
+			else
+			{
+				pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
+				pStnodLabel->IAppendChild(pStnodIdent);
+			}
+		}
+
+		CSTNode * pStnodArg = PStnodParseLogicalAndOrExpression(pParctx, pLex);
+		if (pStnodLabel)
+		{
+			if (!pStnodArg)
+			{
+				CSTNode * pStnodIdent = pStnodLabel->PStnodChildSafe(0);
+				ParseError(pParctx, pLex, "Labeled argument '%s' does not specify a value", StrFromIdentifier(pStnodIdent).PCoz());
+			}
+			else
+			{
+				pStnodLabel->IAppendChild(pStnodArg);
+				pStnodArg = pStnodLabel;
+			}
+		}
+
+		pStnodArgList->IAppendChild(pStnodArg);
+
+		if ((pStnodArg==nullptr))
+			break;
+		if (!FConsumeToken(pLex, TOK(',')))
+			break;
+	}
+}
+
 CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 {
 	CSTNode * pStnod = PStnodParsePrimaryExpression(pParctx, pLex);
@@ -781,52 +833,7 @@ CSTNode * PStnodParsePostfixExpression(CParseContext * pParctx, SLexer * pLex)
 				// parsing this with LogicalAndOrExpression even though ISO c uses assignmentExpression
 				//  need to change this if we expect assignments to return the assigned value (x := a = b; )
 
-				while (1)
-				{
-					CSTNode * pStnodLabel = nullptr;
-					const char * pCozLabel = "error";
-					if (pLex->m_tok == TOK_Label)
-					{
-						TokNext(pLex);
-						SLexerLocation lexloc(pLex);
-
-						pStnodLabel = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-						pStnodLabel->m_tok = TOK_Label;
-						pStnodLabel->m_park = PARK_ArgumentLabel;
-
-						CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
-						if (!pStnodIdent)
-						{
-							ParseError(pParctx, pLex, "Argument label did not specify an argument name");
-						}
-						else
-						{
-							pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
-							pStnodLabel->IAppendChild(pStnodIdent);
-						}
-					}
-
-					CSTNode * pStnodArg = PStnodParseLogicalAndOrExpression(pParctx, pLex);
-					if (pStnodLabel)
-					{
-						if (!pStnodArg)
-						{
-							CSTNode * pStnodIdent = pStnodLabel->PStnodChildSafe(0);
-							ParseError(pParctx, pLex, "Labeled argument '%s' does not specify a value", StrFromIdentifier(pStnodIdent).PCoz());
-						}
-						else
-						{
-							pStnodLabel->IAppendChild(pStnodArg);
-							pStnodArg = pStnodLabel;
-						}
-					}
-
-					pStnodArgList->IAppendChild(pStnodArg);
-
-					if ((pStnodArg==nullptr) | (pLex->m_tok != TOK(',')))
-						break;
-					FExpect(pParctx, pLex, TOK(','));
-				}
+				ParseArgumentList(pParctx, pLex, pStnod);
 
 				FExpect(
 					pParctx,
@@ -1317,7 +1324,7 @@ CSTNode * PStnodFindChildPark(CParseContext * pParctx, CSTNode * pStnodRoot, PAR
 	return nullptr;
 }
 
-void CheckGenericParams(CParseContext * pParctx, CSTNode * pStnodRoot, CHash<HV, CSTNode *> * pmpHvPStnod)
+void CheckGenericParams(CParseContext * pParctx, CSTNode * pStnodRoot, CHash<HV, CSTNode *> * pmpHvPStnod, GRFTINPROC * pGrftinproc)
 {
 	CDynAry<CSTNode *> arypStnodStack(pParctx->m_pAlloc, BK_Parse);
 
@@ -1330,6 +1337,8 @@ void CheckGenericParams(CParseContext * pParctx, CSTNode * pStnodRoot, CHash<HV,
 			auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodIt->m_pTin);
 			if (!pTingen)
 				continue;
+
+			pGrftinproc->AddFlags(FTINPROC_HasBakedTypeArgs);
 
 			CSTNode ** ppStnodHash;
 			FINS fins = pmpHvPStnod->FinsEnsureKey(pTingen->m_strName.Hv(), &ppStnodHash);
@@ -1385,13 +1394,8 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 
 			if (pStnodType)
 			{
-				CheckGenericParams(pParctx, pStnodType, &mpHvPStnod);
+				CheckGenericParams(pParctx, pStnodType, &mpHvPStnod, &pTinproc->m_grftinproc);
 			}
-		}
-
-		if (!mpHvPStnod.FIsEmpty())
-		{
-			pTinproc->m_fHasGenericArgs = true;
 		}
 	}
 
@@ -1512,6 +1516,7 @@ CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
 			STypeInfoGeneric * pTingen = EWC_NEW(pSymtab->m_pAlloc, STypeInfoGeneric) 
 											STypeInfoGeneric(strIdent, StrUniqueName(pSymtab->m_pUnsetTin, strIdent));
 			pSymtab->AddManagedTin(pTingen);
+			pTingen->m_pStnodDefinition = pStnod;
 			pStnod->m_pTin = pTingen;
 			pStnod->m_pSym->m_pTin = pTingen;
 		}
@@ -1572,24 +1577,41 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const
 	CSTNode * pStnod = PStnodParseIdentifier(pParctx, pLex);
 	if (pStnod)
 	{
-		while (FConsumeToken(pLex, TOK('.')))
+		if (FConsumeToken(pLex, TOK('(')))
 		{
+			CSymbolTable * pSymtabParent = pParctx->m_pSymtab;
 			SLexerLocation lexloc(pLex);
 
-			TOK tokPrev = TOK(pLex->m_tok);	
-			CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
-			if (!pStnodIdent)
+			CSTNode * pStnodStructInst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+			pStnodStructInst->m_park = PARK_GenericStructInst;
+			pStnodStructInst->IAppendChild(pStnod);
+			
+			ParseArgumentList(pParctx, pLex, pStnodStructInst);
+
+			FExpect(pParctx, pLex, TOK(')'));
+
+		}
+		else if (pLex->m_tok == TOK('.'))
+		{
+			while (FConsumeToken(pLex, TOK('.')))
 			{
-				ParseError(pParctx, pLex, "Expected identifier after '.' before %s", PCozFromTok(tokPrev));
-			}
-			else
-			{
-				CSTNode * pStnodMember = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodMember->m_tok = tokPrev;
-				pStnodMember->m_park = PARK_MemberLookup;
-				pStnodMember->IAppendChild(pStnod);
-				pStnodMember->IAppendChild(pStnodIdent);
-				pStnod = pStnodMember;
+				SLexerLocation lexloc(pLex);
+
+				TOK tokPrev = TOK(pLex->m_tok);
+				CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+				if (!pStnodIdent)
+				{
+					ParseError(pParctx, pLex, "Expected identifier after '.' before %s", PCozFromTok(tokPrev));
+				}
+				else
+				{
+					CSTNode * pStnodMember = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+					pStnodMember->m_tok = tokPrev;
+					pStnodMember->m_park = PARK_MemberLookup;
+					pStnodMember->IAppendChild(pStnod);
+					pStnodMember->IAppendChild(pStnodIdent);
+					pStnod = pStnodMember;
+				}
 			}
 		}
 		return pStnod;
@@ -2287,7 +2309,7 @@ ERRID ErridCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SError
 			PARK park = pOvinf->m_aPark[iPark];
 			if (park != PARK_Nil && FCheckOverloadSignature(park, pTinproc))
 			{
-				if (pTinproc->m_fIsCommutative && !FAllowsCommutative(park))
+				if (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsCommutative) && !FAllowsCommutative(park))
 				{
 					EmitError(pErrman, pLexloc, ERRID_UnknownError, 
 						"'%s' is not allowed when overloading '%s'", PCozFromRword(RWORD_Commutative), PCozFromTok(tok));
@@ -2503,7 +2525,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 						ParseError(pParctx, pLex, "Only operators with two arguments can be commutative ('%s' has %d)", strName.PCoz(), cStnodParams);
 						fIsCommutative = false;
 					}
-					pTinproc->m_fIsCommutative = fIsCommutative;
+					pTinproc->m_grftinproc.AssignFlags(FTINPROC_IsCommutative, fIsCommutative);
 				}
 
 				pTinproc->m_pStnodDefinition = pStnodProc;
@@ -2518,7 +2540,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					CSTNode * pStnodParam = *ppStnodParams;
 					if (pStnodParam->m_park == PARK_VariadicArg)
 					{
-						pTinproc->m_fHasVarArgs = true;
+						pTinproc->m_grftinproc.AddFlags(FTINPROC_HasVarArgs);
 					}
 					else if (EWC_FVERIFY(pStnodParam->m_park == PARK_Decl, "Expected decl"))
 					{
@@ -2755,6 +2777,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pSymtab->AddManagedTin(pTinstruct);
 
 				pTinstruct->m_pStnodStruct = pStnodStruct;
+				pTinstruct->m_fHasCompileTimeArgs = (pStstruct->m_iStnodParameterList >= 0);
 				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
 																		pB + sizeof(STypeInfoStruct), 
 																		EWC_ALIGN_OF(STypeStructMember));
@@ -4114,7 +4137,7 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 				}
 			}
 
-			if (pTinproc->m_fHasVarArgs)
+			if (pTinproc->FHasVarArgs())
 			{
 				pSeb->AppendCoz(",..");
 			}
@@ -4410,7 +4433,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			FormatCoz(pStrbuf, "%s(", pTin->m_strName.PCoz());
 
 			size_t cpTin = pTinproc->m_arypTinParams.C();
-			size_t cCommas = (pTinproc->m_fHasVarArgs) ? cpTin : cpTin - 1;
+			size_t cCommas = (pTinproc->FHasVarArgs()) ? cpTin : cpTin - 1;
 			for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
 			{
 				PrintTypeInfo(pStrbuf, pTinproc->m_arypTinParams[ipTin], PARK_Nil, grfdbgstr);
@@ -4421,7 +4444,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 				}
 			}
 
-			if (pTinproc->m_fHasVarArgs)
+			if (pTinproc->FHasVarArgs())
 			{
 				AppendCoz(pStrbuf, "..");
 			}
@@ -4597,6 +4620,35 @@ void PrintStnod(SStringBuffer * pStrbuf, CSTNode * pStnod, GRFDBGSTR grfdbgstr)
 		grfdbgstr.Clear(FDBGSTR_LiteralSize);
 	}
 }
+
+CString StrFromTypeInfo(STypeInfo * pTin)
+{
+	if (!pTin)
+	{
+		return CString("null");
+	}
+
+	char aCh[1024];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+
+	PrintTypeInfo(&strbuf, pTin, PARK_Nil);
+	return CString(aCh);
+}
+
+CString StrFromSTNode(CSTNode * pStnod)
+{
+	if (!pStnod)
+	{
+		return CString("null");
+	}
+
+	char aCh[1024];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+
+	PrintStnodName(&strbuf, pStnod);
+	return CString(aCh);
+}
+
 
 void CSTNode::WriteDebugString(EWC::SStringBuffer * pStrbuf, GRFDBGSTR grfdbgstr)
 {

@@ -349,7 +349,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 												PLtypeFromPTin(pTinproc->m_arypTinReturns[0]) : 
 												LLVMVoidType();	
 
-			auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, apLtypeParam, (u32)cpLtypeParam, pTinproc->m_fHasVarArgs);
+			auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, apLtypeParam, (u32)cpLtypeParam, pTinproc->FHasVarArgs());
 
 			// NOTE: actually a pointer to a function (not the function type itself)
 			auto pLtypPtr = LLVMPointerType(pLtypeFunction, 0);
@@ -1996,7 +1996,7 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 			arypLval.Append(pLvalAryParam); //m_arypTinParam
 			arypLval.Append(pLvalAryReturn); //m_arypTinReturn
 
-			arypLval.Append(LLVMConstInt(LLVMInt1Type(), pTinproc->m_fHasVarArgs, false)); //m_fHasVarArgs
+			arypLval.Append(LLVMConstInt(LLVMInt1Type(), pTinproc->FHasVarArgs(), false)); //m_fHasVarArgs
 			arypLval.Append(LLVMConstInt(LLVMInt8Type(), pTinproc->m_inlinek, true)); //m_inlinek
 			arypLval.Append(LLVMConstInt(LLVMInt8Type(), pTinproc->m_callconv, true)); //m_callconv
 
@@ -4212,7 +4212,7 @@ CIRValue * PValGenerateCall(
 		auto pLvalFunction = pProc->m_pLvalFunction;
 		if (LLVMCountParams(pLvalFunction) != parypLvalArgs->C())
 		{
-			if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
+			if (!EWC_FVERIFY(pTinproc->FHasVarArgs(), "unexpected number of arguments"))
 				return nullptr;
 		}
 
@@ -4966,7 +4966,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				auto pLvalFunction = pProc->m_pLvalFunction;
 				if (LLVMCountParams(pLvalFunction) != cStnodArgs)
 				{
-					if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "unexpected number of arguments"))
+					if (!EWC_FVERIFY(pTinproc->FHasVarArgs(), "unexpected number of arguments"))
 						return nullptr;
 				}
 
@@ -5759,7 +5759,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 	EWC_ASSERT(pTinproc, "Exected procedure type");
 
 	char aCh[256];
-	EWC_ASSERT(!pTinproc->m_fHasGenericArgs, "generic arg should not make it to codegen");
+	EWC_ASSERT(!pTinproc->FHasGenericArgs(), "generic arg should not make it to codegen");
 	EWC_ASSERT(pTinproc->m_strMangled.PCoz(), "missing procedure mangled name in tinproc '%s', pStnod = %p", pTinproc->m_strName.PCoz(), pStnod);
 	const char * pChzMangled = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());
 

@@ -89,7 +89,7 @@ struct SInstantiateRequest // tag = insreq
 								}
 
 
-	CSTNode 	* 				m_pStnodGeneric;
+	CSTNode * 					m_pStnodGeneric;
 	SSymbol *					m_pSym;				// instantiated type, tin proc with resolved argument types
 	SGenericMap * 				m_pGenmap;
 
@@ -293,7 +293,7 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 			auto pTinproc = (STypeInfoProcedure *)pTin;
 			FormatCoz(&m_strbuf, "F%d_", pTinproc->m_arypTinReturns.C());
 
-			if (pTinproc->m_fHasVarArgs)
+			if (pTinproc->FHasVarArgs())
 			{
 				AppendCoz(&m_strbuf, "VA");
 			}
@@ -407,7 +407,7 @@ STypeInfo * PTinAfterRValueAssignment(STypeCheckWorkspace * pTcwork, SLexerLocat
 	if (pTin->m_tink == TINK_Procedure)
 	{
 		auto pTinproc = (STypeInfoProcedure *)pTin;
-		if (pTinproc->m_fHasGenericArgs)	
+		if (pTinproc->FHasGenericArgs())	
 		{
 			EmitError(pTcwork->m_pErrman, pLexloc, ERRID_NoGenericRValue,
 				"cannot make a reference to a generic procedure definition '%s'",
@@ -467,9 +467,7 @@ STypeInfoProcedure * PTinprocCopy(CSymbolTable * pSymtab, STypeInfoProcedure * p
 										pTinprocSrc->m_strName.PCoz());
 
 	pTinprocNew->m_pStnodDefinition = pTinprocSrc->m_pStnodDefinition;
-	pTinprocNew->m_fHasVarArgs = pTinprocSrc->m_fHasVarArgs;
-	pTinprocNew->m_fHasGenericArgs = pTinprocSrc->m_fHasGenericArgs;
-	pTinprocNew->m_fIsCommutative = pTinprocSrc->m_fIsCommutative;
+	pTinprocNew->m_grftinproc = pTinprocSrc->m_grftinproc;
 	pTinprocNew->m_inlinek = pTinprocSrc->m_inlinek;
 	pTinprocNew->m_callconv = pTinprocSrc->m_callconv;
 
@@ -603,7 +601,7 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 		}
 
 		auto pTinproc = PTinprocAlloc(pSymtab, arypTinParams.C(), arypTinReturns.C(), "");
-		pTinproc->m_fHasVarArgs = fHasVarArgs;
+		pTinproc->m_grftinproc.AssignFlags(FTINPROC_HasVarArgs, fHasVarArgs);
 
 		size_t cpTin = arypTinParams.C();
 		for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
@@ -643,7 +641,7 @@ CString	CNameMangler::StrMangleMethodName(STypeInfoProcedure * pTinproc)
 
 	AppendCoz(&m_strbuf, "_"); // arguments
 
-	if (pTinproc->m_fHasVarArgs)
+	if (pTinproc->FHasVarArgs())
 	{
 		AppendCoz(&m_strbuf, "VA");
 	}
@@ -696,7 +694,7 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 	}
 
 	auto pTinproc = PTinprocAlloc(pSymtab, arypTinParams.C(), arypTinReturns.C(), strProcName.PCoz());
-	pTinproc->m_fHasVarArgs = fHasVarArgs;
+	pTinproc->m_grftinproc.AssignFlags(FTINPROC_HasVarArgs, fHasVarArgs);
 
 	size_t cpTin = arypTinParams.C();
 	for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
@@ -802,20 +800,6 @@ CString StrTypenameFromTypeSpecification(CSTNode * pStnod)
 		}
 	}
 
-	return CString(aCh);
-}
-
-CString StrFromTypeInfo(STypeInfo * pTin)
-{
-	if (!pTin)
-	{
-		return CString("null");
-	}
-
-	char aCh[1024];
-	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-
-	PrintTypeInfo(&strbuf, pTin, PARK_Nil);
 	return CString(aCh);
 }
 
@@ -1863,7 +1847,7 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 			auto pTinprocRhs = (STypeInfoProcedure *)pTinRhs;
 			if (pTinprocLhs->m_arypTinParams.C() != pTinprocRhs->m_arypTinParams.C() ||
 				pTinprocLhs->m_arypTinReturns.C() != pTinprocRhs->m_arypTinReturns.C() ||
-				pTinprocLhs->m_fHasVarArgs != pTinprocRhs->m_fHasVarArgs)
+				pTinprocLhs->m_grftinproc != pTinprocRhs->m_grftinproc)
 				return false;
 
 			STypeInfo ** ppTinLhs = pTinprocLhs->m_arypTinParams.A();
@@ -1914,26 +1898,7 @@ bool FIsGenericType(STypeInfo * pTin)
     case TINK_Procedure:
     	{
     		auto pTinproc = (STypeInfoProcedure *)pTin;
-    		return pTinproc->m_fHasGenericArgs;
-
-    		/*
-    		if (!EWC_FVERIFY(pTinproc->m_pStnodDefinition->m_strees >= STREES_SignatureTypeChecked, "pTinproc isn't typechecked yet in FIsGenericType()"))
-    			return false;
-
-    		int iParam = 0;
-    		for (STypeInfo ** ppTin = pTinproc->m_arypTinParams.A(); ppTin != pTinproc->m_arypTinParams.PMac(); ++ppTin, ++iParam)
-    		{
-    			if (FIsGenericType(*ppTin))
-    				return true;
-    		}
-
-    		for (STypeInfo ** ppTin = pTinproc->m_arypTinReturns.A(); ppTin != pTinproc->m_arypTinReturns.PMac(); ++ppTin)
-    		{
-    			if (FIsGenericType(*ppTin))
-    				return true;
-    		}
-    		return false;
-    		*/
+    		return pTinproc->FHasGenericArgs();
     	}
     case TINK_Struct:
     	{
@@ -2422,8 +2387,44 @@ QUALK QualkFromRword(RWORD rword)
 	}
 }
 
+
+STypeInfo * PTinInstantiateGenericStruct(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodStructInst,
+	GRFSYMLOOK grfsymlook,
+	bool * pFIsValidTypeSpec)
+{
+	CSTNode * pStnodIdent = pStnodStructInst->PStnodChildSafe(0);
+	SSymbol * pSymGen = nullptr;
+	if (EWC_FVERIFY(pStnodIdent, "bad generic struct instantiation"))
+	{
+		auto strIdent = StrFromIdentifier(pStnodIdent);
+		auto pSym = pSymtab->PSymLookup(strIdent, pStnodIdent->m_lexloc, grfsymlook);
+		if (!pSymGen)
+		{
+			EmitError(pTcwork, pStnodStructInst, "failed looking up generic struct '%s'", strIdent.PCoz());
+		}
+	}
+	
+	if (!pSymGen)
+	{
+		*pFIsValidTypeSpec = false;
+		return nullptr;
+	}
+
+	if (!pSymGen->m_grfsym.FIsSet(FSYM_IsType))
+	{
+		EmitError(pTcwork, pStnodStructInst, "Expected type specification but encountered '%s'", pSymGen->m_strName.PCoz());
+		*pFIsValidTypeSpec = false;
+		return nullptr;
+	}
+
+	return nullptr;
+}
+
 STypeInfo * PTinFromTypeSpecification(
-	STypeCheckWorkspace *pTcwork,
+	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnod,
 	GRFSYMLOOK grfsymlook,
@@ -2466,6 +2467,15 @@ STypeInfo * PTinFromTypeSpecification(
 
 				pStnodIt = pStnodIt->PStnodChild(1);
 			} break;
+		case PARK_GenericStructInst:
+			{
+				EWC_ASSERT(false, "TBD generic structure instantiation");
+				//auto pTinStructInst = PTinInstantiateGenericStruct(pTcwork, pSymtab, pStnodIt, pFIsValidTypeSpec);
+
+				//pTinFinal = pSym->m_pTin;
+				//pStnodIt->m_pTin = pTinFinal;
+				//pStnodIt = nullptr;
+			} break;
 		case PARK_Identifier:
 			{
 				auto strIdent = StrFromIdentifier(pStnodIt);
@@ -2473,7 +2483,7 @@ STypeInfo * PTinFromTypeSpecification(
 
 				if (!pSym->m_grfsym.FIsSet(FSYM_IsType))
 				{
-					EmitError(pTcwork, pStnodIt, "Expected type specification but encounted '%s'", strIdent.PCoz());
+					EmitError(pTcwork, pStnodIt, "Expected type specification but encountered '%s'", strIdent.PCoz());
 					*pFIsValidTypeSpec = false;
 				}
 
@@ -3274,7 +3284,7 @@ ERRID ErridComputeDefinedGenerics(
 					if (!pTinprocRef)
 						break;
 				
-					if (pTinprocRef->m_fHasGenericArgs)
+					if (pTinprocRef->FHasGenericArgs())
 					{
 						if (errep == ERREP_ReportErrors)
 						{
@@ -3289,12 +3299,12 @@ ERRID ErridComputeDefinedGenerics(
 					auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnodCur->m_pStmap);
 					if (EWC_FVERIFY(pStproc && pTinprocGen, "bad PARK_ProcedureReferenceDecl") &&
 						pTinprocRef && 
-						pTinprocGen->m_fHasGenericArgs &&
+						pTinprocGen->FHasGenericArgs() &&
   						pStproc->m_iStnodParameterList >= 0)
 					{
 						if (pTinprocRef->m_arypTinParams.C() == pTinprocGen->m_arypTinParams.C() &&
 							pTinprocRef->m_arypTinReturns.C() == pTinprocGen->m_arypTinReturns.C() &&
-							pTinprocRef->m_fHasVarArgs == pTinprocGen->m_fHasVarArgs)
+							pTinprocRef->FHasVarArgs() == pTinprocGen->FHasVarArgs()) 
 						{
 
 							CSTNode * pStnodParameterList = pStnodCur->PStnodChild(pStproc->m_iStnodParameterList);
@@ -3322,8 +3332,7 @@ ERRID ErridComputeDefinedGenerics(
 	STypeInfo ** ppTin;
 	while ((ppTin = iter.Next(&ppSym)))
 	{
-		auto pTingen = PTinDerivedCast<STypeInfoGeneric *>((*ppSym)->m_pTin);
-		pGenmap->m_mpPTingenPTinRemapped.Insert(pTingen, *ppTin);
+		pGenmap->m_mpPSymBakval.Insert(*ppSym, SBakeValue(*ppTin));
 	}
 	return ERRID_Nil;
 }
@@ -3342,8 +3351,8 @@ STypeInfo * PTinSubstituteGenerics(
 		case TINK_Generic:
 			{
 				auto pTingen = (STypeInfoGeneric *)pTinUnsub;
-				STypeInfo ** ppTin = pGenmap->m_mpPTingenPTinRemapped.Lookup(pTingen);
-				if (!ppTin)
+				SBakeValue * pBakval = pGenmap->m_mpPSymBakval.Lookup(pTingen->m_pStnodDefinition->m_pSym);
+				if (!pBakval)
 				{
 					if (errep == ERREP_ReportErrors)
 					{
@@ -3353,7 +3362,8 @@ STypeInfo * PTinSubstituteGenerics(
 					return pTingen;
 				}
 
-				return *ppTin;
+				EWC_ASSERT(pBakval->m_pTin, "expected baked type (not value)");
+				return pBakval->m_pTin;
 			}
     	case TINK_Integer:
     	case TINK_Float:
@@ -3372,7 +3382,7 @@ STypeInfo * PTinSubstituteGenerics(
 		    {
 		    	auto pTinprocUnsub = (STypeInfoProcedure *)pTinUnsub;
 				auto pTinproc = PTinprocCopy(pSymtab, pTinprocUnsub);
-				pTinproc->m_fHasGenericArgs = false;
+				pTinproc->m_grftinproc.Clear(FTINPROC_HasGenericArgs);
 
 		    	auto cpTinParams = pTinproc->m_arypTinParams.C();
 				for (int ipTin = 0; ipTin < cpTinParams; ++ipTin)
@@ -3426,7 +3436,7 @@ PROCMATCH ProcmatchCheckArguments(
 	SSymbol * pSymProc)
 {
 	size_t cArgCall = pPmparam->m_cpStnodCall;
-	if 	(pTinproc->m_fHasVarArgs == false && cArgCall > pTinproc->m_arypTinParams.C())
+	if 	(!pTinproc->FHasVarArgs() && cArgCall > pTinproc->m_arypTinParams.C())
 	{
 		if (errep == ERREP_ReportErrors)
 		{
@@ -3630,7 +3640,7 @@ PROCMATCH ProcmatchCheckArguments(
 
 		if (fIsArgOutsideRange)
 		{
-			if (!pTinproc->m_fHasVarArgs)
+			if (!pTinproc->FHasVarArgs())
 			{
 				if (errep == ERREP_ReportErrors)
 				{
@@ -3657,7 +3667,7 @@ PROCMATCH ProcmatchCheckArguments(
 	}
 
 	CHash<HV, CSTNode *> mpHvPStnodAnchor(pTcwork->m_pAlloc, BK_TypeCheckProcmatch);
-	if (pTinproc->m_fHasGenericArgs)
+	if (pTinproc->FHasGenericArgs())
 	{
 		// compute types for generic type 'anchors'
 		if (pStproc && pStproc->m_iStnodParameterList >= 0)
@@ -3845,6 +3855,25 @@ SInstantiateContext * PInsctxNew(STypeCheckWorkspace * pTcwork)
 	return pInsctx;
 }
 
+bool FBakvalAreSame(SBakeValue * pBakvalA, SBakeValue * pBakvalB)
+{
+	if (pBakvalA->m_pTin != nullptr)
+	{
+		if (!FTypesAreSame(pBakvalA->m_pTin, pBakvalB->m_pTin))
+			return false;
+	}
+
+	if (pBakvalA->m_pStnod != nullptr)
+	{
+		if (pBakvalB->m_pStnod == nullptr)
+			return false;
+
+		EWC_ASSERT(false, "TBD! need code to check if the constant value of two syntax trees is equal");
+	}
+
+	return true;
+}
+
 SInstantiateRequest * PInsreqLookup(
 	STypeCheckWorkspace * pTcwork,
 	CSTNode * pStnodDefinition,
@@ -3856,28 +3885,26 @@ SInstantiateRequest * PInsreqLookup(
 		if (pInsreq->m_pStnodGeneric != pStnodDefinition)
 			continue;
 
-		auto pmpPTingenPTinRemappedIt = &pInsreq->m_pGenmap->m_mpPTingenPTinRemapped;
-		auto pmpPTingenPTinRemappedArg = &pGenmap->m_mpPTingenPTinRemapped;
-		if (pmpPTingenPTinRemappedIt->C() != pmpPTingenPTinRemappedArg->C())
+		auto pmpPSymBakvalRemappedIt = &pInsreq->m_pGenmap->m_mpPSymBakval;
+		auto pmpPSymBakvalRemappedArg = &pGenmap->m_mpPSymBakval;
+		if (pmpPSymBakvalRemappedIt->C() != pmpPSymBakvalRemappedArg->C())
 			continue;
 
-		EWC::CHash<STypeInfoGeneric *, STypeInfo *>::CIterator iterIt(pmpPTingenPTinRemappedIt);
-		EWC::CHash<STypeInfoGeneric *, STypeInfo *>::CIterator iterArg(pmpPTingenPTinRemappedArg);
+		EWC::CHash<SSymbol *, SBakeValue>::CIterator iterIt(pmpPSymBakvalRemappedIt);
+		EWC::CHash<SSymbol *, SBakeValue>::CIterator iterArg(pmpPSymBakvalRemappedArg);
 
 		bool fAreTheSame = true;
-		STypeInfoGeneric ** ppTingenIt;
-		STypeInfoGeneric ** ppTingenArg;
-		STypeInfo ** ppTinIt;
-		STypeInfo ** ppTinArg;
-		while ((ppTinIt = iterIt.Next(&ppTingenIt)))
+		SSymbol ** ppSymIt;
+		SSymbol ** ppSymArg;
+		SBakeValue * pBakvalIt;
+		SBakeValue * pBakvalArg;
+		while ((pBakvalIt = iterIt.Next(&ppSymIt)))
 		{
-			ppTinArg = iterArg.Next(&ppTingenArg);
-			if (!EWC_FVERIFY(ppTinArg, "hash value mismatch"))
+			pBakvalArg = iterArg.Next(&ppSymArg);
+			if (!EWC_FVERIFY(pBakvalArg, "hash value mismatch"))
 				break;	
 
-			STypeInfo * pTinIt = *ppTinIt;
-			STypeInfo * pTinArg = *ppTinArg;
-			fAreTheSame &= (*ppTingenIt == *ppTingenArg && FTypesAreSame(pTinIt, pTinArg));
+			fAreTheSame &= (*ppSymIt == *ppSymArg && FBakvalAreSame(pBakvalIt, pBakvalArg));
 			if (!fAreTheSame)
 				break;
 		}
@@ -4144,7 +4171,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	pTinprocNew->m_strMangled = StrComputeMangled(pTcwork, pStnodProcCopy, pSymtabSrc->m_pSymtabParent);
 
 	EWC_ASSERT(pTinprocNew->m_strMangled.PCoz(), "failed computing mangled name");
-	pTinprocNew->m_fHasGenericArgs = false;
+	pTinprocNew->m_grftinproc.Clear(FTINPROC_HasGenericArgs);
 
 	// type check the body with the new values
 
@@ -4266,7 +4293,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 				continue;
 
 			int argordMax = ARGORD_Normal+1;
-			if (pTinprocSym->m_fIsCommutative)
+			if (pTinprocSym->m_grftinproc.FIsSet(FTINPROC_IsCommutative))
 			{
 				argordMax = ARGORD_Max;
 				++cSymOptions;
@@ -4564,7 +4591,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						{
 							CSTNode * pStnodParamList = pStnod->PStnodChild(pStproc->m_iStnodParameterList);
 
-							int cParamsExpected = pStnodParamList->CStnodChild() - pTinproc->m_fHasVarArgs;
+							int cParamsExpected = pStnodParamList->CStnodChild() - pTinproc->FHasVarArgs();
 							EWC_ASSERT(pTinproc->m_arypTinParams.C() == cParamsExpected, "parameter child mismatch");
 							for (int iStnodArg = 0; iStnodArg < cParamsExpected; ++iStnodArg)
 							{
@@ -4716,7 +4743,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				CSTNode * pStnodParameterList = pStnod->PStnodChildSafe(pStproc->m_iStnodParameterList);
 				if (pStnodParameterList)
 				{
-					cParamsExpected = pStnodParameterList->CStnodChild() - pTinproc->m_fHasVarArgs;
+					cParamsExpected = pStnodParameterList->CStnodChild() - pTinproc->FHasVarArgs();
 				}
 
 				EWC_ASSERT(pTinproc->m_arypTinParams.C() == cParamsExpected, "parameter child mismatch");
@@ -4947,7 +4974,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 					else
 					{
-						if (!EWC_FVERIFY(pTinproc->m_fHasVarArgs, "bad procedure match!"))
+						if (!EWC_FVERIFY(pTinproc->FHasVarArgs(), "bad procedure match!"))
 							return TCRET_StoppingError;
 
 						pTinCall = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, nullptr, ERREP_ReportErrors);

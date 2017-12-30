@@ -125,14 +125,24 @@ void PrintGenericInstantiateContext(SErrorManager * pErrman, SInstantiateContext
 		}
 
 		printf("  while instantiating generic '%s': ", pCozName);	
-		EWC::CHash<STypeInfoGeneric *, STypeInfo *>::CIterator iter(&pInsctxIt->m_pGenmap->m_mpPTingenPTinRemapped);
+		EWC::CHash<SSymbol *, SBakeValue>::CIterator iter(&pInsctxIt->m_pGenmap->m_mpPSymBakval);
 
-		STypeInfoGeneric ** ppTingen;
-		STypeInfo ** ppTin;
-		while ((ppTin = iter.Next(&ppTingen)))
+		SSymbol ** ppSym;
+		SBakeValue * pBakval;
+		while ((pBakval = iter.Next(&ppSym)))
 		{
-			CString strTin = StrFromTypeInfo(*ppTin);
-			printf("$%s %s, ", (*ppTingen)->m_strName.PCoz(), strTin.PCoz());
+			CString str;
+			if (pBakval->m_pTin)
+			{
+				str = StrFromTypeInfo(pBakval->m_pTin);
+			}
+			else 
+			{
+				EWC_ASSERT(pBakval->m_pStnod, "no bake value for '%s'", (*ppSym)->m_strName.PCoz());
+				str = StrFromSTNode(pBakval->m_pStnod);
+			}
+
+			printf("$%s %s, ", (*ppSym)->m_strName.PCoz(), str.PCoz());
 		}
 		s32 iLine;
 		s32 iCol;

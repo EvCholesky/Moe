@@ -138,7 +138,7 @@ enum PARK : s16 // PARse Kind
 
 	PARK_ProcedureReferenceDecl,
 	PARK_Decl,
-//	PARK_CompoundDecl,	// comma separated declarations - specialized AST node for future tuple return value support.
+//	PARK_CompoundDecl,		// comma separated declarations - specialized AST node for future tuple return value support.
 	PARK_Typedef,
 	PARK_ConstantDecl,
 	PARK_ProcedureDefinition,
@@ -149,6 +149,7 @@ enum PARK : s16 // PARse Kind
 	PARK_ArrayLiteral,
 	PARK_ArgumentLabel,
 	PARK_GenericDecl,
+	PARK_GenericStructInst,		// 
 	
 	EWC_MAX_MIN_NIL(PARK)
 };
@@ -157,6 +158,7 @@ const char * PChzFromPark(PARK park);
 const char * PChzFromLitk(LITK litk);
 EWC::CString StrFromIdentifier(CSTNode * pStnod);
 EWC::CString StrFromTypeInfo(STypeInfo * pTin);
+EWC::CString StrFromSTNode(CSTNode * pTin);
 
 
 // node type for mutually exlusive syntax tree nodes 
@@ -557,11 +559,35 @@ enum FSHADOW
 	FShadow_ShadowingAllowed,
 };
 
+
+
+struct SBakeValue		// tag bakval
+{
+					SBakeValue()
+					:m_pStnod(nullptr)
+					, m_pTin(nullptr)
+						{ ; }
+
+					SBakeValue(CSTNode * pStnod)
+					:m_pStnod(pStnod)
+					, m_pTin(nullptr)
+						{ ; }
+
+					SBakeValue(STypeInfo * pTin)
+					:m_pStnod(nullptr)
+					, m_pTin(pTin)
+						{ ; }
+
+
+	CSTNode *		m_pStnod;
+	STypeInfo *		m_pTin;
+};
+
 struct SGenericMap // tag = genmap
 {
 							SGenericMap(EWC::CAlloc * pAlloc, SSymbol * pSymDefinition)
 							:m_pSymDefinition(pSymDefinition)	
-							,m_mpPTingenPTinRemapped(pAlloc, EWC::BK_TypeCheckGenerics)
+							,m_mpPSymBakval(pAlloc, EWC::BK_TypeCheckGenerics)
 								{ ; }
 
 	void 					Swap(SGenericMap * pGenmapOther)
@@ -570,17 +596,18 @@ struct SGenericMap // tag = genmap
 									m_pSymDefinition = pGenmapOther->m_pSymDefinition;
 									pGenmapOther->m_pSymDefinition = pSymDefinitionTemp;
 
-									m_mpPTingenPTinRemapped.Swap(&pGenmapOther->m_mpPTingenPTinRemapped);
+									m_mpPSymBakval.Swap(&pGenmapOther->m_mpPSymBakval);
 								}
 
 	bool					FIsEmpty() const
 								{
-									return m_mpPTingenPTinRemapped.FIsEmpty();// && m_mpPSymGenericPSymRemapped.FIsEmpty();
+									return m_mpPSymBakval.FIsEmpty();// && m_mpPSymGenericPSymRemapped.FIsEmpty();
 								}
 
 
-	SSymbol *									m_pSymDefinition; 
-	EWC::CHash<STypeInfoGeneric *, STypeInfo *> m_mpPTingenPTinRemapped;
+	SSymbol *							m_pSymDefinition; 
+	EWC::CHash<SSymbol *, SBakeValue>	m_mpPSymBakval;			// map from a unbaked symbol to the instance that defines it
+
 };
 
 class CSymbolTable		// tag = symtab

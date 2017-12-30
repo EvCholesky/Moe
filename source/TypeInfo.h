@@ -239,13 +239,27 @@ const char * PChzFromInlinek(INLINEK inlinek);
 
 enum FPARMQ	// Flags for ARGument Qualifiers
 {
-	FPARMQ_ImplicitRef	= 0x1,		// convert LValue argument and pass into procedure's pointer argument
+	FPARMQ_ImplicitRef		= 0x1,		// convert LValue argument and pass into procedure's pointer argument
+	FPARMQ_BakedValue		= 0x2,
 
-	FPARMQ_None			= 0x0,
-	FPARMQ_All			= 0x1,
+	FPARMQ_None				= 0x0,
+	FPARMQ_All				= 0x3,
 };
 
 EWC_DEFINE_GRF(GRFPARMQ, FPARMQ, u8);
+
+enum FTINPROC
+{
+	FTINPROC_HasVarArgs			= 0x1,
+	FTINPROC_HasBakedTypeArgs	= 0x2,
+	FTINPROC_HasBakedValueArgs	= 0x4,
+	FTINPROC_IsCommutative		= 0x8,
+
+	FTINPROC_None				= 0x0,
+	FTINPROC_All				= 0xF,
+	FTINPROC_HasGenericArgs		= FTINPROC_HasBakedTypeArgs | FTINPROC_HasBakedValueArgs,
+};
+EWC_DEFINE_GRF(GRFTINPROC, FTINPROC, u8);
 
 struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 {
@@ -258,12 +272,15 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 						,m_arypTinParams()
 						,m_arypTinReturns()
 						,m_mpIptinGrfparmq()
-						,m_fHasVarArgs(false)
-						,m_fHasGenericArgs(false)
-						,m_fIsCommutative(false)
+						,m_grftinproc(FTINPROC_None)
 						,m_inlinek(INLINEK_Nil)
 						,m_callconv(CALLCONV_Nil)
 							{ ; }
+
+	bool				FHasVarArgs() const
+							{ return m_grftinproc.FIsSet(FTINPROC_HasVarArgs); }
+	bool				FHasGenericArgs() const
+							{ return m_grftinproc.FIsAnySet(FTINPROC_HasGenericArgs); }
 
 	EWC::CString				m_strMangled;
 	CSTNode *					m_pStnodDefinition;
@@ -271,10 +288,7 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 	EWC::CAllocAry<STypeInfo *>	m_arypTinReturns;
 	EWC::CAllocAry<GRFPARMQ>	m_mpIptinGrfparmq;
 
-	// BB - should convert bool fields to flags 
-	bool					m_fHasVarArgs;
-	bool					m_fHasGenericArgs;
-	bool					m_fIsCommutative;	// two argument operator overload, arguments can be passed in either order
+	GRFTINPROC				m_grftinproc;
 	INLINEK					m_inlinek;
 	CALLCONV				m_callconv;
 
@@ -297,7 +311,10 @@ struct STypeInfoGeneric : public STypeInfo // tag = tingen
 	static const TINK s_tink = TINK_Generic;
 						STypeInfoGeneric(const EWC::CString & strName, const EWC::CString & strUnique)
 						:STypeInfo(strName, strUnique, s_tink)
+						,m_pStnodDefinition(nullptr)
 							{ ; }
+
+	CSTNode *			m_pStnodDefinition;
 };
 
 // NOTE: just documenting a subtle relationship: CSTVal stores a literal value and is enough to determine 
@@ -344,7 +361,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 										STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
 										:STypeInfo(strName, strUnique, s_tink)
-										,m_fHasGenericArgs(false)
+										,m_fHasCompileTimeArgs(false)
 										,m_pGlobInit(nullptr)
 										,m_pLvalInitMethod(nullptr)
 										,m_pLtype(nullptr)
@@ -352,7 +369,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 										,m_aryTypemembField()
 											{ ; }
 	
-	bool								m_fHasGenericArgs;	// this struct is a non-instanced generic struct
+	bool								m_fHasCompileTimeArgs;	// this struct is a non-instanced generic struct
 	CIRGlobal *							m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
 	LLVMOpaqueValue *					m_pLvalInitMethod;
 	LLVMOpaqueType *					m_pLtype;			// llvm type reference, here to avoid infinite recursion in
