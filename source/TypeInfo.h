@@ -240,7 +240,7 @@ const char * PChzFromInlinek(INLINEK inlinek);
 enum FPARMQ	// Flags for ARGument Qualifiers
 {
 	FPARMQ_ImplicitRef		= 0x1,		// convert LValue argument and pass into procedure's pointer argument
-	FPARMQ_BakedValue		= 0x2,
+	FPARMQ_BakedValue		= 0x2,		// baked value parameter, will be dropped during generic specialization.
 
 	FPARMQ_None				= 0x0,
 	FPARMQ_All				= 0x3,

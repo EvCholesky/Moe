@@ -190,6 +190,7 @@ public:
 
 					CSTDecl()
 					:SSyntaxTreeMap(s_stmapk)
+					,m_fIsBakedConstant(false)
 					,m_iStnodIdentifier(-1)
 					,m_iStnodType(-1)
 					,m_iStnodInit(-1)
@@ -198,6 +199,7 @@ public:
 					,m_pTin(nullptr)
 						{ ; }
 
+	bool			m_fIsBakedConstant;
 	int				m_iStnodIdentifier;
 	int				m_iStnodType;
 	int				m_iStnodInit;
@@ -470,7 +472,7 @@ public:
 };
 
 CSTValue * PStvalCopy(EWC::CAlloc * pAlloc, CSTValue * pStval);
-CSTNode * PStnodCopy(EWC::CAlloc * pAlloc, CSTNode * pStnodSrc);
+CSTNode * PStnodCopy(EWC::CAlloc * pAlloc, CSTNode * pStnodSrc, EWC::CHash<CSTNode *, CSTNode *> * pmpPStnodSrcPStnodDst = nullptr);
 CSTValue * PStvalExpected(CSTNode * pStnod);
 
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
@@ -506,7 +508,6 @@ enum FSYM		// SYMbol flags
 	FSYM_VisibleWhenNested	= 0x4,	// types, constants and procedures that are visible in a more deeply nested symbol table
 									// - ie. not an instance. Nested proceedure should be able to call peer procedure, but not
 									//   access variable from parent proc.
-	FSYM_NeedsGenericRemap	= 0x8,	// Temp Flag used during instantiation of generics
 
 	FSYM_All				= 0xF,
 };
@@ -565,17 +566,17 @@ struct SBakeValue		// tag bakval
 {
 					SBakeValue()
 					:m_pStnod(nullptr)
-					, m_pTin(nullptr)
+					,m_pTin(nullptr)
 						{ ; }
 
 					SBakeValue(CSTNode * pStnod)
 					:m_pStnod(pStnod)
-					, m_pTin(nullptr)
+					,m_pTin(nullptr)
 						{ ; }
 
 					SBakeValue(STypeInfo * pTin)
 					:m_pStnod(nullptr)
-					, m_pTin(pTin)
+					,m_pTin(pTin)
 						{ ; }
 
 
@@ -588,7 +589,13 @@ struct SGenericMap // tag = genmap
 							SGenericMap(EWC::CAlloc * pAlloc, SSymbol * pSymDefinition)
 							:m_pSymDefinition(pSymDefinition)	
 							,m_mpPSymBakval(pAlloc, EWC::BK_TypeCheckGenerics)
+							,m_aryPStnodManaged(pAlloc, EWC::BK_TypeCheckGenerics)
 								{ ; }
+
+							~SGenericMap()
+								{
+									EWC_ASSERT(m_aryPStnodManaged.C() == 0, "Generic map stnod list was not cleaned up");
+								}
 
 	void 					Swap(SGenericMap * pGenmapOther)
 								{ 
@@ -597,6 +604,7 @@ struct SGenericMap // tag = genmap
 									pGenmapOther->m_pSymDefinition = pSymDefinitionTemp;
 
 									m_mpPSymBakval.Swap(&pGenmapOther->m_mpPSymBakval);
+									m_aryPStnodManaged.Swap(&pGenmapOther->m_aryPStnodManaged);
 								}
 
 	bool					FIsEmpty() const
@@ -607,6 +615,7 @@ struct SGenericMap // tag = genmap
 
 	SSymbol *							m_pSymDefinition; 
 	EWC::CHash<SSymbol *, SBakeValue>	m_mpPSymBakval;			// map from a unbaked symbol to the instance that defines it
+	EWC::CDynAry<CSTNode *>				m_aryPStnodManaged;		// stnodes for baked constants
 
 };
 

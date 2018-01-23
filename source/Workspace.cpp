@@ -400,57 +400,6 @@ CSymbolTable * PSymtabNew(CAlloc * pAlloc, CSymbolTable * pSymtabParent, const E
 	return PSymtabNew(pAlloc, pSymtabParent, strNamespace, pSymtabParent->m_pUnsetTin, pSymtabParent->m_phashHvPTinUnique);
 }
 
-CSymbolTable * PSymtabCopy(CAlloc * pAlloc, SErrorManager * pErrman, CSymbolTable * pSymtabSrc, const EWC::CString & strNamespace)
-{
-	auto pSymtabNew = PSymtabNew(pAlloc, pSymtabSrc->m_pSymtabParent, strNamespace);
-
-	pSymtabNew->m_pSymtabParent = pSymtabSrc->m_pSymtabParent;
-	pSymtabNew->m_iNestingDepth = pSymtabSrc->m_iNestingDepth;					
-
-	CHash<HV, SSymbol *>::CIterator iterPSym(&pSymtabSrc->m_hashHvPSym);
-	while (SSymbol ** ppSymSrc = iterPSym.Next())
-	{
-		SSymbol * pSymSrc = *ppSymSrc;
-		SSymbol ** ppSymPrev = nullptr;
-		while (pSymSrc)
-		{
-			if (!ppSymPrev)
-			{
-				auto pSymNew = pSymtabNew->PSymEnsure(
-					pErrman,
-					pSymSrc->m_strName,
-					pSymSrc->m_pStnodDefinition,
-					pSymSrc->m_grfsym);
-
-				ppSymPrev = &pSymNew->m_pSymPrev;
-			}
-			else
-			{
-				auto pSymNew = pSymtabNew->PSymNewUnmanaged(pSymSrc->m_strName, pSymSrc->m_pStnodDefinition, pSymSrc->m_grfsym);
-				*ppSymPrev = pSymNew;
-				ppSymPrev = &pSymNew->m_pSymPrev;
-			}
-
-			pSymSrc = pSymSrc->m_pSymPrev;
-		}
-
-		*ppSymSrc = nullptr;
-	}
-
-	for (SSymbol ** ppSym = pSymtabSrc->m_arypSymGenerics.A(); ppSym != pSymtabSrc->m_arypSymGenerics.PMac(); ++ppSym)
-	{
-		if (!ppSym)
-			continue;
-
-		auto pSymSrc = *ppSym;
-		EWC_ASSERT(!pSymSrc->m_pSymPrev, "not handling shadowed generic cymbols");
-
-		SSymbol * pSymNew = pSymtabNew->PSymGenericInstantiate(pSymSrc, pSymSrc->m_pTin);
-	}
-
-	return pSymtabNew;
-}
-
 void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCozOut, size_t cBOutMax)
 {
 	size_t iCh = CBCoz(pCozIn) - 2;

@@ -28,10 +28,11 @@ enum FPDECL
 	FPDECL_AllowCompoundDecl	= 0x1,	// allow comma-separated declaration of multiple variables.
 	FPDECL_AllowVariadic		= 0x2,	// allow the list to end with variadic arguments (..)
 	FPDECL_AllowUninitializer	= 0x4,	// allow decls to specify explicit uninitializers (n:int=---;}
-	FPDECL_AllowGenerics		= 0x8, 	// allow unspecified generic types (aka $T)
+	FPDECL_AllowBakedTypes		= 0x8, 	// allow unspecified generic types (aka $T)
+	FPDECL_AllowBakedValues		= 0x10,	// allow types to be marked as baked constant values
 
 	FPDECL_None			= 0x0,
-	FPDECL_All			= 0x7,
+	FPDECL_All			= 0x1F,
 };
 EWC_DEFINE_GRF(GRFPDECL, FPDECL, u32);
 
@@ -306,7 +307,7 @@ CSTValue * PStvalCopy(CAlloc * pAlloc, CSTValue * pStval)
 	return pStvalRet;
 }
 
-CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc)
+CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc, EWC::CHash<CSTNode *, CSTNode *> * pmpPStnodSrcPStnodDst)
 {
 	auto pStnodDst = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, pStnodSrc->m_lexloc);
 	*pStnodDst = *pStnodSrc;
@@ -340,10 +341,16 @@ CSTNode * PStnodCopy(CAlloc * pAlloc, CSTNode * pStnodSrc)
 		CSTNode * pStnodChildCopy = nullptr;
 		if (pStnodChild)
 		{
-			pStnodChildCopy = PStnodCopy(pAlloc, pStnodChild);
+			pStnodChildCopy = PStnodCopy(pAlloc, pStnodChild, pmpPStnodSrcPStnodDst);
 		}
 		pStnodDst->m_arypStnodChild[ipStnod] = pStnodChildCopy;
 	}
+
+	if (pmpPStnodSrcPStnodDst)
+	{
+		pmpPStnodSrcPStnodDst->FinsEnsureKeyAndValue(pStnodSrc, pStnodDst);
+	}
+
 	return pStnodDst;
 }
 
@@ -1391,6 +1398,12 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 				continue;
 
 			auto pStnodType = pStnodParam->PStnodChildSafe(pStdecl->m_iStnodType);
+			if (pStdecl->m_fIsBakedConstant)
+			{
+				pTinproc->m_grftinproc.AddFlags(FTINPROC_HasBakedValueArgs);
+			}
+
+			pTinproc->m_mpIptinGrfparmq[ipStnodParam].AssignFlags(FPARMQ_BakedValue, pStdecl->m_fIsBakedConstant);
 
 			if (pStnodType)
 			{
@@ -1624,7 +1637,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const
 	pStnod = PStnodParseGenericDecl(pParctx, pLex);
 	if (pStnod)
 	{
-		if (!grfpdecl.FIsSet(FPDECL_AllowGenerics))
+		if (!grfpdecl.FIsSet(FPDECL_AllowBakedTypes))
 		{
 			ParseError(pParctx, pLex, "Generic types not allowed in %s", pCozErrorContext);
 		}
@@ -1743,11 +1756,17 @@ CSTNode * PStnodParseParameter(
 	CSTNode * pStnodCompound = nullptr;
 	CSTNode * pStnodInit = nullptr;
 	bool fAllowCompoundDecl = grfpdecl.FIsSet(FPDECL_AllowCompoundDecl);
+	bool fAllowBakedValues = grfpdecl.FIsSet(FPDECL_AllowBakedValues);
 
 	SLexer lexPeek = *pLex;
 	int cIdent = 0;
 	while (1)
 	{
+		if (fAllowBakedValues)
+		{
+			(void)FConsumeToken(&lexPeek, TOK_Generic); // ignore baked constant marks
+		}
+
 		if (lexPeek.m_tok != TOK_Identifier)
 			return nullptr;
 
@@ -1771,6 +1790,12 @@ CSTNode * PStnodParseParameter(
 	CSTNode * pStnodDecl = nullptr;
 	do
 	{
+		bool fIsBakedConstant = false;
+		if (fAllowBakedValues && FConsumeToken(pLex, TOK_Generic))
+		{
+			fIsBakedConstant = true;
+		}
+
 		if (pStnodInit)
 			ParseError(pParctx, pLex, "Initializer must come after all comma separated declarations");
 
@@ -1782,6 +1807,7 @@ CSTNode * PStnodParseParameter(
 		pStnodDecl->m_park = PARK_Decl;
 
 		auto pStdecl = pStnodDecl->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
+		pStdecl->m_fIsBakedConstant = fIsBakedConstant;
 		++cTypeNeeded;
 
 		if (pStnodReturn)
@@ -1943,7 +1969,7 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex)
 	{
 		// TODO : handle multiple return types
 
-		return PStnodParseTypeSpecifier(pParctx, pLex, "return value", FPDECL_AllowGenerics);
+		return PStnodParseTypeSpecifier(pParctx, pLex, "return value", FPDECL_AllowBakedTypes);
 	}
 	else
 	{
@@ -1970,7 +1996,7 @@ CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, C
 		PushSymbolTable(pParctx, pSymtabProc, lexloc);
 	}
 
-	GRFPDECL grfpdecl = FPDECL_AllowVariadic | FPDECL_AllowGenerics;
+	GRFPDECL grfpdecl = FPDECL_AllowVariadic | FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues;
 	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pLex, pSymtabProc, grfpdecl);
 	CSTNode * pStnodList = nullptr;
 	bool fHasVarArgs = pStnodParam && pStnodParam->m_park == PARK_VariadicArg;
@@ -3265,7 +3291,12 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 		if (pStnodDecl)
 			ExpectEndOfStatement(pParctx, pLex);
 		else
+		{
+			// TBD - parse init statement
+			//CSTNode * pStnodPred = PStnodParseExpression(pParctx, pLex);
+
 			FExpect(pParctx, pLex, TOK(';'));
+		}
 		pStfor->m_iStnodDecl = pStnodFor->IAppendChild(pStnodDecl);
 
 		CSTNode * pStnodPred = PStnodParseExpression(pParctx, pLex);

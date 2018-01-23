@@ -5736,6 +5736,10 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 			if (!EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl, "bad parameter"))
 				continue;
 
+			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
+			if (pStdecl && pStdecl->m_fIsBakedConstant)
+				continue;
+
 			auto pLtype = PLtypeFromPTin(pStnodDecl->m_pTin);
 			if (EWC_FVERIFY(pLtype, "Could not compute LLVM type for parameter"))
 			{
@@ -5866,27 +5870,32 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 		
 		SDIFile * pDif = PDifEnsure(pWork, pBuild, pStnod->m_lexloc.m_strFilename);
 
-		LLVMValueRef * ppLvalParam = appLvalParams;
+		int ipLvalParam = 0;
 		for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
 		{
 			CSTNode * pStnodParam = pStnodParamList->PStnodChild(ipStnodParam);
 			if (pStnodParam->m_park == PARK_VariadicArg)
 				continue;
+	
+			CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodParam->m_pStmap);
+			if (pStdecl && pStdecl->m_fIsBakedConstant)
+				continue; 
 
-			EWC_ASSERT((ppLvalParam - appLvalParams) < cpLvalParams, "parameter count mismatch");
+			EWC_ASSERT(ipLvalParam < cpLvalParams, "parameter count mismatch");
 
 			if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 			{
+				LLVMValueRef  pLvalParam = appLvalParams[ipLvalParam];
 				auto strArgName = StrPunyEncode(pStnodParam->m_pSym->m_strName.PCoz());
-				LLVMSetValueName(*ppLvalParam, strArgName.PCoz());
+				LLVMSetValueName(pLvalParam, strArgName.PCoz());
 
 				CIRArgument * pArg = EWC_NEW(pAlloc, CIRArgument) CIRArgument();
-				pArg->m_pLval = *ppLvalParam;
+				pArg->m_pLval = pLvalParam;
 				pBuild->AddManagedVal(pArg);
 
 				if (!pStproc->m_fIsForeign)
 				{
-					auto pInstAlloca = pBuild->PInstCreateAlloca(arypLtype[ipStnodParam], 1, strArgName.PCoz());
+					auto pInstAlloca = pBuild->PInstCreateAlloca(arypLtype[ipLvalParam], 1, strArgName.PCoz());
 					pStnodParam->m_pSym->m_pVal = pInstAlloca;
 
 					s32 iLine;
@@ -5899,7 +5908,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 											pBuild->m_pDib,
 											pProc->m_pLvalDIFunction, 
 											strArgName.PCoz(),
-											ipStnodParam + 1,
+											ipLvalParam + 1,
 											pDif->m_pLvalFile,
 											iLine,
 											pStnodParam->m_pTin->m_pLvalDIType,
@@ -5918,7 +5927,7 @@ CIRProcedure * PProcCodegenPrototype(CWorkspace * pWork, CIRBuilder * pBuild, CS
 					(void)pBuild->PInstCreateStore(pStnodParam->m_pSym->m_pVal, pArg);
 				}
 			}
-			++ppLvalParam;
+			++ipLvalParam;
 		}
 
 		pAlloc->EWC_FREE(appLvalParams);
