@@ -6012,7 +6012,7 @@ void CodeGenEntryPoint(
 			}
 		}
 
-		if (!arypStnodUnitTest.FIsEmpty())
+		if (!arypStnodUnitTest.FIsEmpty() && !pProcImplicit)
 		{
 			pProcImplicit = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 

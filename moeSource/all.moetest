@@ -899,6 +899,62 @@ test GenericPatternMatch
 		?var("twoInts proc (a: int, b: int) {}") + ?pat("(x: $T,y: T)->void"?errid(2006)) + ?arg("2"?errid(2016)),
 	}
 
+test MultipleGenericProcInstance
+	prereq "SomeProc proc (n: $T)->T { return n}"
+	input "SomeProc(?argB); SomeProc(?argA)"
+	parse "(procCall SomeProc ?argB) (procCall SomeProc ?argA)"
+	typecheck "(?typeB SomeProc(?typeB)->?typeB ?littypeB) (?typeA SomeProc(?typeA)->?typeA ?littypeA) (SomeProc(?typeA)->?typeA SomeProc (Params (?typeA n (?typeA T))) ?typeA ({} (?typeA ?typeA)))?secondInst"
+	{
+		?argA(22) + ?argB(22) + ?typeA(int) + ?typeB(int) + ?littypeA(Literal:Int64) + ?littypeB(Literal:Int64) + ?secondInst(""),
+
+		// this is a crap test as the instantiated entry nodes can print in either order
+		//  we should sort entries by lexloc before printing
+		?argA(22) + ?argB(true) + ?typeA(int) + ?typeB(bool) + ?littypeA(Literal:Int64) + ?littypeB(Literal:Bool8) + ?secondInst(" (SomeProc(?typeB)->?typeB SomeProc (Params (?typeB n (?typeB T))) ?typeB ({} (bool ?typeB)))"),
+	}
+
+test ConstantArgBakeDecl
+	input "SomeProc proc ($BAKE: ?type) {}"
+	parse "(func SomeProc (params (decl BAKE ?type)) void ({} (return)))"
+	typecheck "(SomeProc(?type)->void SomeProc (Params (?type BAKE ?type)) void ({} (return)))"
+	{
+		?type(int|s8|float|bool)
+	}
+
+test ConstantArgBake
+	input "SomeProc proc ($BAKE: ?type)->?type { return BAKE } SomeProc(?lit)"
+	parse "(func SomeProc (params (decl BAKE ?type)) ?type ({} (return BAKE))) (procCall SomeProc ?plit)"
+	typecheck "(SomeProc(?type)->?type SomeProc (Params (?type BAKE ?type)) ?type ({} (return BAKE))) (?type SomeProc()->?type) (SomeProc()->?type SomeProc (Params) ?type ({} (?type ?littype)))"
+	{
+		?type(int) + ?lit(2) + ?plit("?lit") + ?littype(Literal:Int64),
+		?type(s8) + ?lit(2) + ?plit("?lit") + ?littype(Literal:Int8),
+		?type(u32) + ?lit(2) + ?plit("?lit") + ?littype(Literal:Int32),
+		?type(u32) + ?lit("2+3") + ?plit("(+ 2 3)") + ?littype("(Literal:Int32 Literal:Int Literal:Int)"),
+		?type(float) + ?lit("2.2") + ?plit("2.200000") + ?littype(Literal:Float32),
+		?type(bool) + ?lit(true|false) + ?plit("?lit") + ?littype(Literal:Bool8)
+	}
+
+test BakedConstantGenericType
+	input "SomeProc proc ($BAKE: $T)->T { return BAKE} SomeProc(?arg)"
+	parse "(func SomeProc (params (decl BAKE (gendecl T))) T ({} (return BAKE))) (procCall SomeProc ?parg)"
+	typecheck "(SomeProc($T)->$T SomeProc (Params ($T BAKE ($T T))) $T ({} (return BAKE))) (?type SomeProc()->?type) (SomeProc()->?type SomeProc (Params) ?type ({} (?type ?littype)))"
+	{
+		?arg(2) + ?parg("?arg") + ?type(int) + ?littype(Literal:Int64),
+		?arg(true|false) + ?parg("?arg") + ?type(bool) + ?littype(Literal:Bool8),
+		?arg(2.2) + ?parg(2.200000) + ?type(float) + ?littype(Literal:Float32),
+		?arg('z') + ?parg(122) + ?type(char) + ?littype(Literal:Int32),
+		?arg("\"string\"") + ?parg("?arg") + ?type(&const.u8) + ?littype(Literal:String),
+	}
+
+test MultipleBakeConstantInstance
+	prereq "SomeProc proc ($BAKE: int)->int { return BAKE}"
+	input "SomeProc(?argA); SomeProc(?argB)"
+	parse "(procCall SomeProc ?argA) (procCall SomeProc ?argB)"
+	typecheck "(int SomeProc()->int) (int SomeProc()->int) (SomeProc()->int SomeProc (Params) int ({} (int Literal:Int64)))?secondInst"
+	{
+		?argA(22) + ?argB(22) + ?secondInst(""),
+		?argA(22) + ?argB(33) + ?secondInst(" (SomeProc()->int SomeProc (Params) int ({} (int Literal:Int64)))"),
+	}
+
 // Strings:
 test StringLiteral
 	input "pChz ?decl \"hello\""

@@ -113,9 +113,9 @@ struct SUnitTest // tag = utest
 								pAlloc->EWC_FREE(m_pCozParse);
 								pAlloc->EWC_FREE(m_pCozTypeCheck);
 								m_pCozPrereq = nullptr;
-								m_pCozPrereq = nullptr;
-								m_pCozPrereq = nullptr;
-								m_pCozPrereq = nullptr;
+								m_pCozInput = nullptr;
+								m_pCozParse = nullptr;
+								m_pCozTypeCheck = nullptr;
 
 								auto ppPermEnd = m_arypPerm.PMac();
 								for (auto ppPerm = m_arypPerm.A(); ppPerm != ppPermEnd; ++ppPerm)

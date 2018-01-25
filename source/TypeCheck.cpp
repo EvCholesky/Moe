@@ -83,13 +83,7 @@ struct SInstantiateRequest // tag = insreq
 								{
 									if (m_pGenmap)
 									{
-										auto ppStnodPMac = m_pGenmap->m_aryPStnodManaged.PMac();
-										for (auto ppStnod = m_pGenmap->m_aryPStnodManaged.A(); ppStnod != ppStnodPMac; ++ppStnod)
-										{
-											pAlloc->EWC_DELETE(*ppStnod);
-										}
-										m_pGenmap->m_aryPStnodManaged.Clear();
-
+										m_pGenmap->Cleanup(pAlloc);
 										pAlloc->EWC_DELETE(m_pGenmap);
 										m_pGenmap = nullptr;
 									}
@@ -123,7 +117,6 @@ struct STypeCheckWorkspace // tag = tcwork
 							for (auto pInsreq = m_aryInsreq.A(); pInsreq != m_aryInsreq.PMac(); ++pInsreq)
 							{
 								pInsreq->Cleanup(m_pAlloc);
-
 							}
 
 							for (auto ppInsctx = m_arypInsctxManaged.A(); ppInsctx != m_arypInsctxManaged.PMac(); ++ppInsctx)
@@ -3937,6 +3930,76 @@ SInstantiateContext * PInsctxNew(STypeCheckWorkspace * pTcwork)
 	return pInsctx;
 }
 
+bool FLiteralsAreSame(CSTNode * pStnodA, CSTNode * pStnodB)
+{
+	CSTValue * pStvalA = pStnodA->m_pStval;
+	CSTValue * pStvalB = pStnodB->m_pStval;
+	STypeInfoLiteral * pTinlitA = (STypeInfoLiteral *)pStnodA->m_pTin;
+	STypeInfoLiteral * pTinlitB = (STypeInfoLiteral *)pStnodB->m_pTin;
+
+	if (pTinlitA->m_litty.m_litk != pTinlitB->m_litty.m_litk)
+		return false;
+
+	switch (pTinlitA->m_litty.m_litk)
+	{
+	case LITK_Integer:
+		{
+			if ((pTinlitA->m_litty.m_cBit != pTinlitB->m_litty.m_cBit) | 
+				(pTinlitA->m_litty.m_fIsSigned != pTinlitB->m_litty.m_fIsSigned))
+				return false;
+		
+			return pStvalA->m_nUnsigned == pStvalB->m_nUnsigned;
+		}
+	case LITK_Float:
+		{
+			if (pTinlitA->m_litty.m_cBit != pTinlitB->m_litty.m_cBit)
+				return false;
+
+			return pStvalA->m_g == pStvalB->m_g;
+		}
+	case LITK_Char:
+			return pStvalA->m_nUnsigned == pStvalB->m_nUnsigned;
+	case LITK_String:
+			return pStvalA->m_str == pStvalB->m_str;
+	case LITK_Bool:
+		return pStvalA->m_nUnsigned == pStvalB->m_nUnsigned;
+	case LITK_Null:
+		return true;
+	case LITK_Enum:
+		{
+			if (pTinlitA->m_pTinSource != pTinlitB->m_pTinSource)
+				return false;
+
+			return pStvalA->m_nUnsigned == pStvalB->m_nUnsigned;
+		}
+	case LITK_Array:
+		{
+			CSTDecl * pStdeclA = PStmapRtiCast<CSTDecl *>(pStnodA->m_pStmap);
+			CSTDecl * pStdeclB = PStmapRtiCast<CSTDecl *>(pStnodB->m_pStmap);
+			if (!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "array literal with no values") ||
+				!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "array literal with no values"))
+			{
+				return false;
+			}
+
+			auto pStnodListA = pStnodA->PStnodChild(pStdeclA->m_iStnodInit);
+			auto pStnodListB = pStnodB->PStnodChild(pStdeclB->m_iStnodInit);
+
+			if (pStnodListA->CStnodChild() != pStnodListB->CStnodChild())
+				return false;
+
+			for (int ipStnod = 0; ipStnod < pStnodListA->CStnodChild(); ++ipStnod)
+			{
+				if (!FLiteralsAreSame(pStnodListA->PStnodChild(ipStnod), pStnodListB->PStnodChild(ipStnod)))
+					return false;
+			}
+
+			return true;
+		}
+	}
+	return false;
+}
+
 bool FBakvalAreSame(SBakeValue * pBakvalA, SBakeValue * pBakvalB)
 {
 	if (pBakvalA->m_pTin != nullptr)
@@ -3945,12 +4008,23 @@ bool FBakvalAreSame(SBakeValue * pBakvalA, SBakeValue * pBakvalB)
 			return false;
 	}
 
-	if (pBakvalA->m_pStnod != nullptr)
+	auto pStnodA = pBakvalA->m_pStnod;
+	if (pStnodA != nullptr)
 	{
-		if (pBakvalB->m_pStnod == nullptr)
+		auto pStnodB = pBakvalB->m_pStnod;
+		if (pStnodB == nullptr)
 			return false;
 
-		EWC_ASSERT(false, "TBD! need code to check if the constant value of two syntax trees is equal");
+		//check if the constant value of two syntax trees are equal
+		bool fIsLiteralA = pStnodA->m_pTin && pStnodA->m_pTin->m_tink == TINK_Literal;
+		bool fIsLiteralB = pStnodB->m_pTin && pStnodB->m_pTin->m_tink == TINK_Literal;
+		
+		if (fIsLiteralA != fIsLiteralB)
+			return false;
+		if (fIsLiteralA)
+		{
+			return FLiteralsAreSame(pStnodA, pStnodB);
+		}
 	}
 
 	return true;
@@ -3962,13 +4036,13 @@ SInstantiateRequest * PInsreqLookup(
 	SGenericMap * pGenmap,
 	SInstantiateContext * pInsctx)
 {
+	auto pmpPSymBakvalRemappedArg = &pGenmap->m_mpPSymBakval;
 	for (SInstantiateRequest * pInsreq = pTcwork->m_aryInsreq.A(); pInsreq != pTcwork->m_aryInsreq.PMac(); ++pInsreq)
 	{
 		if (pInsreq->m_pStnodGeneric != pStnodDefinition)
 			continue;
 
 		auto pmpPSymBakvalRemappedIt = &pInsreq->m_pGenmap->m_mpPSymBakval;
-		auto pmpPSymBakvalRemappedArg = &pGenmap->m_mpPSymBakval;
 		if (pmpPSymBakvalRemappedIt->C() != pmpPSymBakvalRemappedArg->C())
 			continue;
 
@@ -5145,7 +5219,11 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								pInsctxNew->m_lexlocCall = pStnod->m_lexloc;
 
 								auto pInsreq = PInsreqLookup(pTcwork, pSymProc->m_pStnodDefinition, pmparam.m_pPmfit->m_pGenmap, pInsctxNew);
-								if (!pInsreq)
+								if (pInsreq)
+								{
+									pmparam.m_pPmfit->m_pGenmap->Cleanup(pTcwork->m_pAlloc);
+								}
+								else
 								{
 									pInsreq = PInsreqInstantiateGenericProcedure(
 												pTcwork,

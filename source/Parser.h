@@ -597,6 +597,16 @@ struct SGenericMap // tag = genmap
 									EWC_ASSERT(m_aryPStnodManaged.C() == 0, "Generic map stnod list was not cleaned up");
 								}
 
+							void Cleanup(EWC::CAlloc * pAlloc)
+							{
+								auto ppStnodPMac = m_aryPStnodManaged.PMac();
+								for (auto ppStnod = m_aryPStnodManaged.A(); ppStnod != ppStnodPMac; ++ppStnod)
+								{
+									pAlloc->EWC_DELETE(*ppStnod);
+								}
+								m_aryPStnodManaged.Clear();
+							}
+
 	void 					Swap(SGenericMap * pGenmapOther)
 								{ 
 									auto pSymDefinitionTemp = m_pSymDefinition;
