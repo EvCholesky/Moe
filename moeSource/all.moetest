@@ -987,6 +987,16 @@ test ForLoopBasic
 		?cond(true) + ?pcond(true) + ?tccond("Literal:Bool8")
 	}
 
+test ForLoopBasicNoDecl
+	prereq "n:s64 = 2; i: int"
+	input "for ?decl; i < 5; ++i; { --n }"
+	parse "(for ?pdecl(< i 5) (unary[++] i) ({} (unary[--] n)))"
+	typecheck "(for ?tcdecl(bool int Literal:Int64) (int int) ({} (s64 s64)))"
+	{
+		?decl(i=0) + ?pdecl("(= i 0) ") + ?tcdecl("(= int Literal:Int64) "),
+		?decl("") + ?pdecl("") + ?tcdecl(""),
+	}
+
 // Loops:
 
 test WhileLoop

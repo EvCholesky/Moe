@@ -3292,9 +3292,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 			ExpectEndOfStatement(pParctx, pLex);
 		else
 		{
-			// TBD - parse init statement
-			//CSTNode * pStnodPred = PStnodParseExpression(pParctx, pLex);
-
+			pStnodDecl = PStnodParseExpression(pParctx, pLex);
 			FExpect(pParctx, pLex, TOK(';'));
 		}
 		pStfor->m_iStnodDecl = pStnodFor->IAppendChild(pStnodDecl);
