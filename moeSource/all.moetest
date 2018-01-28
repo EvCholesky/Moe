@@ -945,6 +945,32 @@ test BakedConstantGenericType
 		?arg("\"string\"") + ?parg("?arg") + ?type(&const.u8) + ?littype(Literal:String),
 	}
 
+test BakedDefaultArgs
+	input "SomeProc proc ($BAKE: int = ?def) {} SomeProc(?arg)"
+	parse "(func SomeProc (params (decl BAKE int ?pdef)) void ({} (return))) (procCall SomeProc?parg)"
+	typecheck "(SomeProc(int)->void SomeProc (Params (int BAKE int ?tcdef)) void ({} (return))) (void SomeProc()->void) (SomeProc()->void SomeProc (Params) void ({} (void)))"
+	{
+		?def(0|22) + ?pdef("?def") + ?tcdef("Literal:Int") + ?arg("") + ?parg(""),
+		?def(0xFFFF) + ?pdef("65535") + ?tcdef("Literal:Int") + ?arg("") + ?parg(""),
+		?def(-1) + ?pdef("(unary[-] 1)") + ?tcdef("(Literal:Int Literal:Int)") + ?arg("") + ?parg(""),
+
+		?def(0|22) + ?pdef("?def") + ?tcdef("Literal:Int") + ?arg(22) + ?parg(" ?arg"),
+		?def(0xFFFF) + ?pdef("65535") + ?tcdef("Literal:Int") + ?arg(22) + ?parg(" ?arg"),
+		?def(-1) + ?pdef("(unary[-] 1)") + ?tcdef("(Literal:Int Literal:Int)") + ?arg(22) + ?parg(" ?arg")
+	}
+	
+test NamedBakedArgs
+	prereq "SomeProc proc ($BA: int, $BB: bool) {}"
+	input "SomeProc(?args)"
+	parse "(procCall SomeProc ?parg)"
+	typecheck "(void SomeProc()->void) (SomeProc()->void SomeProc (Params) void ({} (void)))"
+	{
+		?args("22, `BB true") + ?parg("22 (` BB true)"),
+		?args("`BA 1, `BB false") + ?parg("(` BA 1) (` BB false)"),
+		?args("`BB false, `BA 123") + ?parg("(` BB false) (` BA 123)"),
+		?args("22, `BA 15"?errid(2014)) + ?parg("22 (` BA 15)"),
+	}
+
 test MultipleBakeConstantInstance
 	prereq "SomeProc proc ($BAKE: int)->int { return BAKE}"
 	input "SomeProc(?argA); SomeProc(?argB)"

@@ -1602,6 +1602,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const
 			ParseArgumentList(pParctx, pLex, pStnodStructInst);
 
 			FExpect(pParctx, pLex, TOK(')'));
+			return pStnodStructInst;
 
 		}
 		else if (pLex->m_tok == TOK('.'))
@@ -4325,6 +4326,8 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 
 CSTNode::~CSTNode()
 {
+	EWC_ASSERT(!m_grfstnod.FIsSet(FSTNOD_AssertOnDelete), "assert on delete flag set");
+
 	CAlloc * pAlloc = m_arypStnodChild.m_pAlloc;
 	EWC_ASSERT(pAlloc, "missing allocator!");
 
@@ -4601,6 +4604,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_Cast:					AppendCoz(pStrbuf, "cast");					return;
 	case PARK_ArgumentLabel:		AppendCoz(pStrbuf, "`"); 					return;
 	case PARK_GenericDecl:			AppendCoz(pStrbuf, "gendecl"); 				return;
+	case PARK_GenericStructInst:	AppendCoz(pStrbuf, "genstruct");			return;
 	case PARK_Error:
 	default:						AppendCoz(pStrbuf, "error");				return;
 	}
