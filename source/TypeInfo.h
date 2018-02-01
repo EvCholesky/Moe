@@ -361,15 +361,17 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 										STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
 										:STypeInfo(strName, strUnique, s_tink)
-										,m_fHasCompileTimeArgs(false)
 										,m_pGlobInit(nullptr)
 										,m_pLvalInitMethod(nullptr)
 										,m_pLtype(nullptr)
 										,m_pStnodStruct(nullptr)
 										,m_aryTypemembField()
+										,m_arypTinGenericParam()
 											{ ; }
 	
-	bool								m_fHasCompileTimeArgs;	// this struct is a non-instanced generic struct
+	bool								FHasGenericParams() const
+											{ return m_arypTinGenericParam.C() > 0; }
+
 	CIRGlobal *							m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
 	LLVMOpaqueValue *					m_pLvalInitMethod;
 	LLVMOpaqueType *					m_pLtype;			// llvm type reference, here to avoid infinite recursion in
@@ -377,6 +379,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 	CSTNode *							m_pStnodStruct;
 	EWC::CAllocAry<STypeStructMember>	m_aryTypemembField;
+	EWC::CAllocAry<STypeInfo *>			m_arypTinGenericParam;
 };
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);

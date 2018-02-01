@@ -2795,20 +2795,12 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					}
 				}
 
-				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
-								cStnodField * sizeof(STypeStructMember);
-				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
-
+				CSTNode * pStnodParameterList = pStnodStruct->PStnodChildSafe(pStstruct->m_iStnodParameterList);
+				size_t cpStnodParam = (pStnodParameterList) ? pStnodParameterList->CStnodChild() : 0;
 				auto pSymtab = pParctx->m_pSymtab;
-				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent, StrUniqueName(pSymtab->m_pUnsetTin, strIdent));
-				pSymtab->AddManagedTin(pTinstruct);
 
+				auto pTinstruct = PTinstructAlloc(pSymtab, strIdent, cStnodField, cpStnodParam);
 				pTinstruct->m_pStnodStruct = pStnodStruct;
-				pTinstruct->m_fHasCompileTimeArgs = (pStstruct->m_iStnodParameterList >= 0);
-				STypeStructMember * aTypememb = (STypeStructMember*)PVAlign(
-																		pB + sizeof(STypeInfoStruct), 
-																		EWC_ALIGN_OF(STypeStructMember));
-				pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cStnodField);
 
 				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
 				{
@@ -4547,6 +4539,24 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 	}
 }
 
+void PrintLiteral(EWC::SStringBuffer * pStrbuf, CSTNode * pStnodLit)
+{
+	if (!EWC_FVERIFY(pStnodLit->m_park == PARK_Literal && pStnodLit->m_pStval, "bad literal in PrintLiteral"))
+		return;
+
+	switch (pStnodLit->m_pStval->m_stvalk)
+	{
+	case STVALK_String:			FormatCoz(pStrbuf, "\"%s\"", pStnodLit->m_pStval->m_str.PCoz());		return;
+	case STVALK_UnsignedInt:	FormatCoz(pStrbuf, "%llu", pStnodLit->m_pStval->m_nUnsigned);			return;
+	case STVALK_SignedInt:		FormatCoz(pStrbuf, "%lld", pStnodLit->m_pStval->m_nSigned);				return;
+	case STVALK_Float:			FormatCoz(pStrbuf, "%f", pStnodLit->m_pStval->m_g);						return;
+	case STVALK_ReservedWord:	FormatCoz(pStrbuf, "%s", PCozFromRword(pStnodLit->m_pStval->m_rword));	return;
+	default:
+		EWC_ASSERT(false, "unknown literal %s", PCozFromTok(pStnodLit->m_tok));
+		return;
+	}
+}
+
 void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 {
 	switch (pStnod->m_park)
@@ -4556,17 +4566,8 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_Nop:					AppendCoz(pStrbuf, "nop");										return;
 	case PARK_Literal:				
 		{
-			switch (pStnod->m_pStval->m_stvalk)
-			{
-			case STVALK_String:			FormatCoz(pStrbuf, "\"%s\"", pStnod->m_pStval->m_str.PCoz());	return;
-			case STVALK_UnsignedInt:	FormatCoz(pStrbuf, "%llu", pStnod->m_pStval->m_nUnsigned);		return;
-			case STVALK_SignedInt:		FormatCoz(pStrbuf, "%lld", pStnod->m_pStval->m_nSigned);		return;
-			case STVALK_Float:			FormatCoz(pStrbuf, "%f", pStnod->m_pStval->m_g);				return;
-			case STVALK_ReservedWord:	FormatCoz(pStrbuf, "%s", PCozFromRword(pStnod->m_pStval->m_rword));		return;
-			default:
-				EWC_ASSERT(false, "unknown literal %s", PCozFromTok(pStnod->m_tok));
-				return;
-			}
+			PrintLiteral(pStrbuf, pStnod);
+			return;
 		}
 	case PARK_AdditiveOp:		    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
 	case PARK_MultiplicativeOp:	    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;

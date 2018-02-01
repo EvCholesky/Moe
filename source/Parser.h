@@ -478,6 +478,7 @@ CSTValue * PStvalExpected(CSTNode * pStnod);
 
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
 void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GRFDBGSTR grfdbgstr = FDBGSTR_None);
+void PrintLiteral(EWC::SStringBuffer * pStrbuf, CSTNode * pStnodList);
 void WriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
 void HideDebugStringForEntries(CWorkspace * pWork, size_t cBHiddenMax);
 
@@ -770,6 +771,7 @@ void			PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab, const SL
 CSymbolTable *	PSymtabPop(CParseContext * pParctx);
 CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
+STypeInfoStruct * PTinstructAlloc(CSymbolTable * pSymtab, EWC::CString strIdent, size_t cField, size_t cGenericParam);
 STypeInfoProcedure * PTinprocAlloc(CSymbolTable * pSymtab, size_t cParam, size_t cReturn, const char * pCozName);
 
 STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab);
