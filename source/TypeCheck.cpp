@@ -3202,7 +3202,7 @@ SGenericMap * PGenmapFromStructParameters(
 		if (FTypesAreSame(pMtin->m_pTinCallDefault, pMtin->m_pTinParam))
 			continue;
 
-		if (FCanImplicitCast(pMtin->m_pTinCall, pMtin->m_pTinParam))
+		if (!FCanImplicitCast(pMtin->m_pTinCall, pMtin->m_pTinParam))
 		{
 			SInstantiateContext insctx;
 			insctx.m_pGenmap = &genmap;

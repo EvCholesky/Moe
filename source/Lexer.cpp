@@ -208,6 +208,9 @@ static int TokParseString(SLexer * pLex, const char * pChz)
 
 	      // @TODO expand unicode escapes to UTF8
 		*pChOut++ = (char) tok;
+
+		if (pChz == pLex->m_pChEof)
+			break;
 	}
 
 	*pChOut = 0;

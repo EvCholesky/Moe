@@ -584,6 +584,11 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 {
 	switch(pLex->m_tok)
 	{
+		case TOK_Generic:
+			{
+				ParseError(pParctx, pLex, "Token '%s' unexpected outside of declaration.", PCozFromTok((TOK)pLex->m_tok));
+				TokNext(pLex);
+			}
 		case TOK_Identifier:
 			{
 				CSTNode * pStnod = PStnodParseIdentifier(pParctx, pLex);
@@ -4387,6 +4392,9 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 		case PARK_Nop:				AppendCoz(pStrbuf, "Nop");		return;
 		case PARK_Uninitializer:	AppendCoz(pStrbuf, "---");		return;
 		case PARK_AssignmentOp:		AppendCoz(pStrbuf, "=");		return;
+		case PARK_ConstantDecl:		AppendCoz(pStrbuf, "constdecl");return;
+		case PARK_Decl:				AppendCoz(pStrbuf, "decl");		return;
+		case PARK_ArrayDecl:		AppendCoz(pStrbuf, "arydecl");	return;
 		default:					AppendCoz(pStrbuf, "unk");		return;
 		}
 	}

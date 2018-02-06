@@ -140,7 +140,7 @@ test BasicAssign
 test MultiDeclare
 	input "a1, a2: ?typeA, b1: ?typeB ?init"
 	parse "(decl (decl a1 ?typeA) (decl a2 ?typeA) (decl b1 ?typeB)?initp)"
-	typecheck "(unk (?typeA a1 ?typeA) (?typeA a2 ?typeA) (?typeB b1 ?typeB)?initp)"
+	typecheck "(decl (?typeA a1 ?typeA) (?typeA a2 ?typeA) (?typeB b1 ?typeB)?initp)"
 	{
 		?typeA(float|bool|int) + ?typeB(float|bool|int)
 		{ 
@@ -523,7 +523,7 @@ test AutoCast
 test Overloading
 	prereq "Ovr proc(a: ?typeA)->?typeA { return a } Ovr proc(b: ?typeB)->?typeB { return b }"
 	input "a: ?typeA, b: ?typeB; Ovr(a); Ovr(b)"
-	typecheck "(unk (?typeA a ?typeA) (?typeB b ?typeBInit)) (?typeA Ovr(?typeA)->?typeA ?typeA) (?typeB Ovr(?typeB)->?typeB ?typeB)"
+	typecheck "(decl (?typeA a ?typeA) (?typeB b ?typeBInit)) (?typeA Ovr(?typeA)->?typeA ?typeA) (?typeB Ovr(?typeB)->?typeB ?typeB)"
 	{
 		?typeA(int|s8) + ?typeB(float|double) + ?typeBInit("?typeB"),
 		?typeA(int|s8|float) + ?typeBRef(int|float) + ?typeB("&?typeBRef") + ?typeBInit("(?typeB ?typeBRef)"),
@@ -979,6 +979,27 @@ test MultipleBakeConstantInstance
 	{
 		?argA(22) + ?argB(22) + ?secondInst(""),
 		?argA(22) + ?argB(33) + ?secondInst(" (SomeProc()->int SomeProc (Params) int ({} (int Literal:Int64)))"),
+	}
+
+// Generic structs
+test StructBakedDef
+	input "SFoo struct ($BAKE: ?type) { ?decl }"
+	parse "(struct SFoo (params (decl BAKE ?type)) ({} (?pdecl)))"
+	typecheck "(SFoo SFoo (Params (?type BAKE ?type)) ({} (?tcdecl)))"
+	{
+		?type(int|s16) + ?decl("kConst :: BAKE") + ?pdecl("const kConst BAKE") + ?tcdecl("constdecl kConst BAKE"),
+		?type(int|s16) + ?decl("m_a: [BAKE] ?type") + ?pdecl("decl m_a ([] BAKE ?type)") + ?tcdecl("decl m_a (arydecl BAKE ?type)"),
+	}
+
+test StructBakedInstance
+	prereq "SFoo struct ($BAKE: ?type) { kConst : ?type : BAKE}"
+	input "foo: SFoo(?args); n := foo.kConst"
+	parse "(decl foo (genstruct SFoo ?args)) (decl n (member foo kConst))"
+	typecheck "(SFoo foo (SFoo SFoo Literal:Int)) (?type n (Literal:?littype SFoo kConst)) (SFoo SFoo (Params Literal:Int) ({} (Literal:?littype kConst ?type Literal:?littype)))"
+	{
+		?type(s64) + ?args(22|12345) + ?littype(Int64),
+		?type(u32) + ?args(22|12345) + ?littype(Int32),
+		?type(s16) + ?args(22|12345) + ?littype(Int16)
 	}
 
 // Strings:
