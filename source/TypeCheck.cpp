@@ -2530,6 +2530,7 @@ bool FIsCompileTimeConstant(STypeInfo * pTin)
 
 inline bool FFillOrderdAndNamedArgs(
 	STypeCheckWorkspace * pTcwork,
+	size_t cArgDefinition,
 	CAry<CSTNode *> * pmpIArgPStnod,
 	CAry<GRFARG> * pmpIArgGrfarg,
 	ERREP errep,
@@ -2540,15 +2541,14 @@ inline bool FFillOrderdAndNamedArgs(
 	const char * pChzOwner,
 	const char * pChzStructOrProc)
 {
-	int cArgDef = (pStnodDefParamList) ? pStnodDefParamList->CStnodChild() : 0;
-	CDynAry<CString> mpIArgStrName(pTcwork->m_pAlloc, BK_TypeCheckProcmatch, cArgDef);
-	mpIArgStrName.AppendFill(cArgDef, "_");
+	CDynAry<CString> mpIArgStrName(pTcwork->m_pAlloc, BK_TypeCheckProcmatch, cArgDefinition);
+	mpIArgStrName.AppendFill(cArgDefinition, "_");
 
 	// Fill out default arguments and build list of names
 	if (pStnodDefParamList)
 	{
-		cArgDef = pStnodDefParamList->CStnodChild();
-		for (int iArg = 0; iArg < cArgDef; ++iArg)
+		int cpStnodParamList = pStnodDefParamList->CStnodChild();
+		for (int iArg = 0; iArg < cpStnodParamList; ++iArg)
 		{
 			CSTNode * pStnodParamDef = pStnodDefParamList->PStnodChildSafe(iArg);
 			if (!pStnodParamDef)
@@ -2627,7 +2627,7 @@ inline bool FFillOrderdAndNamedArgs(
 		(*pmpIArgGrfarg)[iArgDest] = grfarg;
 	}
 
-	for (int iArg = 0; iArg < cArgDef; ++iArg)
+	for (int iArg = 0; iArg < cArgDefinition; ++iArg)
 	{
 		if ((*pmpIArgPStnod)[iArg] != nullptr)
 			continue;
@@ -3085,6 +3085,7 @@ SGenericMap * PGenmapFromStructParameters(
 
 	if (!FFillOrderdAndNamedArgs(
 		pTcwork,
+		cParam,
 		&mpIArgPStnod,
 		&mpIArgGrfarg,
 		ERREP_ReportErrors,
@@ -4230,6 +4231,7 @@ PROCMATCH ProcmatchCheckArguments(
 	mpIArgGrfarg.AppendFill(cArg, FARG_None);
 	if (!FFillOrderdAndNamedArgs(
 		pTcwork,
+		cArgTinproc,
 		&mpIArgPStnod,
 		&mpIArgGrfarg,
 		errep,

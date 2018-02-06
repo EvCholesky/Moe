@@ -52,13 +52,13 @@ DIR enum u8
 
 FDIR enum u8
 {
-	Left: 	0x1,
-	Up:		0x2,
-	Right:	0x4,
-	Down:	0x8,
+	Left 	:= 0x1,
+	Up 		:= 0x2,
+	Right 	:= 0x4,
+	Down 	:= 0x8,
 
-	none:	0x0,
-	all: 	0xF,
+	none 	:= 0x0,
+	all 	:= 0xF,
 }
 
 GRFDIR typedef FDIR.loose

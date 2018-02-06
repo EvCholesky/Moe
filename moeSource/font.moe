@@ -41,10 +41,10 @@ ALIGNK enum
 	Center,
 	SideMin,
 	SideMax,
-	Left:		SideMin,
-	Bottom:		SideMin,
-	Right:		SideMax,
-	Top:		SideMax,
+	Left 		:= SideMin,
+	Bottom		:= SideMin,
+	Right		:= SideMax,
+	Top			:= SideMax,
 }
 
 SFontData struct // tag = fontd

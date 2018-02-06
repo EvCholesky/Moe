@@ -335,7 +335,7 @@ test StructMemberPointer
 // Enumerations:
 
 test EnumDecl
-	input "ENUMK enum ?loose { Ick : 1, Foo, Bah : 3 }"
+	input "ENUMK enum ?loose { Ick := 1, Foo, Bah := 3 }"
 	parse "(enum ENUMK ?loose({} (enumConst nil) (enumConst min) (enumConst last) (enumConst max) (arrayLit names) (arrayLit values) (enumConst Ick 1) (enumConst Foo) (enumConst Bah 3)))"
 	typecheck "(ENUMK_enum ENUMK ?loose({} (ENUMK_enum Literal:Enum nil) (ENUMK_enum Literal:Enum min) (ENUMK_enum Literal:Enum last) (ENUMK_enum Literal:Enum max) (Literal:Array names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array values (Literal:Array Literal:?litk Literal:?litk Literal:?litk)) (ENUMK_enum Literal:Enum Ick Literal:Int) (ENUMK_enum Literal:Enum Foo) (ENUMK_enum Literal:Enum Bah Literal:Int)))"
 	{
@@ -345,7 +345,7 @@ test EnumDecl
 	}
 
 test EnumSubtypes
-	prereq "ENUMK enum ?loose { Ick : 1, Foo, Bah : 3 }"
+	prereq "ENUMK enum ?loose { Ick := 1, Foo, Bah := 3 }"
 	input "t: ENUMK.?subtype"
 	parse "(decl t (member ENUMK ?subtype))"
 	typecheck "(?tctype t (?tctype ENUMK_enum ?tctype))"
@@ -364,14 +364,14 @@ test EnumSubtypes
 	}
 
 test EnumBadInit
-	input "ENUMK enum ?loose { Ick : 1, Foo, Bah : ?init }"
+	input "ENUMK enum ?loose { Ick := 1, Foo, Bah := ?init }"
 	{
 		?loose(u8) + ?init(300?errid(2001)),
 		?loose(u64) + ?init(-3?errid(2001)),
 	}
 
 test EnumImplicitMembers
-	prereq "ENUMK enum ?loose { Ick : 1, Foo, Bah : 3 }"
+	prereq "ENUMK enum ?loose { Ick := 1, Foo, Bah := 3 }"
 	input "t := ENUMK.?memb?extra"
 	parse "(decl t (member ?pmemb))"	
 	typecheck "(?tctype t (?tcinit))"
@@ -674,9 +674,9 @@ test ProcForeign
 	typecheck "(ForeignFunc()->int ForeignFunc int) (int ForeignFunc()->int)"
 
 test ProcVararg
-	input "VarArgs proc (?args..) ?ret #foreign"
-	parse "(func VarArgs (params ?pargs(..)) void)"
-	typecheck "(VarArgs(?argtype..)->void VarArgs (Params ?tcargs(..)) void)"
+	input "VarArgs proc (?args..) ?ret #foreign; VarArgs(22, 1)"
+	parse "(func VarArgs (params ?pargs(..)) void) (procCall VarArgs 22 1)"
+	typecheck "(VarArgs(?argtype..)->void VarArgs (Params ?tcargs(..)) void) (void VarArgs(?argtype..)->void Literal:Int64 Literal:Int64)"
 	{
 		?args("") + ?pargs("") + ?argtype("") + ?tcargs("") + ?ret(""|"-> void"),
 		?args("a: int, ") + ?argtype("int, ") + ?pargs("(decl a int) ") + ?tcargs("(int a int) ") + ?ret(""|"-> void"),

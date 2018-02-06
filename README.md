@@ -137,8 +137,8 @@ IntPointer typedef & s32;
 ```
 SOMEENUM enum
 {
-    Ack : 0,
-    Bah : Ack+1,
+    Ack := 0,
+    Bah := Ack+1,
     Ugh,  
 }
 ```

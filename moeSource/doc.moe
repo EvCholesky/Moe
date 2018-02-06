@@ -60,7 +60,7 @@ PILLCOL enum u8
 	Blue,
 	Yellow,
 	MaxPills,
-	Green : MaxPills,	// extra color to allow for four player backgrounds
+	Green 		:= MaxPills,	// extra color to allow for four player backgrounds
 }
 
 PILLSPEED enum u8
@@ -141,12 +141,12 @@ GAMRES enum // GAMe RESult
 {
 	Pending,
 	WinMin,
-	WinClearedAll: WinMin,
+	WinClearedAll		:= WinMin,
 	WinLastStanding,
 	WinMax,
 
-	LoseMin: WinMax,
-	LoseOverflow: LoseMin,
+	LoseMin				:= WinMax,
+	LoseOverflow		:= LoseMin,
 	LoseTooSlow,
 	LoseMax,
 }
@@ -162,7 +162,7 @@ PLAYS enum s8 // PLAYer State
 
 FPLAY enum u8
 {
-	Autokill: 0x1,		// pills are killed as soon as they stabilize, used to test n players. Can't win, can't spawn garbage.
+	Autokill		:= 0x1,		// pills are killed as soon as they stabilize, used to test n players. Can't win, can't spawn garbage.
 }
 
 GAMS enum s8 // GAMe State

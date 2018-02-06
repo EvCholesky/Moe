@@ -2118,7 +2118,7 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SLexer * pLex)
 	pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConstant, FSYM_VisibleWhenNested);
 	pStnodConstant->m_pSym = pSym;
 
-	if (FConsumeToken(pLex, TOK(':')))
+	if (FConsumeToken(pLex, TOK_ColonEqual))
 	{
 		CSTNode * pStnodExp = PStnodParseExpression(pParctx, pLex);
 		if (pStnodExp)

@@ -412,11 +412,11 @@ TestEnums proc ()
 
 	ENUMK enum int
 	{
-		Ack : 0,
-		Bah : Ack+1,
+		Ack 		:= 0,
+		Bah 		:= Ack+1,
 		Ugh,	
-		Guh : Bah + Ugh,
-		Four : SLater.ConstFour,
+		Guh 		:= Bah + Ugh,
+		Four 		:= SLater.ConstFour,
 		Final
 	}
 
@@ -1044,7 +1044,7 @@ SLater struct
 
 	MEMB enum
 	{
-		One : 1,
+		One 	:= 1,
 		Two,
 		Three
 	}
