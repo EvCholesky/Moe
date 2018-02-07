@@ -102,6 +102,7 @@ struct SUnitTest // tag = utest
 							,m_pCozInput(nullptr)
 							,m_pCozParse(nullptr)
 							,m_pCozTypeCheck(nullptr)
+							,m_pCozValues(nullptr)
 							,m_utestk(UTESTK_Permute)
 							,m_arypPerm(pAlloc, BK_UnitTest)
 								{ ; }
@@ -112,10 +113,12 @@ struct SUnitTest // tag = utest
 								pAlloc->EWC_FREE(m_pCozInput);
 								pAlloc->EWC_FREE(m_pCozParse);
 								pAlloc->EWC_FREE(m_pCozTypeCheck);
+								pAlloc->EWC_FREE(m_pCozValues);
 								m_pCozPrereq = nullptr;
 								m_pCozInput = nullptr;
 								m_pCozParse = nullptr;
 								m_pCozTypeCheck = nullptr;
+								m_pCozValues = nullptr;
 
 								auto ppPermEnd = m_arypPerm.PMac();
 								for (auto ppPerm = m_arypPerm.A(); ppPerm != ppPermEnd; ++ppPerm)
@@ -130,6 +133,7 @@ struct SUnitTest // tag = utest
 	char *					m_pCozInput;
 	char *					m_pCozParse;
 	char *					m_pCozTypeCheck;
+	char *					m_pCozValues;
 	UTESTK					m_utestk;
 
 	CDynAry<SPermutation *>	m_arypPerm;
@@ -623,6 +627,10 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 		{
 			pUtest->m_pCozTypeCheck = PCozExpectString(pTesctx, pLex);
 		}
+		else if (FConsumeIdentifier(pTesctx, pLex, "values"))
+		{
+			pUtest->m_pCozValues = PCozExpectString(pTesctx, pLex);
+		}
 		else if (pLex->m_tok == TOK('{'))
 		{
 			ParsePermuteString(pTesctx, pLex, pUtest);
@@ -643,7 +651,7 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 
 	if (pUtest->m_utestk != UTESTK_Permute)
 	{
-		if (pUtest->m_pCozPrereq || pUtest->m_pCozInput || pUtest->m_pCozParse || pUtest->m_pCozTypeCheck || pUtest->m_arypPerm.C())
+		if (pUtest->m_pCozPrereq || pUtest->m_pCozInput || pUtest->m_pCozParse || pUtest->m_pCozTypeCheck || pUtest->m_pCozValues || pUtest->m_arypPerm.C())
 		{
 			ParseError(pTesctx, pLex, "permute string test is not allowed for test %s", pUtest->m_strName.PCoz());
 		}
@@ -748,6 +756,7 @@ TESTRES TestresRunUnitTest(
 	const char * pCozIn,
 	const char * pCozParseExpected,
 	const char * pCozTypeCheckExpected,
+	const char * pCozValuesExpected,
 	CDynAry<SErrorCount> * paryErrcExpected)
 {
 	//if (pCozPrereq && pCozPrereq[0] != '\0')
@@ -876,6 +885,19 @@ TESTRES TestresRunUnitTest(
 			}
 			work.m_pAlloc->EWC_DELETE(aChExpected);
 		}
+
+		if (!fHasExpectedErr && testres == TESTRES_Success && !FIsEmptyString(pCozValuesExpected))
+		{
+			WriteDebugStringForEntries(&work, pCh, pChMax, FDBGSTR_Values);
+
+			if (!FAreCozEqual(aCh, pCozValuesExpected))
+			{
+				// print error location
+				printf("VALUE CHECK ERROR during test for '%s'\n", pUtest->m_strName.PCoz());
+				PrintTestError(pCozIn, aCh, pCozValuesExpected);
+				testres = TESTRES_TypeCheckMismatch;
+			}
+		}
 	}
 
 	if (testres == TESTRES_Success)
@@ -971,8 +993,9 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 				auto pCozInput = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozInput, pTesctx->m_arySubStack);
 				auto pCozParse = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozParse, pTesctx->m_arySubStack);
 				auto pCozTypeCheck = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozTypeCheck, pTesctx->m_arySubStack);
+				auto pCozValues = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozValues, pTesctx->m_arySubStack);
 
-				if (!pCozInput || !pCozParse || !pCozTypeCheck)
+				if (!pCozInput || !pCozParse || !pCozTypeCheck || !pCozValues)
 				{
 					printf("... skipping test due to errors\n");
 					++pTesctx->m_mpTestresCResults[TESTRES_UnitTestFailure];
@@ -980,7 +1003,15 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 				else
 				{
 					TESTRES testres = TESTRES_UnitTestFailure;
-					testres = TestresRunUnitTest(pTesctx->m_pWork, pUtest, pCozPrereq, pCozInput, pCozParse, pCozTypeCheck, &aryErrcExpected);
+					testres = TestresRunUnitTest(
+								pTesctx->m_pWork,
+								pUtest,
+								pCozPrereq,
+								pCozInput,
+								pCozParse,
+								pCozTypeCheck,
+								pCozValues,
+								&aryErrcExpected);
 					++pTesctx->m_mpTestresCResults[testres];
 				}
 
@@ -988,6 +1019,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 				if (pCozInput) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozInput);
 				if (pCozParse) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozParse);
 				if (pCozTypeCheck) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozTypeCheck);
+				if (pCozValues) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozValues);
 			}
 		}
 
@@ -1164,7 +1196,15 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 		{
 			// no permutations, just test it as is.
 			TESTRES testres = TESTRES_UnitTestFailure;
-			testres = TestresRunUnitTest(tesctx.m_pWork, pUtest, pUtest->m_pCozPrereq, pUtest->m_pCozInput, pUtest->m_pCozParse, pUtest->m_pCozTypeCheck, nullptr);
+			testres = TestresRunUnitTest(
+						tesctx.m_pWork, 
+						pUtest, 
+						pUtest->m_pCozPrereq,
+						pUtest->m_pCozInput,
+						pUtest->m_pCozParse,
+						pUtest->m_pCozTypeCheck,
+						pUtest->m_pCozValues,
+						nullptr);
 			++tesctx.m_mpTestresCResults[testres];
 			continue;
 		}

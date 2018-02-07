@@ -4565,6 +4565,65 @@ void PrintLiteral(EWC::SStringBuffer * pStrbuf, CSTNode * pStnodLit)
 	}
 }
 
+void PrintStval(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
+{
+	if (!pStnod->m_pStval)
+	{
+		AppendCoz(pStrbuf, "novalue");
+		return;
+	}
+
+	auto pStval = pStnod->m_pStval;
+	auto  pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnod->m_pTin);
+	auto stvalk = pStval->m_stvalk;
+	if (pTinlit)
+	{
+		switch (pTinlit->m_litty.m_litk)
+		{
+			case LITK_Char:		// fallthrough
+			case LITK_Enum:		// fallthrough
+			case LITK_Integer:	stvalk = (pTinlit->m_litty.m_fIsSigned) ? STVALK_SignedInt : STVALK_UnsignedInt;	break;
+			case LITK_Float:	stvalk = STVALK_Float;																break;
+			case LITK_String:	stvalk = STVALK_String;																break;
+			case LITK_Bool:		FormatCoz(pStrbuf, "%s", (pStval->m_nUnsigned == 0) ? "true" : "false");			return;
+			case LITK_Null:		AppendCoz(pStrbuf, "null");															return;
+			case LITK_Array:
+				{
+					AppendCoz(pStrbuf, "(");
+
+					auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
+					if (!EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "array literal with no values"))
+						break;
+
+					auto pStnodList = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+					for (int ipStnod = 0; ipStnod < pStnodList->CStnodChild(); ++ipStnod)
+					{
+						PrintStval(pStrbuf, pStnodList->PStnodChild(ipStnod));
+						if (ipStnod + 1 < pStnodList->CStnodChild())
+						{
+							AppendCoz(pStrbuf, ", ");
+						}
+					}
+
+					AppendCoz(pStrbuf, ")");
+				} break;
+		}
+	}
+
+	switch (stvalk)
+	{
+	case STVALK_Float:			FormatCoz(pStrbuf, "%f", pStval->m_g);												return;
+	case STVALK_SignedInt:
+		FormatCoz(pStrbuf, "%lld", pStval->m_nSigned);
+		return;
+	case STVALK_UnsignedInt:
+		FormatCoz(pStrbuf, "%llu", pStval->m_nUnsigned);
+		return;
+	case STVALK_String:			FormatCoz(pStrbuf, "'%s'", pStval->m_str.PCoz());									return;
+	case STVALK_ReservedWord:	FormatCoz(pStrbuf, "%s", PCozFromRword(pStval->m_rword));							return;
+	}
+}
+
 void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 {
 	switch (pStnod->m_park)
@@ -4644,6 +4703,26 @@ void PrintStnod(SStringBuffer * pStrbuf, CSTNode * pStnod, GRFDBGSTR grfdbgstr)
 			PrintTypeInfo(pStrbuf, pStnod->m_pTin, pStnod->m_park, grfdbgstr);
 		}
 		grfdbgstr.Clear(FDBGSTR_Type);
+	}
+
+	if (grfdbgstr.FIsSet(FDBGSTR_Values))
+	{
+		if (pStnod->m_pStval)
+		{
+			PrintStval(pStrbuf, pStnod);
+		}
+		else
+		{
+			if (pStnod->m_park == PARK_Identifier || pStnod->m_park == PARK_ReservedWord)
+			{
+				PrintStnodName(pStrbuf, pStnod);
+			}
+			else
+			{
+				AppendCoz(pStrbuf, "_");
+			}
+		}
+		grfdbgstr.Clear(FDBGSTR_Values);
 	}
 
 	if (grfdbgstr.FIsSet(FDBGSTR_LiteralSize))

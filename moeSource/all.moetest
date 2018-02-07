@@ -338,10 +338,10 @@ test EnumDecl
 	input "ENUMK enum ?loose { Ick := 1, Foo, Bah := 3 }"
 	parse "(enum ENUMK ?loose({} (enumConst nil) (enumConst min) (enumConst last) (enumConst max) (arrayLit names) (arrayLit values) (enumConst Ick 1) (enumConst Foo) (enumConst Bah 3)))"
 	typecheck "(ENUMK_enum ENUMK ?loose({} (ENUMK_enum Literal:Enum nil) (ENUMK_enum Literal:Enum min) (ENUMK_enum Literal:Enum last) (ENUMK_enum Literal:Enum max) (Literal:Array names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array values (Literal:Array Literal:?litk Literal:?litk Literal:?litk)) (ENUMK_enum Literal:Enum Ick Literal:Int) (ENUMK_enum Literal:Enum Foo) (ENUMK_enum Literal:Enum Bah Literal:Int)))"
+	values "(_ ENUMK ?loose(_ (?nil nil) (1 min) (3 last) (4 max) (_ names (_ 'Ick' 'Foo' 'Bah')) (_ values (_ 1 2 3)) (1 Ick 1) (2 Foo) (3 Bah 3)))"
 	{
-		?loose("") + ?litk("Int8"),
-		?loose("s32 ") + ?litk("Int32"),
-		?loose("s8 ") + ?litk("Int8"),
+		?loose("") + ?litk("Int8") + ?nil(-1),
+		?loose("s8 ") + ?litk("Int8") + ?nil(-1),
 	}
 
 test EnumSubtypes
@@ -350,7 +350,7 @@ test EnumSubtypes
 	parse "(decl t (member ENUMK ?subtype))"
 	typecheck "(?tctype t (?tctype ENUMK_enum ?tctype))"
 	{
-		?loose("") + ?ltype(u8)
+		?loose("") + ?ltype(s8)
 		{
 			?subtype(loose) + ?tctype("?ltype"),
 			?subtype(strict) + ?tctype(ENUMK_enum),
@@ -487,6 +487,7 @@ test ArrayLiteralConst
 	input "aN :: {?tspec 1, 2, 3}"
 	parse "(const aN (arrayLit ?elemspec({} 1 2 3)))"
 	typecheck "(Literal:Array aN (Literal:Array ?elemspec({} Literal:Int Literal:Int Literal:Int)))"
+	values "(_ aN (_ ?elemspec(_ 1 2 3)))"
 	{
 		?elemtype(int|s8) + ?lit("Int")
 		{

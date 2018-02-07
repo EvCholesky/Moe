@@ -1088,11 +1088,13 @@ STypeInfo * PTinFromBint(
 {
 	if (!bint.m_fIsNegative)
 	{
-		s64 nUnsigned = bint.U64Coerce();
-		if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
-		if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
-		if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin("u32");
-		return pSymtab->PTinBuiltin("u64");
+		u64 nUnsigned = bint.U64Coerce();
+		//if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
+		//if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
+		//if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin("u32");
+	
+		if (nUnsigned >  LLONG_MAX)
+			return pSymtab->PTinBuiltin("u64");
 	}
 	
 	s64 nSigned = bint.S64Coerce();
