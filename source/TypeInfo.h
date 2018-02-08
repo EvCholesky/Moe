@@ -390,6 +390,12 @@ struct STypeInfoEnumConstant // tag = tinecon
 	SBigInt				m_bintValue;
 };
 
+enum ENUMK
+{
+	ENUMK_Basic,
+	ENUMK_FlagEnum,
+};
+
 struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 {
 	static const TINK s_tink = TINK_Enum;
@@ -397,6 +403,7 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 						STypeInfoEnum(const EWC::CString & strName, const EWC::CString & strUnique)
 						:STypeInfo(strName, strUnique, s_tink)
 						,m_pTinLoose(nullptr)
+						,m_enumk(ENUMK_Basic)
 						,m_bintMin()
 						,m_bintMax()
 						,m_bintLatest()
@@ -404,6 +411,7 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 							{ ; }
 
 	STypeInfo *			m_pTinLoose;
+	ENUMK				m_enumk;
 	SBigInt				m_bintMin;
 	SBigInt				m_bintMax;
 	SBigInt				m_bintLatest;

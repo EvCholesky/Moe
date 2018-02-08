@@ -1089,10 +1089,7 @@ STypeInfo * PTinFromBint(
 	if (!bint.m_fIsNegative)
 	{
 		u64 nUnsigned = bint.U64Coerce();
-		//if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
-		//if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
-		//if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin("u32");
-	
+
 		if (nUnsigned >  LLONG_MAX)
 			return pSymtab->PTinBuiltin("u64");
 	}
@@ -3746,6 +3743,9 @@ bool FVerifyIvalk(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, IVALK ivalkEx
 
 void SetEnumConstantValue(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, const SBigInt & bint)
 {
+	if (!EWC_FVERIFY(pStnod, "expected pStnod for enum constant"))
+		return;
+
 	auto pStval = EWC_NEW(pTcwork->m_pAlloc, CSTValue) CSTValue();
 	if (bint.m_fIsNegative)
 	{
@@ -6032,7 +6032,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					if (pStenum->m_iStnodConstantList >= 0)
 					{
-						pTinenum->m_bintLatest = BintFromInt(-1);  // -1 so initial incremented value is zero
+						// initial incremented value is 1 (flagEnum) or 0 (basic enums) 
+						int nEnumInitial = (pTinenum->m_enumk == ENUMK_FlagEnum) ? 0 : -1;
+						pTinenum->m_bintLatest = BintFromInt(nEnumInitial);
 
 						auto pTcsentPushed = PTcsentPush(pTcfram, &pTcsentTop, pStnod->PStnodChild(pStenum->m_iStnodConstantList));
 						if (pTcsentPushed)
@@ -6047,49 +6049,69 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto pTinstruct = &pTinenum->m_tinstructProduced;
 				EWC_ASSERT(pTinstruct->m_aryTypemembField.C() == 0, "no fields expected in enum struct");
 
-				int cStnodChild = 0;
-				CSTNode ** ppStnodMember = nullptr;
+				CSTNode * mpEnumimpPStnod[ENUMIMP_Max];
+				ZeroAB(mpEnumimpPStnod, sizeof(mpEnumimpPStnod));
+
+				CSTNode * pStnodConstantList = pStnod->PStnodChild(pStenum->m_iStnodConstantList);
+
+				int cStnodChildImplicit = 0;
+				int cStnodChild = pStnodConstantList->CStnodChild();
+				CDynAry<ENUMIMP> mpIStnodChildEnumimp(pTcwork->m_pAlloc, BK_TypeCheck, cStnodChild);
+				mpIStnodChildEnumimp.AppendFill(cStnodChild, ENUMIMP_Nil);
+
 				if (pStenum->m_iStnodConstantList >= 0)
 				{
-					CSTNode * pStnodConstantList = pStnod->PStnodChild(pStenum->m_iStnodConstantList);
-
-					ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
-
-					if (!EWC_FVERIFY(cStnodChild >= ENUMIMP_Max, "missing implicit enum members"))
-						return TCRET_StoppingError;
-
 					// loop over our constants and find the min/max values
-					CSTNode ** ppStnodIt = &ppStnodMember[ENUMIMP_Max];
-					CSTNode ** ppStnodMax = &ppStnodMember[cStnodChild];
+
+					bool fIsFirst = true;
 					SBigInt bintMin;
-					SBigInt bintMax;
-					if (ppStnodIt != ppStnodMax && (*ppStnodIt)->m_pStval)
+					SBigInt bintLast;
+					SBigInt bintAll;
+					for (int ipStnod = 0; ipStnod < pStnodConstantList->CStnodChild(); ++ipStnod)
 					{
-						bintMin = BintFromStval((*ppStnodIt)->m_pStval);
-						bintMax = bintMin;
-						++ppStnodIt;
-					}
-
-					for ( ; ppStnodIt!= ppStnodMax; ++ppStnodIt)
-					{
-						auto pStnodMember = *ppStnodIt;
-						if (EWC_FVERIFY(pStnodMember->m_pStval, "PARK_EnumConstant type check failed to set values"))
+						int enumimp;
+						for (enumimp = ENUMIMP_Min; enumimp < ENUMIMP_Max; ++enumimp)
 						{
-							auto bint = BintFromStval(pStnodMember->m_pStval);
+							if (pStenum->m_mpEnumimpIstnod[enumimp] == ipStnod)
+								break;
+						}
 
+						auto pStnodConstant = pStnodConstantList->PStnodChild(ipStnod);
+						if (enumimp < ENUMIMP_Max)
+						{
+							mpEnumimpPStnod[enumimp] = pStnodConstant;
+							mpIStnodChildEnumimp[ipStnod] = (ENUMIMP)enumimp;
+							++cStnodChildImplicit;
+							continue;
+						}
+						
+						if (!EWC_FVERIFY(pStnodConstant->m_pStval, "PARK_EnumConstant type check failed to set values"))
+							continue;
+
+						auto bint = BintFromStval(pStnodConstant->m_pStval);
+						bintAll = BintBitwiseOr(bintAll, bint);
+						if (fIsFirst)
+						{
+							fIsFirst = false;
+							bintMin = bint;
+							bintLast = bint;
+						}
+						else
+						{
 							if (bint < bintMin)
 								bintMin = bint;
-							if (bint > bintMax)
-								bintMax = bint;
+							if (bint > bintLast)
+								bintLast = bint;
 						}
 					}
 
+					SBigInt bintMax = BintAdd(bintLast, BintFromInt(1));
 					pTinenum->m_bintMin = bintMin;
 					pTinenum->m_bintMax = bintMax;
 
 					if (!pTinenum->m_pTinLoose)
 					{
-						pTinenum->m_pTinLoose = PTinFromRange(pTcwork, pTcsentTop->m_pSymtab, pStnod, bintMin, bintMax);
+						pTinenum->m_pTinLoose = PTinFromRange(pTcwork, pTcsentTop->m_pSymtab, pStnod, bintMin, bintLast);
 					}
 
 					auto pTinLoose = pTinenum->m_pTinLoose;
@@ -6113,10 +6135,18 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 						}
 
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_NilConstant], bintNil);
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MinConstant], bintMin);
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_LastConstant], bintMax);
-						SetEnumConstantValue(pTcwork, ppStnodMember[ENUMIMP_MaxConstant], BintAdd(bintMax, BintFromInt(1)));
+						if (pStenum->m_enumk == ENUMK_Basic)
+						{
+							SetEnumConstantValue(pTcwork, mpEnumimpPStnod[ENUMIMP_NilConstant], bintNil);
+							SetEnumConstantValue(pTcwork, mpEnumimpPStnod[ENUMIMP_MinConstant], bintMin);
+							SetEnumConstantValue(pTcwork, mpEnumimpPStnod[ENUMIMP_LastConstant], bintLast);
+							SetEnumConstantValue(pTcwork, mpEnumimpPStnod[ENUMIMP_MaxConstant], bintMax);
+						}
+						else
+						{
+							SetEnumConstantValue(pTcwork, mpEnumimpPStnod[ENUMIMP_None], BintFromInt(0));
+							SetEnumConstantValue(pTcwork, mpEnumimpPStnod[ENUMIMP_All], bintAll);
+						}
 					}
 				}
 
@@ -6127,8 +6157,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 				else
 				{
-					CSTNode * pStnodNames = ppStnodMember[ENUMIMP_Names];
-					CSTNode * pStnodValues = ppStnodMember[ENUMIMP_Values];
+					CSTNode * pStnodNames = mpEnumimpPStnod[ENUMIMP_Names];
+					CSTNode * pStnodValues = mpEnumimpPStnod[ENUMIMP_Values];
 
 					int cBitLoose = 64;
 					bool fIsSignedLoose = true;
@@ -6146,19 +6176,21 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					auto pTinU8 = pSymtab->PTinBuiltin("u8");
 					STypeInfo * pTinString = pSymtab->PTinptrAllocate(pTinU8);
 
-					SpoofLiteralArray(pTcwork, pSymtab, pStnodNames, cStnodChild - ENUMIMP_Max, pTinString);
+					SpoofLiteralArray(pTcwork, pSymtab, pStnodNames, cStnodChild - cStnodChildImplicit, pTinString);
 					auto pStdeclNames = PStmapDerivedCast<CSTDecl *>(pStnodNames->m_pStmap);
 					auto pStnodNameList = pStnodNames->PStnodChildSafe(pStdeclNames->m_iStnodInit);
 
-					SpoofLiteralArray(pTcwork, pSymtab, pStnodValues, cStnodChild - ENUMIMP_Max, pTinenum->m_pTinLoose);
+					SpoofLiteralArray(pTcwork, pSymtab, pStnodValues, cStnodChild - cStnodChildImplicit, pTinenum->m_pTinLoose);
 					auto pStdeclValues = PStmapDerivedCast<CSTDecl *>(pStnodValues->m_pStmap);
 					auto pStnodValueList = pStnodValues->PStnodChildSafe(pStdeclValues->m_iStnodInit);
 
 					// assign pTin and finalize literals
 					for (int iStnodMember = 0; iStnodMember < cStnodChild; ++iStnodMember)
 					{
-						auto pStnodMember = ppStnodMember[iStnodMember];
-						if ((iStnodMember == ENUMIMP_Names) | (iStnodMember == ENUMIMP_Values))
+						auto pStnodMember = pStnodConstantList->PStnodChild(iStnodMember);
+
+						ENUMIMP enumimp = mpIStnodChildEnumimp[iStnodMember];
+						if ((enumimp == ENUMIMP_Names) | (enumimp == ENUMIMP_Values))
 							continue;
 
 						// just make sure the init type fits the specified one
@@ -6260,7 +6292,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 				else if (!pStnod->m_grfstnod.FIsSet(FSTNOD_ImplicitMember))
 				{
-					pTinenum->m_bintLatest = BintAdd(pTinenum->m_bintLatest, BintFromUint(1));
+					if (pTinenum->m_enumk == ENUMK_FlagEnum)
+					{
+						pTinenum->m_bintLatest = BintNextPowerOfTwo(pTinenum->m_bintLatest);
+					}
+					else
+					{
+						pTinenum->m_bintLatest = BintAdd(pTinenum->m_bintLatest, BintFromUint(1));
+					}
 					SetEnumConstantValue(pTcwork, pStnod, pTinenum->m_bintLatest);
 				}
 
@@ -7314,7 +7353,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
 							if (!pSymMember)
 							{
-								EmitError(pTcwork, pStnod, "%s is not a member of %s", strMemberName.PCoz(), pTinstruct->m_strName.PCoz());
+								EmitError(pTcwork, pStnod, ERRID_BadMemberLookup, 
+									"%s is not a member of %s", strMemberName.PCoz(), pTinstruct->m_strName.PCoz());
 								return TCRET_StoppingError;
 							}
 
@@ -8275,21 +8315,32 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										TINK tinkOperand = pTinOperand->m_tink;
 										bool fIsInteger = tinkOperand == TINK_Integer;
 										bool fIsFloat = tinkOperand == TINK_Float;
-										bool fIsEnum = tinkOperand == TINK_Enum;
+
+										bool fIsBasicEnum = false;
+										bool fIsFlagEnum = false;
+										auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinOperand);
+										if (pTinenum)
+										{
+											fIsBasicEnum = pTinenum->m_enumk == ENUMK_Basic;
+											fIsFlagEnum = pTinenum->m_enumk == ENUMK_FlagEnum;
+										}
+
 										if (tinkOperand == TINK_Literal && pStnodOperand->m_pStval)
 										{
 											LITK litk = ((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk;
 											fIsInteger |= litk == LITK_Integer;
 											fIsFloat |= litk == LITK_Float;
-											fIsEnum |= litk == LITK_Enum;
+
+											EWC_ASSERT(litk != LITK_Enum || pTinenum, "literal without enum type?");
 										}
 
 										bool fIsValidPtrOp = ((tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) &
 											(tinkOperand == TINK_Pointer);
 										bool fIsValidFloatOp = ((tok == TOK('+')) | (tok == TOK('-')) | (tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) & 
 																fIsFloat;
-										bool fIsValidEnumOp = ((tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) & fIsEnum;
-										bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp | fIsValidEnumOp;
+										bool fIsValidBasicEnumOp = ((tok == TOK_PlusPlus) | (tok == TOK_MinusMinus)) & fIsBasicEnum;
+										bool fIsValidFlagEnumOp = (tok == TOK('~')) & fIsFlagEnum;
+										bool fIsSupported = fIsInteger | fIsValidPtrOp | fIsValidFloatOp | fIsValidBasicEnumOp | fIsValidFlagEnumOp;
 
 										// BB - we should be checking for negating a signed literal here, but we can't really
 										//  do operations on literals until we know the resolved type

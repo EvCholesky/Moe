@@ -233,6 +233,14 @@ void AppendFlagNames(EWC::SStringBuffer * pStrbuf, GRFQUALK grfqualk, const char
 	}
 }
 
+bool FNeedsImplicitMember(ENUMIMP enumimp, ENUMK enumk)
+{
+	if (enumimp == ENUMIMP_Names || enumimp == ENUMIMP_Values)
+		return true;
+	bool fIsFlagEnumimp = enumimp > ENUMIMP_MaxConstant;
+	return fIsFlagEnumimp == (enumk == ENUMK_FlagEnum);
+}
+
 const char * PChzFromEnumimp(ENUMIMP enumimp)
 {
 	static const char * s_mpEnumimpPChz[] =
@@ -241,6 +249,8 @@ const char * PChzFromEnumimp(ENUMIMP enumimp)
 		"min",		//ENUMIMP_MinConstant,
 		"last",		//ENUMIMP_LastConstant,
 		"max",		//ENUMIMP_MaxConstant,
+		"none",		//ENUMIMP_None,
+		"all",		//ENUMIMP_All,
 		"names",	//ENUMIMP_Names,
 		"values",	//ENUMIMP_Values,
 	};
@@ -2141,7 +2151,7 @@ CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park)
 	return pStnod->m_arypStnodChild.A();
 }
 
-CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SLexer * pLex, CSTEnum * pStenum)
 {
 	SLexerLocation lexloc(pLex);
 	auto pStnodList = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
@@ -2152,9 +2162,17 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SLexer * pLex)
 
 	for (int enumimp = ENUMIMP_Min; enumimp < ENUMIMP_Max; ++enumimp)
 	{
+		if (!FNeedsImplicitMember((ENUMIMP)enumimp, pStenum->m_enumk))
+			continue;
+
 		PARK park = ((enumimp == ENUMIMP_Names) | (enumimp == ENUMIMP_Values)) ? PARK_ArrayLiteral : PARK_EnumConstant;
 		auto pStnodImplicit = PStnodSpoofEnumConstant(pParctx, lexloc, PChzFromEnumimp((ENUMIMP)enumimp), park);
-		pStnodList->IAppendChild(pStnodImplicit);
+		pStenum->m_mpEnumimpIstnod[enumimp] = pStnodList->IAppendChild(pStnodImplicit);
+	
+		if (park == PARK_EnumConstant)
+		{
+			++pStenum->m_cConstantImplicit;
+		}
 	}
 
 	while (1)
@@ -2164,6 +2182,7 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SLexer * pLex)
 			break;
 
 		pStnodList->IAppendChild(pStnod);
+		++pStenum->m_cConstantExplicit;
 
 		if (!FConsumeToken(pLex, TOK(',')))
 			break;
@@ -2390,6 +2409,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 		case RWORD_Proc:
 		case RWORD_Struct:
 		case RWORD_Enum:
+		case RWORD_FlagEnum:
 		case RWORD_Typedef:
 		case RWORD_Operator:
 			fIsDefinition = true;
@@ -2637,7 +2657,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				return pStnodProc;
 			}
-			else if (rword == RWORD_Enum)
+			else if (rword == RWORD_Enum || rword == RWORD_FlagEnum)
 			{
 				SLexerLocation lexloc(pLex);
 				CSTNode * pStnodEnum = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
@@ -2645,6 +2665,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				auto pStenum = pStnodEnum->PStmapEnsure<CSTEnum>(pParctx->m_pAlloc);
 				pStenum->m_iStnodIdentifier = pStnodEnum->IAppendChild(pStnodIdent);
+				pStenum->m_enumk = (rword == RWORD_FlagEnum) ? ENUMK_FlagEnum : ENUMK_Basic;
 
 				CSTNode * pStnodType = PStnodParseIdentifier(pParctx, pLex);
 				pStenum->m_iStnodType = pStnodEnum->IAppendChild(pStnodType);
@@ -2664,7 +2685,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				PushSymbolTable(pParctx, pSymtabEnum, lexloc);
 				pStnodEnum->m_pSymtab = pSymtabEnum;
 
-				pStnodConstantList = PStnodParseEnumConstantList(pParctx, pLex);
+				pStnodConstantList = PStnodParseEnumConstantList(pParctx, pLex, pStenum);
 				pStenum->m_iStnodConstantList = pStnodEnum->IAppendChild(pStnodConstantList);
 
 				CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
@@ -2677,17 +2698,13 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				}
 
 				// type info enum
-				int cStnodChild;
-				CSTNode ** ppStnodMember = PPStnodChildFromPark(pStnodConstantList, &cStnodChild, PARK_List);
-
-				int cConstant = (ppStnodMember) ? 
-									cStnodChild - (ENUMIMP_Max - ENUMIMP_Min) + ENUMIMP_CConstant : 
-									0;
+				int cConstant = pStenum->m_cConstantImplicit + pStenum->m_cConstantExplicit;
 				size_t cBAlloc = CBAlign(sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant)) + 
 								cConstant * sizeof(STypeInfoEnumConstant);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
 				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent, StrUniqueName(pSymtabParent->m_pUnsetTin, strIdent));
+				pTinenum->m_enumk = pStenum->m_enumk;
 
 				auto aTinecon = (STypeInfoEnumConstant *)PVAlign( pB + sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant));
 				pTinenum->m_aryTinecon.SetArray(aTinecon, 0, cConstant);
@@ -2695,10 +2712,9 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pTinenum->m_tinstructProduced.m_pStnodStruct = pStnodEnum;
 				pSymtabParent->AddManagedTin(pTinenum);
 
-				CSTNode ** ppStnodMemberMax = (ppStnodMember) ? &ppStnodMember[cStnodChild] : nullptr;
-				for ( ; ppStnodMember != ppStnodMemberMax; ++ppStnodMember)
+				for (int ipStnod = 0; ipStnod < pStnodConstantList->CStnodChild(); ++ipStnod) 
 				{
-					CSTNode * pStnodMember = *ppStnodMember;
+					CSTNode * pStnodMember = pStnodConstantList->PStnodChild(ipStnod);
 
 					switch (pStnodMember->m_park)
 					{
@@ -4585,7 +4601,7 @@ void PrintStval(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 			case LITK_Integer:	stvalk = (pTinlit->m_litty.m_fIsSigned) ? STVALK_SignedInt : STVALK_UnsignedInt;	break;
 			case LITK_Float:	stvalk = STVALK_Float;																break;
 			case LITK_String:	stvalk = STVALK_String;																break;
-			case LITK_Bool:		FormatCoz(pStrbuf, "%s", (pStval->m_nUnsigned == 0) ? "true" : "false");			return;
+			case LITK_Bool:		FormatCoz(pStrbuf, "%s", (pStval->m_nUnsigned == 0) ? "false" : "true");			return;
 			case LITK_Null:		AppendCoz(pStrbuf, "null");															return;
 			case LITK_Array:
 				{
@@ -4613,12 +4629,8 @@ void PrintStval(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	switch (stvalk)
 	{
 	case STVALK_Float:			FormatCoz(pStrbuf, "%f", pStval->m_g);												return;
-	case STVALK_SignedInt:
-		FormatCoz(pStrbuf, "%lld", pStval->m_nSigned);
-		return;
-	case STVALK_UnsignedInt:
-		FormatCoz(pStrbuf, "%llu", pStval->m_nUnsigned);
-		return;
+	case STVALK_SignedInt:		FormatCoz(pStrbuf, "%lld", pStval->m_nSigned);										return;
+	case STVALK_UnsignedInt:	FormatCoz(pStrbuf, "%llu", pStval->m_nUnsigned);									return;
 	case STVALK_String:			FormatCoz(pStrbuf, "'%s'", pStval->m_str.PCoz());									return;
 	case STVALK_ReservedWord:	FormatCoz(pStrbuf, "%s", PCozFromRword(pStval->m_rword));							return;
 	}

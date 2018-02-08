@@ -53,6 +53,7 @@ enum ERRID
 	ERRID_NoGenericRValue			= 2017,
 	ERRID_BakingNonLiteralValue		= 2018,
 	ERRID_StructParamsMustBeBaked	= 2019,
+	ERRID_BadMemberLookup			= 2020,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

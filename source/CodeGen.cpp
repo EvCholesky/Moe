@@ -3816,13 +3816,16 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		} break;
 	case TINK_Enum:
 		{
-			// BB - why is the RHS still a literal here?
-			//EWC_ASSERT(FTypesAreSame(pTinLhs, pTinRhs), "enum comparison type mismatch");
-
-			// BB - Why no plus equals here?
-
-			switch ((u32)tok)
+			auto pTinenum = PTinRtiCast<STypeInfoEnum *>(apTin[0]);
+			if (pTinenum->m_enumk == ENUMK_Basic)
 			{
+				// BB - why is the RHS still a literal here?
+				//EWC_ASSERT(FTypesAreSame(pTinLhs, pTinRhs), "enum comparison type mismatch");
+
+				// BB - Why no plus equals here?
+
+				switch ((u32)tok)
+				{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
 				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
 				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
@@ -3830,7 +3833,7 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
 				case '%':				CreateOpinfo((fIsSigned) ? IROP_SRem : IROP_URem, "nRemTmp", pOpinfo); break;
 				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
-										CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
+					CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
 				case TOK_LessEqual:
 					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSLE, "CmpSLE", pOpinfo);
@@ -3848,6 +3851,27 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSGT, "NCmpSGT", pOpinfo);
 					else				CreateOpinfo(NCMPPRED_NCmpUGT, "NCmpUGT", pOpinfo);
 					break;
+				}
+			}
+			else
+			{
+				EWC_ASSERT(pTinenum->m_enumk == ENUMK_FlagEnum, "Unhandled enumk");
+
+				switch ((u32)tok)
+				{
+				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
+					CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
+				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
+				case TOK_AndEqual:
+				case '&':				CreateOpinfo(IROP_And, "rAndTmp", pOpinfo); break;
+				case TOK_OrEqual:
+				case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
+				case TOK_XorEqual:
+				case '^':				CreateOpinfo(IROP_Xor, "nXorTmp", pOpinfo); break;
+				}
 			}
 		} break;
 	default: 

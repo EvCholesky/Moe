@@ -148,12 +148,6 @@ Enumeration values are referred to with the enum name as a namespace:
 s := SOMEENUM.Bah
 ```
 
-Enumerations also define several implicit constants:
-  * `min` the value of the lowest defined constant.
-  * `last` the value of the highest defined constant.
-  * `max` one past the last value.
-  * `nil` a sentinel to signal an invalid value.
-
 An enumeration's loose type is the type used to store it in memory. The loose type can be used directly in a declaration and the loose type can be specified explicitly in the enum definition:
 ```
 SOMEENUM enum s16
@@ -170,6 +164,34 @@ for i:=0; i<SOMEENUM.names.count; ++i
 }
 ```
 
+### Basic Enumerations
+Basic enum constants that don't explicitly specify a value will start at zero and increment by one per constant.
+
+Basic enumerations also define several implicit constants:
+  * `min` the value of the lowest defined constant.
+  * `last` the value of the highest defined constant.
+  * `max` one past the last value.
+  * `nil` a sentinel to signal an invalid value.
+
+### Flag Enumerations
+Flag enums are used to manage a group of flags in a bitmask. Constants that don't explicitly specify a value will start at one and increase rounding up to the next power of two.
+```
+FLAGS flag_enum
+{
+    Ack,  // 0x1
+    Bah,  // 0x2
+    Ugh,  // 0x4
+}
+```
+
+Flag enumerations define the following implicit constants:
+  * `none` no flags defined. Always zero.
+  * `all` the value of all of the defined flag constants.
+
+### Enum TODOs:
+- [ ] supply a syntax for opting out of implicit constants
+- [ ] syntax for specifying an enum's initial value
+- [ ] generate errors when implicit constants don't fit in a type or overlap an explicit constant
 
 
 ## Control Flow
@@ -361,8 +383,8 @@ smallish tasks:
 - [ ] 'Boxed' type
 
 longer term tasks:
-- [ ] Generic structs
 - [ ] First class types
+- [ ] Generic structs
 - [ ] non-foreign variadic args
 - [ ] using struct members
 - [x] run time type info
@@ -370,7 +392,6 @@ longer term tasks:
 - [ ] array bounds checking
 - [ ] struct literal support
 - [ ] support for inheritance, protocols
-- [ ] first class bitfield type
 
 tasks that might happen:
 - [ ] #mustuse return qualifier that generates an error if ignored

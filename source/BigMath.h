@@ -207,6 +207,21 @@ inline SBigInt BintShiftLeft(const SBigInt & bintLhs, const SBigInt & bintRhs)
 	}
 }
 
+inline SBigInt BintNextPowerOfTwo(const SBigInt & bint)
+{
+	u64 n = bint.m_nAbs; // compute the next highest power of 2 of 32-bit v
+
+	// smear the bits down and then add one
+	n |= n >> 1;
+	n |= n >> 2;
+	n |= n >> 4;
+	n |= n >> 8;
+	n |= n >> 16;
+	n |= n >> 32;
+	n++;
+	return BintFromUint(n);
+}
+
 inline bool operator ==(const SBigInt & bintLhs, const SBigInt & bintRhs)
 {
 	return (bintLhs.m_nAbs == bintRhs.m_nAbs) & (bintLhs.m_fIsNegative == bintRhs.m_fIsNegative);

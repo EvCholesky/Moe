@@ -260,22 +260,55 @@ public:
 	bool					m_fUseUnmangledName;
 };
 
+
+
+enum ENUMIMP	// implicit enum members (added as STNodes during parse)
+{
+	ENUMIMP_NilConstant,	// (enum) -1 or max unsigned (not included in min)
+	ENUMIMP_MinConstant,	// (enum) lowest user value
+	ENUMIMP_LastConstant,	// (enum) highest user value 
+	ENUMIMP_MaxConstant,	// (enum) one past the highest value
+	ENUMIMP_None,			// (flagEnum) zero
+	ENUMIMP_All,			// (flagEnum) all defined bits in bitmask
+	ENUMIMP_Names,
+	ENUMIMP_Values,
+
+	ENUMIMP_Max,
+	ENUMIMP_Min = 0,
+	ENUMIMP_Nil = -1,
+};
+
+const char * PChzFromEnumimp(ENUMIMP enumimp);
+bool FNeedsImplicitMember(ENUMIMP enumimp, ENUMK enumk);
+
 class CSTEnum : public SSyntaxTreeMap // tag = stenum
 {
 public:
-	static const STMAPK s_stmapk = STMAPK_Proc;
+	static const STMAPK s_stmapk = STMAPK_Enum;
 
 					CSTEnum()
 					:SSyntaxTreeMap(s_stmapk)
+					,m_enumk(ENUMK_Basic)
+					,m_cConstantExplicit(0)
+					,m_cConstantImplicit(0)		// just the implicit constants, doesn't include name/value arrays
 					,m_iStnodIdentifier(-1)
 					,m_iStnodType(-1)
 					,m_iStnodConstantList(-1)
 					,m_pTinenum(nullptr)
-						{ ; }
+						{ 
+							for (int enumimp = 0; enumimp < EWC_DIM(m_mpEnumimpIstnod); ++enumimp)
+							{
+								m_mpEnumimpIstnod[enumimp] = -1;
+							}
+						}
 
+	ENUMK			m_enumk;	
+	int				m_cConstantExplicit;
+	int				m_cConstantImplicit;
 	int				m_iStnodIdentifier;
 	int				m_iStnodType;
 	int				m_iStnodConstantList;
+	int				m_mpEnumimpIstnod[ENUMIMP_Max];
 	STypeInfoEnum * m_pTinenum;
 };
 
@@ -333,23 +366,6 @@ inline SSyntaxTreeMap * PStmapCopy(EWC::CAlloc * pAlloc, SSyntaxTreeMap * pStmap
 	EWC_ASSERT(false, "missing STMAPK");
 	return nullptr;
 }
-
-enum ENUMIMP	// implicit enum members (added as STNodes during parse)
-{
-	ENUMIMP_NilConstant,	// -1 or max unsigned (not included in min)
-	ENUMIMP_MinConstant,	// lowest user value
-	ENUMIMP_LastConstant,	// highest user value 
-	ENUMIMP_MaxConstant,	// one past the highest value
-	ENUMIMP_Names,
-	ENUMIMP_Values,
-
-	ENUMIMP_Max,
-	ENUMIMP_Min = 0,
-	ENUMIMP_Nil = -1,
-	ENUMIMP_CConstant = (ENUMIMP_MaxConstant + 1) - ENUMIMP_NilConstant
-};
-
-const char * PChzFromEnumimp(ENUMIMP enumimp);
 
 // Syntax tree string values - used for identifiers, labels and reserved words
 class CSTIdentifier // tag = stident

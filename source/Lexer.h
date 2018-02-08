@@ -78,6 +78,7 @@ enum TOK
 		RW(ForEach) STR(for_each), \
 		RW(While) STR(while), \
 		RW(Enum) STR(enum), \
+		RW(FlagEnum) STR(flag_enum), \
 		RW(Proc) STR(proc), \
 		RW(Struct) STR(struct), \
 		RW(Const) STR(const), \

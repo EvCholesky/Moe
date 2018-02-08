@@ -344,6 +344,16 @@ test EnumDecl
 		?loose("s8 ") + ?litk("Int8") + ?nil(-1),
 	}
 
+test EnumValues
+	prereq "ENUMK enum { A?init, B, C}"
+	input "a := { ENUMK.A, ENUMK.B, ENUMK.C, ENUMK.min, ENUMK.max}"
+	values "(_ a (_ (_ (?a ENUMK A) (?b ENUMK B) (?c ENUMK C) (?a ENUMK min) (?max ENUMK max))))"
+	{
+		?init("") + ?a(0) + ?b(1) + ?c(2) + ?max(3),
+		?init(" := -10") + ?a(-10) + ?b(-9) + ?c(-8) + ?max(-7),
+		?init(" := 100") + ?a(100) + ?b(101) + ?c(102) + ?max(103)
+	}
+
 test EnumSubtypes
 	prereq "ENUMK enum ?loose { Ick := 1, Foo, Bah := 3 }"
 	input "t: ENUMK.?subtype"
@@ -396,6 +406,76 @@ test EnumImplicitMembers
 				?extra(".data") + ?tctype("&s8") + ?pmemb("(member ENUMK ?memb) data") + ?tcinit("?tctype (Literal:Array ENUMK_enum ?memb) data"),
 			},
 		},
+	}
+
+test EnumImplicitConstants
+	prereq "FBIT enum { A?init, B, C}"
+	input "a := FBIT.?con"
+	values "(_ a (?val FBIT ?con))"
+	{
+		?con(A) + ?init("") + ?val(0), 
+		?con(B) + ?init("") + ?val(1), 
+		?con(C) + ?init("") + ?val(2), 
+		?con(min) + ?init("") + ?val(0), 
+		?con(last) + ?init("") + ?val(2),
+		?con(max) + ?init("") + ?val(3),
+		?con(none|all) + ?init(""?errid(2020)) + ?val(0),
+	}
+
+// Flag Enums:
+
+test FlagEnumValues
+	prereq "FBIT flag_enum { A?init, B, C}"
+	input "a := { FBIT.A, FBIT.B, FBIT.C, FBIT.none, FBIT.all}"
+	values "(_ a (_ (_ (?a FBIT A) (?b FBIT B) (?c FBIT C) (0 FBIT none) (?all FBIT all))))"
+	{
+		?init("") + ?a(1) + ?b(2) + ?c(4) + ?all(7),
+		?init(" := 1") + ?a(1) + ?b(2) + ?c(4) + ?all(7),
+		?init(" := 2") + ?a(2) + ?b(4) + ?c(8) + ?all(14),
+		//?init(" := 100") + ?a(100) + ?b(101) + ?c(102) + ?max(103)
+	}
+
+test FlagEnumImplicitConstants
+	prereq "FBIT flag_enum { A?init, B, C}"
+	input "a := FBIT.?con"
+	values "(_ a (?val FBIT ?con))"
+	{
+		?con(none) + ?init("") + ?val(0), 
+		?con(all) + ?init("") + ?val(7),
+		?con(min|last|max|nil) + ?init(""?errid(2020)) + ?val(0),
+	}
+	
+test FlagEnumBinaryOp
+	prereq "FBIT flag_enum { A, B}"
+	input "n := FBIT.A ?op FBIT.B"
+	parse "(decl n (?op (member FBIT A) (member FBIT B)))"
+	typecheck "(?restype n (Literal:?littype (FBIT_enum Literal:Enum FBIT_enum A) (FBIT_enum Literal:Enum FBIT_enum B)))"
+	values "(_ n (?res (1 FBIT A) (2 FBIT B)))"
+	{
+		?op("&") + ?res("0") + ?restype(int) + ?littype(Int64),
+		?op("|") + ?res("3") + ?restype(int) + ?littype(Int64),
+		?op("^") + ?res("3") + ?restype(int) + ?littype(Int64),
+		?op("==") + ?res("false") + ?restype(bool) + ?littype(Bool8),
+		?op("!=") + ?res("true") + ?restype(bool) + ?littype(Bool8)
+	}
+
+test FlagEnumAssignmentOp
+	prereq "FBIT flag_enum { A, B}; fbit: FBIT"
+	input "fbit ?op ?rhs"
+	parse "(?op fbit ?prhs)"
+	typecheck "(= FBIT_enum ?tcrhs)"
+	{
+		?op("|="|"&="|"^=") + ?rhs("FBIT.B") + ?prhs("(member FBIT B)") + ?tcrhs("(Literal:Int8 FBIT_enum B)"),
+		?op("|="|"&="|"^=") + ?rhs(fbit) + ?prhs("fbit") + ?tcrhs("FBIT_enum")
+	}
+
+test FlagEnumUnaryOp
+	prereq "FBIT flag_enum { A, B}"
+	input "n := ?op FBIT.B"
+	parse "(decl n (unary[?op] (member FBIT B)))"
+	typecheck "(int n (Literal:Int64 (FBIT_enum Literal:Enum FBIT_enum B)))"
+	{
+		?op("~")
 	}
 
 // Arrays:
@@ -487,6 +567,7 @@ test ArrayLiteralConst
 	input "aN :: {?tspec 1, 2, 3}"
 	parse "(const aN (arrayLit ?elemspec({} 1 2 3)))"
 	typecheck "(Literal:Array aN (Literal:Array ?elemspec({} Literal:Int Literal:Int Literal:Int)))"
+	values "()"
 	values "(_ aN (_ ?elemspec(_ 1 2 3)))"
 	{
 		?elemtype(int|s8) + ?lit("Int")
