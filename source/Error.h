@@ -61,6 +61,7 @@ enum ERRID
 	ERRID_BadStore					= 3002,
 	ERRID_BadCastGen				= 3003,
 	ERRID_ObjFileFail				= 3004,
+	ERRID_ZeroSizeInstance			= 3005,
 	ERRID_CodeGenMax				= 4000,
 	ERRID_ErrorMax					= 10000,
 

@@ -856,7 +856,7 @@ TESTRES TestresRunUnitTest(
 		}
 	}
 
-	if (testres == TESTRES_Success)
+	if (testres == TESTRES_Success && !work.m_pErrman->FHasHiddenErrors())
 	{
 		// Type Check
 		PerformTypeCheck(work.m_pAlloc, work.m_pErrman, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, work.m_globmod);
@@ -900,7 +900,7 @@ TESTRES TestresRunUnitTest(
 		}
 	}
 
-	if (testres == TESTRES_Success)
+	if (testres == TESTRES_Success && !work.m_pErrman->FHasHiddenErrors())
 	{
 		CIRBuilder build(&work, &work.m_arypValManaged, sebFilename.PCoz(), FCOMPILE_None);
 		CodeGenEntryPoint(&work, &build, work.m_pSymtab, &work.m_arypEntryChecked);

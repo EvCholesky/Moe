@@ -53,7 +53,7 @@ static constexpr const char * OPNAME(const char * pChz) { return pChz; }
 static constexpr const char * OPNAME(const char * pChz) { return ""; }
 #endif
 
-#define LLVM_ENABLE_DUMP 1
+#define LLVM_ENABLE_DUMP _DEBUG
 
 #define ASSERT_STNOD(PWORK, PSTNOD, PREDICATE, ... ) do { if (!(PREDICATE)) { \
 		EWC::AssertHandler(__FILE__, __LINE__, #PREDICATE, __VA_ARGS__); \
@@ -199,7 +199,7 @@ static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
 {
 	printf("%s: ", pChzLabel);
 
-#ifdef LLVM_ENABLE_DUMP
+#if LLVM_ENABLE_DUMP
 	if (pVal)
 	{
 		auto pLtype = LLVMTypeOf(pVal->m_pLval);
@@ -210,7 +210,7 @@ static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
 		printf("null value");
 	}
 #else
-	printf("LLVM_ENABLE_DUMP is not defined.")
+	printf("LLVM_ENABLE_DUMP is not defined.");
 #endif
 }
 
@@ -470,6 +470,7 @@ static inline LLVMOpaqueType * PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement 
 			}
 
 			LLVMStructSetBody(pLtype, apLtypeMember, cTypemembField, false);
+
 			return pLtype;
 		}
 		case TINK_Generic:
@@ -989,7 +990,16 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CIRBuilder * pBuild, CSTN
 			for (size_t iTinecon = 0; iTinecon < cTinecon; ++iTinecon)
 			{
 				auto pTinecon = &pTinenum->m_aryTinecon[iTinecon];
-				s64 nValue = pTinecon->m_bintValue.S64Coerce();
+				s64 nValue = 0;
+				auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTinenum->m_pTinLoose);
+				if (EWC_FVERIFY(pTinint, "expected enum loose type to be integer type") && pTinint->m_fIsSigned)
+				{
+					nValue = pTinecon->m_bintValue.S64Coerce();
+				}
+				else
+				{
+					nValue = pTinecon->m_bintValue.m_nAbs;
+				}
 
 				auto strPunyName = StrPunyEncode(pTinecon->m_strName.PCoz());
 				apLvalConstant[iTinecon] = LLVMDIBuilderCreateEnumerator(pDib, strPunyName.PCoz(), nValue);
@@ -1548,9 +1558,9 @@ CIRInstruction * CIRBuilder::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 	}
 	if (!fIsPointerKind || !fTypesMatch)
 	{
-#ifdef LLVM_ENABLE_DUMP
-		printf("pLtypeT:"); LLVMDumpType(pLtypeT);
-		printf("pLtypePT: (dest)"); LLVMDumpType(pLtypePT);
+#if LLVM_ENABLE_DUMP
+		printf("(src) pLtypeT :"); LLVMDumpType(pLtypeT);
+		printf("(dst) pLtypePT:)"); LLVMDumpType(pLtypePT);
 #endif
 		EmitError(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, ERRID_BadStore, "bad store information\n");
 	}
@@ -3685,6 +3695,12 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 										CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
+				case TOK_AndEqual:
+				case '&':				CreateOpinfo(IROP_And, "rAndTmp", pOpinfo); break;
+				case TOK_OrEqual:
+				case '|':				CreateOpinfo(IROP_Or, "nOrTmp", pOpinfo); break;
+				case TOK_XorEqual:
+				case '^':				CreateOpinfo(IROP_Xor, "nXorTmp", pOpinfo); break;
 				default:
 					EWC_ASSERT(false, "Unhandled TOK");
 					break;
@@ -3973,6 +3989,15 @@ CIRValue * PValGenerateDecl(
 	auto pLtype = PLtypeFromPTin(pStnod->m_pTin, &cElement);
 	if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 		return nullptr;
+
+	u64 cBitSize, cBitAlign;
+	CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
+	if (cBitSize == 0)
+	{
+		EmitError(pWork, &pStnod->m_lexloc, ERRID_ZeroSizeInstance,
+			"Could not instantiate %s, zero-sized instances are not allowed", pStnod->m_pSym->m_strName.PCoz());
+		return nullptr;
+	}
 
 	s32 iLine, iCol;
 	auto pDif = PDifEmitLocation(pWork, pBuild, pStnod->m_lexloc, &iLine, &iCol);
@@ -4716,18 +4741,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 					{
 						pBuild->ActivateBlock(pBlockPred);
 
-						STypeInfo * pTinBool = pStnodPred->m_pTin;
-						if (pTinBool->m_tink == TINK_Literal)
-						{
-							auto pTinlit = (STypeInfoLiteral *)pTinBool;
-							if (pTinlit->m_litty.m_litk == LITK_Bool)
-							{
-								pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
-							}
-						}
-
-						EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for for loop predicate");
-
+						STypeInfo * pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
 						GeneratePredicate(pWork, pBuild, pStnodPred, pBlockBody, pBlockPost, pTinBool);
 					}
 
@@ -5113,6 +5127,22 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				auto pTinlit = (STypeInfoLiteral *)pTinLhs;
 				if (EWC_FVERIFY(pTinlit->m_pGlob, "expected global instance for array literal"))
 				{
+					if (pTinlit->m_litty.m_litk == LITK_Array)
+					{
+						ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
+
+						EWC_ASSERT(valgenk == VALGENK_Instance, "expected instance");
+						if (arymemb == ARYMEMB_Count)
+						{
+							return PValConstantInt(pBuild, 64, true, pTinlit->m_c);
+						}
+
+						// the type of aN.data is &N so a reference would need to be a &&N which we don't have
+						EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
+
+						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinlit->m_pTinSource);
+						return pBuild->PInstCreateCast(IROP_Bitcast, pTinlit->m_pGlob, pTinptr, "Bitcast");
+					}
 					return pTinlit->m_pGlob;
 				}
 			}
@@ -6035,36 +6065,36 @@ void CodeGenEntryPoint(
 				pEntry->m_pProc = pProc;
 			}
 		}
+	}
 
-		if (!arypStnodUnitTest.FIsEmpty() && !pProcImplicit)
-		{
-			pProcImplicit = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
+	if (!arypStnodUnitTest.FIsEmpty() && !pProcImplicit)
+	{
+		pProcImplicit = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
 
-			char aCh[128];
-			GenerateUniqueName(&pWork->m_unset, "__AnonFunc__", aCh, EWC_DIM(aCh));
+		char aCh[128];
+		GenerateUniqueName(&pWork->m_unset, "__AnonFunc__", aCh, EWC_DIM(aCh));
 
-			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
-			pProcImplicit->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
+		auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
+		pProcImplicit->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
 
-			pProcImplicit->m_pBlockLocals = pBuild->PBlockCreate(pProcImplicit, aCh);
-			pProcImplicit->m_pBlockFirst = pBuild->PBlockCreate(pProcImplicit, aCh);
+		pProcImplicit->m_pBlockLocals = pBuild->PBlockCreate(pProcImplicit, aCh);
+		pProcImplicit->m_pBlockFirst = pBuild->PBlockCreate(pProcImplicit, aCh);
 
-			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
-			u64 cBitAlign = cBitSize;
-			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0, cBitSize, cBitAlign);
+		u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
+		u64 cBitAlign = cBitSize;
+		auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0, cBitSize, cBitAlign);
 
-			pProcImplicit->m_pLvalDIFunction = PLvalCreateDebugFunction(
-													pWork,
-													pBuild,
-													aCh,
-													nullptr,
-													arypStnodUnitTest[0],
-													arypStnodUnitTest[0],
-													pLvalDIFunctionType,
-													pProcImplicit->m_pLvalFunction);
+		pProcImplicit->m_pLvalDIFunction = PLvalCreateDebugFunction(
+												pWork,
+												pBuild,
+												aCh,
+												nullptr,
+												arypStnodUnitTest[0],
+												arypStnodUnitTest[0],
+												pLvalDIFunctionType,
+												pProcImplicit->m_pLvalFunction);
 
-			GenerateMethodBody(pWork, pBuild, pProcImplicit, arypStnodUnitTest.A(), (int)arypStnodUnitTest.C(), true);
-		}
+		GenerateMethodBody(pWork, pBuild, pProcImplicit, arypStnodUnitTest.A(), (int)arypStnodUnitTest.C(), true);
 	}
 
 	LLVMDIBuilderFinalize(pBuild->m_pDib);

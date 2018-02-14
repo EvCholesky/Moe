@@ -71,6 +71,7 @@ const char * PChzFromPark(PARK park)
 		"Array Element",		// [array, index]
 		"Member Lookup",		// [struct, child]
 		"Procedure Call",		// [procedure, arg0, arg1, ...]
+		"Specialized Struct",
 		"List",
 		"Parameter List",
 		"Expression List",
@@ -4661,6 +4662,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_ArrayElement:		    AppendCoz(pStrbuf, "elem");					return;
 	case PARK_MemberLookup:		    AppendCoz(pStrbuf, "member");				return;
 	case PARK_ProcedureCall:		AppendCoz(pStrbuf, "procCall");				return;
+	case PARK_SpecializedStruct:	AppendCoz(pStrbuf, "specStruct");			return;
 	case PARK_ExpressionList:
 	case PARK_List:				    AppendCoz(pStrbuf, "{}");					return;
 	case PARK_ParameterList:	    AppendCoz(pStrbuf, "params");				return;

@@ -125,6 +125,7 @@ enum PARK : s16 // PARse Kind
 	PARK_ArrayElement,		// [array, index]
 	PARK_MemberLookup,		// [struct, child]
 	PARK_ProcedureCall,		// [procedure, arg0, arg1, ...]
+	PARK_SpecializedStruct,	// swapped in during typecheck for ProcedureCall nodes that turn out to be instantiated structs SArray(33)
 
 	PARK_List,				// declarations used by structs
 	PARK_ParameterList,		// comma separated declarations used by argument lists

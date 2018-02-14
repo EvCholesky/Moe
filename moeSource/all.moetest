@@ -294,9 +294,9 @@ test IfElse
 
 // Structures:
 test StructDecl
-	input "SFoo struct { m_n ?init } foo : SFoo"
-	parse "(struct SFoo ({} (?decl m_n ?initp))) (decl foo SFoo)"
-	typecheck "(SFoo SFoo ({} (?typememb))) (SFoo foo SFoo)"
+	input "SFoo struct { m_n ?init; m_pad: s8 } foo : SFoo"
+	parse "(struct SFoo ({} (?decl m_n ?initp) (decl m_pad s8))) (decl foo SFoo)"
+	typecheck "(SFoo SFoo ({} (?typememb) (s8 m_pad s8))) (SFoo foo SFoo)"
 	{
 		?init(":= 2") + ?initp(2) + ?decl(decl) + ?typememb("int m_n Literal:Int##"),
 		?init(": int") + ?initp("int") + ?decl(decl) + ?typememb("int m_n int"),
@@ -444,7 +444,7 @@ test FlagEnumImplicitConstants
 		?con(all) + ?init("") + ?val(7),
 		?con(min|last|max|nil) + ?init(""?errid(2020)) + ?val(0),
 	}
-	
+
 test FlagEnumBinaryOp
 	prereq "FBIT flag_enum { A, B}"
 	input "n := FBIT.A ?op FBIT.B"
@@ -783,15 +783,13 @@ test ProcRefDecl
 
 test ProcRefCall
 	prereq "Somefunc proc(n: int) { }"
-	input "pFn := Somefunc; pFn(2)"
-	parse "(decl pFn Somefunc) (procCall pFn 2)"
+	input "pFn := ?ref Somefunc; pFn(2)"
+	parse "(decl pFn ?pref) (procCall pFn 2)"
 	typecheck "(Somefunc(int)->void pFn Somefunc(int)->void) (void Somefunc(int)->void Literal:Int##)"
-
-test ProcRefRefCall
-	prereq "Somefunc proc(n: int) { }"
-	input "ppFn := &Somefunc; (@ppFn)(2)"
-	parse "(decl ppFn (unary[&] Somefunc)) (procCall (unary[@] ppFn) 2)"
-	typecheck "(&Somefunc(int)->void ppFn (&Somefunc(int)->void Somefunc(int)->void)) (void (Somefunc(int)->void &Somefunc(int)->void) Literal:Int##)"
+	{
+		?ref("") + ?pref("Somefunc"),
+		?ref("&"?errid(2009)) + ?pref("(unary[&] Somefunc)")
+	}
 
 test ProcRefArray
 	input "apFn: [?atype] (n: s32)?ret;   apFn[1](33)"
@@ -1075,14 +1073,15 @@ test StructBakedDef
 
 test StructBakedInstance
 	prereq "SFoo struct ($BAKE: ?type) { kConst : ?type : BAKE}"
-	input "foo: SFoo(?args); n := foo.kConst"
-	parse "(decl foo (genstruct SFoo ?args)) (decl n (member foo kConst))"
-	typecheck "(SFoo foo (SFoo SFoo Literal:Int)) (?type n (Literal:?littype SFoo kConst)) (SFoo SFoo (Params Literal:Int) ({} (Literal:?littype kConst ?type Literal:?littype)))"
+	input "n := SFoo(?args).kConst"
+	parse "(decl n (member (procCall SFoo ?args) kConst))"
+	typecheck "(?type n (Literal:?littype (SFoo SFoo Literal:Int) kConst)) (SFoo SFoo (Params Literal:Int) ({} (Literal:?littype kConst ?type Literal:?littype)))"
 	{
 		?type(s64) + ?args(22|12345) + ?littype(Int64),
 		?type(u32) + ?args(22|12345) + ?littype(Int32),
 		?type(s16) + ?args(22|12345) + ?littype(Int16)
 	}
+
 
 // Strings:
 test StringLiteral
