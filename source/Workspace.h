@@ -48,21 +48,6 @@ struct SErrorCount	// tag = errc
 	int		m_c;
 };
 
-// save the context for instantiation of generics so we can report meaningful errors
-struct SInstantiateContext // insctx
-{
-							SInstantiateContext()
-							:m_pGenmap(nullptr)
-							,m_lexlocCall()
-							,m_pInsctxLeaf(nullptr)
-								{ ; }
-
-	SGenericMap *			m_pGenmap;
-	SLexerLocation 			m_lexlocCall;
-
-	SInstantiateContext * 	m_pInsctxLeaf;
-};
-
 struct SErrorManager	//  // tag = errman
 {
 				SErrorManager(EWC::CAlloc * pAlloc);
@@ -98,39 +83,41 @@ struct SErrorManager	//  // tag = errman
 	void		ComputeErrorCounts(int * pCError, int * pCWarning);
 	bool		FTryHideError(ERRID errid);
 
-	void		PushInsctx(SInstantiateContext * pInsctx);
-	void		PopInsctx(SInstantiateContext * pInsctx);
+	void		PushGenmapContext(SGenericMap * pGenmap);
+	void		PopGenmapContext(SGenericMap * pGenmap);
 
-	CWorkspace *				m_pWork;			// back pointer for SFile lookup inside EmitError
-	EWC::CDynAry<ERRID>			m_aryErrid;			// numbered errors (for expected unit test errors)
+	CWorkspace *				m_pWork;				// back pointer for SFile lookup inside EmitError
+	EWC::CDynAry<ERRID>			m_aryErrid;				// numbered errors (for expected unit test errors)
 
 	EWC::CDynAry<SErrorCount> * m_paryErrcExpected;
-	SInstantiateContext *		m_pInsctxTop;
+	EWC::CDynAry<SGenericMap *> m_arypGenmapContext;	// instantiate context
 };
 
-struct SInstantiateContextScope // tag = insctxscope
+struct SGenericMapScope // tag = genscope
 {
-							SInstantiateContextScope(SErrorManager * pErrman, SInstantiateContext * pInsctx)
+							SGenericMapScope(SErrorManager * pErrman, SGenericMap * pGenmap)
 							:m_pErrman(pErrman)
-							,m_pInsctx(pInsctx)
+							,m_pGenmap(pGenmap)
 								{
-									if (m_pInsctx)
+									if (pGenmap)
 									{
-										pErrman->PushInsctx(m_pInsctx);
+										pErrman->PushGenmapContext(pGenmap);
 									}
 								}
 
-							~SInstantiateContextScope()
+							~SGenericMapScope()
 								{
-									if (m_pInsctx)
+									if (m_pGenmap)
 									{
-										m_pErrman->PopInsctx(m_pInsctx);
+										m_pErrman->PopGenmapContext(m_pGenmap);
 									}
 								}
 
 	SErrorManager *			m_pErrman;
-	SInstantiateContext * 	m_pInsctx;
+	SGenericMap * 			m_pGenmap;
 };
+
+
 
 enum ERRS
 {

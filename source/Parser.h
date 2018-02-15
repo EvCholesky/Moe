@@ -610,6 +610,7 @@ struct SGenericMap // tag = genmap
 							:m_pSymDefinition(pSymDefinition)	
 							,m_mpPSymBakval(pAlloc, EWC::BK_TypeCheckGenerics)
 							,m_aryPStnodManaged(pAlloc, EWC::BK_TypeCheckGenerics)
+							,m_aryLexlocSrc(pAlloc, EWC::BK_TypeCheckGenerics)
 								{ ; }
 
 							~SGenericMap()
@@ -635,6 +636,7 @@ struct SGenericMap // tag = genmap
 
 									m_mpPSymBakval.Swap(&pGenmapOther->m_mpPSymBakval);
 									m_aryPStnodManaged.Swap(&pGenmapOther->m_aryPStnodManaged);
+									m_aryLexlocSrc.Swap(&pGenmapOther->m_aryLexlocSrc);
 								}
 
 	bool					FIsEmpty() const
@@ -646,6 +648,7 @@ struct SGenericMap // tag = genmap
 	SSymbol *							m_pSymDefinition; 
 	EWC::CHash<SSymbol *, SBakeValue>	m_mpPSymBakval;			// map from a unbaked symbol to the instance that defines it
 	EWC::CDynAry<CSTNode *>				m_aryPStnodManaged;		// stnodes for baked constants
+	EWC::CDynAry<SLexerLocation>		m_aryLexlocSrc;			// lexer location where this was instantiated
 
 };
 

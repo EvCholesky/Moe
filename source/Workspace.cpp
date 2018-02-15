@@ -29,7 +29,7 @@ SErrorManager::SErrorManager(CAlloc * pAlloc)
 :m_pWork(nullptr)
 ,m_aryErrid(pAlloc, BK_Workspace, 0)
 ,m_paryErrcExpected(nullptr)
-,m_pInsctxTop(nullptr)
+,m_arypGenmapContext(pAlloc, BK_Workspace, 64)
 { 
 
 }
@@ -87,20 +87,19 @@ bool SErrorManager::FTryHideError(ERRID errid)
 	return false;
 }
 
-
-void SErrorManager::PushInsctx(SInstantiateContext * pInsctx)
+void SErrorManager::PushGenmapContext(SGenericMap * pGenmap)
 {
-	pInsctx->m_pInsctxLeaf = m_pInsctxTop;
-	m_pInsctxTop = pInsctx;
+	m_arypGenmapContext.Append(pGenmap);
 }
 
-void SErrorManager::PopInsctx(SInstantiateContext * pInsctx)
+void SErrorManager::PopGenmapContext(SGenericMap * pGenmap)
 {
-	if (!EWC_FVERIFY(m_pInsctxTop, "instantiate context underflow in error manager") ||
-		!EWC_FVERIFY(m_pInsctxTop == pInsctx, "push/pop mismatch for instantate context"))
+	if (EWC_FVERIFY(!m_arypGenmapContext.FIsEmpty(), "instantiate context underflow in error manager"))
 		return;
 
-	m_pInsctxTop = pInsctx->m_pInsctxLeaf;
+	auto pGenmapTop = m_arypGenmapContext.TPopLast();
+	if (!EWC_FVERIFY(pGenmapTop == pGenmap, "push/pop mismatch for instantate context"))
+		return;
 }
 
 
@@ -112,20 +111,19 @@ SError::SError(SErrorManager * pErrman, ERRID errid)
 {
 }
 
-void PrintGenericInstantiateContext(SErrorManager * pErrman, SInstantiateContext * pInsctx)
+void PrintGenericInstantiateContext(SErrorManager * pErrman)
 {
-	auto pInsctxIt = pInsctx;
-	while (pInsctxIt)
+	for (SGenericMap ** ppGenmap = pErrman->m_arypGenmapContext.A(); ppGenmap != pErrman->m_arypGenmapContext.PMac(); ++ppGenmap)
 	{
 		const char * pCozName = "unknown";
-		auto pGenmap = pInsctxIt->m_pGenmap;
+		auto pGenmap = *ppGenmap;
 		if (pGenmap->m_pSymDefinition)
 		{
 			pCozName = pGenmap->m_pSymDefinition->m_strName.PCoz();
 		}
 
 		printf("  while instantiating generic '%s': ", pCozName);	
-		EWC::CHash<SSymbol *, SBakeValue>::CIterator iter(&pInsctxIt->m_pGenmap->m_mpPSymBakval);
+		EWC::CHash<SSymbol *, SBakeValue>::CIterator iter(&pGenmap->m_mpPSymBakval);
 
 		SSymbol ** ppSym;
 		SBakeValue * pBakval;
@@ -146,11 +144,12 @@ void PrintGenericInstantiateContext(SErrorManager * pErrman, SInstantiateContext
 		}
 		s32 iLine;
 		s32 iCol;
-		CalculateLinePosition(pErrman->m_pWork, &pInsctxIt->m_lexlocCall, &iLine, &iCol);
+		for (SLexerLocation * pLexloc = pGenmap->m_aryLexlocSrc.A(); pLexloc != pGenmap->m_aryLexlocSrc.PMac(); ++pLexloc)
+		{
+			CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
 
-		printf("\n  at %s(%d, %d)\n", pInsctxIt->m_lexlocCall.m_strFilename.PCoz(), iLine, iCol);
-
-		pInsctxIt = pInsctxIt->m_pInsctxLeaf;
+			printf("\n  at %s(%d, %d)\n", pLexloc->m_strFilename.PCoz(), iLine, iCol);
+		}
 	}
 }
 
@@ -180,10 +179,7 @@ void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID 
 		printf("\n");
 	}
 
-	if (pErrman->m_pInsctxTop)
-	{
-		PrintGenericInstantiateContext(pErrman, pErrman->m_pInsctxTop);
-	}
+	PrintGenericInstantiateContext(pErrman);
 }
 
 void EmitWarning(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)
@@ -198,10 +194,7 @@ void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID er
 	SError error(pErrman, errid);
 	PrintErrorLine(&error, "Error:", pLexloc, pCoz, ap);
 
-	if (pErrman->m_pInsctxTop)
-	{
-		PrintGenericInstantiateContext(pErrman, pErrman->m_pInsctxTop);
-	}
+	PrintGenericInstantiateContext(pErrman);
 }
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)
