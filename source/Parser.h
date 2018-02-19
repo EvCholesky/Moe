@@ -495,6 +495,7 @@ CSTNode * PStnodCopy(EWC::CAlloc * pAlloc, CSTNode * pStnodSrc, EWC::CHash<CSTNo
 CSTValue * PStvalExpected(CSTNode * pStnod);
 
 CSTNode ** PPStnodChildFromPark(CSTNode * pStnod, int * pCStnodChild, PARK park);
+void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod);
 void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GRFDBGSTR grfdbgstr = FDBGSTR_None);
 void PrintLiteral(EWC::SStringBuffer * pStrbuf, CSTNode * pStnodList);
 void WriteDebugStringForEntries(CWorkspace * pWork, char * pCh, char * pChEnd, GRFDBGSTR grfdbgstr);
@@ -526,8 +527,10 @@ enum FSYM		// SYMbol flags
 	FSYM_IsBuiltIn			= 0x1,
 	FSYM_IsType				= 0x2,	// this is a type declaration (if not set this is a named instance)
 	FSYM_VisibleWhenNested	= 0x4,	// types, constants and procedures that are visible in a more deeply nested symbol table
-									// - ie. not an instance. Nested proceedure should be able to call peer procedure, but not
-									//   access variable from parent proc.
+									// - ie. not an instance. Nested procedure should be able to call peer procedure, but not
+									//   access variable from parent procedure.
+	FSYM_InternalUseOnly	= 0x8,	// type should not be available for user code declarations, just internal compiler use (ie _flag)
+
 
 	FSYM_All				= 0xF,
 };
@@ -738,7 +741,7 @@ public:
 									return (T *)PTinMakeUniqueBase(pTin, &seb); 
 								}
 
-	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin);
+	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin, GRFSYM grfsym = FSYM_None);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
 

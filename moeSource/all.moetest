@@ -458,7 +458,7 @@ test FlagEnumBinaryOp
 		?op("==") + ?res("false") + ?restype(bool) + ?littype(Bool8),
 		?op("!=") + ?res("true") + ?restype(bool) + ?littype(Bool8)
 	}
-
+	
 test FlagEnumAssignmentOp
 	prereq "FBIT flag_enum { A, B}; fbit: FBIT"
 	input "fbit ?op ?rhs"
@@ -469,13 +469,56 @@ test FlagEnumAssignmentOp
 		?op("|="|"&="|"^=") + ?rhs(fbit) + ?prhs("fbit") + ?tcrhs("FBIT_enum")
 	}
 
-test FlagEnumUnaryOp
+test FlagEnumTypeOps
 	prereq "FBIT flag_enum { A, B}"
 	input "n := ?op FBIT.B"
 	parse "(decl n (unary[?op] (member FBIT B)))"
 	typecheck "(int n (Literal:Int64 (FBIT_enum Literal:Enum FBIT_enum B)))"
 	{
-		?op("~")
+		?op("~"),
+	 	?op("&"?errid(2009)),
+	 	?op("-"?errid(2022)),
+	 	?op("+"?errid(2022)),
+	 	?op("--"?errid(2022)),
+	 	?op("++"?errid(2022))
+	}
+
+test EnumFlagInstanceOps
+	prereq "FBIT flag_enum { A, B}; fbit: FBIT; f: bool"
+	 input "n := ?op fbit.A"
+	 parse "(decl n (unary[?op] (member fbit A)))"
+	 {
+	 	?op("!"),
+	 	?op("&"?errid(2021)),
+	 	?op("~"?errid(2022)),
+	 	?op("-"?errid(2022)),
+	 	?op("+"?errid(2022)),
+	 	?op("--"?errid(2022)),
+	 	?op("++"?errid(2022))
+	 }
+
+test EnumFlagRValue
+	prereq "FBIT flag_enum { A, B}; fbit: FBIT; pFbit := &fbit; f: bool"
+	input "f = ?lhs.?rhs"
+	parse "(= f (member ?lhs ?rhs))"
+	typecheck "(= bool (_flag ?tclhs ?rhs))"
+	{
+		?lhs(fbit) + ?tclhs(FBIT_enum) + ?rhs(A|B),
+		?lhs(pFbit) + ?tclhs(&FBIT_enum) + ?rhs(A|B)
+	}
+
+test EnumFlagAssignment
+	prereq "FBIT flag_enum { A, B}; fbit: FBIT; pFbit := &fbit; n := 8; pN := &n"
+	input "?lhs.?rhs = ?rval"
+	parse "(= (member ?lhs ?rhs) ?prval)"
+	typecheck "(= (_flag ?lhtype ?rhs) ?tcrval)"
+	{
+		?rval(true) + ?lhs("pFbit") + ?rhs(A|B) + ?prval("?rval") + ?tcrval("Literal:Bool8") + ?lhtype("&FBIT_enum"),
+
+		?rval(true) + ?lhs("fbit") + ?rhs(A|B) + ?prval("?rval") + ?tcrval("Literal:Bool8") + ?lhtype("FBIT_enum"),
+		?rval(n) + ?lhs("fbit") + ?rhs(A|B) + ?prval("?rval") + ?tcrval("int") + ?lhtype("FBIT_enum"),
+		?rval("pN") + ?lhs("fbit") + ?rhs(A|B) + ?prval("?rval") + ?tcrval("&int") + ?lhtype("FBIT_enum"),
+		?rval("!pN") + ?lhs("fbit") + ?rhs(A|B) + ?prval("(unary[!] pN)") + ?tcrval("(bool &int)") + ?lhtype("FBIT_enum"),
 	}
 
 // Arrays:

@@ -480,6 +480,10 @@ STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab)
 
 STypeInfo * PTinAfterRValueAssignment(STypeCheckWorkspace * pTcwork, SLexerLocation * pLexloc, STypeInfo * pTin, CSymbolTable * pSymtab)
 {
+	if (pTin->m_tink == TINK_Flag)
+	{
+		return pSymtab->PTinBuiltin("bool");
+	}
 	if (pTin->m_tink == TINK_Procedure)
 	{
 		auto pTinproc = (STypeInfoProcedure *)pTin;
@@ -1202,15 +1206,29 @@ inline bool FComputeUnaryOpOnLiteral(
 
 		SBigInt bintOperand(BintFromStval(pStvalOperand));
 
+		auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlitOperand->m_pTinSource);
+		bool fIsFlagEnum = (pTinenum && pTinenum->m_enumk == ENUMK_FlagEnum);
+
 		bool f;
 		switch ((u32)tokOperator)
 		{
-		case TOK('-'):         bintOperand.m_fIsNegative = !bintOperand.m_fIsNegative; break;
-		// BB - We're not really handling unsized literals correctly here - we'll just promote to a 64 bit type
-		case TOK('~'):       bintOperand = BintBitwiseNot(bintOperand); break;
+			case TOK('-'):
+			{
+				if (fIsFlagEnum)
+					return false;
 
-		case TOK('!'):         f = bintOperand.m_nAbs == 0; break;
-		default: return false;
+				bintOperand.m_fIsNegative = !bintOperand.m_fIsNegative; break;
+			}
+			// BB - We're not really handling unsized literals correctly here - we'll just promote to a 64 bit type
+			case TOK('~'):       bintOperand = BintBitwiseNot(bintOperand); break;
+
+			case TOK('!'):         
+			{
+				if (fIsFlagEnum)
+					return false;
+				f = bintOperand.m_nAbs == 0; break;
+			}
+			default: return false;
 		}
 
 		CSTValue * pStvalStnod = EWC_NEW(pSymtab->m_pAlloc, CSTValue) CSTValue();
@@ -1455,6 +1473,7 @@ void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, 
 			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTinDst;
 			pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Float, pTinfloat->m_cBit, true);
 		}break;
+	case TINK_Flag:		// fallthrough
 	case TINK_Bool:		pStnodLit->m_pTin = pSymtab->PTinlitFromLitk(LITK_Bool);	break;
 	case TINK_Procedure:
 		{
@@ -2299,6 +2318,13 @@ SOpTypes OptypeFromPark(
 			return SOpTypes(pTinLhs, pTinLhs, pTinLhs);
 		}
 	}
+	if (pTinLhs->m_tink == TINK_Flag || pTinRhs->m_tink == TINK_Bool)
+	{
+		if (parkOperator == PARK_AssignmentOp)
+		{
+			return SOpTypes(pTinLhs, pTinLhs, pTinLhs);
+		}
+	}
 	return SOpTypes();
 }
 
@@ -2416,7 +2442,7 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 		return true;
 	}
 
-	if (pTinDst->m_tink == TINK_Bool)
+	if (pTinDst->m_tink == TINK_Bool || pTinDst->m_tink == TINK_Flag)
 	{
 		switch (pTinSrc->m_tink)
 		{
@@ -2424,6 +2450,7 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 		case TINK_Float:	return true;
 		case TINK_Pointer:	return true;
 		case TINK_Bool:	return true;
+		case TINK_Flag: return true;
 		default : return false;
 		}
 	}
@@ -3640,10 +3667,15 @@ IVALK IvalkCompute(CSTNode * pStnod)
 
 		// BB - we should have symbol tables for arrays and this should work like any other symbol
 		STypeInfo * pTinLhs = pStnodLhs->m_pTin;
-		if (pTinLhs->m_tink == TINK_Enum)
+		auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinLhs);
+		if (pTinLhs->m_tink == TINK_Pointer)
+		{
+			auto pTinptr = PTinRtiCast<STypeInfoPointer *>(pTinLhs);
+			pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinptr->m_pTinPointedTo);
+		}
+		if (pTinenum)
 		{
 			// check for individual fflag setting (ie. fdir.m_left = true)
-			auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinLhs);
 			if (pTinenum->m_enumk == ENUMK_FlagEnum)
 			{
 				IVALK ivalkLhs = IvalkCompute(pStnodLhs);
@@ -7297,6 +7329,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_tok, &optype))
 						{
 							(void)OptypeFromPark(pTcwork, pSymtab, pStnod->m_tok, pStnod->m_park, pTinLhs, pTinRhsPromoted);
+							FDoesOperatorExist(pStnod->m_tok, &optype);
+
 							CString strLhs = StrFromTypeInfo(pTinLhs);
 							CString strRhs = StrFromTypeInfo(pTinRhsPromoted);
 							EmitError( pTcwork, pStnod,
@@ -7367,13 +7401,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				CString strMemberName = StrFromIdentifier(pStnodRhs);
 				STypeInfo * pTinMember = nullptr;
 				CSTValue * pStvalMember = nullptr;
+				bool fIsFlagEnumInstance = false;
 				if (pTinLhs)
 				{
 					switch (pTinLhs->m_tink)
 					{
 						case TINK_Enum:
 						{
-							auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinLhs);
+							auto pTinenum = (STypeInfoEnum *)pTinLhs;
 							auto pSymLhs = pStnodLhs->m_pSym;
 							if (EWC_FVERIFY(pSymLhs, "expected lhs symbol") && !pSymLhs->m_grfsym.FIsSet(FSYM_IsType))
 							{
@@ -7388,9 +7423,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 								else
 								{
-									CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-									pTinMember = pSymtab->PTinBuiltin("bool");
-									break;
+									fIsFlagEnumInstance = true;
 								}
 							}
 
@@ -7494,6 +7527,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							EWC_ASSERT(false, "unknown type info kind");
 							break;
 					}
+				}
+
+
+				if (fIsFlagEnumInstance)
+				{
+					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+					auto pTinFlag = pSymtab->PTinBuiltin("_flag");
+					pTinMember = pTinFlag;
 				}
 
 				if (!pTinMember)
@@ -8285,8 +8326,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									else
 									{
 										EmitError(
-											pTcwork, 
-											pStnod, 
+											pTcwork, pStnod, ERRID_InvalidUnaryOp, 
 											"invalid unary operand %s for %s literal", 
 											PCozFromTok(pStnod->m_tok),
 											PChzFromLitk(((STypeInfoLiteral *)pTinOperand)->m_litty.m_litk));
@@ -8330,7 +8370,28 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 												break;
 
 											if (pStnodMember->m_park == PARK_MemberLookup)
+											{
+												STypeInfoEnum * pTinenum = nullptr;
+												auto pStnodLhs = pStnodMember->PStnodChildSafe(0);
+												if (pStnodLhs)
+												{
+													pTinenum = PTinRtiCast<STypeInfoEnum *>(pStnodLhs->m_pTin);
+												}
+
+												if (pTinenum && pTinenum->m_enumk == ENUMK_FlagEnum)
+												{
+													char aCh[2048];
+													EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+													PrintStnodName(&strbuf, pStnodMember->PStnodChildSafe(0));
+													AppendCoz(&strbuf, ".");
+													PrintStnodName(&strbuf, pStnodMember->PStnodChildSafe(1));
+
+													EmitError(pTcwork, pStnod, ERRID_CannotTakeReference, 
+														"Cannot take reference of enum_flag %s", aCh);
+													return TCRET_StoppingError;
+												}
 												pStnodMember = pStnodMember->PStnodChildSafe(1);
+											}
 											else if (pStnodMember->m_park == PARK_ArrayElement)
 												pStnodMember = pStnodMember->PStnodChildSafe(0);
 											else if (pStnodMember->m_park == PARK_Cast)
@@ -8342,7 +8403,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 												break;
 										}
 
-										if (pStnodMember->m_pSym && pStnodMember->m_pSym->m_pStnodDefinition)
+										if (pStnodMember && pStnodMember->m_pSym && pStnodMember->m_pSym->m_pStnodDefinition)
 										{
 											PARK parkDefinition = pStnodMember->m_pSym->m_pStnodDefinition->m_park;
 											fCanTakeReference = (parkDefinition != PARK_ProcedureDefinition) | 
@@ -8419,7 +8480,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 										if (!fIsSupported)
 										{
 											CString strOp = StrFromTypeInfo(pTinOperand);
-											EmitError(pTcwork, pStnod, "invalid unary operator for type %s", strOp.PCoz());
+											EmitError(pTcwork, pStnod, ERRID_InvalidUnaryOp, "invalid unary operator for type %s", strOp.PCoz());
 										}
 										else
 										{

@@ -1584,6 +1584,7 @@ bool FExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
 	// BB - Is there really any good reason not to make one type info for ints, bools and floats?
 	switch (pTin->m_tink)
 	{
+	case TINK_Flag:
 	case TINK_Bool:
 		{
 			*pCBit = 1;	
@@ -2573,6 +2574,7 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 			switch (pTinSrc->m_tink)
 			{
 			case TINK_Bool:	
+			case TINK_Flag:	
 				return pValSrc;
 			case TINK_Integer:
 				{
@@ -3227,6 +3229,11 @@ static inline CIRValue * PValGenerateCast(
 	ASSERT_STNOD(pWork, pStnodRhs, (valgenk != VALGENK_Reference) || (pTinRhs->m_tink == TINK_Pointer), "only pointers can be LValues after a cast");
 
 	CIRValue * pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, valgenk);
+	if (pTinOut->m_tink == TINK_Bool && pTinRhs->m_tink == TINK_Flag)
+	{
+		return pValRhs;
+	}
+
 	auto pVal = PValCreateCast(pWork, pBuild, pValRhs, pTinRhs, pTinOut);
 	if (!pVal)
 	{
@@ -3432,6 +3439,12 @@ CIRInstruction * PInstGenerateAssignment(
 
 			CIRValue * pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
 			return PInstCreateMemcpy(pWork, pBuild, pTinstruct, pValLhs, pValRhsRef);
+		} break;
+	case TINK_Flag:
+		{
+			// we can't handle flags here, as we don't have the flag constant or loose enum type
+			EWC_ASSERT(false, "enum_flag instance assignments must be handled rather than callin PInstGenerateAssignment");
+
 		} break;
 	default: 
 		{
@@ -3715,6 +3728,15 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 
 	switch (tink)
 	{
+	case TINK_Flag:
+		switch ((u32)tok)
+		{
+			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case TOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
+			case TOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
+		} break;
 	case TINK_Bool:
 		switch ((u32)tok)
 		{
@@ -5079,22 +5101,36 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 
 			// check the symbol because we need to differentiate between enum namespacing and enum struct member.
+			CIRConstant * pConstEnum = nullptr;
 			if (auto pSym = pStnodLhs->m_pSym)
 			{
-				if (pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Enum)
+				auto pTinLhs = PTinStripQualifiers(pSym->m_pTin);
+
+				VALGENK valgenkLhs = VALGENK_Reference;
+				if (pTinLhs)
 				{
-					EWC_ASSERT(pStnod->m_pOptype, "missing operand type for enum member");
-					auto pTinenum = (STypeInfoEnum *)pStnod->m_pOptype->m_pTinLhs;
+					if (pTinLhs->m_tink == TINK_Pointer)
+					{
+						pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+						valgenkLhs = VALGENK_Instance;
+					}
+				}
+
+				if (pTinLhs && pTinLhs->m_tink == TINK_Enum)
+				{
+					auto pTinenum = (STypeInfoEnum *)pTinLhs;
 					if (EWC_FVERIFY(pStnod->m_pStval, "Enum constant lookup without value"))
 					{
 						auto pLval = PLvalFromEnumConstant(pBuild, pTinenum->m_pTinLoose, pStnod->m_pStval);
 						if (!pLval)
 							return nullptr;
 
-						CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
-						pBuild->AddManagedVal(pConst);
-						pConst->m_pLval = pLval;
-						return pConst;
+						pConstEnum = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+						pBuild->AddManagedVal(pConstEnum);
+						pConstEnum->m_pLval = pLval;
+
+						if (pTinenum->m_enumk != ENUMK_FlagEnum)
+							return pConstEnum;
 					}
 				}
 			}
@@ -5112,7 +5148,23 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 
 				pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
 			}
+
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, valgenkLhs);
+			if (pConstEnum)
+			{
+				if (valgenk == VALGENK_Reference)
+				{
+					// set val: (n & ~flag) | (sext(fNew) & flag)
+					// return the instance here, the assignment operator will have to flip the right bits 
+					return pValLhs;
+				}
+
+				// get val: (n & flag) == flag;
+				auto pInstLhsLoad = pBuild->PInstCreate(IROP_Load, pValLhs, "membLoad");
+				auto pInstAnd = pBuild->PInstCreate(IROP_And, pInstLhsLoad, pConstEnum, "and");
+				auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pInstAnd, pConstEnum, "cmpEq");
+				return pInstCmp;
+			}
 
 			CString strMemberName = StrFromIdentifier(pStnod->PStnodChild(1));
 
@@ -5273,6 +5325,51 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 			CIRValue * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, VALGENK_Reference);
 			if (pStnod->m_tok == TOK('='))
 			{
+				if (pStnodLhs->m_pTin->m_tink == TINK_Flag)
+				{
+					STypeInfo * pTinLoose = nullptr;
+					CIRConstant * pConstEnum = nullptr;
+					if (EWC_FVERIFY(pStnodLhs->m_park == PARK_MemberLookup, "expected member lookup"))
+					{
+						CSTNode * pStnodEnum = pStnodLhs->PStnodChildSafe(0);
+						STypeInfo * pTinLhs = (pStnodEnum) ? pStnodEnum->m_pTin : nullptr;
+						if (pTinLhs->m_tink == TINK_Pointer)
+						{
+							pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+						}
+
+						if (EWC_FVERIFY(pTinLhs && pTinLhs->m_tink == TINK_Enum, "expected enum type"))
+						{
+							auto pTinenum = (STypeInfoEnum *)pTinLhs;
+							pTinLoose = pTinenum->m_pTinLoose;
+
+							auto pLval = PLvalFromEnumConstant(pBuild, pTinLoose, pStnodLhs->m_pStval);
+							if (!pLval)
+								return nullptr;
+
+							pConstEnum = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
+							pBuild->AddManagedVal(pConstEnum);
+							pConstEnum->m_pLval = pLval;
+						}
+
+					}
+
+					// set val: (n & ~flag) | (sext(rhs) & flag)
+
+					auto pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
+					CIRValue * pValRhs = PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnodRhs, pTinBool);
+
+					auto pInstSExt = pBuild->PInstCreateCast(IROP_SignExt, pValRhs, pTinLoose, "SignExt");
+					auto pInstAndRhs = pBuild->PInstCreate(IROP_And, pInstSExt, pConstEnum, "andRhs");
+
+					auto pInstLhsLoad = pBuild->PInstCreate(IROP_Load, pValLhs, "lhsLoad");
+					auto pInstNotEnum =  pBuild->PInstCreate(IROP_Not, pConstEnum, "notEn");
+					auto pInstAndLhs = pBuild->PInstCreate(IROP_And, pInstLhsLoad, pInstNotEnum, "andLhs");
+
+					auto pInstOr = pBuild->PInstCreate(IROP_Or, pInstAndLhs, pInstAndRhs, "orFlags");
+					return pBuild->PInstCreateStore(pValLhs, pInstOr);
+				}
+
 				auto pInstOp = PInstGenerateAssignment(pWork, pBuild, pStnodLhs->m_pTin, pValLhs, pStnodRhs);
 				return pInstOp;
 			}

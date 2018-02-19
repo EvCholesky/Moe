@@ -74,6 +74,7 @@ enum TINK : s8
 	TINK_ForwardDecl= TINK_ReflectedMax,	// Type info added for resolving pointers to self during the type-check phase.
 	TINK_Literal,							// literal that hasn't been resolved to a specific type yet
 	TINK_Generic,
+	TINK_Flag,						// Type for enum flag assignments; no specialized type info
 
 	EWC_MAX_MIN_NIL(TINK)
 };

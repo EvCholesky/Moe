@@ -188,6 +188,21 @@ Flag enumerations define the following implicit constants:
   * `none` no flags defined. Always zero.
   * `all` the value of all of the defined flag constants.
 
+Individual flags can be read or written on an instance by name:
+
+```
+flags: FLAGS
+
+flags.Ack = true    // the same as flags |= FLAGS.Ack
+flags.Ugh = false   // equivalent to flags &= FLAGS.all ^ FLAGS.Ugh
+
+pFlags := &flags
+pFlags.Bah = true   // pointer to flag enum is dereferenced the same as structs
+
+f: bool = flags.Bah
+PrintBool(flags.Ugh)
+```
+
 ### Enum TODOs:
 - [ ] supply a syntax for opting out of implicit constants
 - [ ] syntax for specifying an enum's initial value

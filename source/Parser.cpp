@@ -191,7 +191,8 @@ const char * PChzFromTink(TINK tink)
 		"qualifier",
 		"forwardDecl",
 		"literal",
-		"generic"
+		"generic",
+		"flag"
 	};
 	EWC_CASSERT(EWC_DIM(s_mpTinkPChz) == TINK_Max, "missing TINK string");
 	if (tink == TINK_Nil)
@@ -3764,14 +3765,14 @@ CSymbolTable::~CSymbolTable()
 	}
 }
 
-void AddSimpleBuiltInType(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, TINK tink)
+void AddSimpleBuiltInType(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, TINK tink, GRFSYM grfsym = FSYM_None)
 {
 	STypeInfo * pTin = EWC_NEW(pSymtab->m_pAlloc, STypeInfo) STypeInfo(
 																strName,
 																StrUniqueName(pSymtab->m_pUnsetTin, strName),
 																tink);
 
-	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTin);
+	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTin, grfsym);
 }
 
 void AddBuiltInInteger(CWorkspace * pWork, CSymbolTable * pSymtab, const CString & strName, u32 cBit, bool fSigned)
@@ -3854,6 +3855,7 @@ void AddBuiltInLiteral(CWorkspace * pWork, CSymbolTable * pSymtab, const CString
 void CSymbolTable::AddBuiltInSymbols(CWorkspace * pWork)
 {
 	AddSimpleBuiltInType(pWork, this, "bool", TINK_Bool);
+	AddSimpleBuiltInType(pWork, this, "_flag", TINK_Flag, FSYM_InternalUseOnly);
 	AddSimpleBuiltInType(pWork, this, "void", TINK_Void);
 
 	AddBuiltInInteger(pWork, this, "u8", 8, false);
@@ -4254,7 +4256,7 @@ void CSymbolTable::AddManagedSymtab(CSymbolTable * pSymtab)
 	m_pSymtabNextManaged = pSymtab;
 }
 
-void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin)
+void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin, GRFSYM grfsym)
 {
 	// NOTE: This function is for built-in types without a lexical order, so we shouldn't be calling it on an ordered table
 	EWC_ASSERT(m_iNestingDepth == 0, "Cannot add built-in types to ordered symbol table.");
@@ -4272,7 +4274,7 @@ void CSymbolTable::AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeI
 	{
 		*ppTinValue = pTin;
 
-		auto pSym = PSymEnsure(pErrman, strName, nullptr, FSYM_IsBuiltIn | FSYM_IsType | FSYM_VisibleWhenNested);
+		auto pSym = PSymEnsure(pErrman, strName, nullptr, FSYM_IsBuiltIn | FSYM_IsType | FSYM_VisibleWhenNested | grfsym.m_raw);
 		pSym->m_pTin = pTin;
 	}
 	else
@@ -4553,6 +4555,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			return;
 		}
     case TINK_Bool:			// fall through ...
+    case TINK_Flag:			// fall through ...
     case TINK_Void:			// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
@@ -4639,6 +4642,12 @@ void PrintStval(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 
 void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 {
+	if (!pStnod)
+	{
+		AppendCoz(pStrbuf, "null");
+		return;
+	}
+
 	switch (pStnod->m_park)
 	{
 	case PARK_Identifier:			FormatCoz(pStrbuf, "%s", StrFromIdentifier(pStnod).PCoz());	return;
