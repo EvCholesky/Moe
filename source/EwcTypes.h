@@ -53,8 +53,8 @@ typedef uint64_t u64;
 
 typedef wchar_t WChar; // tag = wch
 
-typedef float F32;
-typedef double F64;
+typedef float f32;
+typedef double f64;
 
 typedef u32 HV; // Hash Value
 
@@ -247,8 +247,8 @@ template <> struct SIsUnsignedInt<u64>							{ enum { V = true }; };
 template <typename T> struct SIsInt								{ enum { V  = SIsSignedInt<T>::V  || SIsUnsignedInt<T>::V  }; };
 
 template <typename T> struct SIsFloat							{ enum { V = false }; };
-template <> struct SIsFloat<F32>								{ enum { V = true }; };
-template <> struct SIsFloat<F64>								{ enum { V = true }; };
+template <> struct SIsFloat<f32>								{ enum { V = true }; };
+template <> struct SIsFloat<f64>								{ enum { V = true }; };
 
 template <typename T> struct SIsBool							{ enum { V = false }; };
 template <> struct SIsBool<bool>								{ enum { V = true }; };
@@ -508,12 +508,12 @@ inline const char * PChzVerifyAscii(const char * pChz)
 template <typename T> T ewcMin(T a, T b)						{ return a < b ? a : b; }
 template <typename T> T ewcMax(T a, T b)						{ return a > b ? a : b; }
 template <typename T> T ewcClamp(T value, T min, T max)			{ return ewcMin(ewcMax(value, min), max); }
-template <typename T> T ewcLerp(T a, T b, F32 gLerp)			{ return a + (b - a) * gLerp; }
+template <typename T> T ewcLerp(T a, T b, f32 gLerp)			{ return a + (b - a) * gLerp; }
 template <typename T> void ewcSwap(T & a, T & b)				{ T temp = a; a = b; b = temp; }
 
  // system time
 
-typedef F64 Syst;
+typedef f64 Syst;
 
 inline Syst SystInvalid()										{ return -1.0f; }
 inline bool FIsSystValid(Syst syst)								{ return syst >= 0.0f; }
@@ -769,19 +769,19 @@ struct SSpan // tag = span
 					{
 					}
 
-	explicit	SSpan(F32 g)
+	explicit	SSpan(f32 g)
 				:m_gMin(g)
 				,m_gMax(g)
 					{
 					}
 
-				SSpan(F32 gMin, F32 gMax)
+				SSpan(f32 gMin, f32 gMax)
 				:m_gMin(gMin)
 				,m_gMax(gMax)
 					{
 					}
 
-	void		SetValue(F32 g)
+	void		SetValue(f32 g)
 					{
 						m_gMin = g;
 						m_gMax = g;
@@ -789,22 +789,22 @@ struct SSpan // tag = span
 
 	bool		FIsSingleValue() const
 					{ return m_gMax == m_gMin; }
-	F32			DG() const
+	f32			DG() const
 					{ return m_gMax - m_gMin; }
 
-	SSpan		SpanExtrude(F32 sExtrude) const
+	SSpan		SpanExtrude(f32 sExtrude) const
 					{
 						if (sExtrude < 0.0f)	return SSpan(m_gMin + sExtrude, m_gMin);
 						else					return SSpan(m_gMax, m_gMax + sExtrude);
 					}
-	SSpan		SpanFromPercent(F32 uMin, F32 uMax)
+	SSpan		SpanFromPercent(f32 uMin, f32 uMax)
 					{
-						F32 dG = DG();
+						f32 dG = DG();
 						return SSpan(m_gMin + uMin*dG, m_gMin + uMax*dG);
 					}
 
-	F32	m_gMin;
-	F32	m_gMax;
+	f32	m_gMin;
+	f32	m_gMax;
 };
 
 

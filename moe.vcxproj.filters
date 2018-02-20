@@ -60,6 +60,9 @@
     <ClInclude Include="source\Error.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="source\ByteCode.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\EwcString.cpp">
@@ -87,6 +90,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\UnitTest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\ByteCode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

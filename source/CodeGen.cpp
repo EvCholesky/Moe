@@ -1631,7 +1631,7 @@ inline CIRConstant * PValConstantInt(CIRBuilder * pBuild, int cBit, bool fIsSign
 	return pConst;
 }
 
-inline LLVMOpaqueValue * PLvalConstantFloat(int cBit, F64 g)
+inline LLVMOpaqueValue * PLvalConstantFloat(int cBit, f64 g)
 {
 	switch (cBit)
 	{
@@ -2343,7 +2343,7 @@ LLVMOpaqueValue * PLvalFromLiteral(CIRBuilder * pBuild, STypeInfoLiteral * pTinl
 		}break;
 	case LITK_Float:
 		{
-			F64 g = 0;
+			f64 g = 0;
 			switch (pStval->m_stvalk)
 			{
 			case STVALK_UnsignedInt:	g = (float)pStval->m_nUnsigned;	break;

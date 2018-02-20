@@ -107,9 +107,9 @@ static int TokParseSuffixes(SLexer * pLex, TOK tok, LITK litk, const char * pChz
 	return tokReturn;
 }
 
-static F64 GParse(const char * pChzIn, char const ** pChzOut)
+static f64 GParse(const char * pChzIn, char const ** pChzOut)
 {
-	F64 gReturn = 0.0f;
+	f64 gReturn = 0.0f;
 	while ((*pChzIn >= '0') & (*pChzIn <= '9'))
 	{
 		gReturn = gReturn*10.0f + (*pChzIn++ - '0');
@@ -117,8 +117,8 @@ static F64 GParse(const char * pChzIn, char const ** pChzOut)
 
 	if (*pChzIn == '.') 
 	{
-		F64 gPow10 = 1.0f;
-		F64 gAddend = 0;
+		f64 gPow10 = 1.0f;
+		f64 gAddend = 0;
 		++pChzIn;
 		while ((*pChzIn >= '0') & (*pChzIn <= '9'))
 		{
@@ -718,7 +718,7 @@ void AssertMatches(
 	const char * pCozInput, 
 	const TOK * aTok, 
 	const int * aN = nullptr, 
-	const F64 * aG = nullptr,
+	const f64 * aG = nullptr,
 	const char * apCoz[] = nullptr,
 	const RWORD * aRword = nullptr,
 	const LITK * aLitk = nullptr)
@@ -844,7 +844,7 @@ bool FTestLexing()
 									};
 										
 	const int s_aNNum[] = {0,	  0, 5, 0, 0,   0, 0, 1, 0, 65535, 0, 0,        0};	// negative integer literal comes through as two tokens
-	const F64 s_aGNum[] = {2.456, 0, 0, 0, 7.3, 0, 0, 1, 0, 0,     0, 12.34e12, 12.34e-12};
+	const f64 s_aGNum[] = {2.456, 0, 0, 0, 7.3, 0, 0, 1, 0, 0,     0, 12.34e12, 12.34e-12};
 	static_assert(EWC_DIM(s_aTokNum)-1 == EWC_DIM(s_aNNum), "s_aNNum size mismatch");
 	static_assert(EWC_DIM(s_aTokNum)-1 == EWC_DIM(s_aGNum), "s_aGNum size mismatch");
 

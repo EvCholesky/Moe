@@ -220,6 +220,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="source\BigMath.h" />
+    <ClInclude Include="source\ByteCode.h" />
     <ClInclude Include="source\CodeGen.h" />
     <ClInclude Include="source\Error.h" />
     <ClInclude Include="source\EwcArray.h" />
@@ -236,6 +237,7 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
     <ClInclude Include="source\Workspace.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="source\ByteCode.cpp" />
     <ClCompile Include="source\CodeGen.cpp" />
     <ClCompile Include="source\EwcString.cpp" />
     <ClCompile Include="source\Lexer.cpp" />

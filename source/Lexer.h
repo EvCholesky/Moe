@@ -194,7 +194,7 @@ struct SLexer // tag = lex
 								// < 0 for an error, > 256 for multichar or eof
    GRFLEXER			m_grflexer;
    RWORD			m_rword;
-   F64				m_g;
+   f64				m_g;
    u64				m_n;
    LITK				m_litk;
    EWC::CString		m_str;

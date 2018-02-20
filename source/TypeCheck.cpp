@@ -1075,12 +1075,12 @@ inline s64 NSignedLiteralCast(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, c
 	}
 }
 
-inline F64 GLiteralCast(const CSTValue * pStval)
+inline f64 GLiteralCast(const CSTValue * pStval)
 {
 	switch (pStval->m_stvalk)
 	{
-	case STVALK_UnsignedInt:	return (F64)pStval->m_nUnsigned;
-	case STVALK_SignedInt:		return (F64)pStval->m_nSigned;
+	case STVALK_UnsignedInt:	return (f64)pStval->m_nUnsigned;
+	case STVALK_SignedInt:		return (f64)pStval->m_nSigned;
 	case STVALK_Float:			return pStval->m_g;
 	default: EWC_ASSERT(false, "expected number");
 	}
@@ -1169,7 +1169,7 @@ inline bool FComputeUnaryOpOnLiteral(
 	if (littyOperand.m_litk == LITK_Float)
 	{
 		bool f;
-		F64 g = GLiteralCast(pStvalOperand);
+		f64 g = GLiteralCast(pStvalOperand);
 		switch ((u32)tokOperator)
 		{
 		case '-':         g = -g; break;
@@ -1307,10 +1307,10 @@ inline bool FComputeBinaryOpOnLiterals(
 	// if lhs or rhs are float, upcast to float
 	if ((littyLhs.m_litk == LITK_Float) | (littyRhs.m_litk == LITK_Float))
 	{
-		F64 g;
+		f64 g;
 		bool f;
-		F64 gLhs = GLiteralCast(pStvalLhs);
-		F64 gRhs = GLiteralCast(pStvalRhs);
+		f64 gLhs = GLiteralCast(pStvalLhs);
+		f64 gRhs = GLiteralCast(pStvalRhs);
 		switch ((u32)tokOperator)
 		{
 		case TOK('+'):         g = gLhs + gRhs; break;

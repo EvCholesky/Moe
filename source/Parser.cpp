@@ -550,7 +550,7 @@ CSTNode * PStnodParseReservedWord(CParseContext * pParctx, SLexer * pLex, RWORD 
 	return pStnod;
 }
 
-STypeInfo * PTinForFloat(CSymbolTable * pSymtab, F64 gMin, F64 gLast)
+STypeInfo * PTinForFloat(CSymbolTable * pSymtab, f64 gMin, f64 gLast)
 {
 	return nullptr;
 }

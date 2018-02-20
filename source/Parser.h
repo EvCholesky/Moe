@@ -66,7 +66,7 @@ public:
 	EWC::CString		m_str;
 	union
 	{
-		F64					m_g;
+		f64					m_g;
 		u64					m_nUnsigned;
 		s64					m_nSigned;
 	};
@@ -76,7 +76,7 @@ public:
 										// BB - should STVALK should be expanded to make this unnecessary?
 };
 
-inline void SetFloatValue(CSTValue * pStval, F64 g)
+inline void SetFloatValue(CSTValue * pStval, f64 g)
 {
 	pStval->m_stvalk = STVALK_Float;
 	pStval->m_g = g;
