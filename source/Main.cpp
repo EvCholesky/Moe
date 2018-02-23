@@ -16,6 +16,7 @@
 #define EWC_TYPES_IMPLEMENTATION
 #include "EwcTypes.h"
 
+#include "ByteCode.h"
 #include "CodeGen.h"
 #include "Lexer.h"
 #include "Parser.h"
@@ -130,6 +131,7 @@ void PrintCommandLineOptions()
 	printf("	-printIR  : Print llvm's intermediate representation\n");
 	printf("    -release  : Generate optimized code and link against optimized local libraries\n");
 	printf("    -test     : Run compiler unit tests\n");
+	printf("    -bytecode : Run bytecode tests\n");
 	printf("    -useLLD   : Use llvm linker (rather than linke.exe) use this to emit DWARF debug data.\n");
 	printf("    -llvm cmd : run an llvm command line\n");
 }
@@ -492,6 +494,18 @@ int main(int cpChzArg, const char * apChzArg[])
 	if (aB)
 	{
 		delete[] aB;
+	}
+
+	if (comline.FHasCommand("-bytecode"))
+	{
+		u8 aBString[1024 * 100];
+		CAlloc allocString(aBString, sizeof(aBString));
+		StaticInitStrings(&allocString);
+
+		aB = new u8[s_cBHeap];
+		CAlloc alloc(aB, s_cBHeap);
+
+		BuildTestByteCode(&alloc);
 	}
 
 	if (comline.FHasCommand("-test"))

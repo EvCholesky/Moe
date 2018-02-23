@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "EwcArray.h"
 #include "EwcString.h"
 #include "EwcTypes.h"
 
@@ -96,30 +97,29 @@
 
 
 
-enum BCOPSZ	// tag = Byte Code OPerand Size
+enum BCOPSZ : u8 // tag = Byte Code OPerand Size
 {
 	BCOPSZ_8,
 	BCOPSZ_16,
 	BCOPSZ_32,
 	BCOPSZ_64,
+	BCOPSZ_Max
 };
 
 enum BCOPK : u8	// tag = Byte Code OPERand Kind
 {
-	/*
-	BCOPK_Lit8,
-	BCOPK_Lit16,
-	BCOPK_Lit32,
-	BCOPK_Lit64,
-	BCOPK_Stack8,
-	BCOPK_Stack16,
-	BCOPK_Stack32,
-	BCOPK_Stack64,
-	BCOPK_Register,
-	*/
 	BCOPK_Literal,
 	BCOPK_Stack,
 	BCOPK_Register,
+	BCOPK_Nil = 255
+};
+
+enum BCOPTYPE : u8
+{
+	BCOPTYPE_Float,
+	BCOPTYPE_Signed,
+	BCOPTYPE_Unsigned,
+	BCOPTYPE_Vid,
 };
 
 
@@ -127,9 +127,9 @@ enum BCOPK : u8	// tag = Byte Code OPERand Kind
 struct SInstruction		// tag = inst
 {
 	BCOP	m_bcop;
-	u8		m_bcopkDst	: 4;		
-	u8		m_bcopkSrc	: 4;		
-	u8		m_bcopkMod	: 4;		
+	u8		m_bcopkLhs	: 4;		
+	u8		m_bcopkRhs	: 4;		
+	u8		m_bcopkOut	: 4;		
 	u8		m_bcopsz	: 4;		
 };
 
@@ -138,49 +138,80 @@ struct SInstruction		// tag = inst
 class CVirtualMachine	// tag = vm
 {
 public:
+			CVirtualMachine(u8 * pBInst, u8 * pBStack);
+
 	u8 *	m_pBInstStart;
 	u8 *	m_pBInst;
 	u8 *	m_pBStack;
-
-	u8 *	m_pBHeap;
-	u8 *	m_pBCode;
 };
 
 
 
-struct SBCOperand		// tag = op 
+/*
+enum VID : u16		//  tag = Value ID
 {
-			SBCOperand(BCOPK bcopk, u64 nValue)
-			:m_bcopk(bcopk)
-			,m_nUnsigned(nValue)
-				{ ; }
+	VID_Max = 0xFFFF,
+	VID_Nil = 0xFFFF
+};*/
 
 
-	BCOPK	m_bcopk;
+
+struct SRecord		// tag = rec 
+{
+	BCOPK		m_bcopk;
+	BCOPTYPE	m_bcoptype;
+	BCOPSZ		m_bcopsz;
+
 	union
 	{
-		f64		m_g;
-		s64		m_nSigned;
-		u64		m_nUnsigned;
+		s8		m_s8;
+		s16		m_s16;
+		s32		m_s32;
+		s64		m_s64;
+		u8		m_u8;
+		u16		m_u16;
+		u32		m_u32;
+		u64		m_u64;
+		f32		m_f32;
+		f64		m_f64;
 	};
 };
+
+SRecord RecFloat(f64 g);
+SRecord RecSigned(s64 nSigned);
+SRecord RecUnsigned(u64 nUnsigned);
+SRecord RecStack(u32 iBStack);
+//SRecord RecVid(VID vid);
 
 
 
 struct SBCBlock			// tag = block
 {
 	u32			m_iBInstMin;
+	u32			m_cBStack;	// room needed on the stack for temporaries and local vars
 };
 
 
 
 struct SBCProcedure		// tag = proc
 {
+						SBCProcedure(EWC::CString strName, EWC::CString strMangled);
 	EWC::CString		m_strName;
 	EWC::CString		m_strMangled;
 
+	u32					m_cBStack;	// allocated bytes on stack
+
 	SBCBlock *			m_pBlock;
 };
+
+
+
+/*
+struct SBCValue		//	bcval
+{
+	u32			m_iBStack;	// stack space allocated for 
+	BCOPSZ		m_bcopsz;
+};*/
 
 
 
@@ -189,31 +220,43 @@ class CByteCodeBuilder // tag = bcbuild
 public:
 					CByteCodeBuilder(EWC::CAlloc * pAlloc);
 
-	//u32			IBStackPush(u8 cB);
-	//void			StackPop(u8 cB);
-
 	SBCProcedure *	PProcCreate(const char * pChzName, const char * pChzMangled);
+	void			BeginProc(SBCProcedure * pProc);
+	void			EndProc(SBCProcedure * pProc);
 
 	SBCBlock *		PBlockBegin();
 	void			EndBlock(SBCBlock * pBlock);
 
-	SBCOperand 		PRegisterAlloc();
-	void			PRegisterFree(SBCOperand * pOp);
-	//SBCOperand *	POpLoad("memory address?");
+//	SBCOperand 		PRegisterAlloc();
+//	void			PRegisterFree(SBCOperand * pOp);
 
-	void			AddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs);
-	void			AddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs, SBCOperand & opRhs);
+	//SBCValue		BcvalAddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs);
+	//SBCValue		BcvalAddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs, SBCOperand & opRhs);
 
-	EWC::CAlloc *	m_pAlloc;
-	u8 *			m_pBInstMin;	// start of the instruction buffer
-	u8 *			m_pBInstMax;
-	u8 *			m_pBDataMin;	// start of the data buffer
-	u8 *			m_pBDataMax;
+	SRecord			RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & recLhs);
+	SRecord			RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs);
+
+	u32				IBStackAlloc(u32 cB, u32 cBAlign);
+	u8 *			PBStackAlloc(u32 cB, u32 cBAlign);
+	//u8 *			PBInstAlloc(u32 cB, u32 cBAlign);
+	void			PackInst(const void * pV, u32 cB);
+	//void			UnpackInst(void * pV, u32 cB);
+
+	EWC::CAlloc *					m_pAlloc;
+	EWC::CDynAry<SRecord>			m_aryBcval;		
+	EWC::CDynAry<SBCProcedure *>	m_arypProcManaged;
+
+	SBCProcedure *			m_pProcCur;
+	u8 *					m_pBInstMin;	// start of the instruction buffer
+	u8 *					m_pBInstCur;
+	u8 *					m_pBInstMax;
+//	u8 *					m_pBDataMin;	// start of the data buffer
+//	u8 *					m_pBDataMax;
 };
 
 
 
 void ExecuteBytecode(CVirtualMachine * pVm);
-void BuildTestByteCode();
+void BuildTestByteCode(EWC::CAlloc * pAlloc);
 
 
