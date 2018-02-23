@@ -19,9 +19,15 @@
 #include "EwcString.h"
 #include "EwcTypes.h"
 
+
+
+namespace BCode
+{
+
 #define BC_OPCODE_LIST \
 		OP(Error), \
 		OP(Ret), \
+		OP(Halt), \
 		OP_RANGE(TerminalOp, Ret) \
 		\
 		OP(Call), \
@@ -67,6 +73,7 @@
 		OP(GEP), \
 		OP(PtrDiff), \
 		OP(Memcpy), \
+		OP(NTrace), \
 		OP_RANGE(MemoryOp, LogicOpMax) \
 		\
 		OP(NTrunc), \
@@ -83,180 +90,163 @@
 		OP(Bitcast), \
 		OP_RANGE(CastOp, MemoryOpMax) \
 
-#define OP(x) BCOP_##x
-#define OP_RANGE(range, PREV_VAL) BCOP_##range##Max, BCOP_##range##Min = BCOP_##PREV_VAL, BCOP_##range##Last = BCOP_##range##Max - 1,
-	enum BCOP : u8
+
+#define OP(x) OP_##x
+#define OP_RANGE(range, PREV_VAL) OP_##range##Max, OP_##range##Min = OP_##PREV_VAL, OP_##range##Last = OP_##range##Max - 1,
+	enum OP : u8
 	{
 		BC_OPCODE_LIST
 
-		BCOP_Max,
-		BCOP_Min = 0,
+		OP_Max,
+		OP_Min = 0,
 	};
 #undef OP_RANGE
 #undef OP
 
 
 
-enum BCOPSZ : u8 // tag = Byte Code OPerand Size
-{
-	BCOPSZ_8,
-	BCOPSZ_16,
-	BCOPSZ_32,
-	BCOPSZ_64,
-	BCOPSZ_Max
-};
-
-enum BCOPK : u8	// tag = Byte Code OPERand Kind
-{
-	BCOPK_Literal,
-	BCOPK_Stack,
-	BCOPK_Register,
-	BCOPK_Nil = 255
-};
-
-enum BCOPTYPE : u8
-{
-	BCOPTYPE_Float,
-	BCOPTYPE_Signed,
-	BCOPTYPE_Unsigned,
-	BCOPTYPE_Vid,
-};
-
-
-
-struct SInstruction		// tag = inst
-{
-	BCOP	m_bcop;
-	u8		m_bcopkLhs	: 4;		
-	u8		m_bcopkRhs	: 4;		
-	u8		m_bcopkOut	: 4;		
-	u8		m_bcopsz	: 4;		
-};
-
-
-
-class CVirtualMachine	// tag = vm
-{
-public:
-			CVirtualMachine(u8 * pBInst, u8 * pBStack);
-
-	u8 *	m_pBInstStart;
-	u8 *	m_pBInst;
-	u8 *	m_pBStack;
-};
-
-
-
-/*
-enum VID : u16		//  tag = Value ID
-{
-	VID_Max = 0xFFFF,
-	VID_Nil = 0xFFFF
-};*/
-
-
-
-struct SRecord		// tag = rec 
-{
-	BCOPK		m_bcopk;
-	BCOPTYPE	m_bcoptype;
-	BCOPSZ		m_bcopsz;
-
-	union
+	enum OPSZ : u8 // tag = Byte Code OPerand Size
 	{
-		s8		m_s8;
-		s16		m_s16;
-		s32		m_s32;
-		s64		m_s64;
-		u8		m_u8;
-		u16		m_u16;
-		u32		m_u32;
-		u64		m_u64;
-		f32		m_f32;
-		f64		m_f64;
+		OPSZ_8,
+		OPSZ_16,
+		OPSZ_32,
+		OPSZ_64,
+		OPSZ_Max
 	};
-};
 
-SRecord RecFloat(f64 g);
-SRecord RecSigned(s64 nSigned);
-SRecord RecUnsigned(u64 nUnsigned);
-SRecord RecStack(u32 iBStack);
-//SRecord RecVid(VID vid);
+	enum OPK : u8	// tag = Byte Code OPERand Kind
+	{
+		OPK_Literal,
+		OPK_Stack,
+		OPK_Register,
 
-
-
-struct SBCBlock			// tag = block
-{
-	u32			m_iBInstMin;
-	u32			m_cBStack;	// room needed on the stack for temporaries and local vars
-};
+		OPK_Nil			= 255
+	};
 
 
 
-struct SBCProcedure		// tag = proc
-{
-						SBCProcedure(EWC::CString strName, EWC::CString strMangled);
-	EWC::CString		m_strName;
-	EWC::CString		m_strMangled;
+	struct SInstructionOld		// tag = inst
+	{
+		OP		m_op;
+		u8		m_opkLhs : 4;
+		u8		m_opkRhs : 4;
+		u8		m_opkOut : 4;
+		u8		m_opsz : 4;
+	};
 
-	u32					m_cBStack;	// allocated bytes on stack
+	struct SWord	// tag = word
+	{
+		union
+		{
+			s8		m_s8;
+			s16		m_s16;
+			s32		m_s32;
+			s64		m_s64;
+			u8		m_u8;
+			u16		m_u16;
+			u32		m_u32;
+			u64		m_u64;
+			f32		m_f32;
+			f64		m_f64;
+		};
+	};
 
-	SBCBlock *			m_pBlock;
-};
+	struct SInstruction		// tag = inst
+	{
+		OP		m_op;
+		OPSZ	m_opsz;
+		OPK		m_opkLhs;
+		OPK		m_opkRhs;
 
-
-
-/*
-struct SBCValue		//	bcval
-{
-	u32			m_iBStack;	// stack space allocated for 
-	BCOPSZ		m_bcopsz;
-};*/
-
-
-
-class CByteCodeBuilder // tag = bcbuild
-{
-public:
-					CByteCodeBuilder(EWC::CAlloc * pAlloc);
-
-	SBCProcedure *	PProcCreate(const char * pChzName, const char * pChzMangled);
-	void			BeginProc(SBCProcedure * pProc);
-	void			EndProc(SBCProcedure * pProc);
-
-	SBCBlock *		PBlockBegin();
-	void			EndBlock(SBCBlock * pBlock);
-
-//	SBCOperand 		PRegisterAlloc();
-//	void			PRegisterFree(SBCOperand * pOp);
-
-	//SBCValue		BcvalAddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs);
-	//SBCValue		BcvalAddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs, SBCOperand & opRhs);
-
-	SRecord			RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & recLhs);
-	SRecord			RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs);
-
-	u32				IBStackAlloc(u32 cB, u32 cBAlign);
-	u8 *			PBStackAlloc(u32 cB, u32 cBAlign);
-	//u8 *			PBInstAlloc(u32 cB, u32 cBAlign);
-	void			PackInst(const void * pV, u32 cB);
-	//void			UnpackInst(void * pV, u32 cB);
-
-	EWC::CAlloc *					m_pAlloc;
-	EWC::CDynAry<SRecord>			m_aryBcval;		
-	EWC::CDynAry<SBCProcedure *>	m_arypProcManaged;
-
-	SBCProcedure *			m_pProcCur;
-	u8 *					m_pBInstMin;	// start of the instruction buffer
-	u8 *					m_pBInstCur;
-	u8 *					m_pBInstMax;
-//	u8 *					m_pBDataMin;	// start of the data buffer
-//	u8 *					m_pBDataMax;
-};
+		u32		m_iBStackOut;
+		SWord	m_wordLhs;
+		SWord	m_wordRhs;
+	};
 
 
 
-void ExecuteBytecode(CVirtualMachine * pVm);
-void BuildTestByteCode(EWC::CAlloc * pAlloc);
+	class CVirtualMachine	// tag = vm
+	{
+	public:
+		CVirtualMachine(u8 * pBInst, u8 * pBStack);
 
+		u8 *	m_pBInstStart;
+		u8 *	m_pBInst;
+		u8 *	m_pBStack;
+	};
+
+	struct SRecord		// tag = rec 
+	{
+		OPK			m_opk;
+		SWord		m_word;
+	};
+
+	SRecord RecFloat(f64 g);
+	SRecord RecSigned(s64 nSigned);
+	SRecord RecUnsigned(u64 nUnsigned);
+	SRecord RecStack(u32 iBStack);
+
+
+
+	struct SBlock			// tag = block
+	{
+		u32			m_iBInstMin;
+		u32			m_cBStack;	// room needed on the stack for temporaries and local vars
+	};
+
+
+
+	struct SProcedure		// tag = proc
+	{
+		SProcedure(EWC::CString strName, EWC::CString strMangled);
+		EWC::CString		m_strName;
+		EWC::CString		m_strMangled;
+
+		u32					m_cBStack;	// allocated bytes on stack
+
+		SBlock *			m_pBlock;
+	};
+
+
+
+	class CBuilder // tag = bcbuild
+	{
+	public:
+		CBuilder(EWC::CAlloc * pAlloc);
+
+		SProcedure *	PProcCreate(const char * pChzName, const char * pChzMangled);
+		void			BeginProc(SProcedure * pProc);
+		void			EndProc(SProcedure * pProc);
+
+		SBlock *		PBlockBegin();
+		void			EndBlock(SBlock * pBlock);
+
+		//	SBCOperand 		PRegisterAlloc();
+		//	void			PRegisterFree(SBCOperand * pOp);
+
+		SRecord			RecAddInstOld(OP bcop, OPSZ bcopsz, const SRecord & recLhs);
+		SRecord			RecAddInstOld(OP bcop, OPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs);
+
+		SRecord			RecAddInst(OP bcop, OPSZ bcopsz, const SRecord & recLhs);
+		SRecord			RecAddInst(OP bcop, OPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs);
+
+		u32				IBStackAlloc(u32 cB, u32 cBAlign);
+		SInstruction *	PInstAlloc();
+		void			PackInst(const void * pV, u32 cB);
+
+		EWC::CAlloc *					m_pAlloc;
+		EWC::CDynAry<SProcedure *>		m_arypProcManaged;
+
+		SProcedure *					m_pProcCur;
+		u8 *							m_pBInstMin;	// start of the instruction buffer
+		u8 *							m_pBInstCur;
+		u8 *							m_pBInstMax;
+	};
+
+
+
+	void ExecuteBytecodeOld(CVirtualMachine * pVm);
+	void BuildTestByteCode(EWC::CAlloc * pAlloc);
+
+}
 

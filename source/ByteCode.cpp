@@ -14,26 +14,30 @@
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
 #include "ByteCode.h"
+#include "stdio.h"
 
 using namespace EWC;
 
-u32 CBFromBcopsz(BCOPSZ bcopsz)
+namespace BCode 
 {
-	static const u32 s_mpBcopszCB [] =
-	{
-		1,	// BCOPSZ_8,
-		2,	// BCOPSZ_16,
-		4,	// BCOPSZ_32,
-		8,	// BCOPSZ_64,
-	};
-	EWC_CASSERT(EWC_DIM(s_mpBcopszCB) == BCOPSZ_Max, "missing size");
 
-	if (!EWC_FVERIFY(bcopsz < BCOPSZ_Max))
+u32 CBFromOpsz(OPSZ opsz)
+{
+	static const u32 s_mpOpszCB [] =
+	{
+		1,	// OPSZ_8,
+		2,	// OPSZ_16,
+		4,	// OPSZ_32,
+		8,	// OPSZ_64,
+	};
+	EWC_CASSERT(EWC_DIM(s_mpOpszCB) == OPSZ_Max, "missing size");
+
+	if (!EWC_FVERIFY(opsz < OPSZ_Max))
 		return 1;
-	return s_mpBcopszCB[bcopsz];
+	return s_mpOpszCB[opsz];
 }
 
-SBCProcedure::SBCProcedure(EWC::CString strName, EWC::CString strMangled)
+SProcedure::SProcedure(EWC::CString strName, EWC::CString strMangled)
 :m_strName(strName)
 ,m_strMangled(strMangled)
 ,m_cBStack(0)
@@ -43,9 +47,8 @@ SBCProcedure::SBCProcedure(EWC::CString strName, EWC::CString strMangled)
 
 
 
-CByteCodeBuilder::CByteCodeBuilder(EWC::CAlloc * pAlloc)
+CBuilder::CBuilder(EWC::CAlloc * pAlloc)
 :m_pAlloc(pAlloc)
-,m_aryBcval(pAlloc, BK_ByteCodeCreator, 512)
 ,m_arypProcManaged(pAlloc, BK_ByteCodeCreator, 256)
 ,m_pProcCur(nullptr)
 ,m_pBInstMin(nullptr)
@@ -58,85 +61,61 @@ CByteCodeBuilder::CByteCodeBuilder(EWC::CAlloc * pAlloc)
 	m_pBInstMax = m_pBInstMin + s_cBInst;
 }
 
-SBCProcedure * CByteCodeBuilder::PProcCreate(const char * pChzName, const char * pChzMangled)
+SProcedure * CBuilder::PProcCreate(const char * pChzName, const char * pChzMangled)
 {
-	auto pProc = EWC_NEW(m_pAlloc, SBCProcedure) SBCProcedure(pChzName, pChzMangled);
+	auto pProc = EWC_NEW(m_pAlloc, SProcedure) SProcedure(pChzName, pChzMangled);
 	m_arypProcManaged.Append(pProc);
 
 	return pProc;
 }
 
-void CByteCodeBuilder::BeginProc(SBCProcedure * pProc)
+void CBuilder::BeginProc(SProcedure * pProc)
 {
 	EWC_ASSERT(!m_pProcCur, "cannot begin procedure %s; previous procedure %s was not ended", 
 		m_pProcCur->m_strName.PCoz(), pProc->m_strName.PCoz());
 	m_pProcCur = pProc;
 }
 
-void CByteCodeBuilder::EndProc(SBCProcedure * pProc)
+void CBuilder::EndProc(SProcedure * pProc)
 {
 	EWC_ASSERT(m_pProcCur == pProc, "mismatch ending procedure %s", pProc->m_strName.PCoz());
 	m_pProcCur = nullptr;
 }
 
-SBCBlock * CByteCodeBuilder::PBlockBegin()
+SBlock * CBuilder::PBlockBegin()
 {
 	return nullptr;
 }
 
-void CByteCodeBuilder::EndBlock(SBCBlock * pBlock)
+void CBuilder::EndBlock(SBlock * pBlock)
 {
 }
 
-/*
-SBCValue CByteCodeBuilder::BcvalAddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs)
+SRecord CBuilder::RecAddInstOld(OP op, OPSZ opsz, const SRecord & recLhs)
 {
-	SBCValue bcvalRet;
-	bcvalRet.m_bcopsz = bcopsz;
-
-	return bcvalRet;
-}
-
-SBCValue CByteCodeBuilder::BcvalAddInst(BCOP bcop, BCOPSZ bcopsz, SBCOperand & opLhs, SBCOperand & opRhs)
-{
-	SBCValue bcvalRet;
-	bcvalRet.m_bcopsz = bcopsz;
-
-	return bcvalRet;
-}*/
-
-
-SRecord CByteCodeBuilder::RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & recLhs)
-{
-	// setup output value
-	/*
-	SRecord recOutAddr;
-	VID vidOut = VidCoerce(m_aryBcval.C());
-	SBCValue * pBcvalOut = m_aryBcval.AppendNew();
-	pBcvalOut->m_bcopsz = bcopsz;
-	*/
-
-	u32 cB = CBFromBcopsz(bcopsz);
+	u32 cB = CBFromOpsz(opsz);
 	u32 iBStackOut = IBStackAlloc(cB, cB);
 
-	//auto pInst = (SInstruction *)PBInstAlloc(sizeof(SInstruction), EWC_ALIGN_OF(SInstruction));
-	SInstruction inst;
-	inst.m_bcop = bcop;
-	inst.m_bcopsz = bcopsz;
-	inst.m_bcopkLhs = recLhs.m_bcopk;
-	inst.m_bcopkRhs = BCOPK_Nil;
-	inst.m_bcopkOut = BCOPK_Stack;
-	PackInst(&inst, sizeof(SInstruction));
+	SInstructionOld inst;
+	inst.m_op = op;
+	inst.m_opsz = opsz;
+	inst.m_opkLhs = recLhs.m_opk;
+	inst.m_opkRhs = OPK_Nil;
+	inst.m_opkOut = OPK_Stack;
+	PackInst(&inst, sizeof(SInstructionOld));
 
-	#define MASHTYPE(BCOPK, BCOPSZ)				(u32)(BCOPK | (BCOPSZ << 16))
-	switch (MASHTYPE(recLhs.m_bcopk, bcopsz))
+	#define MASHTYPE(OPK, OPSZ)				(u32)(OPK | (OPSZ << 16))
+	switch (MASHTYPE(recLhs.m_opk, opsz))
 	{
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_8):		PackInst(&recLhs.m_u8, 1);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_16):	PackInst(&recLhs.m_u16, 2);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_32):	PackInst(&recLhs.m_u32, 4);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_64):	PackInst(&recLhs.m_u64, 8);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_8):		PackInst(&recLhs.m_word.m_u8, 1);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_16):	PackInst(&recLhs.m_word.m_u16, 2);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_32):	PackInst(&recLhs.m_word.m_u32, 4);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_64):	PackInst(&recLhs.m_word.m_u64, 8);	break;
 
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_32):		PackInst(&recLhs.m_u32, 4);	break;
+		case MASHTYPE(OPK_Stack, OPSZ_8):
+		case MASHTYPE(OPK_Stack, OPSZ_16):
+		case MASHTYPE(OPK_Stack, OPSZ_32):
+		case MASHTYPE(OPK_Stack, OPSZ_64):		PackInst(&recLhs.m_word.m_u32, 4);	break;
 		default:
 			EWC_ASSERT(false, "unhandled opcode kind");
 	}
@@ -146,47 +125,46 @@ SRecord CByteCodeBuilder::RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & r
 	return RecStack(iBStackOut);
 }
 
-SRecord CByteCodeBuilder::RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs)
+SRecord CBuilder::RecAddInstOld(OP op, OPSZ opsz, const SRecord & recLhs, const SRecord & recRhs)
 {
-	u32 cB = CBFromBcopsz(bcopsz);
+	u32 cB = CBFromOpsz(opsz);
 	u32 iBStackOut = IBStackAlloc(cB, cB);
 
-	SInstruction inst;
-	inst.m_bcop = bcop;
-	inst.m_bcopsz = bcopsz;
-	inst.m_bcopkLhs = recLhs.m_bcopk;
-	inst.m_bcopkRhs = recRhs.m_bcopk;
-	inst.m_bcopkOut = BCOPK_Stack;
-	PackInst(&inst, sizeof(SInstruction));
+	SInstructionOld inst;
+	inst.m_op = op;
+	inst.m_opsz = opsz;
+	inst.m_opkLhs = recLhs.m_opk;
+	inst.m_opkRhs = recRhs.m_opk;
+	inst.m_opkOut = OPK_Stack;
+	PackInst(&inst, sizeof(SInstructionOld));
 
-
-	#define MASHTYPE(BCOPK, BCOPSZ)				(u32)(BCOPK | (BCOPSZ << 16))
-	switch (MASHTYPE(recLhs.m_bcopk, bcopsz))
+	#define MASHTYPE(OPK, OPSZ)				(u32)(OPK | (OPSZ << 16))
+	switch (MASHTYPE(recLhs.m_opk, opsz))
 	{
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_8):		PackInst(&recLhs.m_u8, 1);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_16):	PackInst(&recLhs.m_u16, 2);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_32):	PackInst(&recLhs.m_u32, 4);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_64):	PackInst(&recLhs.m_u64, 8);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_8):		PackInst(&recLhs.m_word.m_u8, 1);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_16):	PackInst(&recLhs.m_word.m_u16, 2);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_32):	PackInst(&recLhs.m_word.m_u32, 4);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_64):	PackInst(&recLhs.m_word.m_u64, 8);	break;
 
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_8):
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_16):
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_32):
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_64):		PackInst(&recLhs.m_u32, 4);	break;
+		case MASHTYPE(OPK_Stack, OPSZ_8):
+		case MASHTYPE(OPK_Stack, OPSZ_16):
+		case MASHTYPE(OPK_Stack, OPSZ_32):
+		case MASHTYPE(OPK_Stack, OPSZ_64):		PackInst(&recLhs.m_word.m_u32, 4);	break;
 		default:
 			EWC_ASSERT(false, "unhandled opcode kind");
 	}
 
-	switch (MASHTYPE(recRhs.m_bcopk, bcopsz))
+	switch (MASHTYPE(recRhs.m_opk, opsz))
 	{
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_8):		PackInst(&recRhs.m_u8, 1);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_16):	PackInst(&recRhs.m_u16, 2);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_32):	PackInst(&recRhs.m_u32, 4);	break;
-		case MASHTYPE(BCOPK_Literal, BCOPSZ_64):	PackInst(&recRhs.m_u64, 8);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_8):		PackInst(&recRhs.m_word.m_u8, 1);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_16):	PackInst(&recRhs.m_word.m_u16, 2);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_32):	PackInst(&recRhs.m_word.m_u32, 4);	break;
+		case MASHTYPE(OPK_Literal, OPSZ_64):	PackInst(&recRhs.m_word.m_u64, 8);	break;
 
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_8):
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_16):
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_32):
-		case MASHTYPE(BCOPK_Stack, BCOPSZ_64):		PackInst(&recRhs.m_u32, 4);	break;
+		case MASHTYPE(OPK_Stack, OPSZ_8):
+		case MASHTYPE(OPK_Stack, OPSZ_16):
+		case MASHTYPE(OPK_Stack, OPSZ_32):
+		case MASHTYPE(OPK_Stack, OPSZ_64):		PackInst(&recRhs.m_word.m_u32, 4);	break;
 		default:
 			EWC_ASSERT(false, "unhandled opcode kind");
 	}
@@ -196,7 +174,45 @@ SRecord CByteCodeBuilder::RecAddInst(BCOP bcop, BCOPSZ bcopsz, const SRecord & r
 	return RecStack(iBStackOut);
 }
 
-u32	CByteCodeBuilder::IBStackAlloc(u32 cB, u32 cBAlign)
+SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs)
+{
+	u32 cB = CBFromOpsz(opsz);
+
+	auto pInst = PInstAlloc();
+	pInst->m_op = op;
+	pInst->m_opsz = opsz;
+	pInst->m_opkLhs = recLhs.m_opk;
+	pInst->m_opkRhs = OPK_Nil;
+
+	u32 iBStackOut = IBStackAlloc(cB, cB);
+	pInst->m_iBStackOut = iBStackOut;
+
+	pInst->m_wordLhs.m_u64 = recLhs.m_word.m_u64;
+	pInst->m_wordRhs.m_u64 = 0;
+	
+	return RecStack(iBStackOut);
+}
+
+SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs, const SRecord & recRhs)
+{
+	u32 cB = CBFromOpsz(opsz);
+
+	auto pInst = PInstAlloc();
+	pInst->m_op = op;
+	pInst->m_opsz = opsz;
+	pInst->m_opkLhs = recLhs.m_opk;
+	pInst->m_opkRhs = OPK_Nil;
+
+	u32 iBStackOut = IBStackAlloc(cB, cB);
+	pInst->m_iBStackOut = iBStackOut;
+
+	pInst->m_wordLhs.m_u64 = recLhs.m_word.m_u64;
+	pInst->m_wordRhs.m_u64 = recRhs.m_word.m_u64;
+	
+	return RecStack(iBStackOut);
+}
+
+u32	CBuilder::IBStackAlloc(u32 cB, u32 cBAlign)
 {
 	if (!EWC_FVERIFY(m_pProcCur, "Allocating from the stack without an active procedure"))
 		return 0;
@@ -206,35 +222,22 @@ u32	CByteCodeBuilder::IBStackAlloc(u32 cB, u32 cBAlign)
 	return cBStack;
 }
 
-/*
-u8 * CByteCodeBuilder::PBStackAlloc(u32 cB, u32 cBAlign)
+SInstruction * CBuilder::PInstAlloc()
 {
-	if (!EWC_FVERIFY(m_pProcCur, "Allocating from the stack without an active procedure"))
-		return 0;
-	size_t cBMasked = cBAlign - 1;
-	u32 cBStack = U32Coerce((m_pProcCur->m_cBStack + cBMasked) & ~cBMasked);
-	m_pProcCur->m_cBStack = cBStack + cB;
-	return cBStack;
-}*/
-
-/*
-u8 * CByteCodeBuilder::PBInstAlloc(u32 cBAlloc, u32 cBAlign)
-{
-	//auto pBAlign = (u8 *)EWC::PVAlign(m_pBInstCur, EWC_ALIGN_OF(SInstruction));
-	auto pBAlign = (u8 *)EWC::PVAlign(m_pBInstCur, cBAlign);
+	auto pBAlign = (u8 *)EWC::PVAlign(m_pBInstCur, EWC_ALIGN_OF(SInstruction));
 	ptrdiff_t cBAlign = pBAlign - m_pBInstCur;
 
-	u32 cB = U32Coerce(cB + cBAlign);
+	u32 cBTotal = U32Coerce(sizeof(SInstruction) + cBAlign);
 	ptrdiff_t cBRemain = m_pBInstMax - m_pBInstCur;
-	if (cBRemain < cB)
+	if (cBRemain < cBTotal)
 		return nullptr;
 
 	auto pB = (u8 *)(m_pBInstCur + cBAlign);
-	m_pBInstCur += cB;
-	return pB;
-}*/
+	m_pBInstCur += cBTotal;
+	return (SInstruction *)pB;
+}
 
-void CByteCodeBuilder::PackInst(const void * pV, u32 cB)
+void CBuilder::PackInst(const void * pV, u32 cB)
 {
 	ptrdiff_t cBRemain = m_pBInstMax - m_pBInstCur;
 	if (cBRemain < cB)
@@ -243,11 +246,13 @@ void CByteCodeBuilder::PackInst(const void * pV, u32 cB)
 	EWC::CopyAB(pV, m_pBInstCur, cB);
 	m_pBInstCur += cB;
 }
+
 void UnpackInst(u8 ** ppBInst, void * pVOut, u32 cB)
 {
 	EWC::CopyAB(*ppBInst, pVOut, cB);
 	*ppBInst += cB;
 }
+
 
 
 template <typename T>
@@ -260,7 +265,7 @@ static inline T StackFetch(CVirtualMachine * pVm)
 
 static inline void ReadOpcodes(CVirtualMachine * pVm, u32 * piLhs, u32 * piOut)
 {
-	u32 * pI = (u32*)(pVm->m_pBInst + sizeof(SInstruction));
+	u32 * pI = (u32*)(pVm->m_pBInst + sizeof(SInstructionOld));
 	*piLhs = *pI++;
 	*piOut = *pI++;
 	pVm->m_pBInst = (u8 *)pI;
@@ -268,73 +273,111 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, u32 * piLhs, u32 * piOut)
 
 static inline void ReadOpcodes(CVirtualMachine * pVm, u32 * piLhs, u32 * piRhs, u32 * piOut)
 {
-	u32 * pI = (u32*)(pVm->m_pBInst + sizeof(SInstruction));
+	u32 * pI = (u32*)(pVm->m_pBInst + sizeof(SInstructionOld));
 	*piLhs = *pI++;
 	*piRhs = *pI++;
 	*piOut = *pI++;
 	pVm->m_pBInst = (u8 *)pI;
 }
 
-static inline void LoadRecord(CVirtualMachine * pVm, SRecord * pRec, u32 iB, BCOPSZ bcopsz)
+static inline void LoadWord(CVirtualMachine * pVm, SWord * pWord, u32 iB, OPSZ opsz)
 {
 	u8 * pB = &pVm->m_pBStack[iB];
-	switch (bcopsz)
+	switch (opsz)
 	{
-		case BCOPSZ_8:	pRec->m_u8 = *pB;
-		case BCOPSZ_16:	pRec->m_u16 = *(u16*)pB;
-		case BCOPSZ_32: pRec->m_u32 = *(u32*)pB;
-		case BCOPSZ_64: pRec->m_u64 = *(u64*)pB;
+		case OPSZ_8:	pWord->m_u8 = *pB;			break;
+		case OPSZ_16:	pWord->m_u16 = *(u16*)pB;	break;
+		case OPSZ_32:	pWord->m_u32 = *(u32*)pB;	break;
+		case OPSZ_64:	pWord->m_u64 = *(u64*)pB;	break;
 	}
 }
 
-static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SRecord * pRecLhs, u32 * piOut)
+static inline void ReadOpcodesOld(CVirtualMachine * pVm, SInstructionOld * pInst, SWord * pWordLhs, u32 * piOut)
 {
-	BCOPSZ bcopsz = (BCOPSZ)pInst->m_bcopsz;
-	u32 cB = CBFromBcopsz(bcopsz);
-	UnpackInst(&pVm->m_pBInst, &pRecLhs->m_u64, cB);
-	if (pInst->m_bcopkLhs == BCOPK_Stack)
+	OPSZ opsz = (OPSZ)pInst->m_opsz;
+	u32 cB = CBFromOpsz(opsz);
+	if (pInst->m_opkLhs == OPK_Stack)
 	{
 		u32 iBStack;
 		UnpackInst(&pVm->m_pBInst, &iBStack, sizeof(iBStack));
-		LoadRecord(pVm, pRecLhs, iBStack, bcopsz);
+		LoadWord(pVm, pWordLhs, iBStack, opsz);
 	}
 	else
 	{
-		UnpackInst(&pVm->m_pBInst, &pRecLhs->m_u64, cB);
+		UnpackInst(&pVm->m_pBInst, &pWordLhs->m_u64, cB);
 	}
 
 	UnpackInst(&pVm->m_pBInst, piOut, 4);
 }
 
-static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SRecord * pRecLhs, SRecord * pRecRhs, u32 * piOut)
+static inline void ReadOpcodesOld(CVirtualMachine * pVm, SInstructionOld * pInst, SWord * pWordLhs, SWord * pWordRhs, u32 * piOut)
 {
-	BCOPSZ bcopsz = (BCOPSZ)pInst->m_bcopsz;
-	u32 cB = CBFromBcopsz(bcopsz);
-	if (pInst->m_bcopkLhs == BCOPK_Stack)
+	OPSZ opsz = (OPSZ)pInst->m_opsz;
+	u32 cB = CBFromOpsz(opsz);
+	if (pInst->m_opkLhs == OPK_Stack)
 	{
 		u32 iBStack;
 		UnpackInst(&pVm->m_pBInst, &iBStack, sizeof(iBStack));
-		LoadRecord(pVm, pRecLhs, iBStack, bcopsz);
+		LoadWord(pVm, pWordLhs, iBStack, opsz);
 	}
 	else
 	{
-		UnpackInst(&pVm->m_pBInst, &pRecLhs->m_u64, cB);
+		UnpackInst(&pVm->m_pBInst, &pWordLhs->m_u64, cB);
 	}
 
 
-	if (pInst->m_bcopkRhs == BCOPK_Stack)
+	if (pInst->m_opkRhs == OPK_Stack)
 	{
 		u32 iBStack;
 		UnpackInst(&pVm->m_pBInst, &iBStack, sizeof(iBStack));
-		LoadRecord(pVm, pRecRhs, iBStack, bcopsz);
+		LoadWord(pVm, pWordRhs, iBStack, opsz);
 	}
 	else
 	{
-		UnpackInst(&pVm->m_pBInst, &pRecRhs->m_u64, cB);
+		UnpackInst(&pVm->m_pBInst, &pWordRhs->m_u64, cB);
 	}
 
 	UnpackInst(&pVm->m_pBInst, piOut, 4);
 }
+
+static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs)
+{
+	if (pInst->m_opkLhs == OPK_Stack)
+	{
+		OPSZ opsz = (OPSZ)pInst->m_opsz;
+		u32 cB = CBFromOpsz(opsz);
+		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_u32, opsz);
+	}
+	else
+	{
+		*pWordLhs = pInst->m_wordLhs;
+	}
+}
+
+static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs, SWord * pWordRhs)
+{
+	OPSZ opsz = (OPSZ)pInst->m_opsz;
+	u32 cB = CBFromOpsz(opsz);
+
+	if (pInst->m_opkLhs == OPK_Stack)
+	{
+		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_u32, opsz);
+	}
+	else
+	{
+		*pWordLhs = pInst->m_wordLhs;
+	}
+
+	if (pInst->m_opkRhs == OPK_Stack)
+	{
+		LoadWord(pVm, pWordRhs, pInst->m_wordRhs.m_u32, opsz);
+	}
+	else
+	{
+		*pWordRhs = pInst->m_wordRhs;
+	}
+}
+
 
 template <typename T>
 static inline void StackStore(CVirtualMachine * pVm, T val)
@@ -344,114 +387,112 @@ static inline void StackStore(CVirtualMachine * pVm, T val)
 	*(T *)&pVm->m_pBStack[ibStack] = val;
 }
 
-void ExecuteBytecode(CVirtualMachine * pVm)
+void ExecuteBytecodeOld(CVirtualMachine * pVm)
 {
-	#define MASHOP(BCOP, BCOPSZ)				(u32)(BCOP | (BCOPSZ << 16))
-
-
-	// BB - Ignoring BCOPK - everthing is on the stack
-#if 0
-	#define FETCH(NAME, TYPE)					auto ibStack##NAME = *(u32 *)pVm->m_pBInst; \
-												pVm->m_pBInst += 4; \
-												auto NAME = *(TYPE *)&pVm->m_pBStack[ibStack##NAME]
-
-	#define STORE(VALUE, DEST, TYPE)			auto ibStack##NAME = *(u32 *)pVm->m_pBInst; \
-												pVm->m_pBInst += 4; \
-												*(TYPE *)&pVm->m_pBStack[ibStack##DEST] = VALUE
-
-	while (1)
-	{
-		SInstruction * pInst = (SInstruction *)pVm->m_pBInst;
-		//pVm->m_pBInst += pBInst->m_dB;
-
-		switch (MASHOP(pInst->m_bcop, pInst->m_bcopsz))
-		{
-		case MASHOP(BCOP_NAdd, BCOPSZ_8):	{ FETCH(Lhs, u8); FETCH(Rhs, u8);	STORE(Rhs + Lhs, Out, u8); } break;
-		case MASHOP(BCOP_NAdd, BCOPSZ_16):	{ FETCH(Lhs, u16); FETCH(Rhs, u16); STORE(Rhs + Lhs, Out, u16); } break;
-		case MASHOP(BCOP_NAdd, BCOPSZ_32):	{ FETCH(Lhs, u32); FETCH(Rhs, u32); STORE(Rhs + Lhs, Out, u32); } break;
-		case MASHOP(BCOP_NAdd, BCOPSZ_64):	{ FETCH(Lhs, u64); FETCH(Rhs, u64); STORE(Rhs + Lhs, Out, u64); } break;
-
-		case MASHOP(BCOP_GAdd, BCOPSZ_32):	{ FETCH(Lhs, f32); FETCH(Rhs, f32); STORE(Rhs + Lhs, Out, f32); } break;
-		case MASHOP(BCOP_GAdd, BCOPSZ_64):	{ FETCH(Lhs, f64); FETCH(Rhs, f64); STORE(Rhs + Lhs, Out, f64); } break;
-
-		case MASHOP(BCOP_NSub, BCOPSZ_8):	{ FETCH(Lhs, u8); FETCH(Rhs, u8);	STORE(Rhs - Lhs, Out, u8); } break;
-		case MASHOP(BCOP_NSub, BCOPSZ_16):	{ FETCH(Lhs, u16); FETCH(Rhs, u16); STORE(Rhs - Lhs, Out, u16); } break;
-		case MASHOP(BCOP_NSub, BCOPSZ_32):	{ FETCH(Lhs, u32); FETCH(Rhs, u32); STORE(Rhs - Lhs, Out, u32); } break;
-		case MASHOP(BCOP_NSub, BCOPSZ_64):	{ FETCH(Lhs, u64); FETCH(Rhs, u64); STORE(Rhs - Lhs, Out, u64); } break;
-
-		case MASHOP(BCOP_GSub, BCOPSZ_32):	{ FETCH(Lhs, f32); FETCH(Rhs, f32); STORE(Rhs - Lhs, Out, f32); } break;
-		case MASHOP(BCOP_GSub, BCOPSZ_64):	{ FETCH(Lhs, f64); FETCH(Rhs, f64); STORE(Rhs - Lhs, Out, f64); } break;
-			break;
-		}
-	}
-#endif
+	#define MASHOP(OP, OPSZ)					(u32)(OP | (OPSZ << 16))
 	#define FETCH(IB, TYPE)						*(TYPE *)&pVm->m_pBStack[IB]
-
 	#define STORE(IBOUT, TYPE, VALUE)			*(TYPE *)&pVm->m_pBStack[IBOUT] = VALUE
 
-
-
 	u32 iBStackOut;	
-	SRecord recLhs, recRhs;
+	SWord recLhs, recRhs;
 
 	while (1)
 	{
-		//SInstruction * pInst = (SInstruction *)pVm->m_pBInst;
-		SInstruction inst;
-		UnpackInst(&pVm->m_pBInst, &inst, sizeof(SInstruction));
+		SInstructionOld inst;
+		UnpackInst(&pVm->m_pBInst, &inst, sizeof(SInstructionOld));
+		if (inst.m_op == OP_Halt)
+			return;
 
-		//pVm->m_pBInst += pBInst->m_dB;
-
-		switch (MASHOP(inst.m_bcop, inst.m_bcopsz))
+		switch (MASHOP(inst.m_op, inst.m_opsz))
 		{
-		case MASHOP(BCOP_NAdd, BCOPSZ_8):	
+		case MASHOP(OP_NAdd, OPSZ_8):	
 			{ 
-				//ReadOpcodes(pVm, &iBLhs, &iBRhs, &iBOut); STORE(iBOut, u8, FETCH(iBLhs, u8) + FETCH(iBRhs, u8));
-				ReadOpcodes(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
+				ReadOpcodesOld(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
 				STORE(iBStackOut, u8, recLhs.m_u8 + recRhs.m_u8);
 			}	break;
-		case MASHOP(BCOP_NAdd, BCOPSZ_16):	
-			//{ ReadOpcodes(pVm, &iBLhs, &iBRhs, &iBOut); STORE(iBOut, u16, FETCH(iBLhs, u16) + FETCH(iBRhs, u16)); }	break;
+		case MASHOP(OP_NAdd, OPSZ_16):	
 			{ 
-				//ReadOpcodes(pVm, &iBLhs, &iBRhs, &iBOut); STORE(iBOut, u8, FETCH(iBLhs, u8) + FETCH(iBRhs, u8));
-				ReadOpcodes(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
+				ReadOpcodesOld(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
 				STORE(iBStackOut, u16, recLhs.m_u16 + recRhs.m_u16);
 			}	break;
-		case MASHOP(BCOP_NAdd, BCOPSZ_32):	
-			//{ ReadOpcodes(pVm, &iBLhs, &iBRhs, &iBOut); STORE(iBOut, u32, FETCH(iBLhs, u32) + FETCH(iBRhs, u32)); }	break;
+		case MASHOP(OP_NAdd, OPSZ_32):	
 			{ 
-				//ReadOpcodes(pVm, &iBLhs, &iBRhs, &iBOut); STORE(iBOut, u8, FETCH(iBLhs, u8) + FETCH(iBRhs, u8));
-				ReadOpcodes(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
+				ReadOpcodesOld(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
 				STORE(iBStackOut, u32, recLhs.m_u32 + recRhs.m_u32);
 			}	break;
-		case MASHOP(BCOP_NAdd, BCOPSZ_64):	
-			//{ ReadOpcodes(pVm, &iBLhs, &iBRhs, &iBOut); STORE(iBOut, u64, FETCH(iBLhs, u64) + FETCH(iBRhs, u64)); }	break;
+		case MASHOP(OP_NAdd, OPSZ_64):	
 			{ 
-				//ReadOpcodes(pVm, &iBLhs, &iBRhs, &iBOut); STORE(iBOut, u8, FETCH(iBLhs, u8) + FETCH(iBRhs, u8));
-				ReadOpcodes(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
+				ReadOpcodesOld(pVm, &inst, &recLhs, &recRhs, &iBStackOut);
 				STORE(iBStackOut, u64, recLhs.m_u64 + recRhs.m_u64);
 			}	break;
 
 			break;
-		}
 
-#if 0
-		switch (pInst->m_bcop)
-		{
-		case BCOP_NAdd:
-		case BCOP_GSub:
-		case BCOP_NSub:
-		case BCOP_GSub:
-		case BCOP_NMul:
-		case BCOP_GMul:
-		case BCOP_SDiv:
-		case BCOP_UDiv:
-		case BCOP_GDiv:
-		case BCOP_SRem:
-		case BCOP_URem:
-		case BCOP_GRem:
+		case MASHOP(OP_NTrace, OPSZ_8):	
+			ReadOpcodesOld(pVm, &inst, &recLhs, &iBStackOut); printf("1byte %d\n", recLhs.m_u8); break;
+		case MASHOP(OP_NTrace, OPSZ_16):	
+			ReadOpcodesOld(pVm, &inst, &recLhs, &iBStackOut); printf("2byte %d\n", recLhs.m_u16); break;
+		case MASHOP(OP_NTrace, OPSZ_32):	
+			ReadOpcodesOld(pVm, &inst, &recLhs, &iBStackOut); printf("4byte %d\n", recLhs.m_u32); break;
+		case MASHOP(OP_NTrace, OPSZ_64):	
+			ReadOpcodesOld(pVm, &inst, &recLhs, &iBStackOut); printf("8byte %lld\n", recLhs.m_u64); break;
 		}
-#endif
+	}
+
+	#undef MASHOP
+	#undef FETCH
+	#undef MASHOP
+}
+
+void ExecuteBytecode(CVirtualMachine * pVm)
+{
+	#define MASHOP(OP, OPSZ)					(u32)(OP | (OPSZ << 16))
+	#define FETCH(IB, TYPE)						*(TYPE *)&pVm->m_pBStack[IB]
+	#define STORE(IBOUT, TYPE, VALUE)			*(TYPE *)&pVm->m_pBStack[IBOUT] = VALUE
+
+	SWord recLhs, recRhs;
+
+	SInstruction * pInst = (SInstruction *)pVm->m_pBInst;
+	while (1)
+	{
+		if (pInst->m_op == OP_Halt)
+			return;
+
+		switch (MASHOP(pInst->m_op, pInst->m_opsz))
+		{
+		case MASHOP(OP_NAdd, OPSZ_8):	
+			{ 
+				ReadOpcodes(pVm, pInst, &recLhs, &recRhs);
+				STORE(pInst->m_iBStackOut, u8, recLhs.m_u8 + recRhs.m_u8);
+			}	break;
+		case MASHOP(OP_NAdd, OPSZ_16):	
+			{ 
+				ReadOpcodes(pVm, pInst, &recLhs, &recRhs);
+				STORE(pInst->m_iBStackOut, u16, recLhs.m_u16 + recRhs.m_u16);
+			}	break;
+		case MASHOP(OP_NAdd, OPSZ_32):	
+			{ 
+				ReadOpcodes(pVm, pInst, &recLhs, &recRhs);
+				STORE(pInst->m_iBStackOut, u32, recLhs.m_u32 + recRhs.m_u32);
+			}	break;
+		case MASHOP(OP_NAdd, OPSZ_64):	
+			{ 
+				ReadOpcodes(pVm, pInst, &recLhs, &recRhs);
+				STORE(pInst->m_iBStackOut, u64, recLhs.m_u64 + recRhs.m_u64);
+			}	break;
+
+			break;
+
+		case MASHOP(OP_NTrace, OPSZ_8):	
+			ReadOpcodes(pVm, pInst, &recLhs); printf("1byte %d\n", recLhs.m_u8); break;
+		case MASHOP(OP_NTrace, OPSZ_16):	
+			ReadOpcodes(pVm, pInst, &recLhs); printf("2byte %d\n", recLhs.m_u16); break;
+		case MASHOP(OP_NTrace, OPSZ_32):	
+			ReadOpcodes(pVm, pInst, &recLhs); printf("4byte %d\n", recLhs.m_u32); break;
+		case MASHOP(OP_NTrace, OPSZ_64):	
+			ReadOpcodes(pVm, pInst, &recLhs); printf("8byte %lld\n", recLhs.m_u64); break;
+		}
+		++pInst;
 	}
 
 	#undef MASHOP
@@ -469,59 +510,47 @@ CVirtualMachine::CVirtualMachine(u8 * pBInst, u8 * pBStack)
 SRecord RecFloat(f64 g)
 {
 	SRecord rec;
-	rec.m_bcopk	= BCOPK_Literal;
-	rec.m_bcoptype = BCOPTYPE_Float;
-	rec.m_f64 = g;
+	rec.m_opk	= OPK_Literal;
+	rec.m_word.m_f64 = g;
 	return rec;
 }
 
 SRecord RecSigned(s64 nSigned)
 {
 	SRecord rec;
-	rec.m_bcopk	= BCOPK_Literal;
-	rec.m_bcoptype = BCOPTYPE_Signed;
-	rec.m_s64 = nSigned;
+	rec.m_opk	= OPK_Literal;
+	rec.m_word.m_s64 = nSigned;
 	return rec;
 }
 
 SRecord RecUnsigned(u64 nUnsigned)
 {
 	SRecord rec;
-	rec.m_bcopk	= BCOPK_Literal;
-	rec.m_bcoptype = BCOPTYPE_Unsigned;
-	rec.m_u64 = nUnsigned;
+	rec.m_opk	= OPK_Literal;
+	rec.m_word.m_u64 = nUnsigned;
 	return rec;
 }
 
 SRecord RecStack(u32 iBStack)
 {
 	SRecord rec;
-	rec.m_bcopk	= BCOPK_Stack;
-	rec.m_bcoptype = BCOPTYPE_Unsigned;
-	rec.m_u32 = iBStack;
+	rec.m_opk	= OPK_Stack;
+	rec.m_word.m_u32 = iBStack;
 	return rec;
 }
 
-/*
-SRecord RecVid(VID vid)
-{
-	SRecord rec;
-	rec.m_bcopk	= BCOPK_Stack;
-	rec.m_bcoptype = BCOPTYPE_Vid;
-	rec.m_nSigned = vid;
-	return rec;
-}*/
-
 void BuildTestByteCode(EWC::CAlloc * pAlloc)
 {
-	CByteCodeBuilder bcbuild(pAlloc);
+	CBuilder bcbuild(pAlloc);
 
 	auto pProc = bcbuild.PProcCreate("main", "main");
 	
 	bcbuild.BeginProc(pProc);
 	auto pBlock = bcbuild.PBlockBegin();
-	auto recRhs = bcbuild.RecAddInst(BCOP_NAdd, BCOPSZ_8, RecSigned(5), RecSigned(3));
-	(void) bcbuild.RecAddInst(BCOP_NAdd, BCOPSZ_8, recRhs, RecSigned(12));
+	auto recRhs = bcbuild.RecAddInst(OP_NAdd, OPSZ_8, RecSigned(5), RecSigned(3));
+	auto recOut = bcbuild.RecAddInst(OP_NAdd, OPSZ_8, recRhs, RecSigned(12));
+	(void) bcbuild.RecAddInst(OP_NTrace, OPSZ_8, recOut);
+	(void) bcbuild.RecAddInst(OP_Halt, OPSZ_8, RecUnsigned(0));
 	bcbuild.EndBlock(pBlock);
 	bcbuild.EndProc(pProc);
 
@@ -536,3 +565,5 @@ void BuildTestByteCode(EWC::CAlloc * pAlloc)
 
 	ExecuteBytecode(&vm);
 }
+
+} // namespace BCode 
