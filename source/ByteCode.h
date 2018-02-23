@@ -23,75 +23,90 @@
 
 namespace BCode
 {
+	// Legend
+	// Stack		- OPK_Stack - will be looked up
+	// StackAddr	- OPK_Literal stores address of stack val
+	// Literal		- OPK_Literal stored in instruction stream
+
+	enum OPARG // OPerand ARGuments - define the expected in->out arguments for a given opcode
+	{
+		OPARG_Error,
+		OPARG_Unary,		// (Stack|Literal) -> Stack
+		OPARG_Binary,		// (Stack|Literal, Stack|Literal) -> Stack
+		OPARG_Store,		// (StackAddr, Stack|Literal) -> Stack(lhs)
+
+		OPARG_Nil = -1,
+	};
 
 #define BC_OPCODE_LIST \
-		OP(Error), \
-		OP(Ret), \
-		OP(Halt), \
+		OP(Error) OPARG(Error), \
+		OP(Ret) OPARG(Error), \
+		OP(Halt) OPARG(Unary), \
 		OP_RANGE(TerminalOp, Ret) \
 		\
-		OP(Call), \
-		OP(CondBranch), \
-		OP(Branch), \
-		OP(Phi), \
+		OP(Call) OPARG(Error), \
+		OP(CondBranch) OPARG(Error), \
+		OP(Branch) OPARG(Error), \
+		OP(Phi) OPARG(Error), \
 		OP_RANGE(JumpOp, TerminalOpMax) \
 		\
-		OP(NAdd), \
-		OP(GAdd), \
-		OP(NSub), \
-		OP(GSub), \
-		OP(NMul), \
-		OP(GMul), \
-		OP(SDiv), \
-		OP(UDiv), \
-		OP(GDiv), \
-		OP(SRem), \
-		OP(URem), \
-		OP(GRem), \
+		OP(NAdd) OPARG(Binary), \
+		OP(GAdd) OPARG(Error), \
+		OP(NSub) OPARG(Error), \
+		OP(GSub) OPARG(Error), \
+		OP(NMul) OPARG(Error), \
+		OP(GMul) OPARG(Error), \
+		OP(SDiv) OPARG(Error), \
+		OP(UDiv) OPARG(Error), \
+		OP(GDiv) OPARG(Error), \
+		OP(SRem) OPARG(Error), \
+		OP(URem) OPARG(Error), \
+		OP(GRem) OPARG(Error), \
 		OP_RANGE(BinaryOp, JumpOpMax) \
 		\
-		OP(NNeg), \
-		OP(GNeg), \
-		OP(Not), \
+		OP(NNeg) OPARG(Error), \
+		OP(GNeg) OPARG(Error), \
+		OP(Not) OPARG(Error), \
 		OP_RANGE(UnaryOp, BinaryOpMax) \
 		\
-		OP(NCmp), \
-		OP(GCmp), \
+		OP(NCmp) OPARG(Error), \
+		OP(GCmp) OPARG(Error), \
 		OP_RANGE(CmpOp, UnaryOpMax) \
 		\
-		OP(Shl), \
-		OP(AShr), \
-		OP(LShr), \
-		OP(And), \
-		OP(Or), \
-		OP(Xor), \
+		OP(Shl) OPARG(Error), \
+		OP(AShr) OPARG(Error), \
+		OP(LShr) OPARG(Error), \
+		OP(And) OPARG(Error), \
+		OP(Or) OPARG(Error), \
+		OP(Xor) OPARG(Error), \
 		OP_RANGE(LogicOp, CmpOpMax) \
 		\
-		OP(Alloca), \
-		OP(Load), \
-		OP(Store), \
-		OP(GEP), \
-		OP(PtrDiff), \
-		OP(Memcpy), \
-		OP(NTrace), \
+		OP(Alloca) OPARG(Error), \
+		OP(Load) OPARG(Error), \
+		OP(Store) OPARG(Store), \
+		OP(GEP) OPARG(Error), \
+		OP(PtrDiff) OPARG(Error), \
+		OP(Memcpy) OPARG(Error), \
+		OP(NTrace) OPARG(Unary), \
 		OP_RANGE(MemoryOp, LogicOpMax) \
 		\
-		OP(NTrunc), \
-		OP(SignExt), \
-		OP(ZeroExt), \
-		OP(GToS), \
-		OP(GToU), \
-		OP(SToG), \
-		OP(UToG), \
-		OP(GTrunc), \
-		OP(GExtend), \
-		OP(PtrToInt), \
-		OP(IntToPtr), \
-		OP(Bitcast), \
+		OP(NTrunc) OPARG(Error), \
+		OP(SignExt) OPARG(Error), \
+		OP(ZeroExt) OPARG(Error), \
+		OP(GToS) OPARG(Error), \
+		OP(GToU) OPARG(Error), \
+		OP(SToG) OPARG(Error), \
+		OP(UToG) OPARG(Error), \
+		OP(GTrunc) OPARG(Error), \
+		OP(GExtend) OPARG(Error), \
+		OP(PtrToInt) OPARG(Error), \
+		OP(IntToPtr) OPARG(Error), \
+		OP(Bitcast) OPARG(Error), \
 		OP_RANGE(CastOp, MemoryOpMax) \
 
 
 #define OP(x) OP_##x
+#define OPARG(x)
 #define OP_RANGE(range, PREV_VAL) OP_##range##Max, OP_##range##Min = OP_##PREV_VAL, OP_##range##Last = OP_##range##Max - 1,
 	enum OP : u8
 	{
@@ -102,6 +117,7 @@ namespace BCode
 	};
 #undef OP_RANGE
 #undef OP
+#undef OPARG
 
 
 
@@ -224,11 +240,10 @@ namespace BCode
 		//	SBCOperand 		PRegisterAlloc();
 		//	void			PRegisterFree(SBCOperand * pOp);
 
-		SRecord			RecAddInstOld(OP bcop, OPSZ bcopsz, const SRecord & recLhs);
-		SRecord			RecAddInstOld(OP bcop, OPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs);
-
 		SRecord			RecAddInst(OP bcop, OPSZ bcopsz, const SRecord & recLhs);
 		SRecord			RecAddInst(OP bcop, OPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
+		
 
 		u32				IBStackAlloc(u32 cB, u32 cBAlign);
 		SInstruction *	PInstAlloc();
