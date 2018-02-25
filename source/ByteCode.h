@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include "CodeGen.h"
 #include "EwcArray.h"
 #include "EwcString.h"
 #include "EwcTypes.h"
-
 
 
 namespace BCode
@@ -33,10 +33,41 @@ namespace BCode
 		OPARG_Error,
 		OPARG_Unary,		// (Stack|Literal) -> Stack
 		OPARG_Binary,		// (Stack|Literal, Stack|Literal) -> Stack
+		OPARG_Compare,		// (Stack|Literal, Stack|Literal) -> Stack(bool)
 		OPARG_Store,		// (StackAddr, Stack|Literal) -> Stack(lhs)
 
 		OPARG_Nil = -1,
 	};
+
+
+
+	#define MOE_PRED(X) GPRED_##X,
+	#define LLVM_PRED(X)
+	enum GPRED
+	{
+		GCMPPRED_LIST
+
+		GPRED_Max,
+		GPRED_Min = 0,
+		GPRED_Nil = 1,
+	};
+	#undef MOE_PRED
+	#undef LLVM_PRED
+
+	#define MOE_PRED(X) NPRED_##X,
+	#define LLVM_PRED(X)
+	enum NPRED
+	{
+		NCMPPRED_LIST
+
+		NPRED_Max,
+		NPRED_Min = 0,
+		NPRED_Nil = 1,
+	};
+	#undef MOE_PRED
+	#undef LLVM_PRED
+
+
 
 #define BC_OPCODE_LIST \
 		OP(Error) OPARG(Error), \
@@ -69,8 +100,8 @@ namespace BCode
 		OP(Not) OPARG(Error), \
 		OP_RANGE(UnaryOp, BinaryOpMax) \
 		\
-		OP(NCmp) OPARG(Error), \
-		OP(GCmp) OPARG(Error), \
+		OP(NCmp) OPARG(Compare), \
+		OP(GCmp) OPARG(Compare), \
 		OP_RANGE(CmpOp, UnaryOpMax) \
 		\
 		OP(Shl) OPARG(Error), \
@@ -141,15 +172,6 @@ namespace BCode
 
 
 
-	struct SInstructionOld		// tag = inst
-	{
-		OP		m_op;
-		u8		m_opkLhs : 4;
-		u8		m_opkRhs : 4;
-		u8		m_opkOut : 4;
-		u8		m_opsz : 4;
-	};
-
 	struct SWord	// tag = word
 	{
 		union
@@ -170,7 +192,8 @@ namespace BCode
 	struct SInstruction		// tag = inst
 	{
 		OP		m_op;
-		OPSZ	m_opsz;
+		u8		m_opsz:4;
+		u8		m_pred:4;
 		OPK		m_opkLhs;
 		OPK		m_opkRhs;
 
@@ -206,8 +229,11 @@ namespace BCode
 
 	struct SBlock			// tag = block
 	{
-		u32			m_iBInstMin;
-		u32			m_cBStack;	// room needed on the stack for temporaries and local vars
+						SBlock()
+						:m_aryInst()
+							{ ; }
+
+		EWC::CDynAry<SInstruction>	m_aryInst;
 	};
 
 
@@ -234,28 +260,27 @@ namespace BCode
 		void			BeginProc(SProcedure * pProc);
 		void			EndProc(SProcedure * pProc);
 
-		SBlock *		PBlockBegin();
+		SBlock *		PBlockCreate();
+		void			BeginBlock(SBlock * pBlock);
 		void			EndBlock(SBlock * pBlock);
 
-		//	SBCOperand 		PRegisterAlloc();
-		//	void			PRegisterFree(SBCOperand * pOp);
+		SRecord			RecAddInst(OP bcop, OPSZ copsz, const SRecord & recLhs);
+		SRecord			RecAddInst(OP bcop, OPSZ copsz, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddNCmp(OPSZ copsz, NPRED npred, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddGCmp(OPSZ copsz, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
 
-		SRecord			RecAddInst(OP bcop, OPSZ bcopsz, const SRecord & recLhs);
-		SRecord			RecAddInst(OP bcop, OPSZ bcopsz, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddInstInternal(OP bcop, OPSZ copsz, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
 		
-
 		u32				IBStackAlloc(u32 cB, u32 cBAlign);
 		SInstruction *	PInstAlloc();
-		void			PackInst(const void * pV, u32 cB);
 
 		EWC::CAlloc *					m_pAlloc;
 		EWC::CDynAry<SProcedure *>		m_arypProcManaged;
+		EWC::CDynAry<SBlock *>			m_arypBlockManaged;
 
 		SProcedure *					m_pProcCur;
-		u8 *							m_pBInstMin;	// start of the instruction buffer
-		u8 *							m_pBInstCur;
-		u8 *							m_pBInstMax;
+		SBlock *						m_pBlockCur;
 	};
 
 

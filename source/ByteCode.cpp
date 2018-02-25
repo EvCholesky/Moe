@@ -21,6 +21,8 @@ using namespace EWC;
 namespace BCode 
 {
 
+
+
 u32 CBFromOpsz(OPSZ opsz)
 {
 	static const u32 s_mpOpszCB [] =
@@ -88,15 +90,10 @@ SProcedure::SProcedure(EWC::CString strName, EWC::CString strMangled)
 CBuilder::CBuilder(EWC::CAlloc * pAlloc)
 :m_pAlloc(pAlloc)
 ,m_arypProcManaged(pAlloc, BK_ByteCodeCreator, 256)
+,m_arypBlockManaged(pAlloc, BK_ByteCodeCreator, 256)
 ,m_pProcCur(nullptr)
-,m_pBInstMin(nullptr)
-,m_pBInstCur(nullptr)
-,m_pBInstMax(nullptr)
+,m_pBlockCur(nullptr)
 {
-	static const int s_cBInst = 4 * 1024;
-	m_pBInstMin = (u8 *)pAlloc->EWC_ALLOC(s_cBInst, 4);
-	m_pBInstCur = m_pBInstMin;
-	m_pBInstMax = m_pBInstMin + s_cBInst;
 }
 
 SProcedure * CBuilder::PProcCreate(const char * pChzName, const char * pChzMangled)
@@ -120,13 +117,24 @@ void CBuilder::EndProc(SProcedure * pProc)
 	m_pProcCur = nullptr;
 }
 
-SBlock * CBuilder::PBlockBegin()
+SBlock * CBuilder::PBlockCreate()
 {
-	return nullptr;
+	auto pBlock = EWC_NEW(m_pAlloc, SBlock) SBlock();
+	pBlock->m_aryInst.SetAlloc(m_pAlloc, BK_ByteCode, 128);
+	m_arypBlockManaged.Append(pBlock);
+	return pBlock;
+}
+
+void CBuilder::BeginBlock(SBlock * pBlock)
+{
+	EWC_ASSERT(!m_pBlockCur, "cannot begin basic block; previous block was not ended");
+	m_pBlockCur = pBlock;
 }
 
 void CBuilder::EndBlock(SBlock * pBlock)
 {
+	EWC_ASSERT(m_pBlockCur == pBlock, "mismatch ending block");
+	m_pBlockCur = nullptr;
 }
 
 SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs)
@@ -151,17 +159,29 @@ SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs)
 	return RecStack(iBStackOut);
 }
 
-SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs, const SRecord & recRhs)
+static inline void RecSetupInst(
+	SInstruction * pInst,
+	OP op,
+	OPSZ opsz,
+	const SRecord & recLhs,
+	const SRecord & recRhs)
 {
-	auto oparg = OpargFromOp(op);
-	EWC_ASSERT(oparg == OPARG_Binary || oparg == OPARG_Store, "unexpected operator '%s' in binary add inst", PChzFromOp(op));
-	u32 cB = CBFromOpsz(opsz);
-
-	auto pInst = PInstAlloc();
 	pInst->m_op = op;
 	pInst->m_opsz = opsz;
 	pInst->m_opkLhs = recLhs.m_opk;
 	pInst->m_opkRhs = recRhs.m_opk;
+
+	pInst->m_wordLhs.m_u64 = recLhs.m_word.m_u64;
+	pInst->m_wordRhs.m_u64 = recRhs.m_word.m_u64;
+}
+
+SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs, const SRecord & recRhs)
+{
+	auto pInst = PInstAlloc(); 
+	RecSetupInst(pInst, op, opsz, recLhs, recRhs);
+
+	auto oparg = OpargFromOp(op);
+	EWC_ASSERT(oparg == OPARG_Binary || oparg == OPARG_Store, "unexpected operator '%s' in binary add inst", PChzFromOp(op));
 
 	u32 iBStackOut;
 	if (oparg == OPARG_Store)
@@ -170,13 +190,35 @@ SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs, const SRe
 	}
 	else
 	{
+		u32 cB = CBFromOpsz(opsz);
 		iBStackOut = IBStackAlloc(cB, cB);
 	}
-	pInst->m_iBStackOut = iBStackOut;
 
-	pInst->m_wordLhs.m_u64 = recLhs.m_word.m_u64;
-	pInst->m_wordRhs.m_u64 = recRhs.m_word.m_u64;
-	
+	pInst->m_iBStackOut = iBStackOut;
+	return RecStack(iBStackOut);
+}
+
+SRecord	CBuilder::RecAddNCmp(OPSZ opsz, NPRED npred, const SRecord & recLhs, const SRecord & recRhs)
+{
+	auto pInst = PInstAlloc(); 
+	RecSetupInst(pInst, OP_NCmp, opsz, recLhs, recRhs);
+
+	pInst->m_pred = (u8)npred;
+
+	u32 iBStackOut = IBStackAlloc(1, 1);
+	pInst->m_iBStackOut = iBStackOut;
+	return RecStack(iBStackOut);
+}
+
+SRecord	CBuilder::RecAddGCmp(OPSZ opsz, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs)
+{
+	auto pInst = PInstAlloc(); 
+	RecSetupInst(pInst, OP_GCmp, opsz, recLhs, recRhs);
+
+	pInst->m_pred = (u8)gpred;
+
+	u32 iBStackOut = IBStackAlloc(1, 1);
+	pInst->m_iBStackOut = iBStackOut;
 	return RecStack(iBStackOut);
 }
 
@@ -198,33 +240,8 @@ u32	CBuilder::IBStackAlloc(u32 cB, u32 cBAlign)
 
 SInstruction * CBuilder::PInstAlloc()
 {
-	auto pBAlign = (u8 *)EWC::PVAlign(m_pBInstCur, EWC_ALIGN_OF(SInstruction));
-	ptrdiff_t cBAlign = pBAlign - m_pBInstCur;
-
-	u32 cBTotal = U32Coerce(sizeof(SInstruction) + cBAlign);
-	ptrdiff_t cBRemain = m_pBInstMax - m_pBInstCur;
-	if (cBRemain < cBTotal)
-		return nullptr;
-
-	auto pB = (u8 *)(m_pBInstCur + cBAlign);
-	m_pBInstCur += cBTotal;
-	return (SInstruction *)pB;
-}
-
-void CBuilder::PackInst(const void * pV, u32 cB)
-{
-	ptrdiff_t cBRemain = m_pBInstMax - m_pBInstCur;
-	if (cBRemain < cB)
-		return;
-
-	EWC::CopyAB(pV, m_pBInstCur, cB);
-	m_pBInstCur += cB;
-}
-
-void UnpackInst(u8 ** ppBInst, void * pVOut, u32 cB)
-{
-	EWC::CopyAB(*ppBInst, pVOut, cB);
-	*ppBInst += cB;
+	EWC_ASSERT(m_pBlockCur, "cannot allocate instructions without a current basic block");
+	return m_pBlockCur->m_aryInst.AppendNew();
 }
 
 
@@ -296,6 +313,111 @@ static inline void StackStore(CVirtualMachine * pVm, T val)
 	*(T *)&pVm->m_pBStack[ibStack] = val;
 }
 
+
+
+/*
+template <typename T> struct SWordElement		{ T Lookup(SWord & word) { return word.m_u64; } };
+template <> struct SWordElement<s8>				{ T Lookup(SWord & word) { return word.m_s8; } };
+template <> struct SWordElement<s16>			{ T Lookup(SWord & word) { return word.m_s16; } };
+template <> struct SWordElement<s32>			{ T Lookup(SWord & word) { return word.m_s32; } };
+template <> struct SWordElement<s64>			{ T Lookup(SWord & word) { return word.m_s64; } };
+template <> struct SWordElement<u8>				{ T Lookup(SWord & word) { return word.m_u8; } };
+template <> struct SWordElement<u16>			{ T Lookup(SWord & word) { return word.m_u16; } };
+template <> struct SWordElement<u32>			{ T Lookup(SWord & word) { return word.m_u32; } };
+template <> struct SWordElement<u64>			{ T Lookup(SWord & word) { return word.m_u64; } };
+template <> struct SWordElement<f32>			{ T Lookup(SWord & word) { return word.m_f32; } };
+template <> struct SWordElement<f64>			{ T Lookup(SWord & word) { return word.m_f64; } };
+*/
+
+// partial specialization to help write op handlers
+template <OPSZ SZ> struct SWordOpsize			{ };
+template <> struct SWordOpsize<OPSZ_8>			
+	{ 
+		static s8 Signed(SWord & word)		{ return word.m_s8; }
+		static u8 Unsigned(SWord & word)	{ return word.m_u8; }
+	};
+template <> struct SWordOpsize<OPSZ_16>			
+	{ 
+		static s16 Signed(SWord & word)	{ return word.m_s16; }
+		static u16 Unsigned(SWord & word)	{ return word.m_u16; }
+	};
+template <> struct SWordOpsize<OPSZ_32>
+	{ 
+		static s32 Signed(SWord & word)	{ return word.m_s32; }
+		static u32 Unsigned(SWord & word)	{ return word.m_u32; }
+		static f32 Float(SWord & word)		{ return word.m_f32; }
+	};
+template <> struct SWordOpsize<OPSZ_64>
+	{ 
+		static s64 Signed(SWord & word)	{ return word.m_s64; }
+		static u64 Unsigned(SWord & word)	{ return word.m_u64; }
+		static f64 Float(SWord & word)		{ return word.m_f64; }
+	};
+
+template <OPSZ SZ>
+bool FEvaluateNCmp(NPRED npred, SWord & wordLhs, SWord & wordRhs)
+{
+	switch (npred)
+	{
+	case NPRED_EQ:	return SWordOpsize<SZ>::Unsigned(wordLhs) == SWordOpsize<SZ>::Unsigned(wordRhs);
+	case NPRED_NE:	return SWordOpsize<SZ>::Unsigned(wordLhs) != SWordOpsize<SZ>::Unsigned(wordRhs);
+	case NPRED_SGT:	return SWordOpsize<SZ>::Signed(wordLhs) > SWordOpsize<SZ>::Signed(wordRhs);
+	case NPRED_UGT:	return SWordOpsize<SZ>::Unsigned(wordLhs) > SWordOpsize<SZ>::Unsigned(wordRhs);
+	case NPRED_SGE:	return SWordOpsize<SZ>::Signed(wordLhs) >= SWordOpsize<SZ>::Signed(wordRhs);
+	case NPRED_UGE:	return SWordOpsize<SZ>::Unsigned(wordLhs) >= SWordOpsize<SZ>::Unsigned(wordRhs);
+	case NPRED_SLT:	return SWordOpsize<SZ>::Signed(wordLhs) < SWordOpsize<SZ>::Signed(wordRhs);
+	case NPRED_ULT:	return SWordOpsize<SZ>::Unsigned(wordLhs) < SWordOpsize<SZ>::Unsigned(wordRhs);
+	case NPRED_SLE:	return SWordOpsize<SZ>::Signed(wordLhs) <= SWordOpsize<SZ>::Signed(wordRhs);
+	case NPRED_ULE:	return SWordOpsize<SZ>::Unsigned(wordLhs) <= SWordOpsize<SZ>::Unsigned(wordRhs);
+	}
+
+	EWC_ASSERT(false, "unhandled predicate type");
+	return false;
+}
+
+template <OPSZ SZ>
+bool FEvaluateGCmp(GPRED gpred, SWord & wordLhs, SWord & wordRhs)
+{
+	switch (gpred)
+	{
+	case GPRED_EQ:	return SWordOpsize<SZ>::Float(wordLhs) == SWordOpsize<SZ>::Float(wordRhs);
+	case GPRED_NE:	return SWordOpsize<SZ>::Float(wordLhs) != SWordOpsize<SZ>::Float(wordRhs);
+	case GPRED_GT:	return SWordOpsize<SZ>::Float(wordLhs) > SWordOpsize<SZ>::Float(wordRhs);
+	case GPRED_GE:	return SWordOpsize<SZ>::Float(wordLhs) >= SWordOpsize<SZ>::Float(wordRhs);
+	case GPRED_LT:	return SWordOpsize<SZ>::Float(wordLhs) < SWordOpsize<SZ>::Float(wordRhs);
+	case GPRED_LE:	return SWordOpsize<SZ>::Float(wordLhs) <= SWordOpsize<SZ>::Float(wordRhs);
+	}
+
+	EWC_ASSERT(false, "unhandled predicate type");
+	return false;
+}
+	/*
+template <OPSZ SZ>
+bool FEvaluateCmp(NCMP ncmp, SWord & wordLhs, SWord & wordRhs)
+{
+	switch (ncmp)
+	{
+	case GCMP_GCmpEQ:
+	case NCMP_NCmpEQ:	return SWordElement::Lookup<T>(wordLhs) == SWordElement::Lookup<T>(wordRhs);
+	case GCMP_GCmpNE:
+	case NCMP_NCmpNE:	return SWordElement::Lookup<T>(wordLhs) != SWordElement::Lookup<T>(wordRhs);
+	case GCMP_GCmpSGT:
+	case NCMP_NCmpSGT:
+	case NCMP_NCmpUGT:	return SWordElement::Lookup<T>(wordLhs) > SWordElement::Lookup<T>(wordRhs);
+	case GCMP_GCmpSGE:
+	case NCMP_NCmpSGE:
+	case NCMP_NCmpUGE:	return SWordElement::Lookup<T>(wordLhs) >= SWordElement::Lookup<T>(wordRhs);
+	case GCMP_GCmpSLT:
+	case NCMP_NCmpSLT:
+	case NCMP_NCmpULT:	return SWordElement::Lookup<T>(wordLhs) < SWordElement::Lookup<T>(wordRhs);
+	case GCMP_GCmpSLE:
+	case NCMP_NCmpSLE:
+	case NCMP_NCmpULE:	return SWordElement::Lookup<T>(wordLhs) <= SWordElement::Lookup<T>(wordRhs);
+	}
+}*/
+
+
+
 void ExecuteBytecode(CVirtualMachine * pVm)
 {
 	#define MASHOP(OP, OPSZ)					(u32)(OP | (OPSZ << 16))
@@ -343,17 +465,40 @@ void ExecuteBytecode(CVirtualMachine * pVm)
 			ReadOpcodes(pVm, pInst, &recLhs); printf("8byte %lld\n", recLhs.m_u64); break;
 
 		case MASHOP(OP_Store, OPSZ_8):	
-			EWC_ASSERT(pInst->m_opkLhs == OPK_Literal, "expected stack index");
 			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); STORE(recLhs.m_u32, u8, recRhs.m_u8); break;
 		case MASHOP(OP_Store, OPSZ_16):	
-			EWC_ASSERT(pInst->m_opkLhs == OPK_Literal, "expected stack index");
 			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); STORE(recLhs.m_u32, u16, recRhs.m_u16); break;
 		case MASHOP(OP_Store, OPSZ_32):	
-			EWC_ASSERT(pInst->m_opkLhs == OPK_Literal, "expected stack index");
 			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); STORE(recLhs.m_u32, u32, recRhs.m_u32); break;
 		case MASHOP(OP_Store, OPSZ_64):	
-			EWC_ASSERT(pInst->m_opkLhs == OPK_Literal, "expected stack index");
 			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); STORE(recLhs.m_u32, u64, recRhs.m_u64); break;
+
+		case MASHOP(OP_NCmp, OPSZ_8):
+			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); 
+			STORE(pInst->m_iBStackOut, u8, FEvaluateNCmp<OPSZ_8>((NPRED)pInst->m_pred, recLhs, recRhs));
+			break;
+		case MASHOP(OP_NCmp, OPSZ_16):
+			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); 
+			STORE(pInst->m_iBStackOut, u16, FEvaluateNCmp<OPSZ_16>((NPRED)pInst->m_pred, recLhs, recRhs));
+			break;
+		case MASHOP(OP_NCmp, OPSZ_32):
+			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); 
+			STORE(pInst->m_iBStackOut, u32, FEvaluateNCmp<OPSZ_32>((NPRED)pInst->m_pred, recLhs, recRhs));
+			break;
+		case MASHOP(OP_NCmp, OPSZ_64):
+			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); 
+			STORE(pInst->m_iBStackOut, u64, FEvaluateNCmp<OPSZ_64>((NPRED)pInst->m_pred, recLhs, recRhs));
+			break;
+
+		case MASHOP(OP_GCmp, OPSZ_32):
+			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); 
+			STORE(pInst->m_iBStackOut, u32, FEvaluateGCmp<OPSZ_32>((GPRED)pInst->m_pred, recLhs, recRhs));
+			break;
+		case MASHOP(OP_GCmp, OPSZ_64):
+			ReadOpcodes(pVm, pInst, &recLhs, &recRhs); 
+			STORE(pInst->m_iBStackOut, u64, FEvaluateGCmp<OPSZ_64>((GPRED)pInst->m_pred, recLhs, recRhs));
+			break;
+
 
 		}
 		++pInst;
@@ -408,18 +553,22 @@ void BuildTestByteCode(EWC::CAlloc * pAlloc)
 	CBuilder bcbuild(pAlloc);
 
 	auto pProc = bcbuild.PProcCreate("main", "main");
-	
 	bcbuild.BeginProc(pProc);
-	auto pBlock = bcbuild.PBlockBegin();
+	
+	auto pBlock = bcbuild.PBlockCreate();
+	bcbuild.BeginBlock(pBlock);
 	auto recVarAddr = bcbuild.AllocLocalVar(1, 1);
 	auto recVarVal = bcbuild.RecAddInst(OP_Store, OPSZ_8, recVarAddr, RecSigned(55));
 
-	//auto recLoad = bcbuild.RecAddInst(OP_Load, OPSZ_8, recVar);
 	(void) bcbuild.RecAddInst(OP_NTrace, OPSZ_8, recVarVal);
 
 	auto recRhs = bcbuild.RecAddInst(OP_NAdd, OPSZ_8, RecSigned(5), RecSigned(3));
 	auto recOut = bcbuild.RecAddInst(OP_NAdd, OPSZ_8, recRhs, recVarVal);
 	(void) bcbuild.RecAddInst(OP_NTrace, OPSZ_8, recOut);
+
+	auto recCmp = bcbuild.RecAddNCmp(OPSZ_8, NPRED_SLT, recOut, RecSigned(100));
+	(void) bcbuild.RecAddInst(OP_NTrace, OPSZ_8, recCmp);
+
 	(void) bcbuild.RecAddInst(OP_Halt, OPSZ_8, RecUnsigned(0));
 	bcbuild.EndBlock(pBlock);
 	bcbuild.EndProc(pProc);
@@ -431,7 +580,7 @@ void BuildTestByteCode(EWC::CAlloc * pAlloc)
 	}
 
 	u8 * pBStack = (u8 *)pAlloc->EWC_ALLOC(cBStackMax, 16);
-	CVirtualMachine vm(bcbuild.m_pBInstMin, pBStack);
+	CVirtualMachine vm((u8*)pBlock->m_aryInst.A(), pBStack);
 
 	ExecuteBytecode(&vm);
 }

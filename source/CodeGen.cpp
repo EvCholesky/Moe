@@ -2579,7 +2579,7 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 			case TINK_Integer:
 				{
 					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValSrc, pConstZero, "NToBool");
+					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NE, pValSrc, pConstZero, "NToBool");
 					return pInst;
 				} 
 			case TINK_Float:
@@ -2595,7 +2595,7 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CIRBuilder * pBuild, CIRValue * pV
 			case TINK_Pointer:
 				{
 					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NCmpNE, pValSrc, pConstZero, "PToBool");
+					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NE, pValSrc, pConstZero, "PToBool");
 					return pInst;
 				}
 			case TINK_Literal:
@@ -3301,7 +3301,7 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 
 					pBuild->ActivateBlock(pBlockPred);
 					auto pInstLoadIndex = pBuild->PInstCreate(IROP_Load, pInstAlloca, "iLoad");
-					auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpULT, pInstLoadIndex, pValCount, "NCmp");
+					auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_ULT, pInstLoadIndex, pValCount, "NCmp");
 
 					(void) pBuild->PInstCreateCondBranch(pInstCmp, pBlockBody, pBlockPost);
 
@@ -3656,9 +3656,9 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					pOpinfo->m_fNegateFirst = true;
 				} break;
 			case TOK_EqualEqual:
-				CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); 
+				CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); 
 				break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 			}
 		}
 		else if (tinkMin == TINK_Integer && tinkMax == TINK_Array)
@@ -3732,8 +3732,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		switch ((u32)tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 			case TOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 			case TOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 		} break;
@@ -3741,8 +3741,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		switch ((u32)tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 			case TOK_AndEqual:
 			case '&':				CreateOpinfo(IROP_And, "nAndTmp", pOpinfo); break;
 			case TOK_OrEqual:
@@ -3773,23 +3773,23 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 			case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 									CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 			case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 			case TOK_LessEqual:
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSLE, "CmpSLE", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_NCmpULE, "NCmpULE", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_SLE, "CmpSLE", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_ULE, "NCmpULE", pOpinfo);
 				break;
 			case TOK_GreaterEqual:
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSGE, "NCmpSGE", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_NCmpUGE, "NCmpUGE", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_SGE, "NCmpSGE", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_UGE, "NCmpUGE", pOpinfo);
 				break;
 			case '<':
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSLT, "NCmpSLT", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_NCmpULT, "NCmpULT", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_SLT, "NCmpSLT", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_ULT, "NCmpULT", pOpinfo);
 				break;
 			case '>':
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_NCmpSGT, "NCmpSGT", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_NCmpUGT, "NCmpUGT", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NCMPPRED_SGT, "NCmpSGT", pOpinfo);
+				else			CreateOpinfo(NCMPPRED_UGT, "NCmpUGT", pOpinfo);
 				break;
 		} break;
 	case TINK_Float:
@@ -3806,20 +3806,20 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 			case '/': 				CreateOpinfo(IROP_GDiv, "gDivTmp", pOpinfo); break;
 			case TOK_ModEqual:
 			case '%': 				CreateOpinfo(IROP_GRem, "gRemTmp", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(GCMPPRED_GCmpOEQ, "NCmpOEQ", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(GCMPPRED_GCmpONE, "NCmpONE", pOpinfo); break;
-			case TOK_LessEqual:		CreateOpinfo(GCMPPRED_GCmpOLE, "NCmpOLE", pOpinfo); break;
-			case TOK_GreaterEqual:	CreateOpinfo(GCMPPRED_GCmpOGE, "NCmpOGE", pOpinfo); break;
-			case '<': 				CreateOpinfo(GCMPPRED_GCmpOLT, "NCmpOLT", pOpinfo); break;
-			case '>': 				CreateOpinfo(GCMPPRED_GCmpOGT, "NCmpOGT", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(GCMPPRED_EQ, "GCmpEQ", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(GCMPPRED_NE, "GCmpNE", pOpinfo); break;
+			case TOK_LessEqual:		CreateOpinfo(GCMPPRED_LE, "GCGpLE", pOpinfo); break;
+			case TOK_GreaterEqual:	CreateOpinfo(GCMPPRED_GE, "GCmpGE", pOpinfo); break;
+			case '<': 				CreateOpinfo(GCMPPRED_LT, "GCmpLT", pOpinfo); break;
+			case '>': 				CreateOpinfo(GCMPPRED_GT, "GCmpGT", pOpinfo); break;
 		} break;
 	case TINK_Procedure:
 		{
 			switch ((u32)tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 			}
 		} break;
 	case TINK_Struct:
@@ -3839,10 +3839,10 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					{
 						CreateOpinfo(IROP_PtrDiff, "ptrDif", pOpinfo);
 					} break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
-/*				case TOK_PlusEqual:		CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case TOK_MinusEqual:	CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+/*				case TOK_PlusEqual:		CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_MinusEqual:	CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 				case '+=':				CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
 				case '-=': 				
 					{
@@ -3865,8 +3865,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				switch ((u32)tok)
 				{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 				case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
 				case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
 				case '%':				CreateOpinfo((fIsSigned) ? IROP_SRem : IROP_URem, "nRemTmp", pOpinfo); break;
@@ -3874,20 +3874,20 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
 				case TOK_LessEqual:
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSLE, "CmpSLE", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_NCmpULE, "NCmpULE", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_SLE, "CmpSLE", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_ULE, "NCmpULE", pOpinfo);
 					break;
 				case TOK_GreaterEqual:
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSGE, "NCmpSGE", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_NCmpUGE, "NCmpUGE", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_SGE, "NCmpSGE", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_UGE, "NCmpUGE", pOpinfo);
 					break;
 				case '<':
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSLT, "NCmpSLT", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_NCmpULT, "NCmpULT", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_SLT, "NCmpSLT", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_ULT, "NCmpULT", pOpinfo);
 					break;
 				case '>':
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_NCmpSGT, "NCmpSGT", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_NCmpUGT, "NCmpUGT", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NCMPPRED_SGT, "NCmpSGT", pOpinfo);
+					else				CreateOpinfo(NCMPPRED_UGT, "NCmpUGT", pOpinfo);
 					break;
 				}
 			}
@@ -3898,8 +3898,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				switch ((u32)tok)
 				{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_NCmpEQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NCmpNE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
 				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 					CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
@@ -5162,7 +5162,7 @@ CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStno
 				// get val: (n & flag) == flag;
 				auto pInstLhsLoad = pBuild->PInstCreate(IROP_Load, pValLhs, "membLoad");
 				auto pInstAnd = pBuild->PInstCreate(IROP_And, pInstLhsLoad, pConstEnum, "and");
-				auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_NCmpEQ, pInstAnd, pConstEnum, "cmpEq");
+				auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_EQ, pInstAnd, pConstEnum, "cmpEq");
 				return pInstCmp;
 			}
 
