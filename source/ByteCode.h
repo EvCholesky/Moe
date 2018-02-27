@@ -23,6 +23,9 @@
 
 namespace BCode
 {
+	struct SBlock;
+	struct SProcedure;
+
 	// Legend
 	// Stack		- OPK_Stack - will be looked up
 	// StackAddr	- OPK_Literal stores address of stack val
@@ -35,6 +38,7 @@ namespace BCode
 		OPARG_Binary,		// (Stack|Literal, Stack|Literal) -> Stack
 		OPARG_Compare,		// (Stack|Literal, Stack|Literal) -> Stack(bool)
 		OPARG_Store,		// (StackAddr, Stack|Literal) -> Stack(lhs)
+		OPARG_Branch,		// (Stack|Literal predicate, pack(iInstTrue, iInstFalse) -> 0
 
 		OPARG_Nil = -1,
 	};
@@ -76,8 +80,8 @@ namespace BCode
 		OP_RANGE(TerminalOp, Ret) \
 		\
 		OP(Call) OPARG(Error), \
-		OP(CondBranch) OPARG(Error), \
-		OP(Branch) OPARG(Error), \
+		OP(CondBranch) OPARG(Branch), \
+		OP(Branch) OPARG(Branch), \
 		OP(Phi) OPARG(Error), \
 		OP_RANGE(JumpOp, TerminalOpMax) \
 		\
@@ -113,7 +117,7 @@ namespace BCode
 		OP_RANGE(LogicOp, CmpOpMax) \
 		\
 		OP(Alloca) OPARG(Error), \
-		OP(Load) OPARG(Error), \
+		OP(Load) OPARG(Unary), \
 		OP(Store) OPARG(Store), \
 		OP(GEP) OPARG(Error), \
 		OP(PtrDiff) OPARG(Error), \
@@ -207,10 +211,11 @@ namespace BCode
 	class CVirtualMachine	// tag = vm
 	{
 	public:
-		CVirtualMachine(u8 * pBInst, u8 * pBStack);
+		CVirtualMachine(u8 * pBInst, s32 cInst, u8 * pBStack);
 
-		u8 *	m_pBInstStart;
 		u8 *	m_pBInst;
+		s32		m_cInst;
+
 		u8 *	m_pBStack;
 	};
 
@@ -226,27 +231,44 @@ namespace BCode
 	SRecord RecStack(u32 iBStack);
 
 
+	struct SBranch // tag = branch
+	{
+		s32 *		m_pIInstDst;			// opcode referring to branch - finalized to iInstDst
+		SBlock *	m_pBlockDest;
+	};
 
 	struct SBlock			// tag = block
 	{
 						SBlock()
-						:m_aryInst()
+						:m_iInstFinal(-1)
+						,m_pProc(nullptr)
+						,m_aryInst()
+						,m_aryBranch()
 							{ ; }
 
+						bool FIsFinalized() const
+							{ return m_iInstFinal >= 0; }
+
+		s32							m_iInstFinal;
+		SProcedure *				m_pProc;
 		EWC::CDynAry<SInstruction>	m_aryInst;
+		EWC::CDynAry<SBranch>		m_aryBranch;	// outgoing links in control flow graph.
 	};
 
 
 
 	struct SProcedure		// tag = proc
 	{
-		SProcedure(EWC::CString strName, EWC::CString strMangled);
-		EWC::CString		m_strName;
-		EWC::CString		m_strMangled;
+									SProcedure(EWC::CAlloc * pAlloc, EWC::CString strName, EWC::CString strMangled);
 
-		u32					m_cBStack;	// allocated bytes on stack
+		EWC::CString				m_strName;
+		EWC::CString				m_strMangled;
 
-		SBlock *			m_pBlock;
+		u32							m_cBStack;		// allocated bytes on stack
+
+		SBlock *					m_pBlockEntry;
+		EWC::CDynAry<SBlock *>		m_arypBlock;	// blocks that have written to this procedure 
+		EWC::CDynAry<SInstruction>	m_aryInst;
 	};
 
 
@@ -259,6 +281,7 @@ namespace BCode
 		SProcedure *	PProcCreate(const char * pChzName, const char * pChzMangled);
 		void			BeginProc(SProcedure * pProc);
 		void			EndProc(SProcedure * pProc);
+		void			FinalizeProc(SProcedure * pProc);
 
 		SBlock *		PBlockCreate();
 		void			BeginBlock(SBlock * pBlock);
@@ -268,6 +291,9 @@ namespace BCode
 		SRecord			RecAddInst(OP bcop, OPSZ copsz, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			RecAddNCmp(OPSZ copsz, NPRED npred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			RecAddGCmp(OPSZ copsz, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
+
+		void			RecAddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
+		void			RecAddBranch(SBlock * pBlock);
 
 		SRecord			RecAddInstInternal(OP bcop, OPSZ copsz, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
