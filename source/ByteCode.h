@@ -17,8 +17,8 @@
 
 #include "CodeGen.h"
 #include "EwcArray.h"
+#include "EwcHash.h"
 #include "EwcString.h"
-#include "EwcTypes.h"
 
 
 namespace BCode
@@ -34,6 +34,7 @@ namespace BCode
 	enum OPARG // OPerand ARGuments - define the expected in->out arguments for a given opcode
 	{
 		OPARG_Error,
+		OPARG_OnlyOpcode,
 		OPARG_Unary,		// (Stack|Literal) -> Stack
 		OPARG_Binary,		// (Stack|Literal, Stack|Literal) -> Stack
 		OPARG_Compare,		// (Stack|Literal, Stack|Literal) -> Stack(bool)
@@ -76,10 +77,11 @@ namespace BCode
 #define BC_OPCODE_LIST \
 		OP(Error) OPARG(Error), \
 		OP(Ret) OPARG(Error), \
-		OP(Halt) OPARG(Unary), \
+		OP(Halt) OPARG(OnlyOpcode), \
 		OP_RANGE(TerminalOp, Ret) \
 		\
 		OP(Call) OPARG(Error), \
+		OP(Return) OPARG(Error), \
 		OP(CondBranch) OPARG(Branch), \
 		OP(Branch) OPARG(Branch), \
 		OP(Phi) OPARG(Error), \
@@ -156,13 +158,14 @@ namespace BCode
 
 
 
-	enum OPSZ : u8 // tag = Byte Code OPerand Size
+	enum OPSZ : s8 // tag = Byte Code OPerand Size
 	{
 		OPSZ_8,
 		OPSZ_16,
 		OPSZ_32,
 		OPSZ_64,
-		OPSZ_Max
+
+		EWC_MAX_MIN_NIL(OPSZ)
 	};
 
 	enum OPK : u8	// tag = Byte Code OPERand Kind
@@ -188,15 +191,18 @@ namespace BCode
 			u16		m_u16;
 			u32		m_u32;
 			u64		m_u64;
+
 			f32		m_f32;
 			f64		m_f64;
+
+			void *	m_pV;
 		};
 	};
 
 	struct SInstruction		// tag = inst
 	{
 		OP		m_op;
-		u8		m_opsz:4;
+		s8		m_opsz:4;
 		u8		m_pred:4;
 		OPK		m_opkLhs;
 		OPK		m_opkRhs;
@@ -208,17 +214,6 @@ namespace BCode
 
 
 
-	class CVirtualMachine	// tag = vm
-	{
-	public:
-		CVirtualMachine(u8 * pBInst, s32 cInst, u8 * pBStack);
-
-		u8 *	m_pBInst;
-		s32		m_cInst;
-
-		u8 *	m_pBStack;
-	};
-
 	struct SRecord		// tag = rec 
 	{
 		OPK			m_opk;
@@ -229,6 +224,7 @@ namespace BCode
 	SRecord RecSigned(s64 nSigned);
 	SRecord RecUnsigned(u64 nUnsigned);
 	SRecord RecStack(u32 iBStack);
+	SRecord RecPointer(void * pV);
 
 
 	struct SBranch // tag = branch
@@ -287,22 +283,25 @@ namespace BCode
 		void			BeginBlock(SBlock * pBlock);
 		void			EndBlock(SBlock * pBlock);
 
-		SRecord			RecAddInst(OP bcop, OPSZ copsz, const SRecord & recLhs);
-		SRecord			RecAddInst(OP bcop, OPSZ copsz, const SRecord & recLhs, const SRecord & recRhs);
+		void			AddInst(OP op);
+		SRecord			RecAddInst(OP op, OPSZ copsz, const SRecord & recLhs);
+		SRecord			RecAddInst(OP cop, OPSZ copsz, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			RecAddNCmp(OPSZ copsz, NPRED npred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			RecAddGCmp(OPSZ copsz, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
 
-		void			RecAddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
-		void			RecAddBranch(SBlock * pBlock);
+		void			AddCall(SProcedure * pProc);
+		void			AddReturn();
+		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
+		void			AddBranch(SBlock * pBlock);
 
-		SRecord			RecAddInstInternal(OP bcop, OPSZ copsz, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddInstInternal(OP op, OPSZ copsz, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
 		
 		u32				IBStackAlloc(u32 cB, u32 cBAlign);
 		SInstruction *	PInstAlloc();
 
 		EWC::CAlloc *					m_pAlloc;
-		EWC::CDynAry<SProcedure *>		m_arypProcManaged;
+		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
 		EWC::CDynAry<SBlock *>			m_arypBlockManaged;
 
 		SProcedure *					m_pProcCur;
@@ -311,7 +310,23 @@ namespace BCode
 
 
 
-	void ExecuteBytecodeOld(CVirtualMachine * pVm);
+	class CVirtualMachine	// tag = vm
+	{
+	public:
+		CVirtualMachine(u8 * pBStack, u8 * pBStackMax);
+
+		SInstruction *	m_pInst;
+
+		u8 *			m_pBStackMin;
+		u8 *			m_pBStackMax;
+		u8 *			m_pBStack;			// current stack bottom (grows down)
+		SProcedure *	m_pProcCurDebug;	// current procedure being executed (not available in release)
+
+		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
+	};
+
+	SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv);
+
 	void BuildTestByteCode(EWC::CAlloc * pAlloc);
 
 }
