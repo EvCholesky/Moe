@@ -49,6 +49,7 @@
 #include "BigMath.h"
 #include "EwcArray.h"
 #include "EwcString.h"
+#include "lexer.h"
 
 class CIRGlobal;
 class CSTNode;
@@ -90,6 +91,15 @@ enum FTIN
 };
 
 EWC_DEFINE_GRF(GRFTIN, FTIN, u8);
+
+struct SDataLayout		// tag = dlay
+{
+	s32		m_cBBool;			// byte size of "bool"
+	s32		m_cBInt;			// byte size of "int"
+	s32		m_cBFloat;			// byte size of "float"
+	s32		m_cBPointer;		// byte size of pointer
+	s32		m_cBStackAlign;		// code gen stack alignment
+};
 
 struct STypeInfo	// tag = tin
 {
@@ -289,9 +299,9 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 	EWC::CAllocAry<STypeInfo *>	m_arypTinReturns;
 	EWC::CAllocAry<GRFPARMQ>	m_mpIptinGrfparmq;
 
-	GRFTINPROC				m_grftinproc;
-	INLINEK					m_inlinek;
-	CALLCONV				m_callconv;
+	GRFTINPROC					m_grftinproc;
+	INLINEK						m_inlinek;
+	CALLCONV					m_callconv;
 
 	// BB - need names for named argument matching?
 };
@@ -349,11 +359,13 @@ struct STypeStructMember	// tag = typememb
 					:m_strName()
 					,m_pTin(nullptr)
 					,m_pStnod(nullptr)
+					,m_dBOffset(-1)
 						{ ;}
 
 	EWC::CString	m_strName;
 	STypeInfo *		m_pTin;
-	CSTNode *		m_pStnod;	// syntax tree node for this member
+	CSTNode *		m_pStnod;		// syntax tree node for this member
+	s32				m_dBOffset;		// for bytecode GEP
 };
 
 struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
@@ -368,6 +380,8 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 										,m_pStnodStruct(nullptr)
 										,m_aryTypemembField()
 										,m_arypTinGenericParam()
+										,m_cB(-1)
+										,m_cBAlign(-1)
 											{ ; }
 	
 	bool								FHasGenericParams() const
@@ -381,6 +395,9 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	CSTNode *							m_pStnodStruct;
 	EWC::CAllocAry<STypeStructMember>	m_aryTypemembField;
 	EWC::CAllocAry<STypeInfo *>			m_arypTinGenericParam;
+
+	s64									m_cB;
+	s64									m_cBAlign;
 };
 
 STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);

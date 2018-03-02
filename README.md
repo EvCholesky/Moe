@@ -1,15 +1,14 @@
 # Moe
 
-Moe is a custom procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is *very* much still a work in progress and is not ready to be used by anyone else.
+Moe is a custom procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is still a work in progress and is not quite ready to be used by anyone else.
 
 It's current feature set is roughly comprable to C: enumerations, structures, pointers, procedures, conditions and loops are all there, but there are a few changes to make it nicer to use:
   - top level symbol lookup is order independent.
   - variable declarations support type inference.
-  - procedure overloading is supported.
+  - procedure/operator overloading is supported.
   - instances are initialized unless explicitly marked as uninitialized.
   - break and continue support breaking to a labeled outer loop.
   - run time type reflection
-  - operator overloading (with in/out reference arguments)
 
 There are quite a few upcoming features that are C lacks:
   - optional array bounds checking
@@ -118,7 +117,7 @@ SFoo struct
   m_g: float
 
   m_n := 22
-  kVal const = 33   // member constants *should* work
+  kVal const = 33   // member constants are supported
 }
 ```
 
@@ -259,7 +258,7 @@ switch m_foo
 The simplest loop is the `while` loop that continues to loop as long as its condition evaluates to `true`
 
 ```
-while FShouldKeepLooping()
+while f == true
 {
   printf("woo.")
 }

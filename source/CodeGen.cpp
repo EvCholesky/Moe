@@ -175,7 +175,7 @@ static inline llvm::CallingConv::ID CallingconvFromCallconv(CALLCONV callconv)
 	{
 		llvm::CallingConv::C,				//CALLCONV_CX86,
 		llvm::CallingConv::X86_StdCall,		//CALLCONV_StdcallX86,
-		llvm::CallingConv::Win64,	 //CALLCONV_X64,
+		llvm::CallingConv::Win64,			//CALLCONV_X64,
 	};
 	static const int s_cCallconv = sizeof(s_mpCallconvCallingconv) / sizeof(s_mpCallconvCallingconv[0]);
 	EWC_CASSERT(s_cCallconv == CALLCONV_Max, "Missing llvm calling convention");

@@ -551,6 +551,7 @@ enum BK // block kind
 	BK_Linker,
 	BK_ByteCode,
 	BK_ByteCodeCreator,
+	BK_ByteCodeTest,
 };
 
 #define EWC_ALLOC(numBytes, alignment) 			AllocImpl(numBytes, alignment, __FILE__, __LINE__)

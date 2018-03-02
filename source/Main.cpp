@@ -505,7 +505,13 @@ int main(int cpChzArg, const char * apChzArg[])
 		aB = new u8[s_cBHeap];
 		CAlloc alloc(aB, s_cBHeap);
 
-		BCode::BuildTestByteCode(&alloc);
+		u8 * aBError = new u8[s_cBError];
+		CAlloc allocError(aBError, s_cBError);
+
+		SErrorManager errman(&allocError);
+		CWorkspace work(&alloc, &errman);
+
+		BCode::BuildTestByteCode(&work, &alloc);
 	}
 
 	if (comline.FHasCommand("-test"))

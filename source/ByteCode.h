@@ -19,6 +19,7 @@
 #include "EwcArray.h"
 #include "EwcHash.h"
 #include "EwcString.h"
+#include "typeinfo.h"
 
 
 namespace BCode
@@ -77,7 +78,6 @@ namespace BCode
 #define BC_OPCODE_LIST \
 		OP(Error) OPARG(Error), \
 		OP(Ret) OPARG(Error), \
-		OP(Halt) OPARG(OnlyOpcode), \
 		OP_RANGE(TerminalOp, Ret) \
 		\
 		OP(Call) OPARG(Error), \
@@ -121,6 +121,7 @@ namespace BCode
 		OP(Alloca) OPARG(Error), \
 		OP(Load) OPARG(Unary), \
 		OP(Store) OPARG(Store), \
+		OP(StoreArg) OPARG(Store), \
 		OP(GEP) OPARG(Error), \
 		OP(PtrDiff) OPARG(Error), \
 		OP(Memcpy) OPARG(Error), \
@@ -251,20 +252,25 @@ namespace BCode
 		EWC::CDynAry<SBranch>		m_aryBranch;	// outgoing links in control flow graph.
 	};
 
-
+	struct SParameter // tag = param
+	{
+		OPSZ	m_opsz;
+		u32 	m_iBStack;
+	};
 
 	struct SProcedure		// tag = proc
 	{
-									SProcedure(EWC::CAlloc * pAlloc, EWC::CString strName, EWC::CString strMangled);
+									SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure *pTinproc);
 
-		EWC::CString				m_strName;
-		EWC::CString				m_strMangled;
+		STypeInfoProcedure *		m_pTinproc;
 
 		u32							m_cBStack;		// allocated bytes on stack
 
 		SBlock *					m_pBlockEntry;
 		EWC::CDynAry<SBlock *>		m_arypBlock;	// blocks that have written to this procedure 
 		EWC::CDynAry<SInstruction>	m_aryInst;
+		SParameter *				m_aParamArg;
+		SParameter *				m_aParamRet;
 	};
 
 
@@ -272,9 +278,9 @@ namespace BCode
 	class CBuilder // tag = bcbuild
 	{
 	public:
-		CBuilder(EWC::CAlloc * pAlloc);
+		CBuilder(EWC::CAlloc * pAlloc, SDataLayout * pDlay);
 
-		SProcedure *	PProcCreate(const char * pChzName, const char * pChzMangled);
+		SProcedure *	PProcCreate(STypeInfoProcedure * pTinproc);
 		void			BeginProc(SProcedure * pProc);
 		void			EndProc(SProcedure * pProc);
 		void			FinalizeProc(SProcedure * pProc);
@@ -289,7 +295,7 @@ namespace BCode
 		SRecord			RecAddNCmp(OPSZ copsz, NPRED npred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			RecAddGCmp(OPSZ copsz, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
 
-		void			AddCall(SProcedure * pProc);
+		void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
 		void			AddReturn();
 		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
 		void			AddBranch(SBlock * pBlock);
@@ -301,6 +307,7 @@ namespace BCode
 		SInstruction *	PInstAlloc();
 
 		EWC::CAlloc *					m_pAlloc;
+		SDataLayout *					m_pDlay;
 		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
 		EWC::CDynAry<SBlock *>			m_arypBlockManaged;
 
@@ -316,6 +323,7 @@ namespace BCode
 		CVirtualMachine(u8 * pBStack, u8 * pBStackMax);
 
 		SInstruction *	m_pInst;
+		SInstruction *  m_pInstArgMin;		// first argument to push when executing a call instruction
 
 		u8 *			m_pBStackMin;
 		u8 *			m_pBStackMax;
@@ -327,7 +335,7 @@ namespace BCode
 
 	SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv);
 
-	void BuildTestByteCode(EWC::CAlloc * pAlloc);
+	void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc);
 
 }
 

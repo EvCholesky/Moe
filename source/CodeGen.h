@@ -67,18 +67,6 @@ enum VALK	// VALue Kind
 
 	VALK_Instruction,
 	VALK_Global,
-	/*
-	VALK_TerminatorInst,
-	VALK_BinaryOpInst,
-	VALK_UnaryOpInst,
-	VALK_CastInst,
-	VALK_CompareInst,
-	VALK_ReturnInst,
-	VALK_InvokeInst,
-
-	VALK_EndInst,
-	VALK_BeginInst = VALK_TerminatorInst,
-	*/
 
 	VALK_Max,
 	VALK_Min = 0,
