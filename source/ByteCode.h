@@ -159,16 +159,6 @@ namespace BCode
 
 
 
-	enum OPSZ : s8 // tag = Byte Code OPerand Size
-	{
-		OPSZ_8,
-		OPSZ_16,
-		OPSZ_32,
-		OPSZ_64,
-
-		EWC_MAX_MIN_NIL(OPSZ)
-	};
-
 	enum OPK : u8	// tag = Byte Code OPERand Kind
 	{
 		OPK_Literal,
@@ -203,7 +193,7 @@ namespace BCode
 	struct SInstruction		// tag = inst
 	{
 		OP		m_op;
-		s8		m_opsz:4;
+		u8		m_cB:4;		// operand byte count
 		u8		m_pred:4;
 		OPK		m_opkLhs;
 		OPK		m_opkRhs;
@@ -254,7 +244,7 @@ namespace BCode
 
 	struct SParameter // tag = param
 	{
-		OPSZ	m_opsz;
+		u8		m_cB;
 		u32 	m_iBStack;
 	};
 
@@ -290,17 +280,17 @@ namespace BCode
 		void			EndBlock(SBlock * pBlock);
 
 		void			AddInst(OP op);
-		SRecord			RecAddInst(OP op, OPSZ copsz, const SRecord & recLhs);
-		SRecord			RecAddInst(OP cop, OPSZ copsz, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			RecAddNCmp(OPSZ copsz, NPRED npred, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			RecAddGCmp(OPSZ copsz, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddInst(OP op, u8 cB, const SRecord & recLhs);
+		SRecord			RecAddInst(OP cop, u8 cB, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddNCmp(u8 cB, NPRED npred, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddGCmp(u8 cB, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
 
 		void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
 		void			AddReturn();
 		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
 		void			AddBranch(SBlock * pBlock);
 
-		SRecord			RecAddInstInternal(OP op, OPSZ copsz, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddInstInternal(OP op, u8 cB, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
 		
 		u32				IBStackAlloc(u32 cB, u32 cBAlign);

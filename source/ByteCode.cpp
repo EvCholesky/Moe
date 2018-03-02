@@ -123,35 +123,6 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, s64 * pcB,
 namespace BCode 
 {
 
-// BB - Why are we doing this, can we just kill opsz?
-OPSZ OpszFromCB(s64 cB)
-{
-	switch (cB)
-	{
-	case 1:		return OPSZ_8;
-	case 2:		return OPSZ_16;
-	case 4:		return OPSZ_32;
-	case 8:		return OPSZ_64;
-	default:	return OPSZ_Nil;
-	}
-}
-
-u32 CBFromOpsz(OPSZ opsz)
-{
-	static const u32 s_mpOpszCB [] =
-	{
-		1,	// OPSZ_8,
-		2,	// OPSZ_16,
-		4,	// OPSZ_32,
-		8,	// OPSZ_64,
-	};
-	EWC_CASSERT(EWC_DIM(s_mpOpszCB) == OPSZ_Max, "missing size");
-
-	if (!EWC_FVERIFY(opsz < OPSZ_Max))
-		return 1;
-	return s_mpOpszCB[opsz];
-}
-
 OPARG OpargFromOp(OP op)
 {
 	if (op > OP_Max)
@@ -239,7 +210,7 @@ SProcedure * CBuilder::PProcCreate(STypeInfoProcedure * pTinproc)
 		CalculateByteSizeAndAlign(m_pDlay, pTinParam, &cB, &cBAlign);
 
 		auto pParam = &pProc->m_aParamArg[iArg];
-		pParam->m_opsz = OpszFromCB(cB);
+		pParam->m_cB = S8Coerce(cB);
 		pParam->m_iBStack = IBStackAlloc((u32)cB, (u32)cBAlign); // BB - clean up this cast
 	}
 	m_pProcCur = pProcPrev;
@@ -329,7 +300,7 @@ void CBuilder::AddInst(OP op)
 
 	auto pInst = PInstAlloc();
 	pInst->m_op = op;
-	pInst->m_opsz = OPSZ_Nil;
+	pInst->m_cB = 0;
 	pInst->m_opkLhs = OPK_Nil;
 	pInst->m_opkRhs = OPK_Nil;
 	
@@ -338,16 +309,14 @@ void CBuilder::AddInst(OP op)
 	pInst->m_wordRhs.m_u64 = 0;
 }
 
-SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs)
+SRecord CBuilder::RecAddInst(OP op, u8 cB, const SRecord & recLhs)
 {
 	auto oparg = OpargFromOp(op);
 	EWC_ASSERT(oparg == OPARG_Unary, "unexpected operator '%s' in unary add inst", PChzFromOp(op));
 
-	u32 cB = CBFromOpsz(opsz);
-
 	auto pInst = PInstAlloc();
 	pInst->m_op = op;
-	pInst->m_opsz = opsz;
+	pInst->m_cB = cB;
 	pInst->m_opkLhs = recLhs.m_opk;
 	pInst->m_opkRhs = OPK_Nil;
 
@@ -363,12 +332,12 @@ SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs)
 static inline void RecSetupInst(
 	SInstruction * pInst,
 	OP op,
-	OPSZ opsz,
+	u8 cB,
 	const SRecord & recLhs,
 	const SRecord & recRhs)
 {
 	pInst->m_op = op;
-	pInst->m_opsz = opsz;
+	pInst->m_cB = cB;
 	pInst->m_opkLhs = recLhs.m_opk;
 	pInst->m_opkRhs = recRhs.m_opk;
 
@@ -376,10 +345,10 @@ static inline void RecSetupInst(
 	pInst->m_wordRhs.m_u64 = recRhs.m_word.m_u64;
 }
 
-SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs, const SRecord & recRhs)
+SRecord CBuilder::RecAddInst(OP op, u8 cB, const SRecord & recLhs, const SRecord & recRhs)
 {
 	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, op, opsz, recLhs, recRhs);
+	RecSetupInst(pInst, op, cB, recLhs, recRhs);
 
 	auto oparg = OpargFromOp(op);
 	EWC_ASSERT(oparg == OPARG_Binary || oparg == OPARG_Store, "unexpected operator '%s' in binary add inst", PChzFromOp(op));
@@ -391,7 +360,6 @@ SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs, const SRe
 	}
 	else
 	{
-		u32 cB = CBFromOpsz(opsz);
 		iBStackOut = IBStackAlloc(cB, cB);
 	}
 
@@ -399,10 +367,10 @@ SRecord CBuilder::RecAddInst(OP op, OPSZ opsz, const SRecord & recLhs, const SRe
 	return RecStack(iBStackOut);
 }
 
-SRecord	CBuilder::RecAddNCmp(OPSZ opsz, NPRED npred, const SRecord & recLhs, const SRecord & recRhs)
+SRecord	CBuilder::RecAddNCmp(u8 cB, NPRED npred, const SRecord & recLhs, const SRecord & recRhs)
 {
 	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, OP_NCmp, opsz, recLhs, recRhs);
+	RecSetupInst(pInst, OP_NCmp, cB, recLhs, recRhs);
 
 	pInst->m_pred = (u8)npred;
 
@@ -411,10 +379,10 @@ SRecord	CBuilder::RecAddNCmp(OPSZ opsz, NPRED npred, const SRecord & recLhs, con
 	return RecStack(iBStackOut);
 }
 
-SRecord	CBuilder::RecAddGCmp(OPSZ opsz, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs)
+SRecord	CBuilder::RecAddGCmp(u8 cB, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs)
 {
 	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, OP_GCmp, opsz, recLhs, recRhs);
+	RecSetupInst(pInst, OP_GCmp, cB, recLhs, recRhs);
 
 	pInst->m_pred = (u8)gpred;
 
@@ -443,11 +411,11 @@ void CBuilder::AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg)
 		// NOTE: stack values here are relative to the calling function, we need to adjust them later 
 		//  when the called function is finalized
 		auto pParam = &pProc->m_aParamArg[iRec];
-		(void) RecAddInst(OP_StoreArg, pParam->m_opsz, RecUnsigned(pParam->m_iBStack), aRecArg[iRec]);
+		(void) RecAddInst(OP_StoreArg, pParam->m_cB, RecUnsigned(pParam->m_iBStack), aRecArg[iRec]);
 	}
 
 	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, OP_Call, OPSZ_Nil, RecPointer(pProc), RecPointer(m_pProcCur));
+	RecSetupInst(pInst, OP_Call, 0, RecPointer(pProc), RecPointer(m_pProcCur));
 	pInst->m_iBStackOut = 0;
 }
 
@@ -458,14 +426,14 @@ void CBuilder::AddReturn()
 
 	auto pInst = PInstAlloc(); 
 	auto dB = DBStackOffset(m_pProcCur);
-	RecSetupInst(pInst, OP_Return, OPSZ_Nil, RecSigned(dB), RecUnsigned(0));
+	RecSetupInst(pInst, OP_Return, 0, RecSigned(dB), RecUnsigned(0));
 	pInst->m_iBStackOut = 0;
 }
 
 void CBuilder::AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse)
 {
 	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, OP_CondBranch, OPSZ_8, recPred, RecUnsigned(0));
+	RecSetupInst(pInst, OP_CondBranch, 1, recPred, RecUnsigned(0));
 
 	EWC_ASSERT(m_pBlockCur && !m_pBlockCur->FIsFinalized(), "cannot allocate instructions without a unfinalized basic block");
 
@@ -484,7 +452,7 @@ void CBuilder::AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pB
 void CBuilder::AddBranch(SBlock * pBlock)
 {
 	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, OP_Branch, OPSZ_Nil, RecUnsigned(0), RecUnsigned(0));
+	RecSetupInst(pInst, OP_Branch, 0, RecUnsigned(0), RecUnsigned(0));
 
 	EWC_ASSERT(m_pBlockCur && !m_pBlockCur->FIsFinalized(), "cannot allocate instructions without a unfinalized basic block");
 
@@ -520,15 +488,15 @@ SInstruction * CBuilder::PInstAlloc()
 
 
 
-static inline void LoadWord(CVirtualMachine * pVm, SWord * pWord, u32 iB, OPSZ opsz)
+static inline void LoadWord(CVirtualMachine * pVm, SWord * pWord, u32 iB, u8 cB)
 {
 	u8 * pB = &pVm->m_pBStack[iB];
-	switch (opsz)
+	switch (cB)
 	{
-		case OPSZ_8:	pWord->m_u8 = *pB;			break;
-		case OPSZ_16:	pWord->m_u16 = *(u16*)pB;	break;
-		case OPSZ_32:	pWord->m_u32 = *(u32*)pB;	break;
-		case OPSZ_64:	pWord->m_u64 = *(u64*)pB;	break;
+		case 1:	pWord->m_u8 = *pB;			break;
+		case 2:	pWord->m_u16 = *(u16*)pB;	break;
+		case 4:	pWord->m_u32 = *(u32*)pB;	break;
+		case 8:	pWord->m_u64 = *(u64*)pB;	break;
 	}
 }
 
@@ -536,9 +504,8 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWor
 {
 	if (pInst->m_opkLhs == OPK_Stack)
 	{
-		OPSZ opsz = (OPSZ)pInst->m_opsz;
-		u32 cB = CBFromOpsz(opsz);
-		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_s32, opsz);
+		u8 cB = pInst->m_cB;
+		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_s32, cB);
 	}
 	else
 	{
@@ -548,12 +515,11 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWor
 
 static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs, SWord * pWordRhs)
 {
-	OPSZ opsz = (OPSZ)pInst->m_opsz;
-	u32 cB = CBFromOpsz(opsz);
+	u8 cB = pInst->m_cB;
 
 	if (pInst->m_opkLhs == OPK_Stack)
 	{
-		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_s32, opsz);
+		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_s32, cB);
 	}
 	else
 	{
@@ -562,7 +528,7 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWor
 
 	if (pInst->m_opkRhs == OPK_Stack)
 	{
-		LoadWord(pVm, pWordRhs, pInst->m_wordRhs.m_s32, opsz);
+		LoadWord(pVm, pWordRhs, pInst->m_wordRhs.m_s32, cB);
 	}
 	else
 	{
@@ -587,62 +553,62 @@ template <> struct SWordElement<f64>			{ T Lookup(SWord & word) { return word.m_
 */
 
 // partial specialization to help write op handlers
-template <OPSZ SZ> struct SWordOpsize			{ };
-template <> struct SWordOpsize<OPSZ_8>			
+template <s32 CB> struct SWordOpsize			{ };
+template <> struct SWordOpsize<1>			
 	{ 
 		static s8 Signed(SWord & word)		{ return word.m_s8; }
 		static u8 Unsigned(SWord & word)	{ return word.m_u8; }
 	};
-template <> struct SWordOpsize<OPSZ_16>			
+template <> struct SWordOpsize<2>			
 	{ 
-		static s16 Signed(SWord & word)	{ return word.m_s16; }
+		static s16 Signed(SWord & word)		{ return word.m_s16; }
 		static u16 Unsigned(SWord & word)	{ return word.m_u16; }
 	};
-template <> struct SWordOpsize<OPSZ_32>
+template <> struct SWordOpsize<4>
 	{ 
-		static s32 Signed(SWord & word)	{ return word.m_s32; }
+		static s32 Signed(SWord & word)		{ return word.m_s32; }
 		static u32 Unsigned(SWord & word)	{ return word.m_u32; }
 		static f32 Float(SWord & word)		{ return word.m_f32; }
 	};
-template <> struct SWordOpsize<OPSZ_64>
+template <> struct SWordOpsize<8>
 	{ 
-		static s64 Signed(SWord & word)	{ return word.m_s64; }
+		static s64 Signed(SWord & word)		{ return word.m_s64; }
 		static u64 Unsigned(SWord & word)	{ return word.m_u64; }
 		static f64 Float(SWord & word)		{ return word.m_f64; }
 	};
 
-template <OPSZ SZ>
+template <s32 CB>
 bool FEvaluateNCmp(NPRED npred, SWord & wordLhs, SWord & wordRhs)
 {
 	switch (npred)
 	{
-	case NPRED_EQ:	return SWordOpsize<SZ>::Unsigned(wordLhs) == SWordOpsize<SZ>::Unsigned(wordRhs);
-	case NPRED_NE:	return SWordOpsize<SZ>::Unsigned(wordLhs) != SWordOpsize<SZ>::Unsigned(wordRhs);
-	case NPRED_SGT:	return SWordOpsize<SZ>::Signed(wordLhs) > SWordOpsize<SZ>::Signed(wordRhs);
-	case NPRED_UGT:	return SWordOpsize<SZ>::Unsigned(wordLhs) > SWordOpsize<SZ>::Unsigned(wordRhs);
-	case NPRED_SGE:	return SWordOpsize<SZ>::Signed(wordLhs) >= SWordOpsize<SZ>::Signed(wordRhs);
-	case NPRED_UGE:	return SWordOpsize<SZ>::Unsigned(wordLhs) >= SWordOpsize<SZ>::Unsigned(wordRhs);
-	case NPRED_SLT:	return SWordOpsize<SZ>::Signed(wordLhs) < SWordOpsize<SZ>::Signed(wordRhs);
-	case NPRED_ULT:	return SWordOpsize<SZ>::Unsigned(wordLhs) < SWordOpsize<SZ>::Unsigned(wordRhs);
-	case NPRED_SLE:	return SWordOpsize<SZ>::Signed(wordLhs) <= SWordOpsize<SZ>::Signed(wordRhs);
-	case NPRED_ULE:	return SWordOpsize<SZ>::Unsigned(wordLhs) <= SWordOpsize<SZ>::Unsigned(wordRhs);
+	case NPRED_EQ:	return SWordOpsize<CB>::Unsigned(wordLhs) == SWordOpsize<CB>::Unsigned(wordRhs);
+	case NPRED_NE:	return SWordOpsize<CB>::Unsigned(wordLhs) != SWordOpsize<CB>::Unsigned(wordRhs);
+	case NPRED_SGT:	return SWordOpsize<CB>::Signed(wordLhs) > SWordOpsize<CB>::Signed(wordRhs);
+	case NPRED_UGT:	return SWordOpsize<CB>::Unsigned(wordLhs) > SWordOpsize<CB>::Unsigned(wordRhs);
+	case NPRED_SGE:	return SWordOpsize<CB>::Signed(wordLhs) >= SWordOpsize<CB>::Signed(wordRhs);
+	case NPRED_UGE:	return SWordOpsize<CB>::Unsigned(wordLhs) >= SWordOpsize<CB>::Unsigned(wordRhs);
+	case NPRED_SLT:	return SWordOpsize<CB>::Signed(wordLhs) < SWordOpsize<CB>::Signed(wordRhs);
+	case NPRED_ULT:	return SWordOpsize<CB>::Unsigned(wordLhs) < SWordOpsize<CB>::Unsigned(wordRhs);
+	case NPRED_SLE:	return SWordOpsize<CB>::Signed(wordLhs) <= SWordOpsize<CB>::Signed(wordRhs);
+	case NPRED_ULE:	return SWordOpsize<CB>::Unsigned(wordLhs) <= SWordOpsize<CB>::Unsigned(wordRhs);
 	}
 
 	EWC_ASSERT(false, "unhandled predicate type");
 	return false;
 }
 
-template <OPSZ SZ>
+template <s32 CB>
 bool FEvaluateGCmp(GPRED gpred, SWord & wordLhs, SWord & wordRhs)
 {
 	switch (gpred)
 	{
-	case GPRED_EQ:	return SWordOpsize<SZ>::Float(wordLhs) == SWordOpsize<SZ>::Float(wordRhs);
-	case GPRED_NE:	return SWordOpsize<SZ>::Float(wordLhs) != SWordOpsize<SZ>::Float(wordRhs);
-	case GPRED_GT:	return SWordOpsize<SZ>::Float(wordLhs) > SWordOpsize<SZ>::Float(wordRhs);
-	case GPRED_GE:	return SWordOpsize<SZ>::Float(wordLhs) >= SWordOpsize<SZ>::Float(wordRhs);
-	case GPRED_LT:	return SWordOpsize<SZ>::Float(wordLhs) < SWordOpsize<SZ>::Float(wordRhs);
-	case GPRED_LE:	return SWordOpsize<SZ>::Float(wordLhs) <= SWordOpsize<SZ>::Float(wordRhs);
+	case GPRED_EQ:	return SWordOpsize<CB>::Float(wordLhs) == SWordOpsize<CB>::Float(wordRhs);
+	case GPRED_NE:	return SWordOpsize<CB>::Float(wordLhs) != SWordOpsize<CB>::Float(wordRhs);
+	case GPRED_GT:	return SWordOpsize<CB>::Float(wordLhs) > SWordOpsize<CB>::Float(wordRhs);
+	case GPRED_GE:	return SWordOpsize<CB>::Float(wordLhs) >= SWordOpsize<CB>::Float(wordRhs);
+	case GPRED_LT:	return SWordOpsize<CB>::Float(wordLhs) < SWordOpsize<CB>::Float(wordRhs);
+	case GPRED_LE:	return SWordOpsize<CB>::Float(wordLhs) <= SWordOpsize<CB>::Float(wordRhs);
 	}
 
 	EWC_ASSERT(false, "unhandled predicate type");
@@ -660,7 +626,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 	pBStack -= DBStackOffset(pProc);
 	pVm->m_pBStack = pBStack;
 
-	#define MASHOP(OP, OPSZ)					(u32)(OP | (OPSZ << 16))
+	#define MASHOP(OP, CB)						(u32)(OP | (CB << 16))
 	#define FETCH(IB, TYPE)						*(TYPE *)&pVm->m_pBStack[IB]
 	#define STORE(IBOUT, TYPE, VALUE)			*(TYPE *)&pVm->m_pBStack[IBOUT] = VALUE
 
@@ -670,52 +636,52 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 	SInstruction * pInst = pInstMin;
 	while (1)
 	{
-		switch (MASHOP(pInst->m_op, pInst->m_opsz))
+		switch (MASHOP(pInst->m_op, pInst->m_cB))
 		{
-		case MASHOP(OP_NAdd, OPSZ_8):	
+		case MASHOP(OP_NAdd, 1):	
 			{ 
 				ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 				STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 + wordRhs.m_u8);
 			}	break;
-		case MASHOP(OP_NAdd, OPSZ_16):	
+		case MASHOP(OP_NAdd, 2):	
 			{ 
 				ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 				STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 + wordRhs.m_u16);
 			}	break;
-		case MASHOP(OP_NAdd, OPSZ_32):	
+		case MASHOP(OP_NAdd, 4):	
 			{ 
 				ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 				STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 + wordRhs.m_u32);
 			}	break;
-		case MASHOP(OP_NAdd, OPSZ_64):	
+		case MASHOP(OP_NAdd, 8):	
 			{ 
 				ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 				STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 + wordRhs.m_u64);
 			}	break;
 
-		case MASHOP(OP_NTrace, OPSZ_8):	
+		case MASHOP(OP_NTrace, 1):	
 			ReadOpcodes(pVm, pInst, &wordLhs); printf("1byte %d\n", wordLhs.m_u8); break;
-		case MASHOP(OP_NTrace, OPSZ_16):	
+		case MASHOP(OP_NTrace, 2):	
 			ReadOpcodes(pVm, pInst, &wordLhs); printf("2byte %d\n", wordLhs.m_u16); break;
-		case MASHOP(OP_NTrace, OPSZ_32):	
+		case MASHOP(OP_NTrace, 4):	
 			ReadOpcodes(pVm, pInst, &wordLhs); printf("4byte %d\n", wordLhs.m_u32); break;
-		case MASHOP(OP_NTrace, OPSZ_64):	
+		case MASHOP(OP_NTrace, 8):	
 			ReadOpcodes(pVm, pInst, &wordLhs); printf("8byte %lld\n", wordLhs.m_u64); break;
 
 			// Store(pV, value)
-		case MASHOP(OP_Store, OPSZ_8):	
+		case MASHOP(OP_Store, 1):	
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u8, wordRhs.m_u8); break;
-		case MASHOP(OP_Store, OPSZ_16):	
+		case MASHOP(OP_Store, 2):	
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u16, wordRhs.m_u16); break;
-		case MASHOP(OP_Store, OPSZ_32):	
+		case MASHOP(OP_Store, 4):	
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u32, wordRhs.m_u32); break;
-		case MASHOP(OP_Store, OPSZ_64):	
+		case MASHOP(OP_Store, 8):	
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u64, wordRhs.m_u64); break;
 
-		case MASHOP(OP_StoreArg, OPSZ_8):	
-		case MASHOP(OP_StoreArg, OPSZ_16):	
-		case MASHOP(OP_StoreArg, OPSZ_32):	
-		case MASHOP(OP_StoreArg, OPSZ_64):	
+		case MASHOP(OP_StoreArg, 1):	
+		case MASHOP(OP_StoreArg, 2):	
+		case MASHOP(OP_StoreArg, 4):	
+		case MASHOP(OP_StoreArg, 8):	
 		{
 			EWC_ASSERT(pVm->m_pInstArgMin == nullptr, "arg min wasn't cleared");
 			pVm->m_pInstArgMin = pInst;
@@ -729,58 +695,58 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 		} break;
 
 			// Load(pV) -> iBStackOut
-		case MASHOP(OP_Load, OPSZ_8):	
+		case MASHOP(OP_Load, 1):	
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, (OPSZ)pInst->m_opsz);
+			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cB);
 			STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8);
 		} break;
-		case MASHOP(OP_Load, OPSZ_16):	
+		case MASHOP(OP_Load, 2):	
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, (OPSZ)pInst->m_opsz);
+			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cB);
 			STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16);
 		} break;
-		case MASHOP(OP_Load, OPSZ_32):	
+		case MASHOP(OP_Load, 4):	
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, (OPSZ)pInst->m_opsz);
+			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cB);
 			STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32);
 		} break;
-		case MASHOP(OP_Load, OPSZ_64):	
+		case MASHOP(OP_Load, 8):	
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, (OPSZ)pInst->m_opsz);
+			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cB);
 			STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64);
 		} break;
 
-		case MASHOP(OP_NCmp, OPSZ_8):
+		case MASHOP(OP_NCmp, 1):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u8, FEvaluateNCmp<OPSZ_8>((NPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u8, FEvaluateNCmp<1>((NPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
-		case MASHOP(OP_NCmp, OPSZ_16):
+		case MASHOP(OP_NCmp, 2):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u16, FEvaluateNCmp<OPSZ_16>((NPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u16, FEvaluateNCmp<2>((NPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
-		case MASHOP(OP_NCmp, OPSZ_32):
+		case MASHOP(OP_NCmp, 4):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u32, FEvaluateNCmp<OPSZ_32>((NPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u32, FEvaluateNCmp<4>((NPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
-		case MASHOP(OP_NCmp, OPSZ_64):
+		case MASHOP(OP_NCmp, 8):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u64, FEvaluateNCmp<OPSZ_64>((NPRED)pInst->m_pred, wordLhs, wordRhs));
-			break;
-
-		case MASHOP(OP_GCmp, OPSZ_32):
-			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u32, FEvaluateGCmp<OPSZ_32>((GPRED)pInst->m_pred, wordLhs, wordRhs));
-			break;
-		case MASHOP(OP_GCmp, OPSZ_64):
-			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u64, FEvaluateGCmp<OPSZ_64>((GPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u64, FEvaluateNCmp<8>((NPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 
-		case MASHOP(OP_Call, OPSZ_Nil):
+		case MASHOP(OP_GCmp, 4):
+			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
+			STORE(pInst->m_iBStackOut, u32, FEvaluateGCmp<4>((GPRED)pInst->m_pred, wordLhs, wordRhs));
+			break;
+		case MASHOP(OP_GCmp, 8):
+			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
+			STORE(pInst->m_iBStackOut, u64, FEvaluateGCmp<8>((GPRED)pInst->m_pred, wordLhs, wordRhs));
+			break;
+
+		case MASHOP(OP_Call, 0):
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs);
 
@@ -799,15 +765,15 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 				while (pInstArg->m_op == OP_StoreArg)
 				{
 					// store the arguments 
-					switch (pInstArg->m_opsz)
+					switch (pInstArg->m_cB)
 					{
-					case OPSZ_8:
+					case 1:
 						ReadOpcodes(pVm, pInstArg, &wordLhs, &wordRhs); STORE(wordLhs.m_s32 - dBStack, u8, wordRhs.m_u8); break;
-					case OPSZ_16:
+					case 2:
 						ReadOpcodes(pVm, pInstArg, &wordLhs, &wordRhs); STORE(wordLhs.m_s32 - dBStack, u16, wordRhs.m_u16); break;
-					case OPSZ_32:
+					case 4:
 						ReadOpcodes(pVm, pInstArg, &wordLhs, &wordRhs); STORE(wordLhs.m_s32 - dBStack, u32, wordRhs.m_u32); break;
-					case OPSZ_64:
+					case 8:
 						ReadOpcodes(pVm, pInstArg, &wordLhs, &wordRhs); STORE(wordLhs.m_s32 - dBStack, u64, wordRhs.m_u64); break;
 					}
 					++pInstArg;
@@ -825,7 +791,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 
 		} break;
 
-		case MASHOP(OP_Return, OPSZ_Nil):
+		case MASHOP(OP_Return, 0):
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs);
 
@@ -847,7 +813,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 			
 		} break;
 
-		case MASHOP(OP_CondBranch, OPSZ_8):
+		case MASHOP(OP_CondBranch, 1):
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 			u8 iOp = (wordLhs.m_u8 != 0);
@@ -856,7 +822,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 
 			pInst = &pInstMin[iInst - 1]; // -1 because it is incremented below
 		} break;
-		case MASHOP(OP_Branch, OPSZ_Nil):
+		case MASHOP(OP_Branch, 0):
 		{	
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 			s32 iInst = *(s32*)&pInst->m_wordRhs;
@@ -980,10 +946,10 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	bcbuild.BeginBlock(pBlockPrint);
 	{
 		//auto recVarAddr = bcbuild.AllocLocalVar(4, 4);
-		//auto recVarVal = bcbuild.RecAddInst(OP_Store, OPSZ_32, recVarAddr, RecSigned(12345));
-		//(void)bcbuild.RecAddInst(OP_NTrace, OPSZ_32, recVarVal);
-		(void)bcbuild.RecAddInst(OP_NTrace, OPSZ_16, RecStack(pProcPrint->m_aParamArg[0].m_iBStack));
-		(void)bcbuild.RecAddInst(OP_NTrace, OPSZ_32, RecStack(pProcPrint->m_aParamArg[1].m_iBStack));
+		//auto recVarVal = bcbuild.RecAddInst(OP_Store, 4, recVarAddr, RecSigned(12345));
+		//(void)bcbuild.RecAddInst(OP_NTrace, 4, recVarVal);
+		(void)bcbuild.RecAddInst(OP_NTrace, 2, RecStack(pProcPrint->m_aParamArg[0].m_iBStack));
+		(void)bcbuild.RecAddInst(OP_NTrace, 4, RecStack(pProcPrint->m_aParamArg[1].m_iBStack));
 		bcbuild.AddReturn();
 	}
 
@@ -999,12 +965,12 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	auto pBlockPre = bcbuild.PBlockCreate();
 	bcbuild.BeginBlock(pBlockPre);
 	auto recVarAddr = bcbuild.AllocLocalVar(1, 1);
-	auto recVarVal = bcbuild.RecAddInst(OP_Store, OPSZ_8, recVarAddr, RecSigned(55));
+	auto recVarVal = bcbuild.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(55));
 
-	auto recRhs = bcbuild.RecAddInst(OP_NAdd, OPSZ_8, RecSigned(5), RecSigned(3));
-	auto recOut = bcbuild.RecAddInst(OP_NAdd, OPSZ_8, recRhs, recVarVal);
+	auto recRhs = bcbuild.RecAddInst(OP_NAdd, 1, RecSigned(5), RecSigned(3));
+	auto recOut = bcbuild.RecAddInst(OP_NAdd, 1, recRhs, recVarVal);
 
-	auto recCmp = bcbuild.RecAddNCmp(OPSZ_8, NPRED_SGT, recOut, RecSigned(100));
+	auto recCmp = bcbuild.RecAddNCmp(1, NPRED_SGT, recOut, RecSigned(100));
 	auto pBlockTrue = bcbuild.PBlockCreate();
 	auto pBlockFalse = bcbuild.PBlockCreate();
 	auto pBlockPost = bcbuild.PBlockCreate();
@@ -1012,28 +978,28 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	bcbuild.EndBlock(pBlockPre);
 
 	bcbuild.BeginBlock(pBlockTrue);
-	(void) bcbuild.RecAddInst(OP_Store, OPSZ_8, recVarAddr, RecSigned(11));
+	(void) bcbuild.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(11));
 	bcbuild.AddBranch(pBlockPost);
 	bcbuild.EndBlock(pBlockTrue);
 
 	bcbuild.BeginBlock(pBlockFalse);
-	(void) bcbuild.RecAddInst(OP_Store, OPSZ_8, recVarAddr, RecSigned(22));
+	(void) bcbuild.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(22));
 	bcbuild.AddBranch(pBlockPost);
 	bcbuild.EndBlock(pBlockFalse);
 
 	bcbuild.BeginBlock(pBlockPost);
-	recVarVal = bcbuild.RecAddInst(OP_Load, OPSZ_8, recVarAddr);
-	(void) bcbuild.RecAddInst(OP_NTrace, OPSZ_8, recVarVal);
+	recVarVal = bcbuild.RecAddInst(OP_Load, 1, recVarAddr);
+	(void) bcbuild.RecAddInst(OP_NTrace, 1, recVarVal);
 
 	SRecord aRecArg[2];
 	aRecArg[0] = RecSigned(111);
 	aRecArg[1] = RecSigned(222);
 	bcbuild.AddCall(pProcPrint, aRecArg, 2);
 
-	(void) bcbuild.RecAddInst(OP_NTrace, OPSZ_64, RecSigned(-1));
+	(void) bcbuild.RecAddInst(OP_NTrace, 8, RecSigned(-1));
 
 	auto recIntAddr = bcbuild.AllocLocalVar(4, 4);
-	auto recIntVal = bcbuild.RecAddInst(OP_Store, OPSZ_32, recIntAddr, RecSigned(444));
+	auto recIntVal = bcbuild.RecAddInst(OP_Store, 4, recIntAddr, RecSigned(444));
 	aRecArg[0] = RecSigned(333);
 	aRecArg[1] = recIntVal;
 	bcbuild.AddCall(pProcPrint, aRecArg, 2);
