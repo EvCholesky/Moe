@@ -158,12 +158,18 @@ namespace BCode
 #undef OPARG
 
 
+	enum FOPK : u8
+	{
+		FOPK_DerefStack	= 0x1,
+		FOPK_Arg		= 0x2, // index onto the stack, adjusted to before the pushed current stack frame
+	};
 
 	enum OPK : u8	// tag = Byte Code OPERand Kind
 	{
-		OPK_Literal,
-		OPK_Stack,
-		OPK_Register,
+		OPK_Literal		= 0,
+		OPK_Stack		= FOPK_DerefStack,
+		OPK_ArgLiteral  = FOPK_Arg, 
+		OPK_ArgStack	= FOPK_Arg | FOPK_DerefStack,
 
 		OPK_Nil			= 255
 	};
@@ -207,6 +213,14 @@ namespace BCode
 
 	struct SRecord		// tag = rec 
 	{
+					SRecord()
+						{ ; }
+
+					SRecord(OPK opk, SWord word)
+					:m_opk(opk)
+					,m_word(word)
+						{ ; }
+
 		OPK			m_opk;
 		SWord		m_word;
 	};
@@ -214,7 +228,9 @@ namespace BCode
 	SRecord RecFloat(f64 g);
 	SRecord RecSigned(s64 nSigned);
 	SRecord RecUnsigned(u64 nUnsigned);
-	SRecord RecStack(u32 iBStack);
+	SRecord RecStack(s64 iBStack);
+	SRecord RecArg(s64 iBStack);
+	SRecord RecArgLiteral(s64 iBStack);
 	SRecord RecPointer(void * pV);
 
 
@@ -244,8 +260,8 @@ namespace BCode
 
 	struct SParameter // tag = param
 	{
-		u8		m_cB;
-		u32 	m_iBStack;
+		s32		m_cB;
+		s32 	m_iBStack;
 	};
 
 	struct SProcedure		// tag = proc
@@ -254,7 +270,8 @@ namespace BCode
 
 		STypeInfoProcedure *		m_pTinproc;
 
-		u32							m_cBStack;		// allocated bytes on stack
+		s64							m_cBStack;		// allocated bytes on stack
+		s64							m_cBArg;		// stack space reserved for arguments (includes pInst return)
 
 		SBlock *					m_pBlockEntry;
 		EWC::CDynAry<SBlock *>		m_arypBlock;	// blocks that have written to this procedure 
@@ -286,14 +303,16 @@ namespace BCode
 		SRecord			RecAddGCmp(u8 cB, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
 
 		void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
-		void			AddReturn();
+		SRecord			RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
+		void			AddReturn(SRecord * aRecArg, int cRecArg);
+		//void			AddReturn();
 		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
 		void			AddBranch(SBlock * pBlock);
 
 		SRecord			RecAddInstInternal(OP op, u8 cB, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
 		
-		u32				IBStackAlloc(u32 cB, u32 cBAlign);
+		s32				IBStackAlloc(s64 cB, s64 cBAlign);
 		SInstruction *	PInstAlloc();
 
 		EWC::CAlloc *					m_pAlloc;
@@ -310,8 +329,9 @@ namespace BCode
 	class CVirtualMachine	// tag = vm
 	{
 	public:
-		CVirtualMachine(u8 * pBStack, u8 * pBStackMax);
+		CVirtualMachine(u8 * pBStack, u8 * pBStackMax, SDataLayout * pDlay);
 
+		SDataLayout *	m_pDlay;
 		SInstruction *	m_pInst;
 		SInstruction *  m_pInstArgMin;		// first argument to push when executing a call instruction
 
