@@ -121,7 +121,6 @@ namespace BCode
 		OP(Alloca) OPARG(Error), \
 		OP(Load) OPARG(Unary), \
 		OP(Store) OPARG(Store), \
-		OP(StoreArg) OPARG(Store), \
 		OP(GEP) OPARG(Error), \
 		OP(PtrDiff) OPARG(Error), \
 		OP(Memcpy) OPARG(Error), \
@@ -305,7 +304,6 @@ namespace BCode
 		void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
 		SRecord			RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
 		void			AddReturn(SRecord * aRecArg, int cRecArg);
-		//void			AddReturn();
 		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
 		void			AddBranch(SBlock * pBlock);
 
@@ -339,6 +337,8 @@ namespace BCode
 		u8 *			m_pBStackMax;
 		u8 *			m_pBStack;			// current stack bottom (grows down)
 		SProcedure *	m_pProcCurDebug;	// current procedure being executed (not available in release)
+		EWC::SStringBuffer *
+						m_pStrbuf;			
 
 		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
 	};

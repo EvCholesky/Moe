@@ -207,8 +207,16 @@ SProcedure * CBuilder::PProcCreate(STypeInfoProcedure * pTinproc)
 	auto fins = m_hashHvMangledPProc.FinsEnsureKeyAndValue(pTinproc->m_strMangled.Hv(), pProc);
 	EWC_ASSERT(fins == FINS_Inserted, "adding procedure that already exists");
 	
-	pProc->m_aParamArg = (SParameter *)PVAlign(pBAlloc + sizeof(SProcedure), EWC_ALIGN_OF(SParameter));
-	pProc->m_aParamRet = pProc->m_aParamArg + cArg;
+	SParameter * aParamArg = (SParameter *)PVAlign(pBAlloc + sizeof(SProcedure), EWC_ALIGN_OF(SParameter));
+	if (cArg)
+	{
+		pProc->m_aParamArg = aParamArg;
+	}
+
+	if (cRet)
+	{
+		pProc->m_aParamRet = aParamArg + cArg;
+	}
 
 	s64 cB; 
 	s64 cBAlign;
@@ -681,6 +689,125 @@ bool FEvaluateGCmp(GPRED gpred, SWord & wordLhs, SWord & wordRhs)
 	return false;
 }
 
+void PrintInstance(CVirtualMachine * pVm, STypeInfo * pTin, u8 * pData)
+{
+	switch (pTin->m_tink)
+	{
+    case TINK_Integer:
+	{
+		auto pTinint = (STypeInfoInteger *)pTin;
+		if (pTinint->m_fIsSigned)
+		{
+			switch (pTinint->m_cBit)
+			{
+			case 8: FormatCoz(pVm->m_pStrbuf, "%d", *(s8*)pData);	break;
+			case 16: FormatCoz(pVm->m_pStrbuf, "%d", *(s16*)pData); break;
+			case 32: FormatCoz(pVm->m_pStrbuf, "%d", *(s32*)pData); break;
+			case 64: FormatCoz(pVm->m_pStrbuf, "%lld", *(s64*)pData); break;
+			default: EWC_ASSERT(false, "unexpected float size");
+			}
+		}
+		else
+		{
+			switch (pTinint->m_cBit)
+			{
+			case 8: FormatCoz(pVm->m_pStrbuf, "%u", *(u8*)pData);	break;
+			case 16: FormatCoz(pVm->m_pStrbuf, "%u", *(u16*)pData); break;
+			case 32: FormatCoz(pVm->m_pStrbuf, "%u", *(u32*)pData); break;
+			case 64: FormatCoz(pVm->m_pStrbuf, "%llu", *(u64*)pData); break;
+			default: EWC_ASSERT(false, "unexpected float size");
+			}
+		}
+	} break;
+    case TINK_Float:
+	{
+		auto pTinfloat = (STypeInfoFloat *)pTin;
+		switch (pTinfloat->m_cBit)
+		{
+		case 32: FormatCoz(pVm->m_pStrbuf, "%f", *(f32*)pData);	break;
+		case 64: FormatCoz(pVm->m_pStrbuf, "%f", *(f64*)pData); break;
+		default: EWC_ASSERT(false, "unexpected float size");
+		}
+	} break;
+    case TINK_Bool:
+	{
+		EWC_ASSERT(pVm->m_pDlay->m_cBBool == sizeof(bool), "unexpected bool size");
+		FormatCoz(pVm->m_pStrbuf, "%s", (*(bool*)pData) ? "true" : "false");
+	} break;
+    case TINK_Pointer:
+	{
+		FormatCoz(pVm->m_pStrbuf, "%p", pData);	break;
+	} break;
+    case TINK_Procedure:
+	{
+		FormatCoz(pVm->m_pStrbuf, "%p", pData);	break;
+	} break;
+    case TINK_Struct:
+	{
+		EWC_ASSERT(false, "TBD"); // not writing this until I can test it
+	} break;
+	case TINK_Enum:
+	{
+		EWC_ASSERT(false, "TBD"); // not writing this until I can test it
+	} break;
+    case TINK_Array:
+	{
+		auto pTinary = (STypeInfoArray *)pTin;
+		s64 c;
+		u8 * pDataAdj = pData;
+		switch (pTinary->m_aryk)
+		{
+		case ARYK_Fixed:
+			{
+				FormatCoz(pVm->m_pStrbuf, "[%d]{", pTinary->m_c);
+				c = pTinary->m_c;
+			} break;
+		case ARYK_Dynamic:
+			{
+				AppendCoz(pVm->m_pStrbuf, "[..]{");
+					
+			} break;
+		case ARYK_Reference:
+			{
+				AppendCoz(pVm->m_pStrbuf, "[]{");
+				c = *(s64 *)pData;
+				pDataAdj = pData + sizeof(s64);
+			} break;
+		default: 
+			EWC_ASSERT(false, "unhandled ARYK");
+			break;
+		}
+
+		s64 cBElement;
+		s64 cBAlignElement;
+		CalculateByteSizeAndAlign(pVm->m_pDlay, pTinary->m_pTin, &cBElement, &cBAlignElement);
+		size_t cBStride = EWC::CBAlign(cBElement, cBAlignElement);
+		for (int i = 0; i < c; ++i)
+		{
+			PrintInstance(pVm, pTinary->m_pTin, pDataAdj);
+			pDataAdj += cBStride;
+		}
+		AppendCoz(pVm->m_pStrbuf, "}");
+	} break;
+	case TINK_Qualifier:
+	{	
+		auto pTinqual = (STypeInfoQualifier *)pTin;
+		PrintInstance(pVm, pTinqual->m_pTin, pData);
+	} break;
+    case TINK_Null:		AppendCoz(pVm->m_pStrbuf, "null"); break;
+    case TINK_Void:		AppendCoz(pVm->m_pStrbuf, "void"); break;
+    case TINK_Any:		AppendCoz(pVm->m_pStrbuf, "any(tbd)"); break;
+	default:
+		EWC_ASSERT(false, "unhandled type info kind");
+		break;
+	}
+}
+
+void PrintParameter(CVirtualMachine * pVm, STypeInfo * pTin, SParameter * pParam)
+{
+	PrintInstance(pVm, pTin, &pVm->m_pBStack[pParam->m_iBStack]);
+}
+
 void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 {
 	pVm->m_pProcCurDebug = pProc;
@@ -749,22 +876,6 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 		case MASHOP(OP_Store, 8):	
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u64, wordRhs.m_u64); break;
 
-		case MASHOP(OP_StoreArg, 1):	
-		case MASHOP(OP_StoreArg, 2):	
-		case MASHOP(OP_StoreArg, 4):	
-		case MASHOP(OP_StoreArg, 8):	
-		{
-			EWC_ASSERT(pVm->m_pInstArgMin == nullptr, "arg min wasn't cleared");
-			pVm->m_pInstArgMin = pInst;
-			while (pInst->m_op == OP_StoreArg)
-				++pInst;
-
-			if (!EWC_FVERIFY(pInst->m_op == OP_Call, "Arguments should be followed by function call"))
-				++pInst;
-
-			--pInst; // inst will be incremented after switch
-		} break;
-
 			// Load(pV) -> iBStackOut
 		case MASHOP(OP_Load, 1):	
 		{
@@ -825,17 +936,33 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 
 			SInstruction ** ppInstRet = (SInstruction **)(pVm->m_pBStack - sizeof(SInstruction *));
 			
-			u8 * pBStack = pVm->m_pBStack - pProc->m_cBArg;
-			pBStack -= pProc->m_cBStack;
-			EWC_ASSERT((uintptr_t(pBStack) & (pVm->m_pDlay->m_cBStackAlign - 1)) == 0,
+			pVm->m_pBStack -= pProc->m_cBArg;
+			if (pVm->m_pStrbuf)
+			{
+				FormatCoz(pVm->m_pStrbuf, "%s(", pProc->m_pTinproc->m_strName.PCoz());
+				STypeInfoProcedure * pTinproc = pProc->m_pTinproc;
+				for (int iParam = 0; iParam < pTinproc->m_arypTinParams.C(); ++iParam)
+				{
+					if (iParam > 0)
+						AppendCoz(pVm->m_pStrbuf, ", ");
+
+					SParameter * pParam = &pProc->m_aParamArg[iParam];
+					PrintParameter(pVm, pTinproc->m_arypTinParams[iParam], pParam);
+				}
+				AppendCoz(pVm->m_pStrbuf, "){");
+			}
+
+			pVm->m_pBStack -= pProc->m_cBStack;
+			EWC_ASSERT((uintptr_t(pVm->m_pBStack) & (pVm->m_pDlay->m_cBStackAlign - 1)) == 0,
 				"stack frame should be %d byte aligned.", pVm->m_pDlay->m_cBStackAlign);
-			EWC_ASSERT(uintptr_t(pBStack) >= uintptr_t(pVm->m_pBStackMin), "stack overflow");
-			printf("OP_Call) pBStack = %p, ppInst = %p, cBStack = %lld, cBArg = %lld\n", pVm->m_pBStack, ppInstRet, pProc->m_cBStack, pProc->m_cBArg);
-			pVm->m_pBStack = pBStack;
+			EWC_ASSERT(uintptr_t(pVm->m_pBStack) >= uintptr_t(pVm->m_pBStackMin), "stack overflow");
+
+			//printf("OP_Call) pBStack = %p, ppInst = %p, cBStack = %lld, cBArg = %lld\n", pVm->m_pBStack, ppInstRet, pProc->m_cBStack, pProc->m_cBArg);
 			
 			*ppInstRet = pInst;
 
 			pInst = pProc->m_aryInst.A() - 1; // this will be incremented below
+			pVm->m_pProcCurDebug = pProc;
 
 		} break;
 
@@ -843,23 +970,47 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 		{
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 
+
+			u8 * pBStackCalled = pVm->m_pBStack;
 			pVm->m_pBStack += wordLhs.m_s32;
 			SInstruction ** ppInstRet = ((SInstruction **)pVm->m_pBStack) - 1;
 
-			printf("OP_Ret ) pBStack = %p, ppInst = %p , dB = %d\n", pVm->m_pBStack, ppInstRet, wordLhs.m_s32);
+
+			//printf("OP_Ret ) pBStack = %p, ppInst = %p , dB = %d\n", pVm->m_pBStack, ppInstRet, wordLhs.m_s32);
+			auto pProcCalled = pVm->m_pProcCurDebug;
+			if (pVm->m_pStrbuf && EWC_FVERIFY(pProcCalled, "missing called proc"))
+			{
+				u8 * pBStackArg = pBStackCalled + pProcCalled->m_cBStack;
+				auto pTinproc = pProcCalled->m_pTinproc;
+
+				if (pTinproc->m_arypTinReturns.C())
+				{
+					AppendCoz(pVm->m_pStrbuf, "}->");
+					for (int ipTin = 0; ipTin < pTinproc->m_arypTinReturns.C(); ++ipTin)
+					{
+						SParameter * pParam = &pProcCalled->m_aParamRet[ipTin];
+						auto iBStackRet = *(s32*)&pBStackArg[pParam->m_iBStack];
+						PrintInstance(pVm, pTinproc->m_arypTinReturns[ipTin], &pVm->m_pBStack[iBStackRet]);
+					}
+				}
+				else
+				{
+					AppendCoz(pVm->m_pStrbuf, "}");
+				}
+				AppendCoz(pVm->m_pStrbuf, "; ");
+			}
+
 			if (*ppInstRet == nullptr)
 			{
 				return; // halt
 			}
 
-			auto pInstRet = *ppInstRet;
-			if (EWC_FVERIFY(pInstRet->m_op == OP_Call, "procedure return did not return to call instruction"))
-			{
-				auto pProcPrev = (SProcedure *)wordRhs.m_pV;
-				pVm->m_pProcCurDebug = pProcPrev;
-			}
+			auto pInstCall = *ppInstRet;
+			EWC_ASSERT(pInstCall->m_op == OP_Call, "procedure return did not return to call instruction");
 
-			pInst = pInstRet;
+			auto pProcPrev = (SProcedure *)pInstCall->m_wordRhs.m_pV;
+			pVm->m_pProcCurDebug = pProcPrev;
+			pInst = pInstCall;
 			
 		} break;
 
@@ -909,6 +1060,7 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, SDataLayout *
 ,m_pBStackMax(pBStackMax)
 ,m_pBStack(pBStackMax)
 ,m_pProcCurDebug(nullptr)
+,m_pStrbuf(nullptr)
 {
 	m_pBStack -= 4;
 	auto piInstTerm = (u32*)m_pBStack;
@@ -1099,9 +1251,16 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	static const u32 s_cBStackMax = 2048;
 	u8 * pBStack = (u8 *)pAlloc->EWC_ALLOC(s_cBStackMax, 16);
 
+	char aCh[2048];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+
 	CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &dlay);
+	vm.m_pStrbuf = &strbuf;
 
 	ExecuteBytecode(&vm, pProc);
+
+	EWC::EnsureTerminated(&strbuf, '\0');
+	printf("%s\n", aCh);
 }
 
 } // namespace BCode 
