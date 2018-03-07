@@ -16,6 +16,7 @@
 
 #include "UnitTest.h"
 
+#include "ByteCode.h"
 #include "CodeGen.h"
 #include "Error.h"
 #include "EwcArray.h"
@@ -103,6 +104,7 @@ struct SUnitTest // tag = utest
 							,m_pCozParse(nullptr)
 							,m_pCozTypeCheck(nullptr)
 							,m_pCozValues(nullptr)
+							,m_pCozBytecode(nullptr)
 							,m_utestk(UTESTK_Permute)
 							,m_arypPerm(pAlloc, BK_UnitTest)
 								{ ; }
@@ -114,11 +116,13 @@ struct SUnitTest // tag = utest
 								pAlloc->EWC_FREE(m_pCozParse);
 								pAlloc->EWC_FREE(m_pCozTypeCheck);
 								pAlloc->EWC_FREE(m_pCozValues);
+								pAlloc->EWC_FREE(m_pCozBytecode);
 								m_pCozPrereq = nullptr;
 								m_pCozInput = nullptr;
 								m_pCozParse = nullptr;
 								m_pCozTypeCheck = nullptr;
 								m_pCozValues = nullptr;
+								m_pCozBytecode = nullptr;
 
 								auto ppPermEnd = m_arypPerm.PMac();
 								for (auto ppPerm = m_arypPerm.A(); ppPerm != ppPermEnd; ++ppPerm)
@@ -134,6 +138,7 @@ struct SUnitTest // tag = utest
 	char *					m_pCozParse;
 	char *					m_pCozTypeCheck;
 	char *					m_pCozValues;
+	char *					m_pCozBytecode;
 	UTESTK					m_utestk;
 
 	CDynAry<SPermutation *>	m_arypPerm;
@@ -631,6 +636,10 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 		{
 			pUtest->m_pCozValues = PCozExpectString(pTesctx, pLex);
 		}
+		else if (FConsumeIdentifier(pTesctx, pLex, "bytecode"))
+		{
+			pUtest->m_pCozBytecode = PCozExpectString(pTesctx, pLex);
+		}
 		else if (pLex->m_tok == TOK('{'))
 		{
 			ParsePermuteString(pTesctx, pLex, pUtest);
@@ -651,7 +660,13 @@ static SUnitTest * PUtestParse(STestContext * pTesctx, SLexer * pLex)
 
 	if (pUtest->m_utestk != UTESTK_Permute)
 	{
-		if (pUtest->m_pCozPrereq || pUtest->m_pCozInput || pUtest->m_pCozParse || pUtest->m_pCozTypeCheck || pUtest->m_pCozValues || pUtest->m_arypPerm.C())
+		if (pUtest->m_pCozPrereq || 
+			pUtest->m_pCozInput || 
+			pUtest->m_pCozParse || 
+			pUtest->m_pCozTypeCheck || 
+			pUtest->m_pCozValues || 
+			pUtest->m_pCozBytecode || 
+			pUtest->m_arypPerm.C())
 		{
 			ParseError(pTesctx, pLex, "permute string test is not allowed for test %s", pUtest->m_strName.PCoz());
 		}
@@ -757,6 +772,7 @@ TESTRES TestresRunUnitTest(
 	const char * pCozParseExpected,
 	const char * pCozTypeCheckExpected,
 	const char * pCozValuesExpected,
+	const char * pCozBytecodeExpected,
 	CDynAry<SErrorCount> * paryErrcExpected)
 {
 	//if (pCozPrereq && pCozPrereq[0] != '\0')
@@ -902,13 +918,48 @@ TESTRES TestresRunUnitTest(
 
 	if (testres == TESTRES_Success && !work.m_pErrman->FHasHiddenErrors())
 	{
-		CIRBuilder build(&work, &work.m_arypValManaged, sebFilename.PCoz(), FCOMPILE_None);
-		CodeGenEntryPoint(&work, &build, work.m_pSymtab, &work.m_arypEntryChecked);
+
+		CBuilderIR buildir(&work, &work.m_arypValManaged, sebFilename.PCoz(), FCOMPILE_None);
+
+		SDataLayout dlay;
+		buildir.ComputeDataLayout(&dlay);
+
+		CodeGenEntryPointsLlvm(&work, &buildir, work.m_pSymtab, &work.m_arypEntryChecked);
 
 		if (work.m_pErrman->FHasErrors())
 		{
 			printf("Unexpected error during codegen for test %s\n", pUtest->m_strName.PCoz());
 			testres = TESTRES_CodeGenFailure;
+		}
+
+		if (!fHasExpectedErr && testres == TESTRES_Success && !FIsEmptyString(pCozBytecodeExpected))
+		{
+			CIRProcedure * pProcUnitTest;
+			BCode::CBuilder buildBc(work.m_pAlloc, &dlay);
+			CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_arypEntryChecked, &pProcUnitTest);
+
+			char aCh[2048];
+			SStringBuffer strbufBytecode(aCh, EWC_DIM(aCh));
+
+			if (EWC_FVERIFY(pProcUnitTest, "expected unit test procedure"))
+			{
+				static const u32 s_cBStackMax = 2048;
+				u8 * pBStack = (u8 *)work.m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
+
+				BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &dlay);
+				vm.m_pStrbuf = &strbufBytecode;
+
+				BCode::ExecuteBytecode(&vm, pProcUnitTest->m_pProcBc);
+				work.m_pAlloc->EWC_DELETE(pBStack);
+			}
+
+			if (!FAreCozEqual(aCh, pCozBytecodeExpected))
+			{
+				// print error location
+				printf("BYTECODE ERROR during test for '%s'\n", pUtest->m_strName.PCoz());
+				PrintTestError(pCozIn, aCh, pCozBytecodeExpected);
+				testres = TESTRES_TypeCheckMismatch;
+			}
 		}
 	}
 
@@ -994,6 +1045,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 				auto pCozParse = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozParse, pTesctx->m_arySubStack);
 				auto pCozTypeCheck = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozTypeCheck, pTesctx->m_arySubStack);
 				auto pCozValues = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozValues, pTesctx->m_arySubStack);
+				auto pCozBytecode = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozBytecode, pTesctx->m_arySubStack);
 
 				if (!pCozInput || !pCozParse || !pCozTypeCheck || !pCozValues)
 				{
@@ -1011,15 +1063,17 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 								pCozParse,
 								pCozTypeCheck,
 								pCozValues,
+								pCozBytecode,
 								&aryErrcExpected);
 					++pTesctx->m_mpTestresCResults[testres];
 				}
 
 				if (pCozPrereq) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozPrereq);
-				if (pCozInput) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozInput);
-				if (pCozParse) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozParse);
-				if (pCozTypeCheck) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozTypeCheck);
-				if (pCozValues) pTesctx->m_pAlloc->EWC_DELETE((char*)pCozValues);
+				if (pCozInput)	pTesctx->m_pAlloc->EWC_DELETE((char*)pCozInput);
+				if (pCozParse)	pTesctx->m_pAlloc->EWC_DELETE((char*)pCozParse);
+				if (pCozTypeCheck)	pTesctx->m_pAlloc->EWC_DELETE((char*)pCozTypeCheck);
+				if (pCozValues)		pTesctx->m_pAlloc->EWC_DELETE((char*)pCozValues);
+				if (pCozBytecode)	pTesctx->m_pAlloc->EWC_DELETE((char*)pCozBytecode);
 			}
 		}
 
@@ -1204,6 +1258,7 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 						pUtest->m_pCozParse,
 						pUtest->m_pCozTypeCheck,
 						pUtest->m_pCozValues,
+						pUtest->m_pCozBytecode,
 						nullptr);
 			++tesctx.m_mpTestresCResults[testres];
 			continue;

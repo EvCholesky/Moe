@@ -28,18 +28,28 @@ struct LLVMOpaqueTargetMachine;
 struct LLVMOpaqueType;
 struct LLVMOpaqueValue;
 
+class CBuilderIR;
 class CIRBuilderErrorContext;
 class CIRInstruction;
 class CSTNode;
 class CSymbolTable;
 class CWorkspace;
+struct SDataLayout;
 struct SSymbol;
 struct SErrorManager;
 struct STypeInfo;
 struct STypeInfoInteger;
+struct STypeInfoProcedure;
 struct SWorkspaceEntry;
 
 
+
+namespace BCode
+{
+	class CBuilder;
+	struct SBlock;
+	struct SProcedure;
+}
 
 class CIRBasicBlock		// tag = block
 {
@@ -49,6 +59,7 @@ public:
 
 	void				Append(CIRInstruction * pInst);
 
+	BCode::SBlock *					m_pBlockBc;
 	LLVMOpaqueBasicBlock *			m_pLblock;
 	EWC::CDynAry<CIRInstruction *>	m_arypInst;		// BB - eventually this should be replaced with something that has 
 													// better random insertion performance.
@@ -231,6 +242,7 @@ public:
 						,m_pLvalDebugLocCur(nullptr)
 						,m_pBlockLocals(nullptr)
 						,m_pBlockFirst(nullptr)
+						,m_pProcBc(nullptr)
 						,m_arypBlockManaged(pAlloc, EWC::BK_IR)
 							{ ; }
 
@@ -242,6 +254,7 @@ public:
 	LLVMOpaqueValue *	m_pLvalDebugLocCur;
 	CIRBasicBlock *		m_pBlockLocals;			// entry basic block containing argument stores and local variable allocas
 	CIRBasicBlock *		m_pBlockFirst;			// first
+	BCode::SProcedure *	m_pProcBc;
 
 	EWC::CDynAry<CIRBasicBlock *>
 						m_arypBlockManaged;
@@ -328,23 +341,41 @@ enum INTFUNK // INTrinsic FUNction Kind
 	EWC_MAX_MIN_NIL(INTFUNK)
 };
 
+struct SDIFile // tag = dif (debug info file)
+{
+	LLVMOpaqueValue *				m_pLvalScope;
+	LLVMOpaqueValue *				m_pLvalFile;
 
-class CIRBuilder		// tag = build
+	EWC::CDynAry<LLVMOpaqueValue *>	m_aryLvalScopeStack;
+};
+
+
+
+class CBuilderIR	// tag = buildir
 {
 public:
-						CIRBuilder(
+						CBuilderIR(
 							CWorkspace * pWork,
 							EWC::CDynAry<CIRValue *> *	parypValManaged,
 							const char * pChzFilename,
 							GRFCOMPILE grfcompile);
-						~CIRBuilder();
+						~CBuilderIR();
 	
 	void				PrintDump();
 
-	CIRBasicBlock *		PBlockCreate(CIRProcedure * pProc, const char * pChzName);
+	// Overrides
+	void					FinalizeBuild(CWorkspace * pWork);
+	void					ComputeDataLayout(SDataLayout * pDlay);
 
-	void				ActivateProcedure(CIRProcedure * pProc, CIRBasicBlock * pBlock);
-	void				ActivateBlock(CIRBasicBlock * pBlock);
+	CIRProcedure *			PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, const char * pChzName, CSTNode * pStnod);
+	CIRBasicBlock *			PBlockCreate(CIRProcedure * pProc, const char * pChzName);
+
+	void					ActivateProcedure(CIRProcedure * pProc, CIRBasicBlock * pBlock);
+	void					ActivateBlock(CIRBasicBlock * pBlock);
+	void					FinalizeProc(CIRProcedure * pProc);
+
+	SDIFile *				PDifEnsure(CWorkspace * pWork, const EWC::CString & strFilename);
+
 	void				AddManagedVal(CIRValue * pVal);
 
 	CIRInstruction *	PInstCreateNCmp(NCMPPRED ncmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
@@ -368,8 +399,8 @@ public:
 
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
 
+	EWC::CAlloc *						m_pAlloc;
 	CIRBuilderErrorContext *			m_pBerrctx;
-
 	LLVMOpaqueModule *					m_pLmoduleCur;
 	LLVMOpaqueBuilder *					m_pLbuild;
 
@@ -385,22 +416,12 @@ public:
 	LLVMOpaqueValue *					m_pLvalScope;
 	LLVMOpaqueValue *					m_pLvalFile;
 
-	EWC::CAlloc *						m_pAlloc;
-
 	CIRProcedure *						m_pProcCur;
 	CIRBasicBlock *						m_pBlockCur;
 
 	EWC::CDynAry<CIRProcedure *>		m_arypProcVerify;	// all the procedures that need verification.
 	EWC::CDynAry<CIRValue *> *			m_parypValManaged;
 	EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
-};
-
-struct SDIFile // tag = dif (debug info file)
-{
-	LLVMOpaqueValue *				m_pLvalScope;
-	LLVMOpaqueValue *				m_pLvalFile;
-
-	EWC::CDynAry<LLVMOpaqueValue *>	m_aryLvalScopeStack;
 };
 
 
@@ -411,7 +432,6 @@ enum VALGENK
 	VALGENK_Reference	// return a reference for LHS store
 };
 
-CIRValue * PValGenerate(CWorkspace * pWork, CIRBuilder * pBuild, CSTNode * pStnod, VALGENK valgenk);
 
 
 
@@ -419,11 +439,18 @@ void InitLLVM(EWC::CAry<const char*> * paryPCozArgs);
 void ShutdownLLVM();
 
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn);
-void CodeGenEntryPoint(
+void CodeGenEntryPointsLlvm(
 	CWorkspace * pWork,
-	CIRBuilder * pBuild, 
+	CBuilderIR * pBuild, 
 	CSymbolTable * pSymtabTop,
 	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder);
+
+void CodeGenEntryPointsBytecode(
+	CWorkspace * pWork,
+	BCode::CBuilder * pBuild, 
+	CSymbolTable * pSymtabTop,
+	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder,
+	CIRProcedure ** ppProcUnitTest);
 
 int NExecuteAndWait(
 	const char * pChzProgram,

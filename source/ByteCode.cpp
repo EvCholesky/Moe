@@ -246,17 +246,22 @@ SProcedure * CBuilder::PProcCreate(STypeInfoProcedure * pTinproc)
 	return pProc;
 }
 
-void CBuilder::BeginProc(SProcedure * pProc)
+void CBuilder::ActivateProc(SProcedure * pProc, SBlock * pBlock)
 {
-	EWC_ASSERT(!m_pProcCur, "cannot begin procedure %s; previous procedure %s was not ended", 
-		m_pProcCur->m_pTinproc->m_strName.PCoz(), pProc->m_pTinproc->m_strName.PCoz());
-	m_pProcCur = pProc;
-}
+	if (m_pBlockCur)
+	{
+		EWC_ASSERT(!pBlock || m_pBlockCur == pBlock, "mismatch ending block");
+		m_pBlockCur = nullptr;
+	}
 
-void CBuilder::EndProc(SProcedure * pProc)
-{
-	EWC_ASSERT(m_pProcCur == pProc, "mismatch ending procedure %s", pProc->m_pTinproc->m_strName.PCoz());
-	m_pProcCur = nullptr;
+	if (m_pProcCur)
+	{
+		EWC_ASSERT(!pProc || m_pProcCur == pProc, "mismatch ending procedure");
+		m_pProcCur = nullptr;
+	}
+
+	m_pProcCur = pProc;
+	m_pBlockCur = pBlock;
 }
 
 void CBuilder::FinalizeProc(SProcedure * pProc)
@@ -314,8 +319,14 @@ SBlock * CBuilder::PBlockCreate()
 	return pBlock;
 }
 
-void CBuilder::BeginBlock(SBlock * pBlock)
+void CBuilder::ActivateBlock(SBlock * pBlock)
 {
+	if (m_pBlockCur)
+	{
+		EWC_ASSERT(m_pBlockCur == pBlock, "mismatch ending block");
+		m_pBlockCur = nullptr;
+	}
+
 	EWC_ASSERT(m_pProcCur, "cannot begin basic block without active procedure");
 	EWC_ASSERT(!m_pBlockCur, "cannot begin basic block; previous block was not ended");
 	m_pBlockCur = pBlock;
@@ -331,12 +342,6 @@ void CBuilder::BeginBlock(SBlock * pBlock)
 		pBlock->m_pProc = m_pProcCur;
 		m_pProcCur->m_arypBlock.Append(pBlock);
 	}
-}
-
-void CBuilder::EndBlock(SBlock * pBlock)
-{
-	EWC_ASSERT(m_pBlockCur == pBlock, "mismatch ending block");
-	m_pBlockCur = nullptr;
 }
 
 void CBuilder::AddInst(OP op)
@@ -501,6 +506,12 @@ void CBuilder::AddReturn(SRecord * aRecRet, int cReturn)
 
 	RecSetupInst(pInst, OP_Return, 0, RecArgLiteral(m_pProcCur->m_cBArg), RecSigned(cReturn));
 	pInst->m_iBStackOut = 0;
+}
+
+void CBuilder::AddTraceStore(SRecord & rec, STypeInfo * pTin)
+{
+	auto pInst = PInstAlloc(); 
+	RecSetupInst(pInst, OP_TraceStore, 0, rec, RecPointer(pTin));
 }
 
 void CBuilder::AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse)
@@ -864,6 +875,18 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 		case MASHOP(OP_NTrace, 8):	
 			ReadOpcodes(pVm, pInst, &wordLhs); printf("8byte %lld\n", wordLhs.m_u64); break;
 
+		case MASHOP(OP_TraceStore, 0):	
+		{
+			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+			if (pVm->m_pStrbuf)
+			{
+				auto pTin = (STypeInfo *)wordRhs.m_pV;
+				PrintInstance(pVm, pTin, &pVm->m_pBStack[wordLhs.m_s64]);
+				AppendCoz(pVm->m_pStrbuf, ";");
+			}
+		} break;
+
+
 			// Store(pV, value)
 		case MASHOP(OP_Store, 1):	
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u8, wordRhs.m_u8); break;
@@ -1132,7 +1155,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	SDataLayout dlay;
 	BuildStubDataLayout(&dlay);
 
-	CBuilder bcbuild(pAlloc, &dlay);
+	CBuilder buildBc(pAlloc, &dlay);
 
 	EWC::CHash<HV, STypeInfo *>	hashHvPTin(pAlloc, BK_ByteCodeTest);
 	SUniqueNameSet unsetTin(pAlloc, BK_ByteCodeTest);
@@ -1156,97 +1179,90 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	pTinprocSum->m_arypTinReturns.Append(pTinS32);
 
 
-	auto pProcPrint = bcbuild.PProcCreate(pTinprocPrint);
-	bcbuild.BeginProc(pProcPrint);
-	
-	auto pBlockPrint = bcbuild.PBlockCreate();
-	bcbuild.BeginBlock(pBlockPrint);
+	auto pProcPrint = buildBc.PProcCreate(pTinprocPrint);
+	auto pBlockPrint = buildBc.PBlockCreate();
+	buildBc.ActivateProc(pProcPrint, pBlockPrint);
 	{
-		(void)bcbuild.RecAddInst(OP_NTrace, 2, RecArg(pProcPrint->m_aParamArg[0].m_iBStack));
-		(void)bcbuild.RecAddInst(OP_NTrace, 4, RecArg(pProcPrint->m_aParamArg[1].m_iBStack));
-		bcbuild.AddReturn(nullptr, 0);
+		(void)buildBc.RecAddInst(OP_NTrace, 2, RecArg(pProcPrint->m_aParamArg[0].m_iBStack));
+		(void)buildBc.RecAddInst(OP_NTrace, 4, RecArg(pProcPrint->m_aParamArg[1].m_iBStack));
+
+		buildBc.AddTraceStore(RecArgLiteral(pProcPrint->m_aParamArg[0].m_iBStack), pTinS16);
+		buildBc.AddTraceStore(RecArgLiteral(pProcPrint->m_aParamArg[1].m_iBStack), pTinS32);
+		buildBc.AddReturn(nullptr, 0);
 	}
 
-	bcbuild.EndBlock(pBlockPrint);
-	bcbuild.EndProc(pProcPrint);
-	bcbuild.FinalizeProc(pProcPrint);
+	buildBc.ActivateProc(nullptr, nullptr);
+	buildBc.FinalizeProc(pProcPrint);
 
 
-	auto pProcSum = bcbuild.PProcCreate(pTinprocSum);
-	bcbuild.BeginProc(pProcSum);
+	auto pProcSum = buildBc.PProcCreate(pTinprocSum);
+	auto pBlockSum = buildBc.PBlockCreate();
+	buildBc.ActivateProc(pProcSum, pBlockSum);
 	
-	auto pBlockSum = bcbuild.PBlockCreate();
-	bcbuild.BeginBlock(pBlockSum);
 	{
-		auto recRhs = bcbuild.RecAddInst(
+		auto recRhs = buildBc.RecAddInst(
 									OP_NAdd,
 									4, 
 									RecArg(pProcSum->m_aParamArg[0].m_iBStack),
 									RecArg(pProcSum->m_aParamArg[1].m_iBStack));
 
-		bcbuild.AddReturn(&recRhs, 1);
-		//void) bcbuild.RecAddInst(OP_Store, 4, RecSigned(pProcSum->m_aParamRet[0].m_iBStack), recRhs);
+		buildBc.AddReturn(&recRhs, 1);
+		//void) buildBc.RecAddInst(OP_Store, 4, RecSigned(pProcSum->m_aParamRet[0].m_iBStack), recRhs);
 	}
 
-	bcbuild.EndBlock(pBlockSum);
-	bcbuild.EndProc(pProcSum);
-	bcbuild.FinalizeProc(pProcSum);
+	buildBc.ActivateProc(nullptr, nullptr);
+	buildBc.FinalizeProc(pProcSum);
 
 
-	auto pProc = bcbuild.PProcCreate(pTinprocMain);
-	bcbuild.BeginProc(pProc);
+	auto pProc = buildBc.PProcCreate(pTinprocMain);
+	auto pBlockPre = buildBc.PBlockCreate();
+	buildBc.ActivateProc(pProc, pBlockPre);
 	
-	auto pBlockPre = bcbuild.PBlockCreate();
-	bcbuild.BeginBlock(pBlockPre);
-	auto recVarAddr = bcbuild.AllocLocalVar(1, 1);
-	auto recVarVal = bcbuild.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(55));
+	auto recVarAddr = buildBc.AllocLocalVar(1, 1);
+	auto recVarVal = buildBc.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(55));
 
-	auto recRhs = bcbuild.RecAddInst(OP_NAdd, 1, RecSigned(5), RecSigned(3));
-	auto recOut = bcbuild.RecAddInst(OP_NAdd, 1, recRhs, recVarVal);
+	auto recRhs = buildBc.RecAddInst(OP_NAdd, 1, RecSigned(5), RecSigned(3));
+	auto recOut = buildBc.RecAddInst(OP_NAdd, 1, recRhs, recVarVal);
 
-	auto recCmp = bcbuild.RecAddNCmp(1, NPRED_SGT, recOut, RecSigned(100));
-	auto pBlockTrue = bcbuild.PBlockCreate();
-	auto pBlockFalse = bcbuild.PBlockCreate();
-	auto pBlockPost = bcbuild.PBlockCreate();
-	bcbuild.AddCondBranch(recCmp, pBlockTrue, pBlockFalse);
-	bcbuild.EndBlock(pBlockPre);
+	auto recCmp = buildBc.RecAddNCmp(1, NPRED_SGT, recOut, RecSigned(100));
+	auto pBlockTrue = buildBc.PBlockCreate();
+	auto pBlockFalse = buildBc.PBlockCreate();
+	auto pBlockPost = buildBc.PBlockCreate();
+	buildBc.AddCondBranch(recCmp, pBlockTrue, pBlockFalse);
 
-	bcbuild.BeginBlock(pBlockTrue);
-	(void) bcbuild.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(11));
-	bcbuild.AddBranch(pBlockPost);
-	bcbuild.EndBlock(pBlockTrue);
+	buildBc.ActivateBlock(pBlockTrue);
+	(void) buildBc.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(11));
+	buildBc.AddBranch(pBlockPost);
 
-	bcbuild.BeginBlock(pBlockFalse);
-	(void) bcbuild.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(22));
-	bcbuild.AddBranch(pBlockPost);
-	bcbuild.EndBlock(pBlockFalse);
+	buildBc.ActivateBlock(pBlockFalse);
+	(void) buildBc.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(22));
+	buildBc.AddBranch(pBlockPost);
 
-	bcbuild.BeginBlock(pBlockPost);
-	recVarVal = bcbuild.RecAddInst(OP_Load, 1, recVarAddr);
-	(void) bcbuild.RecAddInst(OP_NTrace, 1, recVarVal);
+	buildBc.ActivateBlock(pBlockPost);
+	recVarVal = buildBc.RecAddInst(OP_Load, 1, recVarAddr);
+	(void) buildBc.RecAddInst(OP_NTrace, 1, recVarVal);
 
 	SRecord aRecArg[2];
 	aRecArg[0] = RecSigned(111);
 	aRecArg[1] = RecSigned(222);
-	bcbuild.AddCall(pProcPrint, aRecArg, 2);
+	buildBc.AddCall(pProcPrint, aRecArg, 2);
 
-	(void) bcbuild.RecAddInst(OP_NTrace, 8, RecSigned(-1));
+	(void) buildBc.RecAddInst(OP_NTrace, 8, RecSigned(-1));
 
-	auto recIntAddr = bcbuild.AllocLocalVar(4, 4);
-	auto recIntVal = bcbuild.RecAddInst(OP_Store, 4, recIntAddr, RecSigned(444));
+	auto recIntAddr = buildBc.AllocLocalVar(4, 4);
+	auto recIntVal = buildBc.RecAddInst(OP_Store, 4, recIntAddr, RecSigned(444));
 	aRecArg[0] = RecSigned(333);
 	aRecArg[1] = recIntVal;
-	bcbuild.AddCall(pProcPrint, aRecArg, 2);
+	buildBc.AddCall(pProcPrint, aRecArg, 2);
 
 	aRecArg[0] = RecSigned(123);
 	aRecArg[1] = RecSigned(111);
-	auto recSumVal = bcbuild.RecAddCall(pProcSum, aRecArg, 2);
-	(void) bcbuild.RecAddInst(OP_NTrace, 4, recSumVal);
+	auto recSumVal = buildBc.RecAddCall(pProcSum, aRecArg, 2);
+	(void) buildBc.RecAddInst(OP_NTrace, 4, recSumVal);
 
-	bcbuild.AddReturn(nullptr, 0);
-	bcbuild.EndBlock(pBlockPost);
-	bcbuild.EndProc(pProc);
-	bcbuild.FinalizeProc(pProc);
+	buildBc.AddReturn(nullptr, 0);
+	buildBc.ActivateProc(nullptr, nullptr);
+	buildBc.FinalizeProc(pProc);
 
 	static const u32 s_cBStackMax = 2048;
 	u8 * pBStack = (u8 *)pAlloc->EWC_ALLOC(s_cBStackMax, 16);

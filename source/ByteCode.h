@@ -125,6 +125,7 @@ namespace BCode
 		OP(PtrDiff) OPARG(Error), \
 		OP(Memcpy) OPARG(Error), \
 		OP(NTrace) OPARG(Unary), \
+		OP(TraceStore) OPARG(Unary), \
 		OP_RANGE(MemoryOp, LogicOpMax) \
 		\
 		OP(NTrunc) OPARG(Error), \
@@ -287,13 +288,12 @@ namespace BCode
 		CBuilder(EWC::CAlloc * pAlloc, SDataLayout * pDlay);
 
 		SProcedure *	PProcCreate(STypeInfoProcedure * pTinproc);
-		void			BeginProc(SProcedure * pProc);
-		void			EndProc(SProcedure * pProc);
+		void			ActivateProc(SProcedure * pProc, SBlock * pBlock);
 		void			FinalizeProc(SProcedure * pProc);
 
 		SBlock *		PBlockCreate();
-		void			BeginBlock(SBlock * pBlock);
-		void			EndBlock(SBlock * pBlock);
+		void			ActivateBlock(SBlock * pBlock);
+		void			DeactivateBlock(SBlock * pBlock);
 
 		void			AddInst(OP op);
 		SRecord			RecAddInst(OP op, u8 cB, const SRecord & recLhs);
@@ -306,6 +306,7 @@ namespace BCode
 		void			AddReturn(SRecord * aRecArg, int cRecArg);
 		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
 		void			AddBranch(SBlock * pBlock);
+		void			AddTraceStore(SRecord & rec, STypeInfo * pTin);
 
 		SRecord			RecAddInstInternal(OP op, u8 cB, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
@@ -345,6 +346,7 @@ namespace BCode
 
 	SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv);
 
+	void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc);
 	void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc);
 
 }
