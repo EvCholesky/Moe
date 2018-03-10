@@ -14,6 +14,7 @@
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
 #include "ByteCode.h"
+#include "CodeGen.h"
 #include "parser.h"
 #include "stdio.h"
 #include "workspace.h"
@@ -40,7 +41,7 @@
 
 using namespace EWC;
 
-void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, s64 * pcB, s64 * pcBAlign)
+void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign)
 {
 	// return the embeded size of a type (ie. how many bytes would be needed to include it in a struct)
 
@@ -163,10 +164,12 @@ const char * PChzFromOp(OP op)
 }
 
 SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
-:m_pTinproc(pTinproc)
+:SValue(VALK_Procedure)
+,m_pTinproc(pTinproc)
 ,m_cBStack(0)
 ,m_cBArg(0)
-,m_pBlockEntry(nullptr)
+,m_pBlockLocals(nullptr)
+,m_pBlockFirst(nullptr)
 ,m_arypBlock(pAlloc, BK_ByteCodeCreator, 16)
 ,m_aryInst(pAlloc, BK_ByteCode, 0)
 ,m_aParamArg(nullptr)
@@ -176,11 +179,13 @@ SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
 
 
 
-CBuilder::CBuilder(EWC::CAlloc * pAlloc, SDataLayout * pDlay)
-:m_pAlloc(pAlloc)
+CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
+:CBuilderBase(pWork)
 ,m_pDlay(pDlay)
-,m_hashHvMangledPProc(pAlloc, BK_ByteCodeCreator, 256)
-,m_arypBlockManaged(pAlloc, BK_ByteCodeCreator, 256)
+,m_hashHvMangledPProc(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
+,m_arypBlockManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
+,m_aryJumptStack(pWork->m_pAlloc, EWC::BK_ByteCodeCreator)
+,m_blistGep(pWork->m_pAlloc, BK_ByteCodeCreator)
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
 {
@@ -194,7 +199,7 @@ static inline s64 IBArgAlloc(s64 * pcBArg, s64 cB, s64 cBAlign)
 	return cBStack;
 }
 
-SProcedure * CBuilder::PProcCreate(STypeInfoProcedure * pTinproc)
+SProcedure * CBuilder::PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod)
 {
 	size_t cArg = pTinproc->m_arypTinParams.C();
 	size_t cRet = pTinproc->m_arypTinReturns.C();
@@ -218,8 +223,8 @@ SProcedure * CBuilder::PProcCreate(STypeInfoProcedure * pTinproc)
 		pProc->m_aParamRet = aParamArg + cArg;
 	}
 
-	s64 cB; 
-	s64 cBAlign;
+	u64 cB; 
+	u64 cBAlign;
 	for (size_t iArg = 0; iArg < cArg; ++iArg)
 	{
 		auto pTinParam = pTinproc->m_arypTinParams[iArg];
@@ -244,6 +249,29 @@ SProcedure * CBuilder::PProcCreate(STypeInfoProcedure * pTinproc)
 	pProc->m_cBArg = CBAlign(pProc->m_cBArg, m_pDlay->m_cBStackAlign);
 
 	return pProc;
+}
+
+SProcedure * CBuilder::PProcCreate(
+	CWorkspace * pWork,
+	STypeInfoProcedure * pTinproc,
+	const char * pChzMangled,
+	CSTNode * pStnod,
+	CSTNode * pStnodBody,
+	EWC::CDynAry<LType *> * parypLtype,
+	LType * pLtypeReturn)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
+void CBuilder::SetupParamBlock(
+	CWorkspace * pWork,
+	Proc * pProc,
+	CSTNode * pStnod,
+	CSTNode * pStnodParamList, 
+	EWC::CDynAry<LType *> * parypLtype)
+{
+	EWC_ASSERT(false, "bytecode tbd");
 }
 
 void CBuilder::ActivateProc(SProcedure * pProc, SBlock * pBlock)
@@ -309,11 +337,28 @@ void CBuilder::FinalizeProc(SProcedure * pProc)
 	}
 }
 
-SBlock * CBuilder::PBlockCreate()
+void CBuilder::PrintDump()
+{
+}
+
+void CBuilder::FinalizeBuild(CWorkspace * pWork)
+{
+}
+
+CBuilder::	LType * CBuilder::PLtypeVoid()
+{
+	// BB - this should be relocated... somewhere...
+	static STypeInfo s_tinVoid("void", "void", TINK_Void);
+	return &s_tinVoid;
+}
+
+SBlock * CBuilder::PBlockCreate(SProcedure * pProc, const char * pChzName)
 {
 	auto pBlock = EWC_NEW(m_pAlloc, SBlock) SBlock();
 	pBlock->m_aryInst.SetAlloc(m_pAlloc, BK_ByteCode, 128);
 	pBlock->m_aryBranch.SetAlloc(m_pAlloc, BK_ByteCode, 4);
+	pBlock->m_pProc = pProc;
+	pProc->m_arypBlock.Append(pBlock);
 	m_arypBlockManaged.Append(pBlock);
 
 	return pBlock;
@@ -328,19 +373,13 @@ void CBuilder::ActivateBlock(SBlock * pBlock)
 	}
 
 	EWC_ASSERT(m_pProcCur, "cannot begin basic block without active procedure");
+	EWC_ASSERT(m_pProcCur == pBlock->m_pProc, "block activated inside wrong procedure");
 	EWC_ASSERT(!m_pBlockCur, "cannot begin basic block; previous block was not ended");
 	m_pBlockCur = pBlock;
 
-	if (!m_pProcCur->m_pBlockEntry)
+	if (!m_pProcCur->m_pBlockFirst)
 	{
-		m_pProcCur->m_pBlockEntry = pBlock;
-	}
-
-	EWC_ASSERT(!pBlock->m_pProc || pBlock->m_pProc == m_pProcCur, "block activated in multiple procedures");
-	if (!pBlock->m_pProc)
-	{
-		pBlock->m_pProc = m_pProcCur;
-		m_pProcCur->m_arypBlock.Append(pBlock);
+		m_pProcCur->m_pBlockFirst = pBlock;
 	}
 }
 
@@ -418,28 +457,93 @@ SRecord CBuilder::RecAddInst(OP op, u8 cB, const SRecord & recLhs, const SRecord
 	return RecStack(iBStackOut);
 }
 
-SRecord	CBuilder::RecAddNCmp(u8 cB, NPRED npred, const SRecord & recLhs, const SRecord & recRhs)
+SRecord	CBuilder::RecAddNCmp(u8 cB, NCMPPRED ncmppred, const SRecord & recLhs, const SRecord & recRhs)
 {
 	auto pInst = PInstAlloc(); 
 	RecSetupInst(pInst, OP_NCmp, cB, recLhs, recRhs);
 
-	pInst->m_pred = (u8)npred;
+	pInst->m_pred = (u8)ncmppred;
 
 	u32 iBStackOut = IBStackAlloc(1, 1);
 	pInst->m_iBStackOut = iBStackOut;
 	return RecStack(iBStackOut);
 }
 
-SRecord	CBuilder::RecAddGCmp(u8 cB, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs)
+SRecord	CBuilder::RecAddGCmp(u8 cB, GCMPPRED gcmppred, const SRecord & recLhs, const SRecord & recRhs)
 {
 	auto pInst = PInstAlloc(); 
 	RecSetupInst(pInst, OP_GCmp, cB, recLhs, recRhs);
 
-	pInst->m_pred = (u8)gpred;
+	pInst->m_pred = (u8)gcmppred;
 
 	u32 iBStackOut = IBStackAlloc(1, 1);
 	pInst->m_iBStackOut = iBStackOut;
 	return RecStack(iBStackOut);
+}
+
+CBuilder::Instruction * CBuilder::PInstCreateNCmp(NCMPPRED ncmppred, const SValue * pValLhs, const SValue * pValRhs, const char * pChz)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
+CBuilder::Instruction * CBuilder::PInstCreateGCmp(GCMPPRED gcmppred, const SValue * pValLhs, const SValue * pValRhs, const char * pChz)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
+CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
+CBuilder::Instruction *	CBuilder::PInstCreateAlloca(CBuilder::LType * pLtype, u64 cElement, const char * pChzName)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
+CBuilder::GepIndex * CBuilder::PGepIndex(u64 idx)
+{
+	GepIndex * pGep = m_blistGep.AppendNew();
+	*pGep = (GepIndex)idx;
+	return pGep;
+}
+
+CBuilder::GepIndex * CBuilder::PGepIndexFromValue(SValue * pVal)
+{
+	EWC_ASSERT(false, "GEP index should be SValue, not raw int");
+	return nullptr;
+}
+
+CBuilder::Instruction * CBuilder::PInstCreatePhi(LType * pLtype, const char * pChzName)
+{
+	EWC_ASSERT(false, "GEP index should be SValue, not raw int");
+	return nullptr;
+}
+
+void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
+{
+	EWC_ASSERT(false, "GEP index should be SValue, not raw int");
+}
+
+SValue * CBuilder::PValGenerateCall(
+	CWorkspace * pWork,
+	CSTNode * pStnod,
+	EWC::CDynAry<ProcArg *> * parypArgs,
+	bool fIsDirectCall,
+	STypeInfoProcedure * pTinproc,
+	VALGENK valgenk)
+{
+	EWC_ASSERT(false, "bytecode TBD");
+	return false;
+}
+
+CBuilder::ProcArg *	CBuilder::PProcArg(SValue * pVal)
+{
+	return pVal;
 }
 
 void CBuilder::AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg)
@@ -457,8 +561,8 @@ SRecord CBuilder::RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg)
 		return RecSigned(-1);
 
 	s32 iBStackRet = -1;
-	s64 cB;
-	s64 cBAlign;
+	u64 cB;
+	u64 cBAlign;
 	auto pTinproc = pProc->m_pTinproc;
 	auto cBArg = pProc->m_cBArg;
 	int cpTinReturn = (int)pTinproc->m_arypTinReturns.C();
@@ -489,6 +593,11 @@ SRecord CBuilder::RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg)
 	pInst->m_iBStackOut = 0;
 
 	return RecStack(iBStackRet);
+}
+
+void CBuilder::CreateReturn(SValue ** ppVal, int cpVal)
+{
+	EWC_ASSERT(false, "bytecode tbd");
 }
 
 void CBuilder::AddReturn(SRecord * aRecRet, int cReturn)
@@ -533,7 +642,7 @@ void CBuilder::AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pB
 	pInst->m_iBStackOut = 0;
 }
 
-void CBuilder::AddBranch(SBlock * pBlock)
+void CBuilder::CreateBranch(SBlock * pBlock)
 {
 	auto pInst = PInstAlloc(); 
 	RecSetupInst(pInst, OP_Branch, 0, RecUnsigned(0), RecUnsigned(0));
@@ -568,6 +677,54 @@ SInstruction * CBuilder::PInstAlloc()
 {
 	EWC_ASSERT(m_pBlockCur && !m_pBlockCur->FIsFinalized(), "cannot allocate instructions without a unfinalized basic block");
 	return m_pBlockCur->m_aryInst.AppendNew();
+}
+
+CBuilder::Constant * CBuilder::PConstInt(int cBit, bool fIsSigned, u64 nUnsigned)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+CBuilder::Constant * CBuilder::PConstFloat(int cBit, f64 g)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+CBuilder::Constant * CBuilder::PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+SValue * CBuilder::PValFromSymbol(SSymbol * pSym)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+SValue * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+SValue * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+SValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+SValue * CBuilder::PInstCreateStore(SValue * pValPT, SValue * pValT)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
 }
 
 
@@ -663,20 +820,20 @@ template <> struct SWordOpsize<8>
 	};
 
 template <s32 CB>
-bool FEvaluateNCmp(NPRED npred, SWord & wordLhs, SWord & wordRhs)
+bool FEvaluateNCmp(NCMPPRED ncmppred, SWord & wordLhs, SWord & wordRhs)
 {
-	switch (npred)
+	switch (ncmppred)
 	{
-	case NPRED_EQ:	return SWordOpsize<CB>::Unsigned(wordLhs) == SWordOpsize<CB>::Unsigned(wordRhs);
-	case NPRED_NE:	return SWordOpsize<CB>::Unsigned(wordLhs) != SWordOpsize<CB>::Unsigned(wordRhs);
-	case NPRED_SGT:	return SWordOpsize<CB>::Signed(wordLhs) > SWordOpsize<CB>::Signed(wordRhs);
-	case NPRED_UGT:	return SWordOpsize<CB>::Unsigned(wordLhs) > SWordOpsize<CB>::Unsigned(wordRhs);
-	case NPRED_SGE:	return SWordOpsize<CB>::Signed(wordLhs) >= SWordOpsize<CB>::Signed(wordRhs);
-	case NPRED_UGE:	return SWordOpsize<CB>::Unsigned(wordLhs) >= SWordOpsize<CB>::Unsigned(wordRhs);
-	case NPRED_SLT:	return SWordOpsize<CB>::Signed(wordLhs) < SWordOpsize<CB>::Signed(wordRhs);
-	case NPRED_ULT:	return SWordOpsize<CB>::Unsigned(wordLhs) < SWordOpsize<CB>::Unsigned(wordRhs);
-	case NPRED_SLE:	return SWordOpsize<CB>::Signed(wordLhs) <= SWordOpsize<CB>::Signed(wordRhs);
-	case NPRED_ULE:	return SWordOpsize<CB>::Unsigned(wordLhs) <= SWordOpsize<CB>::Unsigned(wordRhs);
+	case NCMPPRED_EQ:	return SWordOpsize<CB>::Unsigned(wordLhs) == SWordOpsize<CB>::Unsigned(wordRhs);
+	case NCMPPRED_NE:	return SWordOpsize<CB>::Unsigned(wordLhs) != SWordOpsize<CB>::Unsigned(wordRhs);
+	case NCMPPRED_SGT:	return SWordOpsize<CB>::Signed(wordLhs) > SWordOpsize<CB>::Signed(wordRhs);
+	case NCMPPRED_UGT:	return SWordOpsize<CB>::Unsigned(wordLhs) > SWordOpsize<CB>::Unsigned(wordRhs);
+	case NCMPPRED_SGE:	return SWordOpsize<CB>::Signed(wordLhs) >= SWordOpsize<CB>::Signed(wordRhs);
+	case NCMPPRED_UGE:	return SWordOpsize<CB>::Unsigned(wordLhs) >= SWordOpsize<CB>::Unsigned(wordRhs);
+	case NCMPPRED_SLT:	return SWordOpsize<CB>::Signed(wordLhs) < SWordOpsize<CB>::Signed(wordRhs);
+	case NCMPPRED_ULT:	return SWordOpsize<CB>::Unsigned(wordLhs) < SWordOpsize<CB>::Unsigned(wordRhs);
+	case NCMPPRED_SLE:	return SWordOpsize<CB>::Signed(wordLhs) <= SWordOpsize<CB>::Signed(wordRhs);
+	case NCMPPRED_ULE:	return SWordOpsize<CB>::Unsigned(wordLhs) <= SWordOpsize<CB>::Unsigned(wordRhs);
 	}
 
 	EWC_ASSERT(false, "unhandled predicate type");
@@ -684,16 +841,16 @@ bool FEvaluateNCmp(NPRED npred, SWord & wordLhs, SWord & wordRhs)
 }
 
 template <s32 CB>
-bool FEvaluateGCmp(GPRED gpred, SWord & wordLhs, SWord & wordRhs)
+bool FEvaluateGCmp(GCMPPRED gcmppred, SWord & wordLhs, SWord & wordRhs)
 {
-	switch (gpred)
+	switch (gcmppred)
 	{
-	case GPRED_EQ:	return SWordOpsize<CB>::Float(wordLhs) == SWordOpsize<CB>::Float(wordRhs);
-	case GPRED_NE:	return SWordOpsize<CB>::Float(wordLhs) != SWordOpsize<CB>::Float(wordRhs);
-	case GPRED_GT:	return SWordOpsize<CB>::Float(wordLhs) > SWordOpsize<CB>::Float(wordRhs);
-	case GPRED_GE:	return SWordOpsize<CB>::Float(wordLhs) >= SWordOpsize<CB>::Float(wordRhs);
-	case GPRED_LT:	return SWordOpsize<CB>::Float(wordLhs) < SWordOpsize<CB>::Float(wordRhs);
-	case GPRED_LE:	return SWordOpsize<CB>::Float(wordLhs) <= SWordOpsize<CB>::Float(wordRhs);
+	case GCMPPRED_EQ:	return SWordOpsize<CB>::Float(wordLhs) == SWordOpsize<CB>::Float(wordRhs);
+	case GCMPPRED_NE:	return SWordOpsize<CB>::Float(wordLhs) != SWordOpsize<CB>::Float(wordRhs);
+	case GCMPPRED_GT:	return SWordOpsize<CB>::Float(wordLhs) > SWordOpsize<CB>::Float(wordRhs);
+	case GCMPPRED_GE:	return SWordOpsize<CB>::Float(wordLhs) >= SWordOpsize<CB>::Float(wordRhs);
+	case GCMPPRED_LT:	return SWordOpsize<CB>::Float(wordLhs) < SWordOpsize<CB>::Float(wordRhs);
+	case GCMPPRED_LE:	return SWordOpsize<CB>::Float(wordLhs) <= SWordOpsize<CB>::Float(wordRhs);
 	}
 
 	EWC_ASSERT(false, "unhandled predicate type");
@@ -789,8 +946,8 @@ void PrintInstance(CVirtualMachine * pVm, STypeInfo * pTin, u8 * pData)
 			break;
 		}
 
-		s64 cBElement;
-		s64 cBAlignElement;
+		u64 cBElement;
+		u64 cBAlignElement;
 		CalculateByteSizeAndAlign(pVm->m_pDlay, pTinary->m_pTin, &cBElement, &cBAlignElement);
 		size_t cBStride = EWC::CBAlign(cBElement, cBAlignElement);
 		for (int i = 0; i < c; ++i)
@@ -927,28 +1084,28 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 
 		case MASHOP(OP_NCmp, 1):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u8, FEvaluateNCmp<1>((NPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u8, FEvaluateNCmp<1>((NCMPPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 		case MASHOP(OP_NCmp, 2):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u16, FEvaluateNCmp<2>((NPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u16, FEvaluateNCmp<2>((NCMPPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 		case MASHOP(OP_NCmp, 4):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u32, FEvaluateNCmp<4>((NPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u32, FEvaluateNCmp<4>((NCMPPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 		case MASHOP(OP_NCmp, 8):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u64, FEvaluateNCmp<8>((NPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u64, FEvaluateNCmp<8>((NCMPPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 
 		case MASHOP(OP_GCmp, 4):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u32, FEvaluateGCmp<4>((GPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u32, FEvaluateGCmp<4>((GCMPPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 		case MASHOP(OP_GCmp, 8):
 			ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_iBStackOut, u64, FEvaluateGCmp<8>((GPRED)pInst->m_pred, wordLhs, wordRhs));
+			STORE(pInst->m_iBStackOut, u64, FEvaluateGCmp<8>((GCMPPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 
 		case MASHOP(OP_Call, 0):
@@ -1155,7 +1312,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	SDataLayout dlay;
 	BuildStubDataLayout(&dlay);
 
-	CBuilder buildBc(pAlloc, &dlay);
+	CBuilder buildBc(pWork, &dlay);
 
 	EWC::CHash<HV, STypeInfo *>	hashHvPTin(pAlloc, BK_ByteCodeTest);
 	SUniqueNameSet unsetTin(pAlloc, BK_ByteCodeTest);
@@ -1179,8 +1336,8 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	pTinprocSum->m_arypTinReturns.Append(pTinS32);
 
 
-	auto pProcPrint = buildBc.PProcCreate(pTinprocPrint);
-	auto pBlockPrint = buildBc.PBlockCreate();
+	auto pProcPrint = buildBc.PProcCreate(pWork, pTinprocPrint, nullptr);
+	auto pBlockPrint = buildBc.PBlockCreate(pProcPrint);
 	buildBc.ActivateProc(pProcPrint, pBlockPrint);
 	{
 		(void)buildBc.RecAddInst(OP_NTrace, 2, RecArg(pProcPrint->m_aParamArg[0].m_iBStack));
@@ -1195,8 +1352,8 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	buildBc.FinalizeProc(pProcPrint);
 
 
-	auto pProcSum = buildBc.PProcCreate(pTinprocSum);
-	auto pBlockSum = buildBc.PBlockCreate();
+	auto pProcSum = buildBc.PProcCreate(pWork, pTinprocSum, nullptr);
+	auto pBlockSum = buildBc.PBlockCreate(pProcSum);
 	buildBc.ActivateProc(pProcSum, pBlockSum);
 	
 	{
@@ -1214,8 +1371,8 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	buildBc.FinalizeProc(pProcSum);
 
 
-	auto pProc = buildBc.PProcCreate(pTinprocMain);
-	auto pBlockPre = buildBc.PBlockCreate();
+	auto pProc = buildBc.PProcCreate(pWork, pTinprocMain, nullptr);
+	auto pBlockPre = buildBc.PBlockCreate(pProc);
 	buildBc.ActivateProc(pProc, pBlockPre);
 	
 	auto recVarAddr = buildBc.AllocLocalVar(1, 1);
@@ -1224,19 +1381,19 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	auto recRhs = buildBc.RecAddInst(OP_NAdd, 1, RecSigned(5), RecSigned(3));
 	auto recOut = buildBc.RecAddInst(OP_NAdd, 1, recRhs, recVarVal);
 
-	auto recCmp = buildBc.RecAddNCmp(1, NPRED_SGT, recOut, RecSigned(100));
-	auto pBlockTrue = buildBc.PBlockCreate();
-	auto pBlockFalse = buildBc.PBlockCreate();
-	auto pBlockPost = buildBc.PBlockCreate();
+	auto recCmp = buildBc.RecAddNCmp(1, NCMPPRED_SGT, recOut, RecSigned(100));
+	auto pBlockTrue = buildBc.PBlockCreate(pProc);
+	auto pBlockFalse = buildBc.PBlockCreate(pProc);
+	auto pBlockPost = buildBc.PBlockCreate(pProc);
 	buildBc.AddCondBranch(recCmp, pBlockTrue, pBlockFalse);
 
 	buildBc.ActivateBlock(pBlockTrue);
 	(void) buildBc.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(11));
-	buildBc.AddBranch(pBlockPost);
+	buildBc.CreateBranch(pBlockPost);
 
 	buildBc.ActivateBlock(pBlockFalse);
 	(void) buildBc.RecAddInst(OP_Store, 1, recVarAddr, RecSigned(22));
-	buildBc.AddBranch(pBlockPost);
+	buildBc.CreateBranch(pBlockPost);
 
 	buildBc.ActivateBlock(pBlockPost);
 	recVarVal = buildBc.RecAddInst(OP_Load, 1, recVarAddr);

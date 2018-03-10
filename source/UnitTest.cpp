@@ -919,7 +919,7 @@ TESTRES TestresRunUnitTest(
 	if (testres == TESTRES_Success && !work.m_pErrman->FHasHiddenErrors())
 	{
 
-		CBuilderIR buildir(&work, &work.m_arypValManaged, sebFilename.PCoz(), FCOMPILE_None);
+		CBuilderIR buildir(&work, sebFilename.PCoz(), FCOMPILE_None);
 
 		SDataLayout dlay;
 		buildir.ComputeDataLayout(&dlay);
@@ -935,7 +935,7 @@ TESTRES TestresRunUnitTest(
 		if (!fHasExpectedErr && testres == TESTRES_Success && !FIsEmptyString(pCozBytecodeExpected))
 		{
 			CIRProcedure * pProcUnitTest;
-			BCode::CBuilder buildBc(work.m_pAlloc, &dlay);
+			BCode::CBuilder buildBc(&work, &dlay);
 			CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_arypEntryChecked, &pProcUnitTest);
 
 			char aCh[2048];

@@ -32,12 +32,14 @@ class CBuilderIR;
 class CIRBuilderErrorContext;
 class CIRInstruction;
 class CSTNode;
+class CSTValue;
 class CSymbolTable;
 class CWorkspace;
 struct SDataLayout;
 struct SSymbol;
 struct SErrorManager;
 struct STypeInfo;
+struct STypeInfoEnum;
 struct STypeInfoInteger;
 struct STypeInfoProcedure;
 struct SWorkspaceEntry;
@@ -51,11 +53,11 @@ namespace BCode
 	struct SProcedure;
 }
 
-class CIRBasicBlock		// tag = block
+class CIRBlock		// tag = block
 {
 public:
-						CIRBasicBlock(EWC::CAlloc * pAlloc);
-						~CIRBasicBlock();
+						CIRBlock(EWC::CAlloc * pAlloc);
+						~CIRBlock();
 
 	void				Append(CIRInstruction * pInst);
 
@@ -69,12 +71,12 @@ public:
 
 
 
-enum VALK	// VALue Kind
+enum VALK : s8	// VALue Kind
 {
 	VALK_Constant,
 	VALK_Argument,
 
-	VALK_ProcedureDefinition,
+	VALK_Procedure,
 
 	VALK_Instruction,
 	VALK_Global,
@@ -235,7 +237,7 @@ class CIRProcedure	: public CIRValue // tag = proc;
 {
 public:
 						CIRProcedure(EWC::CAlloc * pAlloc)
-						:CIRValue(VALK_ProcedureDefinition)
+						:CIRValue(VALK_Procedure)
 						,m_pAlloc(pAlloc)
 						,m_pLvalDIFunction(nullptr)
 						,m_pLvalFunction(nullptr)
@@ -252,11 +254,11 @@ public:
 	LLVMOpaqueValue *	m_pLvalDIFunction;
 	LLVMOpaqueValue *	m_pLvalFunction;		// null if anonymous function
 	LLVMOpaqueValue *	m_pLvalDebugLocCur;
-	CIRBasicBlock *		m_pBlockLocals;			// entry basic block containing argument stores and local variable allocas
-	CIRBasicBlock *		m_pBlockFirst;			// first
+	CIRBlock *		m_pBlockLocals;			// entry basic block containing argument stores and local variable allocas
+	CIRBlock *		m_pBlockFirst;			// first
 	BCode::SProcedure *	m_pProcBc;
 
-	EWC::CDynAry<CIRBasicBlock *>
+	EWC::CDynAry<CIRBlock *>
 						m_arypBlockManaged;
 };
 
@@ -328,8 +330,8 @@ struct SJumpTargets // tag = jumpt
 					,m_pBlockContinue(nullptr)
 						{ ; }
 
-	CIRBasicBlock * m_pBlockBreak;
-	CIRBasicBlock * m_pBlockContinue;
+	CIRBlock * m_pBlockBreak;
+	CIRBlock * m_pBlockContinue;
 	EWC::CString	m_strLabel;
 };
 
@@ -350,43 +352,95 @@ struct SDIFile // tag = dif (debug info file)
 };
 
 
-
-class CBuilderIR	// tag = buildir
+class CBuilderBase
 {
 public:
+						CBuilderBase(CWorkspace * pWork);
+
+
+	EWC::CAlloc *					m_pAlloc;
+	CIRBuilderErrorContext *		m_pBerrctx;
+};
+
+enum VALGENK
+{
+	VALGENK_Instance,
+	VALGENK_Reference	// return a reference for LHS store
+};
+
+
+
+class CBuilderIR : public CBuilderBase	// tag = buildir
+{
+public:
+	typedef CIRBlock Block;
+	typedef CIRConstant Constant;
+	typedef CIRGlobal Global;
+	typedef CIRInstruction Instruction;
+	typedef CIRProcedure Proc;
+	typedef CIRValue Value;
+	typedef LLVMOpaqueType LType;
+	typedef LLVMOpaqueValue GepIndex;
+	typedef LLVMOpaqueValue ProcArg;
+
 						CBuilderIR(
 							CWorkspace * pWork,
-							EWC::CDynAry<CIRValue *> *	parypValManaged,
 							const char * pChzFilename,
 							GRFCOMPILE grfcompile);
 						~CBuilderIR();
 	
 	void				PrintDump();
 
-	// Overrides
-	void					FinalizeBuild(CWorkspace * pWork);
-	void					ComputeDataLayout(SDataLayout * pDlay);
+	void				FinalizeBuild(CWorkspace * pWork);
+	void				ComputeDataLayout(SDataLayout * pDlay);
 
-	CIRProcedure *			PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, const char * pChzName, CSTNode * pStnod);
-	CIRBasicBlock *			PBlockCreate(CIRProcedure * pProc, const char * pChzName);
+	CIRProcedure *		PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod); 
+	CIRProcedure *		PProcCreate(
+							CWorkspace * pWork,
+							STypeInfoProcedure * pTinproc,
+							const char * pChzMangled,
+							CSTNode * pStnod,
+							CSTNode * pStnodBody,
+							EWC::CDynAry<LLVMOpaqueType *> * parypLtype,
+							LLVMOpaqueType * pLtypeReturn);
+	void				SetupParamBlock(
+							CWorkspace * pWork,
+							CIRProcedure * pProc,
+							CSTNode * pStnod,
+							CSTNode * pStnodParamList, 
+							EWC::CDynAry<LLVMOpaqueType *> * parypLtype);
 
-	void					ActivateProcedure(CIRProcedure * pProc, CIRBasicBlock * pBlock);
-	void					ActivateBlock(CIRBasicBlock * pBlock);
-	void					FinalizeProc(CIRProcedure * pProc);
+	CIRBlock *			PBlockCreate(CIRProcedure * pProc, const char * pChzName);
 
-	SDIFile *				PDifEnsure(CWorkspace * pWork, const EWC::CString & strFilename);
+	void				ActivateProc(CIRProcedure * pProc, CIRBlock * pBlock);
+	void				ActivateBlock(CIRBlock * pBlock);
+	void				FinalizeProc(CIRProcedure * pProc);
 
-	void				AddManagedVal(CIRValue * pVal);
+	static LType *		PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement = nullptr);
+	static LType *		PLtypeVoid();
 
 	CIRInstruction *	PInstCreateNCmp(NCMPPRED ncmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGCmp(GCMPPRED gcmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
-	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBasicBlock * pBlockTrue, CIRBasicBlock * pBlockFalse);
-	CIRInstruction *	PInstCreateBranch(CIRBasicBlock * pBlock);
+	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBlock * pBlockTrue, CIRBlock * pBlockFalse);
+	void				CreateBranch(CIRBlock * pBlock);
+	void				CreateReturn(CIRValue ** ppVal, int cpVal);
 
 	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
 	CIRInstruction *	PInstCreateGEP(CIRValue * pValLhs, LLVMOpaqueValue ** apLvalIndices, u32 cpIndices, const char * pChzName);
+	LLVMOpaqueValue *	PGepIndex(u64 idx);
+	LLVMOpaqueValue *	PGepIndexFromValue(CIRValue * pVal);
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
+	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
+
+	CIRValue *			PValGenerateCall(
+							CWorkspace * pWork,
+							CSTNode * pStnod,
+							EWC::CDynAry<ProcArg *> * parypArgs,
+							bool fIsDirectCall,
+							STypeInfoProcedure * pTinproc, 
+							VALGENK valgenk);
+	LLVMOpaqueValue *	PProcArg(CIRValue * pVal);
 
 	CIRInstruction *	PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
@@ -397,10 +451,12 @@ public:
 	CIRValue *			PValFromSymbol(SSymbol * pSym);
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
 
+	CIRConstant *		PConstInt(int cBit, bool fIsSigned, u64 nUnsigned);
+	CIRConstant *		PConstFloat(int cBit, f64 g);
+	CIRConstant *		PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
+	void				AddManagedVal(CIRValue * pVal);
 
-	EWC::CAlloc *						m_pAlloc;
-	CIRBuilderErrorContext *			m_pBerrctx;
 	LLVMOpaqueModule *					m_pLmoduleCur;
 	LLVMOpaqueBuilder *					m_pLbuild;
 
@@ -417,19 +473,11 @@ public:
 	LLVMOpaqueValue *					m_pLvalFile;
 
 	CIRProcedure *						m_pProcCur;
-	CIRBasicBlock *						m_pBlockCur;
+	CIRBlock *							m_pBlockCur;
 
 	EWC::CDynAry<CIRProcedure *>		m_arypProcVerify;	// all the procedures that need verification.
 	EWC::CDynAry<CIRValue *> *			m_parypValManaged;
 	EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
-};
-
-
-
-enum VALGENK
-{
-	VALGENK_Instance,
-	VALGENK_Reference	// return a reference for LHS store
 };
 
 

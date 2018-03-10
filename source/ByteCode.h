@@ -47,34 +47,6 @@ namespace BCode
 
 
 
-	#define MOE_PRED(X) GPRED_##X,
-	#define LLVM_PRED(X)
-	enum GPRED
-	{
-		GCMPPRED_LIST
-
-		GPRED_Max,
-		GPRED_Min = 0,
-		GPRED_Nil = 1,
-	};
-	#undef MOE_PRED
-	#undef LLVM_PRED
-
-	#define MOE_PRED(X) NPRED_##X,
-	#define LLVM_PRED(X)
-	enum NPRED
-	{
-		NCMPPRED_LIST
-
-		NPRED_Max,
-		NPRED_Min = 0,
-		NPRED_Nil = 1,
-	};
-	#undef MOE_PRED
-	#undef LLVM_PRED
-
-
-
 #define BC_OPCODE_LIST \
 		OP(Error) OPARG(Error), \
 		OP(Ret) OPARG(Error), \
@@ -234,13 +206,25 @@ namespace BCode
 	SRecord RecPointer(void * pV);
 
 
-	struct SBranch // tag = branch
+	struct SBranch	// tag = branch
 	{
 		s32 *		m_pIInstDst;			// opcode referring to branch - finalized to iInstDst
 		SBlock *	m_pBlockDest;
 	};
 
-	struct SBlock			// tag = block
+	struct SValue	// tag = val
+	{
+						SValue(VALK valk)
+						:m_valk(valk)
+							{ ; }
+
+		VALK			m_valk;
+		OPK				m_opk;
+		s32				m_cB;
+		SWord			m_word;
+	};
+
+	struct SBlock // tag = block
 	{
 						SBlock()
 						:m_iInstFinal(-1)
@@ -264,7 +248,7 @@ namespace BCode
 		s32 	m_iBStack;
 	};
 
-	struct SProcedure		// tag = proc
+	struct SProcedure : public SValue // tag = proc
 	{
 									SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure *pTinproc);
 
@@ -273,39 +257,87 @@ namespace BCode
 		s64							m_cBStack;		// allocated bytes on stack
 		s64							m_cBArg;		// stack space reserved for arguments (includes pInst return)
 
-		SBlock *					m_pBlockEntry;
+		SBlock *					m_pBlockLocals;
+		SBlock *					m_pBlockFirst;
 		EWC::CDynAry<SBlock *>		m_arypBlock;	// blocks that have written to this procedure 
 		EWC::CDynAry<SInstruction>	m_aryInst;
 		SParameter *				m_aParamArg;
 		SParameter *				m_aParamRet;
 	};
 
+	struct SJumpTargets // tag = jumpt
+	{
+						SJumpTargets()
+						:m_pBlockBreak(nullptr)
+						,m_pBlockContinue(nullptr)
+							{ ; }
 
+		SBlock * m_pBlockBreak;
+		SBlock * m_pBlockContinue;
+		EWC::CString	m_strLabel;
+	};
 
-	class CBuilder // tag = bcbuild
+	class CBuilder : public CBuilderBase // tag = bcbuild
 	{
 	public:
-		CBuilder(EWC::CAlloc * pAlloc, SDataLayout * pDlay);
+		typedef BCode::SBlock Block;
+		typedef BCode::SValue Constant;
+		typedef BCode::SValue Global;
+		typedef BCode::SValue Instruction;
+		typedef BCode::SProcedure Proc;
+		typedef BCode::SValue Value;
+		typedef STypeInfo LType;
+		typedef int GepIndex;
+		typedef BCode::SValue ProcArg;
 
-		SProcedure *	PProcCreate(STypeInfoProcedure * pTinproc);
+		CBuilder(CWorkspace * pWork, SDataLayout * pDlay);
+
+		void			PrintDump();
+		void			FinalizeBuild(CWorkspace * pWork);
+
+		SProcedure *	PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod);
+		SProcedure *	PProcCreate(
+							CWorkspace * pWork,
+							STypeInfoProcedure * pTinproc,
+							const char * pChzMangled,
+							CSTNode * pStnod,
+							CSTNode * pStnodBody,
+							EWC::CDynAry<LType *> * parypLtype,
+							LType * pLtypeReturn);
+		void			SetupParamBlock(
+							CWorkspace * pWork,
+							Proc * pProc,
+							CSTNode * pStnod,
+							CSTNode * pStnodParamList, 
+							EWC::CDynAry<LType *> * parypLtype);
+
 		void			ActivateProc(SProcedure * pProc, SBlock * pBlock);
 		void			FinalizeProc(SProcedure * pProc);
 
-		SBlock *		PBlockCreate();
+		SBlock *		PBlockCreate(SProcedure * pProc, const char * pChzName = nullptr);
 		void			ActivateBlock(SBlock * pBlock);
 		void			DeactivateBlock(SBlock * pBlock);
+
+		//LType *			PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement = nullptr)
+		static LType *	PLtypeFromPTin(STypeInfo * pTin)
+							{ return pTin; } 
+		static LType *	PLtypeVoid();
 
 		void			AddInst(OP op);
 		SRecord			RecAddInst(OP op, u8 cB, const SRecord & recLhs);
 		SRecord			RecAddInst(OP cop, u8 cB, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			RecAddNCmp(u8 cB, NPRED npred, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			RecAddGCmp(u8 cB, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddNCmp(u8 cB, NCMPPRED npred, const SRecord & recLhs, const SRecord & recRhs);
+		SRecord			RecAddGCmp(u8 cB, GCMPPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
+		Instruction *	PInstCreateNCmp(NCMPPRED npred, const SValue * pValLhs, const SValue * pValRhs, const char * pChzName);
+		Instruction *	PInstCreateGCmp(GCMPPRED gpred, const SValue * pValLhs, const SValue * pValRhs, const char * pChzName);
 
 		void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
 		SRecord			RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
+
+		void			CreateReturn(SValue ** ppVal, int cpVal);
 		void			AddReturn(SRecord * aRecArg, int cRecArg);
 		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
-		void			AddBranch(SBlock * pBlock);
+		void			CreateBranch(SBlock * pBlock);
 		void			AddTraceStore(SRecord & rec, STypeInfo * pTin);
 
 		SRecord			RecAddInstInternal(OP op, u8 cB, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
@@ -314,15 +346,52 @@ namespace BCode
 		s32				IBStackAlloc(s64 cB, s64 cBAlign);
 		SInstruction *	PInstAlloc();
 
+		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName);
+		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName);
+		Instruction *	PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
+		Instruction *	PInstCreateStore(SValue * pValPT, SValue * pValT);
+		Instruction *	PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName);
+		Instruction *	PInstCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName);
+		GepIndex *		PGepIndex(u64 idx);
+		GepIndex *		PGepIndexFromValue(SValue * pVal);
+
+		SValue *		PValGenerateCall(
+							CWorkspace * pWork,
+							CSTNode * pStnod,
+							EWC::CDynAry<ProcArg *> * parypArgs,
+							bool fIsDirectCall,
+							STypeInfoProcedure * pTinproc, 
+							VALGENK valgenk);
+		ProcArg *		PProcArg(SValue * pVal);
+
+		SValue *		PInstCreatePhi(LType * pLtype, const char * pChzName);
+		void			AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock);
+
+		Constant *		PConstInt(int cBit, bool fIsSigned, u64 nUnsigned);
+		Constant *		PConstFloat(int cBit, f64 g);
+		Constant *		PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
+		SValue *		PValFromSymbol(SSymbol * pSym);
+
 		EWC::CAlloc *					m_pAlloc;
+		CIRBuilderErrorContext *		m_pBerrctx;
 		SDataLayout *					m_pDlay;
 		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
 		EWC::CDynAry<SBlock *>			m_arypBlockManaged;
+		EWC::CDynAry<SJumpTargets>		m_aryJumptStack;
+		EWC::CBlockList<GepIndex, 128>	m_blistGep;
+
 
 		SProcedure *					m_pProcCur;
 		SBlock *						m_pBlockCur;
 	};
 
+
+
+	// Do nothing struct used as a proxy for LLVM debug info values
+	struct SStub
+	{
+		int m_pad;
+	};
 
 
 	class CVirtualMachine	// tag = vm
@@ -349,5 +418,6 @@ namespace BCode
 	void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc);
 	void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc);
 
-}
+} // namespace BCode
 
+void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign);
