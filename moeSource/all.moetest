@@ -314,6 +314,15 @@ test StructNesting
 		?nested("ConstTwo :: 2") + ?pnested("(const ConstTwo 2)") + ?tcnested("(Literal:Int ConstTwo Literal:Int)")
 	}
 
+test StructNesting
+	prereq "SOuter struct { INE enum { A, B }}"
+	input "n := SOuter.INE.?memb"
+	parse "(decl n (member (member SOuter INE) ?memb))"
+	typecheck "(INE_enum n (Literal:Int8 (INE_enum SOuter INE) ?memb))"
+	{
+		?memb(A|B)
+	}
+
 test StructMember
 	prereq "SFoo struct { m_n : ?type }; foo : SFoo; n: ?type"
 	input "n = foo.m_n; foo.m_n = n"
@@ -371,6 +380,15 @@ test EnumSubtypes
 			?subtype(loose) + ?tctype("?ltype"),
 			?subtype(strict) + ?tctype(ENUMK_enum),
 		}
+	}
+	
+test EnumLooseType
+	prereq "ENK enum u8 { A, B }"
+	input "n : ENK.loose = ENK.?memb"
+	parse "(decl n (member ENK loose) (member ENK ?memb))"
+	typecheck ""
+	{
+		?memb(A|B)
 	}
 
 test EnumBadInit

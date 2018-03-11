@@ -1859,21 +1859,33 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 	{
 	case LITK_Enum:
 		{
+			auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlit->m_pTinSource);
+			if (!EWC_FVERIFY(pTinenum, "bad enum literal"))
+				return nullptr;
+
 			if (pTinDst->m_tink == TINK_Enum)
 			{
-				auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlit->m_pTinSource);
-				if (EWC_FVERIFY(pTinenum, "bad enum literal"))
-				{
 					return pTinenum;
-				}
 			}
 
+			if (EWC_FVERIFY(pTinenum->m_pTinLoose, "expected loose type"))
+			{
+				return pTinenum->m_pTinLoose;
+			}
+			return nullptr;
+
+			/*
+			auto pTinenum = PTinDerivedCast<STypeInfoEnum *>(pStnod->m_pTin);
+			if (pStenum->m_iStnodType >= 0
+
+			
 			SBigInt bintEnum = BintFromStval(pStnodLit->m_pStval);
 
 			bool fDestIsSigned = pTinDst->m_tink != TINK_Integer || ((STypeInfoInteger*)pTinDst)->m_fIsSigned;
 			bintEnum.m_fIsNegative |= fDestIsSigned;
 
 			return PTinFromBint(pTcwork, pSymtab, bintEnum);
+			*/
 		}
 	case LITK_Integer:
 		{
@@ -7463,6 +7475,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pTinMember = pSymMember->m_pTin;
 
 							pStnodRhs->m_pSym = pSymMember;	
+							pStnod->m_pSym = pSymMember;
 
 							if (pTinMember && pSymMember->m_pStnodDefinition)
 							{

@@ -960,7 +960,7 @@ HandlePlayerInputEvent proc (pEvent: & SEvent, pPlayinp: & SPlayerInput)
 
 ClearPlayerInput proc (pPlayinp: & SPlayerInput)
 {
-	for butk := BUTK.min; butk != butk.max; ++butk
+	for butk := BUTK.min; butk != BUTK.max; ++butk
 	{
 		pPlayinp.m_mpButkEdges[butk] = EDGES.Off
 	}

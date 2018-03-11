@@ -1003,7 +1003,7 @@ DrawBoards proc (pGame : & SGame, pDrac: & SDrawContext)
 
 ClearPlayerInput proc (pPlayinp: & SPlayerInput)
 {
-	for butk := BUTK.min; butk != butk.max; ++butk
+	for butk := BUTK.min; butk != BUTK.max; ++butk
 	{
 		pPlayinp.m_mpButkEdges[butk] = EDGES.Off
 	}
@@ -1011,7 +1011,7 @@ ClearPlayerInput proc (pPlayinp: & SPlayerInput)
 
 AdvancePlayerInput proc (pPlayinp: & SPlayerInput)
 {
-	for butk := BUTK.min; butk != butk.max; ++butk
+	for butk := BUTK.min; butk != BUTK.max; ++butk
 	{
 		if pPlayinp.m_mpButkEdges[butk] >= EDGES.Hold
 		{
