@@ -286,11 +286,14 @@ namespace BCode
 		typedef BCode::SValue Instruction;
 		typedef BCode::SProcedure Proc;
 		typedef BCode::SValue Value;
+		typedef BCode::SValue LValue;
 		typedef STypeInfo LType;
 		typedef int GepIndex;
 		typedef BCode::SValue ProcArg;
 
-		CBuilder(CWorkspace * pWork, SDataLayout * pDlay);
+						CBuilder(CWorkspace * pWork, SDataLayout * pDlay);
+						~CBuilder();
+		void			Clear();
 
 		void			PrintDump();
 		void			FinalizeBuild(CWorkspace * pWork);
@@ -318,7 +321,6 @@ namespace BCode
 		void			ActivateBlock(SBlock * pBlock);
 		void			DeactivateBlock(SBlock * pBlock);
 
-		//LType *			PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement = nullptr)
 		static LType *	PLtypeFromPTin(STypeInfo * pTin)
 							{ return pTin; } 
 		static LType *	PLtypeVoid();
@@ -333,6 +335,7 @@ namespace BCode
 
 		void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
 		SRecord			RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
+		void			CreateProcCall(LValue * pLvalProc, ProcArg ** ppProcArg, unsigned cArg, Instruction * pInstOut);
 
 		void			CreateReturn(SValue ** ppVal, int cpVal);
 		void			AddReturn(SRecord * aRecArg, int cRecArg);
@@ -348,12 +351,21 @@ namespace BCode
 
 		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName);
 		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName);
+		Instruction *	PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName);
+
 		Instruction *	PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
 		Instruction *	PInstCreateStore(SValue * pValPT, SValue * pValT);
-		Instruction *	PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName);
+
 		Instruction *	PInstCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName);
+		Instruction *	PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
+		Instruction *	PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef);
+		Instruction *	PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, CSTNode * pStnodInit);
+
+		Instruction *	PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName);
 		GepIndex *		PGepIndex(u64 idx);
 		GepIndex *		PGepIndexFromValue(SValue * pVal);
+
+		Global *		PGlobCreate(STypeInfo * pTin, const char * pChzName);
 
 		SValue *		PValGenerateCall(
 							CWorkspace * pWork,
@@ -362,15 +374,25 @@ namespace BCode
 							bool fIsDirectCall,
 							STypeInfoProcedure * pTinproc, 
 							VALGENK valgenk);
-		ProcArg *		PProcArg(SValue * pVal);
+
+		static ProcArg *	PProcArg(SValue * pVal);
 
 		SValue *		PInstCreatePhi(LType * pLtype, const char * pChzName);
 		void			AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock);
 
-		Constant *		PConstInt(int cBit, bool fIsSigned, u64 nUnsigned);
-		Constant *		PConstFloat(int cBit, f64 g);
-		Constant *		PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
-		SValue *		PValFromSymbol(SSymbol * pSym);
+		Constant *			PConstInt(int cBit, bool fIsSigned, u64 nUnsigned);
+		Constant *			PConstFloat(int cBit, f64 g);
+		static LValue *		PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned);
+		static LValue *		PLvalConstantFloat(int cBit, f64 g);
+		LValue *			PLvalConstantGlobalStringPtr(const char * pChzString, const char * pChzName);
+		static LValue *		PLvalConstantNull(LType * pLtype);
+		static LValue *		PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval);
+
+
+		Constant *			PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
+		SValue *			PValFromSymbol(SSymbol * pSym);
+
+		void				AddManagedVal(SValue * pVal);
 
 		EWC::CAlloc *					m_pAlloc;
 		CIRBuilderErrorContext *		m_pBerrctx;
@@ -379,6 +401,7 @@ namespace BCode
 		EWC::CDynAry<SBlock *>			m_arypBlockManaged;
 		EWC::CDynAry<SJumpTargets>		m_aryJumptStack;
 		EWC::CBlockList<GepIndex, 128>	m_blistGep;
+		EWC::CDynAry<SValue *>			m_arypValManaged;
 
 
 		SProcedure *					m_pProcCur;

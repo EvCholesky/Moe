@@ -53,8 +53,10 @@
 
 class CIRGlobal;
 class CSTNode;
-struct LLVMOpaqueType;
-struct LLVMOpaqueValue;
+
+// opaque CodeGen types and values used for both LLVM IR and bytecode
+typedef void * CodeGenValueRef;		// tag = cgval
+typedef void * CodeGenTypeRef;		// tag = cgtype
 
 enum TINK : s8
 {
@@ -109,8 +111,8 @@ struct STypeInfo	// tag = tin
 						,m_strName(strName)
 						,m_strUnique(strUnique)
 						,m_strDesc()
-						,m_pLvalDIType(nullptr)
-						,m_pLvalReflectGlobal(nullptr)
+						,m_pCgvalDIType(nullptr)
+						,m_pCgvalReflectGlobal(nullptr)
 						,m_pTinNative(nullptr)
 							{ ; }
 
@@ -121,9 +123,9 @@ struct STypeInfo	// tag = tin
 	EWC::CString		m_strUnique;			// unique name (if a named type)
 	EWC::CString		m_strDesc;				// unique descriptor for this type 
 
-	LLVMOpaqueValue *	m_pLvalDIType;
-	LLVMOpaqueValue *	m_pLvalReflectGlobal;	// global variable pointing to the type info struct
-												// const TypeInfo entry in the reflection type table
+	CodeGenValueRef		m_pCgvalDIType;
+	CodeGenValueRef		m_pCgvalReflectGlobal;	// global variable pointing to the type info struct
+												// const TypeInfo entry in ahe reflectioa te table
 
 	STypeInfo *			m_pTinNative;			// native non-aliased source type (ie sSize->s64)
 
@@ -374,9 +376,9 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 										STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
 										:STypeInfo(strName, strUnique, s_tink)
-										,m_pGlobInit(nullptr)
-										,m_pLvalInitMethod(nullptr)
-										,m_pLtype(nullptr)
+										,m_pVGlobInit(nullptr)
+										,m_pCgvalInitMethod(nullptr)
+										,m_pCgtype(nullptr)
 										,m_pStnodStruct(nullptr)
 										,m_aryTypemembField()
 										,m_arypTinGenericParam()
@@ -387,9 +389,9 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	bool								FHasGenericParams() const
 											{ return m_arypTinGenericParam.C() > 0; }
 
-	CIRGlobal *							m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
-	LLVMOpaqueValue *					m_pLvalInitMethod;
-	LLVMOpaqueType *					m_pLtype;			// llvm type reference, here to avoid infinite recursion in
+	void *								m_pVGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
+	CodeGenValueRef						m_pCgvalInitMethod;
+	CodeGenTypeRef						m_pCgtype;			// type reference, here to avoid infinite recursion in
 															//  self referential member pointers
 
 	CSTNode *							m_pStnodStruct;

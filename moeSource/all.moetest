@@ -381,12 +381,12 @@ test EnumSubtypes
 			?subtype(strict) + ?tctype(ENUMK_enum),
 		}
 	}
-	
+
 test EnumLooseType
 	prereq "ENK enum u8 { A, B }"
 	input "n : ENK.loose = ENK.?memb"
 	parse "(decl n (member ENK loose) (member ENK ?memb))"
-	typecheck ""
+	typecheck "(u8 n (u8 ENK_enum u8) (Literal:Int8 ENK_enum ?memb))"
 	{
 		?memb(A|B)
 	}

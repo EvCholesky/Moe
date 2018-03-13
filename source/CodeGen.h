@@ -213,9 +213,6 @@ public:
 						,m_irop(irop)
 							{ ; }
 
-	bool				FIsError() const
-							{ return (m_irop == IROP_Error); }
-
 	s8					m_cpValOperand;		// current opcode count
 	IROP				m_irop;
 
@@ -379,6 +376,7 @@ public:
 	typedef CIRInstruction Instruction;
 	typedef CIRProcedure Proc;
 	typedef CIRValue Value;
+	typedef LLVMOpaqueValue LValue;
 	typedef LLVMOpaqueType LType;
 	typedef LLVMOpaqueValue GepIndex;
 	typedef LLVMOpaqueValue ProcArg;
@@ -416,7 +414,7 @@ public:
 	void				ActivateBlock(CIRBlock * pBlock);
 	void				FinalizeProc(CIRProcedure * pProc);
 
-	static LType *		PLtypeFromPTin(STypeInfo * pTin, u64 * pCElement = nullptr);
+	static LType *		PLtypeFromPTin(STypeInfo * pTin);
 	static LType *		PLtypeVoid();
 
 	CIRInstruction *	PInstCreateNCmp(NCMPPRED ncmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
@@ -426,12 +424,9 @@ public:
 	void				CreateBranch(CIRBlock * pBlock);
 	void				CreateReturn(CIRValue ** ppVal, int cpVal);
 
-	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
-	CIRInstruction *	PInstCreateGEP(CIRValue * pValLhs, LLVMOpaqueValue ** apLvalIndices, u32 cpIndices, const char * pChzName);
-	LLVMOpaqueValue *	PGepIndex(u64 idx);
-	LLVMOpaqueValue *	PGepIndexFromValue(CIRValue * pVal);
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
+	void				CreateProcCall(LValue * pLvalProc, ProcArg ** ppProcArg, unsigned cArg, CIRInstruction * pInstOut);
 
 	CIRValue *			PValGenerateCall(
 							CWorkspace * pWork,
@@ -440,7 +435,7 @@ public:
 							bool fIsDirectCall,
 							STypeInfoProcedure * pTinproc, 
 							VALGENK valgenk);
-	LLVMOpaqueValue *	PProcArg(CIRValue * pVal);
+	static ProcArg *	PProcArg(CIRValue * pVal);
 
 	CIRInstruction *	PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
@@ -450,10 +445,25 @@ public:
 
 	CIRValue *			PValFromSymbol(SSymbol * pSym);
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
+	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
+	CIRInstruction *	PInstCreateMemset(CWorkspace * pWork, CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
+	CIRInstruction *	PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CIRValue * pValRhsRef);
+	CIRInstruction *	PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CSTNode * pStnodInit);
+
+	CIRInstruction *	PInstCreateGEP(CIRValue * pValLhs, LLVMOpaqueValue ** apLvalIndices, u32 cpIndices, const char * pChzName);
+	LLVMOpaqueValue *	PGepIndex(u64 idx);
+	LLVMOpaqueValue *	PGepIndexFromValue(CIRValue * pVal);
 
 	CIRConstant *		PConstInt(int cBit, bool fIsSigned, u64 nUnsigned);
 	CIRConstant *		PConstFloat(int cBit, f64 g);
+	static LValue *		PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned);
+	static LValue *		PLvalConstantFloat(int cBit, f64 g);
+	LValue *			PLvalConstantGlobalStringPtr(const char * pChzString, const char * pChzName);
+	static LValue *		PLvalConstantNull(LType * pLtype);
+	static LValue *		PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval);
+
 	CIRConstant *		PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
+
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddManagedVal(CIRValue * pVal);
 

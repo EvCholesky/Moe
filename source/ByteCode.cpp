@@ -181,14 +181,32 @@ SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
 
 CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
 :CBuilderBase(pWork)
+,m_pAlloc(pWork->m_pAlloc)
+,m_pBerrctx(nullptr)
 ,m_pDlay(pDlay)
 ,m_hashHvMangledPProc(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_arypBlockManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_aryJumptStack(pWork->m_pAlloc, EWC::BK_ByteCodeCreator)
 ,m_blistGep(pWork->m_pAlloc, BK_ByteCodeCreator)
+,m_arypValManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
 {
+}
+
+CBuilder::~CBuilder()
+{
+	Clear();
+}
+
+void CBuilder::Clear()
+{
+	auto ppValMac = m_arypValManaged.PMac();
+	for (auto ppVal = m_arypValManaged.A(); ppVal != ppValMac; ++ppVal)
+	{
+		m_pAlloc->EWC_DELETE(*ppVal);
+	}
+	m_arypValManaged.Clear();
 }
 
 static inline s64 IBArgAlloc(s64 * pcBArg, s64 cB, s64 cBAlign)
@@ -211,6 +229,10 @@ SProcedure * CBuilder::PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTin
 	auto pProc = new(pBAlloc) SProcedure(m_pAlloc, pTinproc);
 	auto fins = m_hashHvMangledPProc.FinsEnsureKeyAndValue(pTinproc->m_strMangled.Hv(), pProc);
 	EWC_ASSERT(fins == FINS_Inserted, "adding procedure that already exists");
+
+	const char * pCozName = pTinproc->m_strName.PCoz();
+	pProc->m_pBlockLocals = PBlockCreate(pProc, pCozName);
+	pProc->m_pBlockFirst = PBlockCreate(pProc, pCozName);
 	
 	SParameter * aParamArg = (SParameter *)PVAlign(pBAlloc + sizeof(SProcedure), EWC_ALIGN_OF(SParameter));
 	if (cArg)
@@ -345,7 +367,7 @@ void CBuilder::FinalizeBuild(CWorkspace * pWork)
 {
 }
 
-CBuilder::	LType * CBuilder::PLtypeVoid()
+CBuilder::LType * CBuilder::PLtypeVoid()
 {
 	// BB - this should be relocated... somewhere...
 	static STypeInfo s_tinVoid("void", "void", TINK_Void);
@@ -368,7 +390,6 @@ void CBuilder::ActivateBlock(SBlock * pBlock)
 {
 	if (m_pBlockCur)
 	{
-		EWC_ASSERT(m_pBlockCur == pBlock, "mismatch ending block");
 		m_pBlockCur = nullptr;
 	}
 
@@ -505,6 +526,24 @@ CBuilder::Instruction *	CBuilder::PInstCreateAlloca(CBuilder::LType * pLtype, u6
 	return nullptr;
 }
 
+CBuilder::Instruction * CBuilder::PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
+CBuilder::Instruction * CBuilder::PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
+CBuilder::Instruction * CBuilder::PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, CSTNode * pStnodInit)
+{
+	EWC_ASSERT(false, "bytecode tbd");
+	return nullptr;
+}
+
 CBuilder::GepIndex * CBuilder::PGepIndex(u64 idx)
 {
 	GepIndex * pGep = m_blistGep.AppendNew();
@@ -527,6 +566,12 @@ CBuilder::Instruction * CBuilder::PInstCreatePhi(LType * pLtype, const char * pC
 void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 {
 	EWC_ASSERT(false, "GEP index should be SValue, not raw int");
+}
+
+CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName)
+{
+	EWC_ASSERT(false,"bytecode tbd");
+	return nullptr;
 }
 
 SValue * CBuilder::PValGenerateCall(
@@ -593,6 +638,11 @@ SRecord CBuilder::RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg)
 	pInst->m_iBStackOut = 0;
 
 	return RecStack(iBStackRet);
+}
+
+void CBuilder::CreateProcCall(LValue * pLvalProc, ProcArg ** ppProcArg, unsigned cArg, Instruction * pInstOut)
+{
+	EWC_ASSERT(false, "bytecode tbd");
 }
 
 void CBuilder::CreateReturn(SValue ** ppVal, int cpVal)
@@ -691,6 +741,36 @@ CBuilder::Constant * CBuilder::PConstFloat(int cBit, f64 g)
 	return nullptr;
 }
 
+CBuilder::LValue * CBuilder::PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+CBuilder::LValue * CBuilder::PLvalConstantFloat(int cBit, f64 g)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+CBuilder::LValue * CBuilder::PLvalConstantGlobalStringPtr(const char * pChzString, const char * pChzName)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+CBuilder::LValue * CBuilder::PLvalConstantNull(LType * pLtype)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
+CBuilder::LValue * CBuilder::PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
 CBuilder::Constant * CBuilder::PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval)
 {
 	EWC_ASSERT(false, "codegen TBD");
@@ -715,6 +795,12 @@ SValue * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, co
 	return nullptr;
 }
 
+CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName)
+{
+	EWC_ASSERT(false, "codegen TBD");
+	return nullptr;
+}
+
 SValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName)
 {
 	EWC_ASSERT(false, "codegen TBD");
@@ -727,6 +813,10 @@ SValue * CBuilder::PInstCreateStore(SValue * pValPT, SValue * pValT)
 	return nullptr;
 }
 
+void CBuilder::AddManagedVal(SValue * pVal)
+{
+	m_arypValManaged.Append(pVal);
+}
 
 
 static inline void LoadWord(CVirtualMachine * pVm, SWord * pWord, u32 iB, u8 cB)
