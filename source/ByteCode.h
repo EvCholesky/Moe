@@ -27,26 +27,10 @@ namespace BCode
 	struct SBlock;
 	struct SProcedure;
 
-	// Legend
-	// Stack		- OPK_Stack - will be looked up
-	// StackAddr	- OPK_Literal stores address of stack val
-	// Literal		- OPK_Literal stored in instruction stream
-
-	enum OPARG // OPerand ARGuments - define the expected in->out arguments for a given opcode
-	{
-		OPARG_Error,
-		OPARG_OnlyOpcode,
-		OPARG_Unary,		// (Stack|Literal) -> Stack
-		OPARG_Binary,		// (Stack|Literal, Stack|Literal) -> Stack
-		OPARG_Compare,		// (Stack|Literal, Stack|Literal) -> Stack(bool)
-		OPARG_Store,		// (StackAddr, Stack|Literal) -> Stack(lhs)
-		OPARG_Branch,		// (Stack|Literal predicate, pack(iInstTrue, iInstFalse) -> 0
-
-		OPARG_Nil = -1,
-	};
 
 
 
+	/*
 #define BC_OPCODE_LIST \
 		OP(Error) OPARG(Error), \
 		OP(Ret) OPARG(Error), \
@@ -128,22 +112,35 @@ namespace BCode
 #undef OP_RANGE
 #undef OP
 #undef OPARG
+*/
 
 
 	enum FOPK : u8
 	{
-		FOPK_DerefStack	= 0x1,
-		FOPK_Arg		= 0x2, // index onto the stack, adjusted to before the pushed current stack frame
+		FOPK_Dereference	= 0x1,	// endless register values, stored on the stack - "dereferenced" upon use.
+		FOPK_Arg			= 0x2,	// index onto the stack, adjusted to before the pushed current stack frame
 	};
+
+
+	// notes for keeping this straight in my head:
+	// "SValues" only exist during build time, they are completely baked into the stack and the instruction stream by
+	// invocation time.
+
+	//  stack opk values are essentially endless register values, they need both Arg and non-arg variants as they
+	//  can exist in the argument stack block. using stack indices rather than pointers as the stack positions change
+	//  from invocation to invocation
+	// 
+	//	this is different from an actual pointer value which will be stored in a location on the stack, but have a stack 
+	//  "register" denoting its location.
+
 
 	enum OPK : u8	// tag = Byte Code OPERand Kind
 	{
-		OPK_Literal		= 0,
-		OPK_Stack		= FOPK_DerefStack,
-		OPK_ArgLiteral  = FOPK_Arg, 
-		OPK_ArgStack	= FOPK_Arg | FOPK_DerefStack,
+		OPK_Literal			= 0,
+		OPK_LiteralArg		= FOPK_Arg, 
 
-		OPK_Nil			= 255
+		OPK_Register		= FOPK_Dereference,
+		OPK_RegisterArg		= FOPK_Dereference | FOPK_Arg,
 	};
 
 
@@ -168,9 +165,66 @@ namespace BCode
 		};
 	};
 
-	struct SInstruction		// tag = inst
+	struct SValue	// tag = val
 	{
-		OP		m_op;
+						SValue(VALK valk)
+						:m_valk(valk)
+							{ ; }
+
+		VALK			m_valk;
+	};
+
+	struct SConstant : public SValue // tag = const
+	{
+		static const VALK s_valk = VALK_Constant;
+
+						SConstant(VALK valk = VALK_Constant)
+						:SValue(VALK_Constant)
+							{ ; }
+
+		OPK				m_opk;
+		SLiteralType	m_litty;
+
+		SWord			m_word;
+	};
+
+	// BB - should this really be a distict struct?
+	struct SRegister : public SConstant // tag = reg
+	{
+		static const VALK s_valk = VALK_BCodeRegister;
+
+						SRegister()
+						:SConstant(VALK_BCodeRegister)
+							{ ; }
+	};
+
+	struct SInstruction : public SValue // tag = inst
+	{
+		static const VALK s_valk = VALK_Instruction;
+
+						SInstruction()
+						:SValue(VALK_Instruction)
+							{ ; }
+
+		//BB - doesn't fit 20 bytes because SValue::Valk
+		IROP			m_irop;
+		//OPK				m_opk;
+		u8				m_cBOperand:4;		// operand byte count
+		u8				m_pred:4;
+
+		OPK				m_opkLhs;
+		OPK				m_opkRhs;
+
+		u32				m_iBStackOut;
+		SWord			m_wordLhs;
+		SWord			m_wordRhs;
+	};
+
+
+
+	struct SInstructionOld		// tag = inst
+	{
+		IROP	m_irop;
 		u8		m_cB:4;		// operand byte count
 		u8		m_pred:4;
 		OPK		m_opkLhs;
@@ -183,6 +237,7 @@ namespace BCode
 
 
 
+	/*
 	struct SRecord		// tag = rec 
 	{
 					SRecord()
@@ -204,24 +259,13 @@ namespace BCode
 	SRecord RecArg(s64 iBStack);
 	SRecord RecArgLiteral(s64 iBStack);
 	SRecord RecPointer(void * pV);
+	*/
 
 
 	struct SBranch	// tag = branch
 	{
 		s32 *		m_pIInstDst;			// opcode referring to branch - finalized to iInstDst
 		SBlock *	m_pBlockDest;
-	};
-
-	struct SValue	// tag = val
-	{
-						SValue(VALK valk)
-						:m_valk(valk)
-							{ ; }
-
-		VALK			m_valk;
-		OPK				m_opk;
-		s32				m_cB;
-		SWord			m_word;
 	};
 
 	struct SBlock // tag = block
@@ -250,6 +294,8 @@ namespace BCode
 
 	struct SProcedure : public SValue // tag = proc
 	{
+		static const VALK s_valk = VALK_Procedure;
+
 									SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure *pTinproc);
 
 		STypeInfoProcedure *		m_pTinproc;
@@ -277,19 +323,25 @@ namespace BCode
 		EWC::CString	m_strLabel;
 	};
 
+	struct CallStack
+	{
+
+	};
+
+
 	class CBuilder : public CBuilderBase // tag = bcbuild
 	{
 	public:
-		typedef BCode::SBlock Block;
-		typedef BCode::SValue Constant;
-		typedef BCode::SValue Global;
-		typedef BCode::SValue Instruction;
-		typedef BCode::SProcedure Proc;
-		typedef BCode::SValue Value;
-		typedef BCode::SValue LValue;
+		typedef SBlock Block;
+		typedef SConstant Constant;
+		typedef SValue Global;
+		typedef SInstruction Instruction;
+		typedef SProcedure Proc;
+		typedef SValue Value;
+		typedef SValue LValue;
 		typedef STypeInfo LType;
 		typedef int GepIndex;
-		typedef BCode::SValue ProcArg;
+		typedef SValue ProcArg;
 
 						CBuilder(CWorkspace * pWork, SDataLayout * pDlay);
 						~CBuilder();
@@ -325,38 +377,43 @@ namespace BCode
 							{ return pTin; } 
 		static LType *	PLtypeVoid();
 
-		void			AddInst(OP op);
-		SRecord			RecAddInst(OP op, u8 cB, const SRecord & recLhs);
-		SRecord			RecAddInst(OP cop, u8 cB, const SRecord & recLhs, const SRecord & recRhs);
+		/*
+		void			AddInst(IROP irop);
+		SRecord			RecAddInst(IROP op, u8 cB, const SRecord & recLhs);
+		SRecord			RecAddInst(IROP cop, u8 cB, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			RecAddNCmp(u8 cB, NCMPPRED npred, const SRecord & recLhs, const SRecord & recRhs);
 		SRecord			RecAddGCmp(u8 cB, GCMPPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
-		Instruction *	PInstCreateNCmp(NCMPPRED npred, const SValue * pValLhs, const SValue * pValRhs, const char * pChzName);
-		Instruction *	PInstCreateGCmp(GCMPPRED gpred, const SValue * pValLhs, const SValue * pValRhs, const char * pChzName);
+		SRecord			RecAddInstInternal(IROP irop, u8 cB, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
+		*/
 
-		void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
-		SRecord			RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
-		void			CreateProcCall(LValue * pLvalProc, ProcArg ** ppProcArg, unsigned cArg, Instruction * pInstOut);
+		SInstruction *	PInstCreateNCmp(NPRED npred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
+		SInstruction *	PInstCreateGCmp(GPRED gpred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
+
+		//void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
+		//SRecord			RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
+		SInstruction *	PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArgs, int cpLvalArg);
 
 		void			CreateReturn(SValue ** ppVal, int cpVal);
-		void			AddReturn(SRecord * aRecArg, int cRecArg);
-		void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
+		//void			AddReturn(SRecord * aRecArg, int cRecArg);
+		//void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
 		void			CreateBranch(SBlock * pBlock);
-		void			AddTraceStore(SRecord & rec, STypeInfo * pTin);
+		SInstruction *	PInstCreateCondBranch(SValue * pValPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
+		SInstruction *	PInstCreateTraceStore(SValue * pVal, STypeInfo * pTin);
 
-		SRecord			RecAddInstInternal(OP op, u8 cB, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
+		//SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
 		
 		s32				IBStackAlloc(s64 cB, s64 cBAlign);
 		SInstruction *	PInstAlloc();
 
-		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName);
-		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName);
-		Instruction *	PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName);
+		Instruction *	PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
+		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName = nullptr);
+		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName = nullptr);
+		SInstruction *	PInstCreateError();
 
 		Instruction *	PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
 		Instruction *	PInstCreateStore(SValue * pValPT, SValue * pValT);
 
-		Instruction *	PInstCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName);
+		SValue *		PValCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName = "");
 		Instruction *	PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
 		Instruction *	PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef);
 		Instruction *	PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, CSTNode * pStnodInit);
@@ -377,13 +434,25 @@ namespace BCode
 
 		static ProcArg *	PProcArg(SValue * pVal);
 
-		SValue *		PInstCreatePhi(LType * pLtype, const char * pChzName);
+		SInstruction *	PInstCreatePhi(LType * pLtype, const char * pChzName);
 		void			AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock);
 
-		Constant *			PConstInt(int cBit, bool fIsSigned, u64 nUnsigned);
-		Constant *			PConstFloat(int cBit, f64 g);
-		static LValue *		PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned);
-		static LValue *		PLvalConstantFloat(int cBit, f64 g);
+
+		//Constant *			PConst();
+		SConstant *			PConstArg(s64 n, int cBit = 64, bool fIsSigned = true);
+		SRegister *			PReg(s64 n, int cBit = 64, bool fIsSigned = true);
+		SRegister *			PRegArg(s64 n, int cBit = 64, bool fIsSigned = true);
+
+		SConstant *			PConstPointer(void * pV);
+		SConstant *			PConstRegAddr(s32 iBStack, int cBitRegister);
+		SConstant *			PConstInt(u64 nUnsigned, int cBit = 64, bool fIsSigned = true);
+		SConstant *			PConstFloat(f64 g, int cBit = 64);
+
+		LValue *			PLvalConstantInt(u64 nUnsigned, int cBit, bool fIsSigned)
+								{ return PConstInt(nUnsigned, cBit, fIsSigned); }
+		LValue *			PLvalConstantFloat(f64 g, int cBit)
+								{ return PConstFloat(g, cBit); }
+
 		LValue *			PLvalConstantGlobalStringPtr(const char * pChzString, const char * pChzName);
 		static LValue *		PLvalConstantNull(LType * pLtype);
 		static LValue *		PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval);
@@ -402,6 +471,8 @@ namespace BCode
 		EWC::CDynAry<SJumpTargets>		m_aryJumptStack;
 		EWC::CBlockList<GepIndex, 128>	m_blistGep;
 		EWC::CDynAry<SValue *>			m_arypValManaged;
+
+		EWC::CBlockList<SConstant, 255>	m_blistConst; // constants / registers used during code generation
 
 
 		SProcedure *					m_pProcCur;

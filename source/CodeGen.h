@@ -43,6 +43,7 @@ struct STypeInfoEnum;
 struct STypeInfoInteger;
 struct STypeInfoProcedure;
 struct SWorkspaceEntry;
+struct SLexerLocation;
 
 
 
@@ -80,6 +81,7 @@ enum VALK : s8	// VALue Kind
 
 	VALK_Instruction,
 	VALK_Global,
+	VALK_BCodeRegister,
 
 	VALK_Max,
 	VALK_Min = 0,
@@ -90,75 +92,136 @@ EWC_ENUM_UTILS(VALK);
 
 
 
+// Stack		- OPK_Stack - will be looked up
+// StackAddr	- OPK_Literal stores address of stack val
+// Literal		- OPK_Literal stored in instruction stream
+
+enum OPARG // OPerand ARGuments - define the expected in->out arguments for a given bytecode opcode
+{
+	OPARG_Error,
+	OPARG_OnlyOpcode,
+	OPARG_Unary,			// (Stack|Literal) -> Stack
+	OPARG_UnaryNoResult,	// (Stack|Literal)
+	OPARG_Binary,			// (Stack|Literal, Stack|Literal) -> Stack
+	OPARG_BinaryNoResult,	// (Stack|Literal, Stack|Literal) 
+	OPARG_Compare,			// (Stack|Literal, Stack|Literal) -> Stack(bool)
+	OPARG_Store,			// (StackAddr, Stack|Literal) -> Stack(lhs)
+	OPARG_Branch,			// (Stack|Literal predicate, pack(iInstTrue, iInstFalse) -> 0
+
+	OPARG_Nil = -1,
+};
+
+enum OPSZ
+{
+	OPSZ_0,
+	OPSZ_1,
+	OPSZ_2,
+	OPSZ_4,
+	OPSZ_8,
+	OPSZ_Ptr,
+	OPSZ_CB,
+	OPSZ_RegIdx,
+};
+
+enum CBSRC
+{
+	CBSRC_Lhs,
+	CBSRC_Rhs,
+	CBSRC_Nil = -1
+};
+
+struct OpSignature // tag = opsig
+{
+	OPSZ	m_opszLhs;
+	OPSZ	m_opszRhs;
+	OPSZ	m_opszRet;
+	CBSRC	m_cbsrc;
+};
+
 #define OPCODE_LIST \
-		OP(Error), \
-		OP(Ret), \
+		OP(Error)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		/* Ret(cBStack+cBArg) -> pValRet */ \
+		OP(Ret)			OPARG(Unary)			OPSIZE(4, 0, CB), \
 		OP_RANGE(TerminalOp, Ret) \
 		\
-		OP(Call), \
-		OP(CondBranch), \
-		OP(Branch), \
-		OP(Phi), \
+		/* Call(pProcNew, pProcOld) -> pValRet */ \
+		OP(Call)		OPARG(BinaryNoResult)	OPSIZE(Ptr, Ptr, 0), \
+		/* CondBranch(fPred, {iInstT,iInstF}) */ \
+		OP(CondBranch)	OPARG(Branch)			OPSIZE(1, 8, 0), \
+		OP(Branch)		OPARG(Branch)			OPSIZE(0, 0, 0), \
+		OP(Phi)			OPARG(Error)			OPSIZE(0, 0, 0), \
 		OP_RANGE(JumpOp, TerminalOpMax) \
 		\
-		OP(NAdd), \
-		OP(GAdd), \
-		OP(NSub), \
-		OP(GSub), \
-		OP(NMul), \
-		OP(GMul), \
-		OP(SDiv), \
-		OP(UDiv), \
-		OP(GDiv), \
-		OP(SRem), \
-		OP(URem), \
-		OP(GRem), \
+		OP(NAdd)		OPARG(Binary)			OPSIZE(CB, CB, CB), \
+		OP(GAdd)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(NSub)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GSub)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(NMul)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GMul)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(SDiv)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(UDiv)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GDiv)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(SRem)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(URem)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GRem)		OPARG(Error)			OPSIZE(0, 0, 0), \
 		OP_RANGE(BinaryOp, JumpOpMax) \
 		\
-		OP(NNeg), \
-		OP(GNeg), \
-		OP(Not), \
+		OP(NNeg)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GNeg)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(Not)			OPARG(Error)			OPSIZE(0, 0, 0), \
 		OP_RANGE(UnaryOp, BinaryOpMax) \
 		\
-		OP(NCmp), \
-		OP(GCmp), \
+		OP(NCmp)		OPARG(Compare)			OPSIZE(CB, CB, 1), \
+		OP(GCmp)		OPARG(Compare)			OPSIZE(CB, CB, 1), \
 		OP_RANGE(CmpOp, UnaryOpMax) \
 		\
-		OP(Shl), \
-		OP(AShr), \
-		OP(LShr), \
-		OP(And), \
-		OP(Or), \
-		OP(Xor), \
+		OP(Shl)			OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(AShr)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(LShr)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(And)			OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(Or)			OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(Xor)			OPARG(Error)			OPSIZE(0, 0, 0), \
 		OP_RANGE(LogicOp, CmpOpMax) \
 		\
-		OP(Alloca), \
-		OP(Load), \
-		OP(Store), \
-		OP(GEP), \
-		OP(PtrDiff), \
-		OP(Memcpy), \
+		OP(Alloca)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(Load)		OPARG(Unary)			OPSIZE(CB, 0, CB), \
+		/* Store(Reg(Pointer), Value) */ \
+		OP(Store)		OPARG(Store)			OPSIZE(CB, CB, 0), \
+		OP(GEP)			OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(PtrDiff)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(Memcpy)		OPARG(Error)			OPSIZE(0, 0, 0), \
 		OP_RANGE(MemoryOp, LogicOpMax) \
 		\
-		OP(NTrunc), \
-		OP(SignExt), \
-		OP(ZeroExt), \
-		OP(GToS), \
-		OP(GToU), \
-		OP(SToG), \
-		OP(UToG), \
-		OP(GTrunc), \
-		OP(GExtend), \
-		OP(PtrToInt), \
-		OP(IntToPtr), \
-		OP(Bitcast), \
+		OP(NTrunc)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(SignExt)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(ZeroExt)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GToS)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GToU)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(SToG)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(UToG)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GTrunc)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(GExtend)		OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(PtrToInt)	OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(IntToPtr)	OPARG(Error)			OPSIZE(0, 0, 0), \
+		OP(Bitcast)		OPARG(Error)			OPSIZE(0, 0, 0), \
 		OP_RANGE(CastOp, MemoryOpMax) \
+		/* ---- bytecode only opcodes ----*/ \
+		OP(NTrace)		OPARG(UnaryNoResult)	OPSIZE(CB, 0, 0), \
+		/* TraceStore(Reg, pTin) */ \
+		OP(TraceStore)	OPARG(UnaryNoResult)	OPSIZE(CB, Ptr, 0), \
+		/* RegStore(RegDst, ValueSrc) */ \
+		OP(RegStore)	OPARG(Store)			OPSIZE(RegIdx, CB, 0), \
+		OP_RANGE(BytecodeOp, CastOpMax) \
 
+#define OPARG(x) 
+#define OPSIZE(A, B, RET) 
 #define OP(x) IROP_##x
 #define OP_RANGE(range, PREV_VAL) IROP_##range##Max, IROP_##range##Min = IROP_##PREV_VAL, IROP_##range##Last = IROP_##range##Max - 1,
 	enum IROP
 	{
 		OPCODE_LIST
+
+		// TODO: Add the ranges to our enum as a second pass (so the debugger will report the enum values rather than the range endpoints
 
 		IROP_Max,
 		IROP_Min = 0,
@@ -166,7 +229,11 @@ EWC_ENUM_UTILS(VALK);
 	};
 #undef OP_RANGE
 #undef OP
+#undef OPSIZE
+#undef OPARG
 
+s8 COperand(IROP irop);
+const char * PChzFromIrop(IROP irop);
 
 
 
@@ -259,7 +326,7 @@ public:
 						m_arypBlockManaged;
 };
 
-#define NCMPPRED_LIST \
+#define NPRED_LIST \
 	MOE_PRED(EQ)  LLVM_PRED(LLVMIntEQ) \
 	MOE_PRED(NE)  LLVM_PRED(LLVMIntNE) \
 	MOE_PRED(UGT) LLVM_PRED(LLVMIntUGT) \
@@ -271,7 +338,7 @@ public:
 	MOE_PRED(SLT) LLVM_PRED(LLVMIntSLT) \
 	MOE_PRED(SLE) LLVM_PRED(LLVMIntSLE)
 
-#define GCMPPRED_LIST \
+#define GPRED_LIST \
 	MOE_PRED(EQ) LLVM_PRED(LLVMRealOEQ) \
 	MOE_PRED(GT) LLVM_PRED(LLVMRealOGT) \
 	MOE_PRED(GE) LLVM_PRED(LLVMRealOGE) \
@@ -279,28 +346,28 @@ public:
 	MOE_PRED(LE) LLVM_PRED(LLVMRealOLE) \
 	MOE_PRED(NE) LLVM_PRED(LLVMRealONE) \
 
-#define MOE_PRED(X) GCMPPRED_##X,
+#define MOE_PRED(X) GPRED_##X,
 #define LLVM_PRED(X)
-enum GCMPPRED
+enum GPRED
 {
-	GCMPPRED_LIST
+	GPRED_LIST
 
-	GCMPPRED_Max,
-	GCMPPRED_Min = 0,
-	GCMPPRED_Nil = 1,
+	GPRED_Max,
+	GPRED_Min = 0,
+	GPRED_Nil = 1,
 };
 #undef MOE_PRED
 #undef LLVM_PRED
 
-#define MOE_PRED(X) NCMPPRED_##X,
+#define MOE_PRED(X) NPRED_##X,
 #define LLVM_PRED(X)
-enum NCMPPRED
+enum NPRED
 {
-	NCMPPRED_LIST
+	NPRED_LIST
 
-	NCMPPRED_Max,
-	NCMPPRED_Min = 0,
-	NCMPPRED_Nil = 1,
+	NPRED_Max,
+	NPRED_Min = 0,
+	NPRED_Nil = 1,
 };
 #undef MOE_PRED
 #undef LLVM_PRED
@@ -349,6 +416,7 @@ struct SDIFile // tag = dif (debug info file)
 };
 
 
+
 class CBuilderBase
 {
 public:
@@ -358,6 +426,22 @@ public:
 	EWC::CAlloc *					m_pAlloc;
 	CIRBuilderErrorContext *		m_pBerrctx;
 };
+
+
+
+class CIRBuilderErrorContext // tag = berrctx
+{
+public:
+					CIRBuilderErrorContext(SErrorManager * pErrman, CBuilderBase * pBuild, CSTNode * pStnod);
+					~CIRBuilderErrorContext();
+
+	SErrorManager *				m_pErrman;
+	CBuilderBase *				m_pBuild;
+	SLexerLocation *			m_pLexloc;
+	CIRBuilderErrorContext *	m_pBerrctxPrev;
+};
+
+
 
 enum VALGENK
 {
@@ -417,8 +501,8 @@ public:
 	static LType *		PLtypeFromPTin(STypeInfo * pTin);
 	static LType *		PLtypeVoid();
 
-	CIRInstruction *	PInstCreateNCmp(NCMPPRED ncmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreateGCmp(GCMPPRED gcmppred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateNCmp(NPRED npred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	CIRInstruction *	PInstCreateGCmp(GPRED gpred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 
 	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBlock * pBlockTrue, CIRBlock * pBlockFalse);
 	void				CreateBranch(CIRBlock * pBlock);
@@ -426,7 +510,7 @@ public:
 
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
-	void				CreateProcCall(LValue * pLvalProc, ProcArg ** ppProcArg, unsigned cArg, CIRInstruction * pInstOut);
+	CIRInstruction *	PInstCreateCall(LValue * pLvalProc, ProcArg ** apLvalArgs, unsigned cArg);
 
 	CIRValue *			PValGenerateCall(
 							CWorkspace * pWork,
@@ -445,7 +529,7 @@ public:
 
 	CIRValue *			PValFromSymbol(SSymbol * pSym);
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
-	CIRInstruction *	PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
+	CIRValue *			PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
 	CIRInstruction *	PInstCreateMemset(CWorkspace * pWork, CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
 	CIRInstruction *	PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CIRValue * pValRhsRef);
 	CIRInstruction *	PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CSTNode * pStnodInit);
@@ -454,10 +538,10 @@ public:
 	LLVMOpaqueValue *	PGepIndex(u64 idx);
 	LLVMOpaqueValue *	PGepIndexFromValue(CIRValue * pVal);
 
-	CIRConstant *		PConstInt(int cBit, bool fIsSigned, u64 nUnsigned);
-	CIRConstant *		PConstFloat(int cBit, f64 g);
-	static LValue *		PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned);
-	static LValue *		PLvalConstantFloat(int cBit, f64 g);
+	CIRConstant *		PConstInt(u64 nUnsigned, int cBit = 64, bool fIsSigned = true);
+	CIRConstant *		PConstFloat(f64 g, int cBit);
+	static LValue *		PLvalConstantInt(u64 nUnsigned, int cBit, bool fIsSigned);
+	static LValue *		PLvalConstantFloat(f64 g, int cBit);
 	LValue *			PLvalConstantGlobalStringPtr(const char * pChzString, const char * pChzName);
 	static LValue *		PLvalConstantNull(LType * pLtype);
 	static LValue *		PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval);

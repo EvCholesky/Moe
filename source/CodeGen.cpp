@@ -156,13 +156,17 @@ const char * PChzFromIrop(IROP irop)
 		return "nil";
 
 	#define OP(x) #x
+	#define OPSIZE(LHS, RHS, RET)
+	#define OPARG(x)
 	#define OP_RANGE(x, y)
 	const char * s_mpIropPChz[] =
 	{
 		OPCODE_LIST
 	};
 	#undef OP_RANGE
-	#undef op
+	#undef OPARG
+	#undef OPSIZE
+	#undef OP
 
 	EWC_CASSERT(EWC_DIM(s_mpIropPChz) == IROP_Max, "missing IROP string");
 	return s_mpIropPChz[irop];
@@ -306,7 +310,7 @@ void DInfoCreateTypedef(
 
 void DInfoInsertDeclare(
 	CBuilderIR * pBuild,
-	CIRInstruction * pInstAlloca,
+	CIRValue * pValAlloca,
 	LLVMValueRef pLvalDIVariable,
 	LLVMValueRef pLvalScope,
 	unsigned nLine,
@@ -315,7 +319,7 @@ void DInfoInsertDeclare(
 {
 	(void)LLVMDIBuilderInsertDeclare(
 		pBuild->m_pDib,
-		pInstAlloca->m_pLval,
+		pValAlloca->m_pLval,
 		pLvalDIVariable,
 		pLvalScope,
 		nLine,
@@ -410,14 +414,15 @@ void CIRBlock::Append(CIRInstruction * pInst)
 	m_fIsTerminated = (pInst->m_irop == IROP_Ret) | (pInst->m_irop == IROP_CondBranch) | (pInst->m_irop == IROP_Branch);
 }
 
-static inline s8 COperand(IROP irop)
+s8 COperand(IROP irop)
 {
 	if (irop == IROP_Call)
 		return 0;
 	if (((irop >= IROP_BinaryOpMin) & (irop < IROP_BinaryOpMax)) | 
 		((irop >= IROP_CmpOpMin) & (irop < IROP_CmpOpMax)) | 
 		((irop >= IROP_LogicOpMin) & (irop < IROP_LogicOpMax)) | 
-		(irop == IROP_Store))
+		(irop == IROP_Store) |
+		(irop == IROP_TraceStore) | (irop == IROP_RegStore))
 		return 2;
 	return 1;
 }
@@ -436,23 +441,10 @@ CIRProcedure::~CIRProcedure()
 
 
 
-class CIRBuilderErrorContext // tag = berrctx
-{
-public:
-					CIRBuilderErrorContext(SErrorManager * pErrman, CBuilderBase * pBuild, CSTNode * pStnod);
-					~CIRBuilderErrorContext();
-
-	SErrorManager *				m_pErrman;
-	CBuilderBase *				m_pBuild;
-	SLexerLocation				m_lexloc;
-	CIRBuilderErrorContext *	m_pBerrctxPrev;
-};
-
-
 CIRBuilderErrorContext::CIRBuilderErrorContext(SErrorManager * pErrman, CBuilderBase * pBuild, CSTNode * pStnod)
 :m_pErrman(pErrman)
 ,m_pBuild(pBuild)
-,m_lexloc(pStnod->m_lexloc)
+,m_pLexloc(&pStnod->m_lexloc)
 ,m_pBerrctxPrev(pBuild->m_pBerrctx)
 {
 	pBuild->m_pBerrctx = this;
@@ -1483,7 +1475,7 @@ CIRInstruction * CBuilderIR::PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRVa
 	{
 		if (irop != IROP_Branch && EWC_FVERIFY(m_pBerrctx, "trying to throw warning with no error context"))
 		{
-			EmitWarning(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, ERRID_UnreachableInst, "Unreachable instruction detected");
+			EmitWarning(m_pBerrctx->m_pErrman, m_pBerrctx->m_pLexloc, ERRID_UnreachableInst, "Unreachable instruction detected");
 		}
 		irop = IROP_Error;
 		pValLhs = nullptr;
@@ -1532,9 +1524,14 @@ void CBuilderIR::AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRB
 	LLVMAddIncoming(pInstPhi->m_pLval, &pVal->m_pLval, &pBlock->m_pLblock, 1);
 }
 
-void CBuilderIR::CreateProcCall(LValue * pLvalProc, ProcArg ** apLvalArgs, unsigned cArg, CIRInstruction * pInstOut)
+CIRInstruction * CBuilderIR::PInstCreateCall(LValue * pLvalProc, ProcArg ** apLvalArgs, unsigned cArg)
 {
-	pInstOut->m_pLval = LLVMBuildCall(m_pLbuild, pLvalProc, apLvalArgs, cArg, "");
+	auto pInst = PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
+	if (FIsError(pInst))
+		return pInst;
+
+	pInst->m_pLval = LLVMBuildCall(m_pLbuild, pLvalProc, apLvalArgs, cArg, "");
+	return pInst;
 }
 
 CIRInstruction * CBuilderIR::PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName)
@@ -1647,7 +1644,7 @@ CIRInstruction * CBuilderIR::PInstCreateCondBranch(
 }
 
 CIRInstruction * CBuilderIR::PInstCreateNCmp(
-	NCMPPRED ncmppred,
+	NPRED npred,
 	CIRValue * pValLhs,
 	CIRValue * pValRhs,
 	const char * pChzName)
@@ -1656,12 +1653,12 @@ CIRInstruction * CBuilderIR::PInstCreateNCmp(
 #define LLVM_PRED(X) X,
 	static const LLVMIntPredicate s_mpNcmpredLpredicate[] =
 	{
-		NCMPPRED_LIST
+		NPRED_LIST
 	};
 #undef MOE_PRED
 #undef LLVM_PRED
-	EWC_CASSERT(EWC_DIM(s_mpNcmpredLpredicate) == NCMPPRED_Max, "missing elements in int predicate map");
-	auto lpredicate = s_mpNcmpredLpredicate[ncmppred];
+	EWC_CASSERT(EWC_DIM(s_mpNcmpredLpredicate) == NPRED_Max, "missing elements in int predicate map");
+	auto lpredicate = s_mpNcmpredLpredicate[npred];
 
 	CIRInstruction * pInst = PInstCreateRaw(IROP_NCmp, pValLhs, pValRhs, pChzName);
 	if (FIsError(pInst))
@@ -1672,7 +1669,7 @@ CIRInstruction * CBuilderIR::PInstCreateNCmp(
 }
 
 CIRInstruction * CBuilderIR::PInstCreateGCmp(
-	GCMPPRED gcmppred,
+	GPRED gpred,
 	CIRValue * pValLhs,
 	CIRValue * pValRhs,
 	const char * pChzName)
@@ -1681,12 +1678,12 @@ CIRInstruction * CBuilderIR::PInstCreateGCmp(
 #define LLVM_PRED(X) X,
 	static const LLVMRealPredicate s_mpGcmpredLpredicate[] =
 	{
-		GCMPPRED_LIST
+		GPRED_LIST
 	};
 #undef MOE_PRED
 #undef LLVM_PRED
-	EWC_CASSERT(EWC_DIM(s_mpGcmpredLpredicate) == GCMPPRED_Max, "missing elements in int predicate map");
-	auto lpredicate = s_mpGcmpredLpredicate[gcmppred];
+	EWC_CASSERT(EWC_DIM(s_mpGcmpredLpredicate) == GPRED_Max, "missing elements in int predicate map");
+	auto lpredicate = s_mpGcmpredLpredicate[gpred];
 
 	CIRInstruction * pInst = PInstCreateRaw(IROP_GCmp, pValLhs, pValRhs, pChzName);
 	if (FIsError(pInst))
@@ -1721,7 +1718,7 @@ CIRGlobal * CBuilderIR::PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzNa
 	return pGlob;
 }
 
-CIRInstruction * CBuilderIR::PInstCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName)
+CIRValue * CBuilderIR::PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName)
 {
 	CIRInstruction * pInst = PInstCreateRaw(IROP_Alloca, nullptr, nullptr, pChzName);
 	if (FIsError(pInst))
@@ -1807,7 +1804,7 @@ CIRInstruction * CBuilderIR::PInstCreateStore(CIRValue * pValPT, CIRValue * pVal
 		printf("(src) pLtypeT :"); LLVMDumpType(pLtypeT);
 		printf("(dst) pLtypePT:)"); LLVMDumpType(pLtypePT);
 #endif
-		EmitError(m_pBerrctx->m_pErrman, &m_pBerrctx->m_lexloc, ERRID_BadStore, "bad store information\n");
+		EmitError(m_pBerrctx->m_pErrman, m_pBerrctx->m_pLexloc, ERRID_BadStore, "bad store information\n");
 	}
 
 #if WARN_ON_LARGE_STORE
@@ -1852,7 +1849,7 @@ bool FExtractNumericInfo(STypeInfo * pTin, u32 * pCBit, bool * pFSigned)
 	return true;
 }
 
-inline LLVMOpaqueValue * CBuilderIR::PLvalConstantInt(int cBit, bool fIsSigned, u64 nUnsigned)
+inline LLVMOpaqueValue * CBuilderIR::PLvalConstantInt(u64 nUnsigned, int cBit, bool fIsSigned)
 {
 	switch (cBit)
 	{
@@ -1867,16 +1864,16 @@ inline LLVMOpaqueValue * CBuilderIR::PLvalConstantInt(int cBit, bool fIsSigned, 
 	}
 }
 
-inline CIRConstant * CBuilderIR::PConstInt(int cBit, bool fIsSigned, u64 nUnsigned)
+inline CIRConstant * CBuilderIR::PConstInt(u64 nUnsigned, int cBit, bool fIsSigned)
 {
 	CIRConstant * pConst = EWC_NEW(m_pAlloc, CIRConstant) CIRConstant();
 	AddManagedVal(pConst);
-	pConst->m_pLval = PLvalConstantInt(cBit, fIsSigned, nUnsigned);
+	pConst->m_pLval = PLvalConstantInt(nUnsigned, cBit, fIsSigned);
 
 	return pConst;
 }
 
-LLVMOpaqueValue * CBuilderIR::PLvalConstantFloat(int cBit, f64 g)
+LLVMOpaqueValue * CBuilderIR::PLvalConstantFloat(f64 g, int cBit)
 {
 	switch (cBit)
 	{
@@ -1903,11 +1900,11 @@ CBuilderIR::LValue * CBuilderIR::PLvalConstantArray(LType * pLtypeElem, LValue *
 }
 
 
-CIRConstant * CBuilderIR::PConstFloat(int cBit, f64 g)
+CIRConstant * CBuilderIR::PConstFloat(f64 g, int cBit)
 {
 	CIRConstant * pConst = EWC_NEW(m_pAlloc, CIRConstant) CIRConstant();
 	AddManagedVal(pConst);
-	pConst->m_pLval = PLvalConstantFloat(cBit, g); 
+	pConst->m_pLval = PLvalConstantFloat(g, cBit); 
 
 	return pConst;
 }
@@ -1918,7 +1915,7 @@ LLVMOpaqueValue * PLvalFromEnumConstant(CBuilderIR * pBuild, STypeInfo * pTinLoo
 	if (!EWC_FVERIFY(pTinint, "expected integer type for enum constant"))
 		return nullptr;
 
-	return pBuild->PLvalConstantInt(pTinint->m_cBit, pTinint->m_fIsSigned, pStval->m_nUnsigned);
+	return pBuild->PLvalConstantInt(pStval->m_nUnsigned, pTinint->m_cBit, pTinint->m_fIsSigned);
 }
 
 CIRConstant * CBuilderIR::PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval)
@@ -1938,8 +1935,8 @@ LLVMOpaqueValue * PLvalZeroInType(CBuilderIR * pBuild, STypeInfo * pTin)
 	switch (pTin->m_tink)
 	{
 	case TINK_Bool:		return LLVMConstInt(LLVMInt1Type(), 0, false);
-	case TINK_Integer:	return CBuilderIR::PLvalConstantInt(((STypeInfoInteger *)pTin)->m_cBit, false, 0);
-	case TINK_Float:	return CBuilderIR::PLvalConstantFloat(((STypeInfoFloat *)pTin)->m_cBit, 0.0);
+	case TINK_Integer:	return CBuilderIR::PLvalConstantInt(0, ((STypeInfoInteger *)pTin)->m_cBit, false);
+	case TINK_Float:	return CBuilderIR::PLvalConstantFloat(0.0f, ((STypeInfoFloat *)pTin)->m_cBit);
 	case TINK_Enum:
 		{
 			auto pTinenum = (STypeInfoEnum *)pTin;
@@ -2640,7 +2637,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 				}
 			}
 
-			pLval = BUILD::PLvalConstantInt(pTinlit->m_litty.m_cBit, pTinlit->m_litty.m_fIsSigned, pStval->m_nUnsigned);
+			pLval = pBuild->PLvalConstantInt(pStval->m_nUnsigned, pTinlit->m_litty.m_cBit, pTinlit->m_litty.m_fIsSigned);
 		}break;
 	case LITK_Float:
 		{
@@ -2653,7 +2650,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 			default: EWC_ASSERT(false, "Float literal kind mismatch");	break;
 			}
 
-			pLval = BUILD::PLvalConstantFloat(pTinlit->m_litty.m_cBit, g);
+			pLval = pBuild->PLvalConstantFloat(g, pTinlit->m_litty.m_cBit);
 		}break;
 	case LITK_Bool:
 	{
@@ -2674,7 +2671,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 			default: EWC_ASSERT(false, "bool literal kind mismatch");			break;
 			}
 
-			pLval = BUILD::PLvalConstantInt(1, false, nUnsigned);
+			pLval = pBuild->PLvalConstantInt(nUnsigned, 1, false);
 		} break;
 	case LITK_Char:		EWC_ASSERT(false, "TBD"); return nullptr;
 	case LITK_String:
@@ -2763,14 +2760,14 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CBuilderIR * pBuild, CIRValue * pV
 			if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 				return nullptr;
 
-			auto pInstAllocaLit = pBuild->PInstCreateAlloca(pLtype, cElement, "aryLit");
+			auto pValAllocaLit = pBuild->PValCreateAlloca(pLtype, cElement, "aryLit");
 
 			// copy the literal into memory
 
-			pBuild->PInstCreateMemcpy(pWork, pTinDst, pInstAllocaLit, pValSrc);
+			pBuild->PInstCreateMemcpy(pWork, pTinDst, pValAllocaLit, pValSrc);
 
 			LLVMOpaqueType * pLtypeDst = CBuilderIR::PLtypeFromPTin(pTinDst);
-			auto pInstAllocaDst = pBuild->PInstCreateAlloca(pLtypeDst, 1, "aryDst");
+			auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, 1, "aryDst");
 
 			// copy the fixed array into the array reference
 			STypeInfoArray tinaryFixed;
@@ -2778,8 +2775,8 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CBuilderIR * pBuild, CIRValue * pV
 			tinaryFixed.m_c = pTinlitSrc->m_c;
 			tinaryFixed.m_pTin = pTinlitSrc->m_pTinSource;
 
-			(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryDst, &tinaryFixed, pInstAllocaDst, pInstAllocaLit);
-			return pBuild->PInstCreate(IROP_Load, pInstAllocaDst, "aryRefLoad");
+			(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryDst, &tinaryFixed, pValAllocaDst, pValAllocaLit);
+			return pBuild->PInstCreate(IROP_Load, pValAllocaDst, "aryRefLoad");
 		}
 
 		return pValSrc;
@@ -2878,7 +2875,7 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CBuilderIR * pBuild, CIRValue * pV
 			case TINK_Integer:
 				{
 					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NE, pValSrc, pConstZero, "NToBool");
+					pInst = pBuild->PInstCreateNCmp(NPRED_NE, pValSrc, pConstZero, "NToBool");
 					return pInst;
 				} 
 			case TINK_Float:
@@ -2894,7 +2891,7 @@ CIRValue * PValCreateCast(CWorkspace * pWork, CBuilderIR * pBuild, CIRValue * pV
 			case TINK_Pointer:
 				{
 					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
-					pInst = pBuild->PInstCreateNCmp(NCMPPRED_NE, pValSrc, pConstZero, "PToBool");
+					pInst = pBuild->PInstCreateNCmp(NPRED_NE, pValSrc, pConstZero, "PToBool");
 					return pInst;
 				}
 			case TINK_Literal:
@@ -2997,9 +2994,9 @@ CIRInstruction * CBuilderIR::PInstCreateLoopingInit(CWorkspace * pWork, STypeInf
 	auto pTinary = (STypeInfoArray *)pTin;
 	EWC_ASSERT(pTinary->m_aryk == ARYK_Fixed, "unexpected ARYK");
 
-	auto pLvalZero = PLvalConstantInt(64, false, 0);
-	auto pLvalOne = PLvalConstantInt(64, false, 1);
-	auto pLvalCount = PLvalConstantInt(64, false, pTinary->m_c);
+	auto pLvalZero = PLvalConstantInt(0, 64, false);
+	auto pLvalOne = PLvalConstantInt(1, 64, false);
+	auto pLvalCount = PLvalConstantInt(pTinary->m_c, 64, false);
 	
 	auto pLvalAlloca = LLVMBuildAlloca(m_pLbuild, LLVMInt64Type(), "iInit");
 	LLVMBuildStore(m_pLbuild, pLvalZero, pLvalAlloca);
@@ -3361,11 +3358,8 @@ static inline typename BUILD::Value * PValInitialize(
 				BUILD::LValue * apLvalArgs[1];
 				apLvalArgs[0] = BUILD::PProcArg(pValPT);
 
-				auto pInst = pBuild->PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
-				if (FIsError(pInst))
-					return pInst;
 
-				pBuild->CreateProcCall(pLvalFunction, apLvalArgs, 1, pInst);
+				auto pInst = pBuild->PInstCreateCall(pLvalFunction, apLvalArgs, 1);
 				return pInst;
 			}
 		} break;
@@ -3392,7 +3386,7 @@ typename BUILD::Value * PValFromArrayMember(
 		EWC_ASSERT(valgenk == VALGENK_Instance, "expected instance");
 		if (arymemb == ARYMEMB_Count)
 		{
-			return pBuild->PConstInt(64, true, pTinary->m_c);
+			return pBuild->PConstInt(pTinary->m_c, 64, true);
 		}
 
 		// the type of aN.data is &N so a reference would need to be a &&N which we don't have
@@ -3485,12 +3479,12 @@ static inline CIRValue * PValGenerateCast(
 					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for cast"))
 						return nullptr;
 
-					auto * pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, "aryCast");
-					(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryLhs, pTinRhs, pInstAlloca, pValRhsRef);
+					auto * pValAlloca = pBuild->PValCreateAlloca(pLtype, cElement, "aryCast");
+					(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryLhs, pTinRhs, pValAlloca, pValRhsRef);
 
 					if (valgenk == VALGENK_Reference)
-						return pInstAlloca;
-					return pBuild->PInstCreate(IROP_Load, pInstAlloca, "deref");
+						return pValAlloca;
+					return pBuild->PInstCreate(IROP_Load, pValAlloca, "deref");
 				}
 
 				EWC_ASSERT(false, "no implicit cast from ARYK %s to ARYK %s", PChzFromAryk(pTinaryRhs->m_aryk), PChzFromAryk(pTinaryLhs->m_aryk));
@@ -3514,14 +3508,14 @@ static inline CIRValue * PValGenerateCast(
 					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 						return nullptr;
 
-					auto pInstAllocaLit = pBuild->PInstCreateAlloca(pLtype, cElement, "aryLit");
+					auto pValAllocaLit = pBuild->PValCreateAlloca(pLtype, cElement, "aryLit");
 
 					// copy the literal into memory
 
-					pBuild->PInstCreateMemcpy(pWork, pTinlitRhs, pInstAllocaLit, pValRhsRef);
+					pBuild->PInstCreateMemcpy(pWork, pTinlitRhs, pValAllocaLit, pValRhsRef);
 
 					LLVMOpaqueType * pLtypeDst = CBuilderIR::PLtypeFromPTin(pTinOut);
-					auto pInstAllocaDst = pBuild->PInstCreateAlloca(pLtypeDst, 1, "aryDst");
+					auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, 1, "aryDst");
 
 					// copy the fixed array into the array reference
 					STypeInfoArray tinaryFixed;
@@ -3529,11 +3523,11 @@ static inline CIRValue * PValGenerateCast(
 					tinaryFixed.m_c = pTinlitRhs->m_c;
 					tinaryFixed.m_pTin = pTinlitRhs->m_pTinSource;
 
-					(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryLhs, &tinaryFixed, pInstAllocaDst, pInstAllocaLit);
+					(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryLhs, &tinaryFixed, pValAllocaDst, pValAllocaLit);
 
 					if (valgenk == VALGENK_Reference)
-						return pInstAllocaDst;
-					return pBuild->PInstCreate(IROP_Load, pInstAllocaDst, "deref");
+						return pValAllocaDst;
+					return pBuild->PInstCreate(IROP_Load, pValAllocaDst, "deref");
 				}
 			}
 		}
@@ -3609,12 +3603,12 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 
 					CIRProcedure * pProc = pBuild->m_pProcCur;
 
-					auto pValZero = pBuild->PConstInt(64, false, 0);
-					auto pValOne = pBuild->PConstInt(64, false, 1);
-					auto pValCount = pBuild->PConstInt(64, false, pTinaryLhs->m_c);
+					auto pValZero = pBuild->PConstInt(0, 64, false);
+					auto pValOne = pBuild->PConstInt(0,  64, false);
+					auto pValCount = pBuild->PConstInt(pTinaryLhs->m_c, 64, false);
 					
-					auto pInstAlloca = pBuild->PInstCreateAlloca(LLVMInt64Type(), 0, "iInit");
-					(void) pBuild->PInstCreateStore(pInstAlloca, pValZero);
+					auto pValAlloca = pBuild->PValCreateAlloca(LLVMInt64Type(), 0, "iInit");
+					(void) pBuild->PInstCreateStore(pValAlloca, pValZero);
 
 					CIRBlock *	pBlockPred = pBuild->PBlockCreate(pProc, "copyPred");
 					CIRBlock *	pBlockBody = pBuild->PBlockCreate(pProc, "copyBody");
@@ -3623,8 +3617,8 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 					pBuild->CreateBranch(pBlockPred);	
 
 					pBuild->ActivateBlock(pBlockPred);
-					auto pInstLoadIndex = pBuild->PInstCreate(IROP_Load, pInstAlloca, "iLoad");
-					auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_ULT, pInstLoadIndex, pValCount, "NCmp");
+					auto pInstLoadIndex = pBuild->PInstCreate(IROP_Load, pValAlloca, "iLoad");
+					auto pInstCmp = pBuild->PInstCreateNCmp(NPRED_ULT, pInstLoadIndex, pValCount, "NCmp");
 
 					(void) pBuild->PInstCreateCondBranch(pInstCmp, pBlockBody, pBlockPost);
 
@@ -3639,7 +3633,7 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 					(void) pBuild->PInstCreateStore(pInstGEPLhs, pInstLoadRhs);
 
 					auto pInstInc = pBuild->PInstCreate(IROP_NAdd, pInstLoadIndex, pValOne, "iInc");
-					(void) pBuild->PInstCreateStore(pInstAlloca, pInstInc);
+					(void) pBuild->PInstCreateStore(pValAlloca, pInstInc);
 					pBuild->CreateBranch(pBlockPred);
 
 					pBuild->ActivateBlock(pBlockPost);
@@ -3658,7 +3652,7 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 					{
 					case ARYK_Fixed:
 						{
-							pValCount = pBuild->PConstInt(64, true, cRhs);
+							pValCount = pBuild->PConstInt(cRhs);
 
 							apLvalIndex[1] = LLVMConstInt(LLVMInt32Type(), 0, false);
 							pValData = pBuild->PInstCreateGEP(pValRhsRef, apLvalIndex, EWC_DIM(apLvalIndex), "aryGep");
@@ -3731,12 +3725,12 @@ CIRInstruction * PInstGenerateAssignment(
 					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 						return nullptr;
 
-					auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, "aryLit");
+					auto pValAlloca = pBuild->PValCreateAlloca(pLtype, cElement, "aryLit");
 
 					// copy the literal into memory
-					pBuild->PInstCreateMemcpy(pWork, pStnodRhs->m_pTin, pInstAlloca, pValRhsRef);
+					pBuild->PInstCreateMemcpy(pWork, pStnodRhs->m_pTin, pValAlloca, pValRhsRef);
 
-					return PInstGenerateAssignmentFromRef(pWork, pBuild, pTinLhs, pStnodRhs->m_pTin, pValLhs, pInstAlloca);
+					return PInstGenerateAssignmentFromRef(pWork, pBuild, pTinLhs, pStnodRhs->m_pTin, pValLhs, pValAlloca);
 				}
 
 				return pBuild->PInstCreateMemcpy(pWork, pStnodRhs->m_pTin, pValLhs, pValRhsRef);
@@ -3906,15 +3900,15 @@ struct SOperatorInfo // tag = opinfo
 {
 					SOperatorInfo()
 					:m_irop(IROP_Nil)
-					,m_ncmppred(NCMPPRED_Nil)
-					,m_gcmppred(GCMPPRED_Nil)
+					,m_npred(NPRED_Nil)
+					,m_gpred(GPRED_Nil)
 					,m_fNegateFirst(false)
 					,m_pChzName(nullptr)
 						{ ; }
 
 	IROP			m_irop;
-	NCMPPRED		m_ncmppred;
-	GCMPPRED		m_gcmppred;
+	NPRED			m_npred;
+	GPRED			m_gpred;
 	bool			m_fNegateFirst;
 	const char *	m_pChzName;
 };
@@ -3925,17 +3919,17 @@ void CreateOpinfo(IROP irop, const char * pChzName, SOperatorInfo * pOpinfo)
 	pOpinfo->m_pChzName = pChzName;
 }
 
-void CreateOpinfo(NCMPPRED ncmppred, const char * pChzName, SOperatorInfo * pOpinfo)
+void CreateOpinfo(NPRED npred, const char * pChzName, SOperatorInfo * pOpinfo)
 {
 	pOpinfo->m_irop = IROP_NCmp;
-	pOpinfo->m_ncmppred = ncmppred;
+	pOpinfo->m_npred = npred;
 	pOpinfo->m_pChzName = pChzName;
 }
 
-void CreateOpinfo(GCMPPRED gcmppred, const char * pChzName, SOperatorInfo * pOpinfo)
+void CreateOpinfo(GPRED gpred, const char * pChzName, SOperatorInfo * pOpinfo)
 {
 	pOpinfo->m_irop = IROP_GCmp;
-	pOpinfo->m_gcmppred = gcmppred;
+	pOpinfo->m_gpred = gpred;
 	pOpinfo->m_pChzName = pChzName;
 }
 
@@ -4006,9 +4000,9 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					pOpinfo->m_fNegateFirst = true;
 				} break;
 			case TOK_EqualEqual:
-				CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); 
+				CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); 
 				break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 			}
 		}
 		else if (tinkMin == TINK_Integer && tinkMax == TINK_Array)
@@ -4082,8 +4076,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		switch ((u32)tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 			case TOK_AndAnd:		CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 			case TOK_OrOr:			CreateOpinfo(IROP_Phi, "Phi", pOpinfo); break;	// only useful for FDoesOperatorExist, codegen is more complicated
 		} break;
@@ -4091,8 +4085,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 		switch ((u32)tok)
 		{
 			case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 			case TOK_AndEqual:
 			case '&':				CreateOpinfo(IROP_And, "nAndTmp", pOpinfo); break;
 			case TOK_OrEqual:
@@ -4123,23 +4117,23 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 			case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 									CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 			case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 			case TOK_LessEqual:
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_SLE, "CmpSLE", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_ULE, "NCmpULE", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NPRED_SLE, "CmpSLE", pOpinfo);
+				else			CreateOpinfo(NPRED_ULE, "NCmpULE", pOpinfo);
 				break;
 			case TOK_GreaterEqual:
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_SGE, "NCmpSGE", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_UGE, "NCmpUGE", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NPRED_SGE, "NCmpSGE", pOpinfo);
+				else			CreateOpinfo(NPRED_UGE, "NCmpUGE", pOpinfo);
 				break;
 			case '<':
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_SLT, "NCmpSLT", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_ULT, "NCmpULT", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NPRED_SLT, "NCmpSLT", pOpinfo);
+				else			CreateOpinfo(NPRED_ULT, "NCmpULT", pOpinfo);
 				break;
 			case '>':
-				if (fIsSigned)	CreateOpinfo(NCMPPRED_SGT, "NCmpSGT", pOpinfo);
-				else			CreateOpinfo(NCMPPRED_UGT, "NCmpUGT", pOpinfo);
+				if (fIsSigned)	CreateOpinfo(NPRED_SGT, "NCmpSGT", pOpinfo);
+				else			CreateOpinfo(NPRED_UGT, "NCmpUGT", pOpinfo);
 				break;
 		} break;
 	case TINK_Float:
@@ -4156,20 +4150,20 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 			case '/': 				CreateOpinfo(IROP_GDiv, "gDivTmp", pOpinfo); break;
 			case TOK_ModEqual:
 			case '%': 				CreateOpinfo(IROP_GRem, "gRemTmp", pOpinfo); break;
-			case TOK_EqualEqual:	CreateOpinfo(GCMPPRED_EQ, "GCmpEQ", pOpinfo); break;
-			case TOK_NotEqual:		CreateOpinfo(GCMPPRED_NE, "GCmpNE", pOpinfo); break;
-			case TOK_LessEqual:		CreateOpinfo(GCMPPRED_LE, "GCGpLE", pOpinfo); break;
-			case TOK_GreaterEqual:	CreateOpinfo(GCMPPRED_GE, "GCmpGE", pOpinfo); break;
-			case '<': 				CreateOpinfo(GCMPPRED_LT, "GCmpLT", pOpinfo); break;
-			case '>': 				CreateOpinfo(GCMPPRED_GT, "GCmpGT", pOpinfo); break;
+			case TOK_EqualEqual:	CreateOpinfo(GPRED_EQ, "GCmpEQ", pOpinfo); break;
+			case TOK_NotEqual:		CreateOpinfo(GPRED_NE, "GCmpNE", pOpinfo); break;
+			case TOK_LessEqual:		CreateOpinfo(GPRED_LE, "GCGpLE", pOpinfo); break;
+			case TOK_GreaterEqual:	CreateOpinfo(GPRED_GE, "GCmpGE", pOpinfo); break;
+			case '<': 				CreateOpinfo(GPRED_LT, "GCmpLT", pOpinfo); break;
+			case '>': 				CreateOpinfo(GPRED_GT, "GCmpGT", pOpinfo); break;
 		} break;
 	case TINK_Procedure:
 		{
 			switch ((u32)tok)
 			{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 			}
 		} break;
 	case TINK_Struct:
@@ -4189,10 +4183,10 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					{
 						CreateOpinfo(IROP_PtrDiff, "ptrDif", pOpinfo);
 					} break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
-/*				case TOK_PlusEqual:		CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-				case TOK_MinusEqual:	CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
+/*				case TOK_PlusEqual:		CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_MinusEqual:	CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 				case '+=':				CreateOpinfo(IROP_GEP, "ptrAdd", pOpinfo); break;
 				case '-=': 				
 					{
@@ -4215,8 +4209,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				switch ((u32)tok)
 				{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 				case '+': 				CreateOpinfo(IROP_NAdd, "nAddTmp", pOpinfo); break;
 				case '-': 				CreateOpinfo(IROP_NSub, "nSubTmp", pOpinfo); break;
 				case '%':				CreateOpinfo((fIsSigned) ? IROP_SRem : IROP_URem, "nRemTmp", pOpinfo); break;
@@ -4224,20 +4218,20 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 					CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
 				case TOK_LessEqual:
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_SLE, "CmpSLE", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_ULE, "NCmpULE", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NPRED_SLE, "CmpSLE", pOpinfo);
+					else				CreateOpinfo(NPRED_ULE, "NCmpULE", pOpinfo);
 					break;
 				case TOK_GreaterEqual:
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_SGE, "NCmpSGE", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_UGE, "NCmpUGE", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NPRED_SGE, "NCmpSGE", pOpinfo);
+					else				CreateOpinfo(NPRED_UGE, "NCmpUGE", pOpinfo);
 					break;
 				case '<':
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_SLT, "NCmpSLT", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_ULT, "NCmpULT", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NPRED_SLT, "NCmpSLT", pOpinfo);
+					else				CreateOpinfo(NPRED_ULT, "NCmpULT", pOpinfo);
 					break;
 				case '>':
-					if (fIsSigned)		CreateOpinfo(NCMPPRED_SGT, "NCmpSGT", pOpinfo);
-					else				CreateOpinfo(NCMPPRED_UGT, "NCmpUGT", pOpinfo);
+					if (fIsSigned)		CreateOpinfo(NPRED_SGT, "NCmpSGT", pOpinfo);
+					else				CreateOpinfo(NPRED_UGT, "NCmpUGT", pOpinfo);
 					break;
 				}
 			}
@@ -4248,8 +4242,8 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 				switch ((u32)tok)
 				{
 				case '=':				CreateOpinfo(IROP_Store, "store", pOpinfo); break;
-				case TOK_EqualEqual:	CreateOpinfo(NCMPPRED_EQ, "NCmpEq", pOpinfo); break;
-				case TOK_NotEqual:		CreateOpinfo(NCMPPRED_NE, "NCmpNq", pOpinfo); break;
+				case TOK_EqualEqual:	CreateOpinfo(NPRED_EQ, "NCmpEq", pOpinfo); break;
+				case TOK_NotEqual:		CreateOpinfo(NPRED_NE, "NCmpNq", pOpinfo); break;
 				case TOK_ShiftRight:	// NOTE: AShr = arithmetic shift right (sign fill), LShr == zero fill
 					CreateOpinfo((fIsSigned) ? IROP_AShr : IROP_LShr, "nShrTmp", pOpinfo); break;
 				case TOK_ShiftLeft:		CreateOpinfo(IROP_Shl, "nShlTmp", pOpinfo); break;
@@ -4323,7 +4317,7 @@ static inline CIRInstruction * PInstGenerateOperator(
 
 			if (cBitSize > 8)
 			{
-				auto pLval = pBuild->PLvalConstantInt(pTinintResult->m_cBit, false, cBitSize / 8);
+				auto pLval = pBuild->PLvalConstantInt(cBitSize / 8, pTinintResult->m_cBit, false);
 				CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
 				pConst->m_pLval = pLval;
 				pBuild->AddManagedVal(pConst);
@@ -4331,8 +4325,8 @@ static inline CIRInstruction * PInstGenerateOperator(
 				pInstOp = pBuild->PInstCreate(IROP_SDiv, pInstOp, pConst, "PtrDif");
 			}
 		} break;
-	case IROP_NCmp:		pInstOp = pBuild->PInstCreateNCmp(opinfo.m_ncmppred, pValLhs, pValRhs, opinfo.m_pChzName); break;
-	case IROP_GCmp:		pInstOp = pBuild->PInstCreateGCmp(opinfo.m_gcmppred, pValLhs, pValRhs, opinfo.m_pChzName); break;
+	case IROP_NCmp:		pInstOp = pBuild->PInstCreateNCmp(opinfo.m_npred, pValLhs, pValRhs, opinfo.m_pChzName); break;
+	case IROP_GCmp:		pInstOp = pBuild->PInstCreateGCmp(opinfo.m_gpred, pValLhs, pValRhs, opinfo.m_pChzName); break;
 	default:			pInstOp = pBuild->PInstCreate(opinfo.m_irop, pValLhs, pValRhs, opinfo.m_pChzName); break;
 	}
 
@@ -4437,16 +4431,16 @@ typename BUILD::Value * PValGenerateDecl(
 
 		auto pBlockCur = pBuild->m_pBlockCur;
 		pBuild->ActivateBlock(pBuild->m_pProcCur->m_pBlockLocals);
-		auto pInstAlloca = pBuild->PInstCreateAlloca(pLtype, cElement, strPunyName.PCoz());
+		auto pValAlloca = pBuild->PValCreateAlloca(pLtype, cElement, strPunyName.PCoz());
 		pBuild->ActivateBlock(pBlockCur);
 
 
-		pStnod->m_pSym->m_pVValue = pInstAlloca;
+		pStnod->m_pSym->m_pVValue = pValAlloca;
 	
 		auto pLvalDIVariable = PLvallDInfoCreateAutoVariable(pBuild, pStnod->m_pTin, pLvalScope, pDif, strPunyName.PCoz(), iLine, false, 0);
 
 
-		DInfoInsertDeclare(pBuild, pInstAlloca, pLvalDIVariable, pLvalScope, iLine, iCol, pBuild->m_pBlockCur);
+		DInfoInsertDeclare(pBuild, pValAlloca, pLvalDIVariable, pLvalScope, iLine, iCol, pBuild->m_pBlockCur);
 
 
 		if (FIsOverloadedOp(pStnod))
@@ -4472,7 +4466,7 @@ typename BUILD::Value * PValGenerateDecl(
 			}
 		}
 
-		return PValInitialize(pWork, pBuild, pStnod->m_pTin, pInstAlloca, pStnodInit);
+		return PValInitialize(pWork, pBuild, pStnod->m_pTin, pValAlloca, pStnodInit);
 	}
 }
 
@@ -5108,7 +5102,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 					if (!pTinint)
 						return nullptr;
 
-					return pBuild->PConstInt(pTinint->m_cBit, false, cBit / 8);
+					return pBuild->PConstInt(cBit / 8, pTinint->m_cBit, false);
 
 				} break;
 			case RWORD_Typeinfo:
@@ -5574,7 +5568,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 				// get val: (n & flag) == flag;
 				auto pInstLhsLoad = pBuild->PInstCreate(IROP_Load, pValLhs, "membLoad");
 				auto pInstAnd = pBuild->PInstCreate(IROP_And, pInstLhsLoad, pConstEnum, "and");
-				auto pInstCmp = pBuild->PInstCreateNCmp(NCMPPRED_EQ, pInstAnd, pConstEnum, "cmpEq");
+				auto pInstCmp = pBuild->PInstCreateNCmp(NPRED_EQ, pInstAnd, pConstEnum, "cmpEq");
 				return pInstCmp;
 			}
 
@@ -5601,7 +5595,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 						EWC_ASSERT(valgenk == VALGENK_Instance, "expected instance");
 						if (arymemb == ARYMEMB_Count)
 						{
-							return pBuild->PConstInt(64, true, pTinlit->m_c);
+							return pBuild->PConstInt(pTinlit->m_c, 64, true);
 						}
 
 						// the type of aN.data is &N so a reference would need to be a &&N which we don't have
@@ -5708,11 +5702,11 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			GeneratePredicate(pWork, pBuild, pStnod, pBlockTrue, pBlockFalse, pTinBool);
 
 			pBuild->ActivateBlock(pBlockTrue);
-			auto pValTrue = pBuild->PConstInt(1, false, 1);
+			auto pValTrue = pBuild->PConstInt(1, 1, false);
 			pBuild->CreateBranch(pBlockPost);	
 
 			pBuild->ActivateBlock(pBlockFalse);
-			auto pValFalse = pBuild->PConstInt(1, false, 0);
+			auto pValFalse = pBuild->PConstInt(0, 1, false);
 			pBuild->CreateBranch(pBlockPost);	
 
 			pBuild->ActivateBlock(pBlockPost);
@@ -6022,7 +6016,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 					{
 					case TINK_Float:	
 						{
-							auto pConst = pBuild->PConstFloat(((STypeInfoFloat *)pTinOperand)->m_cBit, 1.0);
+							auto pConst = pBuild->PConstFloat(1.0f, ((STypeInfoFloat *)pTinOperand)->m_cBit);
 
 							if (pStnod->m_tok == TOK_PlusPlus)
 								pInstAdd = pBuild->PInstCreate(IROP_GAdd, pInstLoad, pConst, "gInc");
@@ -6034,7 +6028,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 					case TINK_Integer:
 						{
 							auto pTinint = (STypeInfoInteger *)pTinOperand;
-							auto pConst = pBuild->PConstInt(pTinint->m_cBit, fIsSigned, 1);
+							auto pConst = pBuild->PConstInt(1, pTinint->m_cBit, fIsSigned);
 
 							if (pStnod->m_tok == TOK_PlusPlus)
 								pInstAdd = pBuild->PInstCreate(IROP_NAdd, pInstLoad, pConst, "gInc");
@@ -6044,7 +6038,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 					case TINK_Pointer:
 						{
 							int nDelta = (pStnod->m_tok == TOK_PlusPlus) ? 1 : -1;
-							auto pConstDelta = pBuild->PConstInt(64, true, nDelta);
+							auto pConstDelta = pBuild->PConstInt(nDelta, 64, true);
 							BUILD::GepIndex * pGepIndex = pBuild->PGepIndexFromValue(pConstDelta);
 
 							auto pValLoad = pBuild->PInstCreate(IROP_Load, pValOperand, "incLoad");
@@ -6423,7 +6417,7 @@ void CBuilderIR::SetupParamBlock(
 
 			if (!pStproc->m_fIsForeign)
 			{
-				auto pInstAlloca = PInstCreateAlloca((*parypLtype)[ipLvalParam], 1, strArgName.PCoz());
+				auto pInstAlloca = PValCreateAlloca((*parypLtype)[ipLvalParam], 1, strArgName.PCoz());
 				pStnodParam->m_pSym->m_pVValue = pInstAlloca;
 
 				s32 iLine;

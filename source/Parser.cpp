@@ -162,6 +162,7 @@ const char * PChzFromLitk(LITK litk)
 		"Null",
 		"Enum",
 		"Array",
+		"Pointer",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpLitkPChz) == LITK_Max, "missing LITK string");
 	if (litk == LITK_Nil)

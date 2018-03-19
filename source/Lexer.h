@@ -137,6 +137,7 @@ enum LITK
 	LITK_Null,
 	LITK_Enum,
 	LITK_Array,
+	LITK_Pointer,	// pointer literal in bytecode
 
 	EWC_MAX_MIN_NIL(LITK)
 };
