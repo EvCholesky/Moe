@@ -540,6 +540,7 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 	if (!EWC_FVERIFY(pProc->m_pTinproc->m_arypTinParams.C() == cpLvalArg, "variadic args not yet supported"))
 		return PInstCreateError();
 
+	s32 iBStackReturnStore = 0;
 	u64 cB;
 	u64 cBAlign;
 	auto pTinproc = pProc->m_pTinproc;
@@ -550,12 +551,12 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 		auto pTinRet = pTinproc->m_arypTinReturns[ipTinReturn];
 
 		CalculateByteSizeAndAlign(m_pDlay, pTinRet, &cB, &cBAlign);
-		auto iBStackRet = IBStackAlloc(cB, cBAlign);
+		iBStackReturnStore = IBStackAlloc(cB, cBAlign);
 
 		auto pParam = &pProc->m_aParamRet[ipTinReturn];
 
 		// subtract cBArg here because we're still in the caller's stack frame
-		(void) PInstCreate(IROP_RegStore, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStackRet, 32));
+		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStackReturnStore, 32));
 	}
 
 	for (int iRec = 0; iRec < cpLvalArg; ++iRec)
@@ -563,7 +564,7 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 		// NOTE: Lhs is relative to called function stack frame, Rhs is relative to calling stack frame
 
 		auto pParam = &pProc->m_aParamArg[iRec];
-		(void) PInstCreate(IROP_RegStore, PReg(pParam->m_iBStack - cBArg), apLvalArgs[iRec]);
+		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), apLvalArgs[iRec]);
 	}
 
 	u8 cBReturnOp = 0;
@@ -573,7 +574,7 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 	}
 
 	auto pInstCall = PInstCreateRaw(IROP_Call, cBReturnOp, PConstPointer(pProc), PConstPointer(m_pProcCur));
-	pInstCall->m_iBStackOut = 0;
+	pInstCall->m_iBStackOut = iBStackReturnStore;
 
 
 	return pInstCall;
@@ -591,7 +592,7 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal)
 		// add the calling stack relative return index to (cBArg + cBStack)
 		auto pInstOffset = PInstCreateRaw(IROP_NAdd, PRegArg(m_pProcCur->m_aParamRet[0].m_iBStack, 32), PConstArg(m_pProcCur->m_cBArg, 32));
 
-		(void) PInstCreate(IROP_RegAddrStore, pInstOffset, apVal[iReturn]);
+		(void) PInstCreate(IROP_StoreToIdx, pInstOffset, apVal[iReturn]);
 	}
 
 	auto pTinproc = m_pProcCur->m_pTinproc;
@@ -793,7 +794,7 @@ CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SV
 		SetOperandFromValue(pValLhs, &pInst->m_opkLhs, &pInst->m_wordLhs, &cBLhs);
 
 		// BB - ugly exception for void returns 
-		EWC_ASSERT(cBLhs != 0 || (irop == IROP_Ret), "expected LHS operand, but has zero size (irop = %s)", PChzFromIrop(irop));
+//		EWC_ASSERT(cBLhs != 0 || (irop == IROP_Ret), "expected LHS operand, but has zero size (irop = %s)", PChzFromIrop(irop));
 	}
 
 	int cBRhs = 0;
@@ -801,10 +802,7 @@ CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SV
 	{
 		EWC_ASSERT(pOpsig->m_opszRhs != OPSZ_0, "unexpected RHS operand");
 		SetOperandFromValue(pValRhs, &pInst->m_opkRhs, &pInst->m_wordRhs, &cBRhs);
-		if (cBLhs != cBRhs)
-		{
-			SetOperandFromValue(pValRhs, &pInst->m_opkRhs, &pInst->m_wordRhs, &cBRhs);
-		}
+
 		EWC_ASSERT(cBRhs != 0, "expected RHS operand, but has zero size");
 	}
 	EWC_ASSERT(!FDefinesCB(pOpsig->m_opszRhs) || !FDefinesCB(pOpsig->m_opszLhs) || cBLhs == cBRhs, "operand size mismatch");
@@ -932,13 +930,12 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	}
 }
 
-static inline void ReadRegStoreOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs, SWord * pWordRhs)
+static inline void ReadOpcodesStoreToReg(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs, SWord * pWordRhs)
 {
 	u8 cB = pInst->m_cBOperand;
 	EWC_ASSERT ((pInst->m_opkLhs & FOPK_Dereference) == FOPK_Dereference, "expected register lhs");
 	*pWordLhs = pInst->m_wordLhs;
 
-	//if (pInst->m_opkRhs == OPK_Stack || pInst->m_opkRhs == OPK_Argument)
 	if ((pInst->m_opkRhs & FOPK_Dereference) == FOPK_Dereference)
 	{
 		LoadWord(pVm, pWordRhs, pInst->m_wordRhs.m_s32, cB);
@@ -1147,17 +1144,26 @@ void PrintParameter(CVirtualMachine * pVm, STypeInfo * pTin, SParameter * pParam
 	PrintInstance(pVm, pTin, &pVm->m_pBStack[pParam->m_iBStack]);
 }
 
-void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
+void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 {
-	pVm->m_pProcCurDebug = pProc;
-	pVm->m_pInst = pProc->m_aryInst.A();
+#if DEBUG_PROC_CALL
+	auto pDebcall = pVm->m_aryDebCall.AppendNew();
+	pDebcall->m_pInstCall = nullptr;
+	pDebcall->m_pBStackSrc = pVm->m_pBStack;
+	pDebcall->m_pBStackArg = pVm->m_pBStack - pProcEntry->m_cBArg;
+	pDebcall->m_pBStackDst = pVm->m_pBStack - (pProcEntry->m_cBArg + pProcEntry->m_cBStack);
+	pDebcall->m_pBReturnStorage = nullptr;
+#endif
+
+	pVm->m_pProcCurDebug = pProcEntry;
+	pVm->m_pInst = pProcEntry->m_aryInst.A();
 
 	// build the stack frame for our top level procedure
-	u8 * pBStack = pVm->m_pBStackMax;
+	u8 * pBStack = pVm->m_pBStack;
 
 	pBStack -= sizeof(SInstruction*);
 	*(SInstruction **)(pBStack) = nullptr;
-	pBStack -= pProc->m_cBStack;
+	pBStack -= pProcEntry->m_cBStack;
 
 	if (pVm->m_pStrbuf)
 	{
@@ -1254,41 +1260,38 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 		} break;
 
 			// Store value to virtual register (pV, value)
-		case MASHOP(IROP_RegStore, 1):	
-			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
-			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
+		case MASHOP(IROP_StoreToReg, 1):	
+			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs); 
 			STORE(pInst->m_wordLhs.m_s32, u8, wordRhs.m_u8); 
 			break;
-		case MASHOP(IROP_RegStore, 2):	
-			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
-			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+		case MASHOP(IROP_StoreToReg, 2):	
+			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
 			STORE(pInst->m_wordLhs.m_s32, u16, wordRhs.m_u16);
 			break;
-		case MASHOP(IROP_RegStore, 4):	
-			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
-			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
+		case MASHOP(IROP_StoreToReg, 4):	
+			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs); 
 			STORE(pInst->m_wordLhs.m_s32, u32, wordRhs.m_u32); 
 			break;
-		case MASHOP(IROP_RegStore, 8):	
+		case MASHOP(IROP_StoreToReg, 8):	
 			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
-			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
 			STORE(pInst->m_wordLhs.m_s32, u64, wordRhs.m_u64); 
 			break;
 
 			// Store value to virtual register (pV, value)
-		case MASHOP(IROP_RegAddrStore, 1):	
+		case MASHOP(IROP_StoreToIdx, 1):	
 			ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); 
 			STORE(wordLhs.m_s32, u8, wordRhs.m_u8); 
 			break;
-		case MASHOP(IROP_RegAddrStore, 2):	
+		case MASHOP(IROP_StoreToIdx, 2):	
 			ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs);
 			STORE(wordLhs.m_s32, u16, wordRhs.m_u16);
 			break;
-		case MASHOP(IROP_RegAddrStore, 4):	
+		case MASHOP(IROP_StoreToIdx, 4):	
 			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); 
 			STORE(wordLhs.m_s32, u32, wordRhs.m_u32); 
 			break;
-		case MASHOP(IROP_RegAddrStore, 8):	
+		case MASHOP(IROP_StoreToIdx, 8):	
 			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
 			STORE(wordLhs.m_s32, u64, wordRhs.m_u64); 
 			break;
@@ -1333,6 +1336,14 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 
 			SInstruction ** ppInstRet = (SInstruction **)(pVm->m_pBStack - sizeof(SInstruction *));
 			
+#if DEBUG_PROC_CALL
+			auto pDebcall = pVm->m_aryDebCall.AppendNew();
+			pDebcall->m_pInstCall = pInst;
+			pDebcall->m_pBStackSrc = pVm->m_pBStack;
+			pDebcall->m_pBStackArg = pVm->m_pBStack - pProc->m_cBArg;
+			pDebcall->m_pBStackDst = pVm->m_pBStack - (pProc->m_cBArg + pProc->m_cBStack);
+			pDebcall->m_pBReturnStorage = &pVm->m_pBStack[pInst->m_iBStackOut];
+#endif 
 			pVm->m_pBStack -= pProc->m_cBArg;
 			if (pVm->m_pStrbuf)
 			{
@@ -1381,8 +1392,15 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 			u8 * pBStackCalled = pVm->m_pBStack;
 			pVm->m_pBStack += pInst->m_wordLhs.m_s32; // cBArg + cBStack
 			SInstruction ** ppInstRet = ((SInstruction **)pVm->m_pBStack) - 1;
-
 			auto pProcCalled = pVm->m_pProcCurDebug;
+#if DEBUG_PROC_CALL
+			auto debcall = pVm->m_aryDebCall.TPopLast();
+			EWC_ASSERT(debcall.m_pInstCall == *ppInstRet, "bad return instruction");
+			EWC_ASSERT(debcall.m_pBStackDst == pBStackCalled, "called proc stack frame mismatch");
+			EWC_ASSERT(debcall.m_pBStackArg == pBStackCalled + pProcCalled->m_cBStack, "called proc stack frame mismatch");
+			EWC_ASSERT(debcall.m_pBStackSrc == pVm->m_pBStack, "source proc stack frame mismatch");
+#endif
+
 			if (pVm->m_pStrbuf && EWC_FVERIFY(pProcCalled, "missing called proc"))
 			{
 				u8 * pBStackArg = pBStackCalled + pProcCalled->m_cBStack;
@@ -1395,6 +1413,10 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 					{
 						SParameter * pParam = &pProcCalled->m_aParamRet[ipTin];
 						auto iBStackRet = *(s32*)&pBStackArg[pParam->m_iBStack];
+
+#if DEBUG_PROC_CALL
+						EWC_ASSERT(ipTin > 0 || debcall.m_pBReturnStorage == &pVm->m_pBStack[iBStackRet], "bad return storage calculation");
+#endif
 						PrintInstance(pVm, pTinproc->m_arypTinReturns[ipTin], &pVm->m_pBStack[iBStackRet]);
 					}
 				}
@@ -1468,10 +1490,10 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, SDataLayout *
 ,m_pBStack(pBStackMax)
 ,m_pProcCurDebug(nullptr)
 ,m_pStrbuf(nullptr)
+#if DEBUG_PROC_CALL
+,m_aryDebCall()
+#endif
 {
-	m_pBStack -= 4;
-	auto piInstTerm = (u32*)m_pBStack;
-	*piInstTerm = 0;
 }
 
 SConstant * CBuilder::PConstPointer(void * pV)
@@ -1672,11 +1694,11 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	(void) buildBc.PInstCreateCondBranch(pInstCmp, pBlockTrue, pBlockFalse);
 
 	buildBc.ActivateBlock(pBlockTrue);
-	(void) buildBc.PInstCreate(IROP_RegStore, pRegVal, buildBc.PConstInt(11, 8));
+	(void) buildBc.PInstCreate(IROP_StoreToReg, pRegVal, buildBc.PConstInt(11, 8));
 	buildBc.CreateBranch(pBlockPost);
 
 	buildBc.ActivateBlock(pBlockFalse);
-	(void) buildBc.PInstCreate(IROP_RegStore, pRegVal, buildBc.PConstInt(22, 8));
+	(void) buildBc.PInstCreate(IROP_StoreToReg, pRegVal, buildBc.PConstInt(22, 8));
 	buildBc.CreateBranch(pBlockPost);
 
 	buildBc.ActivateBlock(pBlockPost);
@@ -1714,6 +1736,10 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 
 	CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &dlay);
 	vm.m_pStrbuf = &strbuf;
+
+#if DEBUG_PROC_CALL
+	vm.m_aryDebCall.SetAlloc(pAlloc, BK_ByteCode, 32);
+#endif
 
 	ExecuteBytecode(&vm, pProc);
 

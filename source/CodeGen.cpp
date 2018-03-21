@@ -422,7 +422,7 @@ s8 COperand(IROP irop)
 		((irop >= IROP_CmpOpMin) & (irop < IROP_CmpOpMax)) | 
 		((irop >= IROP_LogicOpMin) & (irop < IROP_LogicOpMax)) | 
 		(irop == IROP_Store) |
-		(irop == IROP_TraceStore) | (irop == IROP_RegStore))
+		(irop == IROP_TraceStore) | (irop == IROP_StoreToReg))
 		return 2;
 	return 1;
 }

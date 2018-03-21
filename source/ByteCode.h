@@ -136,31 +136,6 @@ namespace BCode
 
 
 
-	/*
-	struct SRecord		// tag = rec 
-	{
-					SRecord()
-						{ ; }
-
-					SRecord(OPK opk, SWord word)
-					:m_opk(opk)
-					,m_word(word)
-						{ ; }
-
-		OPK			m_opk;
-		SWord		m_word;
-	};
-
-	SRecord RecFloat(f64 g);
-	SRecord RecSigned(s64 nSigned);
-	SRecord RecUnsigned(u64 nUnsigned);
-	SRecord RecStack(s64 iBStack);
-	SRecord RecArg(s64 iBStack);
-	SRecord RecArgLiteral(s64 iBStack);
-	SRecord RecPointer(void * pV);
-	*/
-
-
 	struct SBranch	// tag = branch
 	{
 		s32 *		m_pIInstDst;			// opcode referring to branch - finalized to iInstDst
@@ -380,6 +355,17 @@ namespace BCode
 	};
 
 
+#define DEBUG_PROC_CALL 1
+#if DEBUG_PROC_CALL
+	struct SDebugCall // tag = debcall
+	{
+		SInstruction *	m_pInstCall;
+		u8 *			m_pBReturnStorage;
+		u8 *			m_pBStackSrc; // calling stack frame
+		u8 *			m_pBStackArg;
+		u8 *			m_pBStackDst;
+	};
+#endif
 
 	// Do nothing struct used as a proxy for LLVM debug info values
 	struct SStub
@@ -391,7 +377,7 @@ namespace BCode
 	class CVirtualMachine	// tag = vm
 	{
 	public:
-		CVirtualMachine(u8 * pBStack, u8 * pBStackMax, SDataLayout * pDlay);
+						CVirtualMachine(u8 * pBStack, u8 * pBStackMax, SDataLayout * pDlay);
 
 		SDataLayout *	m_pDlay;
 		SInstruction *	m_pInst;
@@ -405,6 +391,10 @@ namespace BCode
 						m_pStrbuf;			
 
 		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
+
+#if DEBUG_PROC_CALL
+		EWC::CDynAry<SDebugCall> 		m_aryDebCall;
+#endif 
 	};
 
 	SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv);

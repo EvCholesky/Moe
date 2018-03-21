@@ -186,8 +186,8 @@ struct OpSignature // tag = opsig
 						/* TraceStore(Reg, pTin) */ \
 		OP(				TraceStore)	OPSIZE(CB, Ptr, 0) \
 						/* RegStore(RegDst, ValueSrc) */ \
-		OP(				RegStore)		OPSIZE(RegIdx, CB, 0) \
-		OPMX(BCodeOp,	RegAddrStore)	OPSIZE(RegIdx, CB, 0) \
+		OP(				StoreToReg)	OPSIZE(RegIdx, CB, 0) \
+		OPMX(BCodeOp,	StoreToIdx)	OPSIZE(RegIdx, CB, 0) \
 
 
 
