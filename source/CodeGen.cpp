@@ -155,16 +155,16 @@ const char * PChzFromIrop(IROP irop)
 	if (irop <= IROP_Nil)
 		return "nil";
 
-	#define OP(x) #x
+	#define OP(X) #X,
+	#define OPMN(RANGE, X) #X,
+	#define OPMX(RANGE, X) #X,
 	#define OPSIZE(LHS, RHS, RET)
-	#define OPARG(x)
-	#define OP_RANGE(x, y)
 	const char * s_mpIropPChz[] =
 	{
 		OPCODE_LIST
 	};
-	#undef OP_RANGE
-	#undef OPARG
+	#undef OPMX
+	#undef OPMN
 	#undef OPSIZE
 	#undef OP
 

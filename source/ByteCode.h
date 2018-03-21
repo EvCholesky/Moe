@@ -29,92 +29,6 @@ namespace BCode
 
 
 
-
-	/*
-#define BC_OPCODE_LIST \
-		OP(Error) OPARG(Error), \
-		OP(Ret) OPARG(Error), \
-		OP_RANGE(TerminalOp, Ret) \
-		\
-		OP(Call) OPARG(Error), \
-		OP(Return) OPARG(Error), \
-		OP(CondBranch) OPARG(Branch), \
-		OP(Branch) OPARG(Branch), \
-		OP(Phi) OPARG(Error), \
-		OP_RANGE(JumpOp, TerminalOpMax) \
-		\
-		OP(NAdd) OPARG(Binary), \
-		OP(GAdd) OPARG(Error), \
-		OP(NSub) OPARG(Error), \
-		OP(GSub) OPARG(Error), \
-		OP(NMul) OPARG(Error), \
-		OP(GMul) OPARG(Error), \
-		OP(SDiv) OPARG(Error), \
-		OP(UDiv) OPARG(Error), \
-		OP(GDiv) OPARG(Error), \
-		OP(SRem) OPARG(Error), \
-		OP(URem) OPARG(Error), \
-		OP(GRem) OPARG(Error), \
-		OP_RANGE(BinaryOp, JumpOpMax) \
-		\
-		OP(NNeg) OPARG(Error), \
-		OP(GNeg) OPARG(Error), \
-		OP(Not) OPARG(Error), \
-		OP_RANGE(UnaryOp, BinaryOpMax) \
-		\
-		OP(NCmp) OPARG(Compare), \
-		OP(GCmp) OPARG(Compare), \
-		OP_RANGE(CmpOp, UnaryOpMax) \
-		\
-		OP(Shl) OPARG(Error), \
-		OP(AShr) OPARG(Error), \
-		OP(LShr) OPARG(Error), \
-		OP(And) OPARG(Error), \
-		OP(Or) OPARG(Error), \
-		OP(Xor) OPARG(Error), \
-		OP_RANGE(LogicOp, CmpOpMax) \
-		\
-		OP(Alloca) OPARG(Error), \
-		OP(Load) OPARG(Unary), \
-		OP(Store) OPARG(Store), \
-		OP(GEP) OPARG(Error), \
-		OP(PtrDiff) OPARG(Error), \
-		OP(Memcpy) OPARG(Error), \
-		OP(NTrace) OPARG(Unary), \
-		OP(TraceStore) OPARG(Unary), \
-		OP_RANGE(MemoryOp, LogicOpMax) \
-		\
-		OP(NTrunc) OPARG(Error), \
-		OP(SignExt) OPARG(Error), \
-		OP(ZeroExt) OPARG(Error), \
-		OP(GToS) OPARG(Error), \
-		OP(GToU) OPARG(Error), \
-		OP(SToG) OPARG(Error), \
-		OP(UToG) OPARG(Error), \
-		OP(GTrunc) OPARG(Error), \
-		OP(GExtend) OPARG(Error), \
-		OP(PtrToInt) OPARG(Error), \
-		OP(IntToPtr) OPARG(Error), \
-		OP(Bitcast) OPARG(Error), \
-		OP_RANGE(CastOp, MemoryOpMax) \
-
-
-#define OP(x) OP_##x
-#define OPARG(x)
-#define OP_RANGE(range, PREV_VAL) OP_##range##Max, OP_##range##Min = OP_##PREV_VAL, OP_##range##Last = OP_##range##Max - 1,
-	enum OP : u8
-	{
-		BC_OPCODE_LIST
-
-		OP_Max,
-		OP_Min = 0,
-	};
-#undef OP_RANGE
-#undef OP
-#undef OPARG
-*/
-
-
 	enum FOPK : u8
 	{
 		FOPK_Dereference	= 0x1,	// endless register values, stored on the stack - "dereferenced" upon use.
@@ -218,21 +132,6 @@ namespace BCode
 		u32				m_iBStackOut;
 		SWord			m_wordLhs;
 		SWord			m_wordRhs;
-	};
-
-
-
-	struct SInstructionOld		// tag = inst
-	{
-		IROP	m_irop;
-		u8		m_cB:4;		// operand byte count
-		u8		m_pred:4;
-		OPK		m_opkLhs;
-		OPK		m_opkRhs;
-
-		u32		m_iBStackOut;
-		SWord	m_wordLhs;
-		SWord	m_wordRhs;
 	};
 
 
@@ -405,6 +304,7 @@ namespace BCode
 		s32				IBStackAlloc(s64 cB, s64 cBAlign);
 		SInstruction *	PInstAlloc();
 
+		Instruction *	PInstCreateRaw(IROP irop, s64 cBOperand, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 		Instruction *	PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName = nullptr);
 		Instruction *	PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName = nullptr);

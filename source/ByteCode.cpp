@@ -17,6 +17,7 @@
 #include "CodeGen.h"
 #include "parser.h"
 #include "stdio.h"
+#include "Util.h"
 #include "workspace.h"
 
 
@@ -138,27 +139,6 @@ T PValDerivedCast(SValue * pVal)
 	return (T)pVal;
 }
 
-
-OPARG OpargFromIrop(IROP irop)
-{
-	if (irop > IROP_Max)
-		return OPARG_Nil;
-
-#define OP(x)
-#define OPARG(ARG) OPARG_##ARG
-#define OPSIZE(LHS, RHS, RET)
-#define OP_RANGE(range, PREV_VAL)
-	static const OPARG s_mpIropOparg [] =
-	{
-		OPCODE_LIST
-	};
-#undef OP_RANGE
-#undef OPSIZE
-#undef OP
-#undef OPARG
-
-	return s_mpIropOparg[irop];
-}
 
 SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
 :SValue(VALK_Procedure)
@@ -286,12 +266,43 @@ SProcedure * CBuilder::PProcCreate(
 
 void CBuilder::SetupParamBlock(
 	CWorkspace * pWork,
-	Proc * pProc,
+	SProcedure * pProc,
 	CSTNode * pStnod,
 	CSTNode * pStnodParamList, 
 	EWC::CDynAry<LType *> * parypLtype)
 {
-	EWC_ASSERT(false, "bytecode tbd");
+	// BB - Could we merge this with the CodeGen version?
+	auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
+	int cpStnodParam = pStnodParamList->CStnodChild();
+
+	auto pTinproc = pProc->m_pTinproc;
+	int iParam = 0;
+	for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
+	{
+		CSTNode * pStnodParam = pStnodParamList->PStnodChild(ipStnodParam);
+		if (pStnodParam->m_park == PARK_VariadicArg)
+			continue;
+
+		CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodParam->m_pStmap);
+		if (pStdecl && pStdecl->m_fIsBakedConstant)
+			continue;
+
+		EWC_ASSERT(iParam < pTinproc->m_arypTinParams.C(), "parameter count mismatch");
+		auto strArgName = StrPunyEncode(pStnodParam->m_pSym->m_strName.PCoz());
+
+		if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
+		{
+			if (!pStproc->m_fIsForeign)
+			{
+				auto pInstAlloca = PValCreateAlloca(pTinproc->m_arypTinParams[iParam], 1, strArgName.PCoz());
+				pStnodParam->m_pSym->m_pVValue = pInstAlloca;
+
+				(void) PInstCreateStore(pInstAlloca, PRegArg(pProc->m_aParamArg[iParam].m_iBStack));
+
+			}
+		}
+		++iParam;
+	}
 }
 
 void CBuilder::ActivateProc(SProcedure * pProc, SBlock * pBlock)
@@ -402,106 +413,6 @@ void CBuilder::ActivateBlock(SBlock * pBlock)
 	}
 }
 
-/*
-void CBuilder::AddInst(IROP irop)
-{
-	auto oparg = OpargFromIrop(irop);
-	EWC_ASSERT(oparg == OPARG_OnlyOpcode, "unexpected operator '%s' in only opcode instruction", PChzFromIrop(irop));
-
-	auto pInst = PInstAlloc();
-	pInst->m_irop = irop;
-	pInst->m_cB = 0;
-	pInst->m_opkLhs = OPK_Nil;
-	pInst->m_opkRhs = OPK_Nil;
-	
-	pInst->m_iBStackOut = 0;
-	pInst->m_wordLhs.m_u64 = 0;
-	pInst->m_wordRhs.m_u64 = 0;
-}
-
-SRecord CBuilder::RecAddInst(IROP irop, u8 cB, const SRecord & recLhs)
-{
-	auto oparg = OpargFromIrop(irop);
-	EWC_ASSERT(oparg == OPARG_Unary, "unexpected operator '%s' in unary add inst", PChzFromIrop(irop));
-
-	auto pInst = PInstAlloc();
-	pInst->m_irop = irop;
-	pInst->m_cBOperand = cB;
-	pInst->m_opkLhs = recLhs.m_opk;
-	pInst->m_opkRhs = OPK_Nil;
-
-	u32 iBStackOut = IBStackAlloc(cB, cB);
-	pInst->m_iBStackOut = iBStackOut;
-
-	pInst->m_wordLhs.m_u64 = recLhs.m_word.m_u64;
-	pInst->m_wordRhs.m_u64 = 0;
-	
-	return RecStack(iBStackOut);
-}
-
-static inline void RecSetupInst(
-	SInstructionOld * pInst,
-	IROP irop,
-	u8 cB,
-	const SRecord & recLhs,
-	const SRecord & recRhs)
-{
-	pInst->m_irop = irop;
-	pInst->m_cB = cB;
-	pInst->m_opkLhs = recLhs.m_opk;
-	pInst->m_opkRhs = recRhs.m_opk;
-
-	pInst->m_wordLhs.m_u64 = recLhs.m_word.m_u64;
-	pInst->m_wordRhs.m_u64 = recRhs.m_word.m_u64;
-}
-
-SRecord CBuilder::RecAddInst(IROP irop, u8 cB, const SRecord & recLhs, const SRecord & recRhs)
-{
-	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, irop, cB, recLhs, recRhs);
-
-	auto oparg = OpargFromIrop(irop);
-	EWC_ASSERT(oparg == OPARG_Binary || oparg == OPARG_Store, "unexpected operator '%s' in binary add inst", PChzFromIrop(irop));
-
-	u32 iBStackOut;
-	if (oparg == OPARG_Store)
-	{
-		iBStackOut = recLhs.m_word.m_s32;
-	}
-	else
-	{
-		iBStackOut = IBStackAlloc(cB, cB);
-	}
-
-	pInst->m_iBStackOut = iBStackOut;
-	return RecStack(iBStackOut);
-}
-
-SRecord	CBuilder::RecAddNCmp(u8 cB, NPRED npred, const SRecord & recLhs, const SRecord & recRhs)
-{
-	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, IROP_NCmp, cB, recLhs, recRhs);
-
-	pInst->m_pred = (u8)npred;
-
-	u32 iBStackOut = IBStackAlloc(1, 1);
-	pInst->m_iBStackOut = iBStackOut;
-	return RecStack(iBStackOut);
-}
-
-SRecord	CBuilder::RecAddGCmp(u8 cB, GPRED gpred, const SRecord & recLhs, const SRecord & recRhs)
-{
-	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, IROP_GCmp, cB, recLhs, recRhs);
-
-	pInst->m_pred = (u8)gpred;
-
-	u32 iBStackOut = IBStackAlloc(1, 1);
-	pInst->m_iBStackOut = iBStackOut;
-	return RecStack(iBStackOut);
-}
-*/
-
 CBuilder::Instruction * CBuilder::PInstCreateNCmp(NPRED npred, SValue * pValLhs, SValue * pValRhs, const char * pChz)
 {
 	auto pInst = PInstCreateRaw(IROP_NCmp, pValLhs, pValRhs);
@@ -522,15 +433,20 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, GepIndex ** a
 	return nullptr;
 }
 
-SValue *	CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char * pChzName)
+SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char * pChzName)
 {
-	/*
+	// Alloca returns a pointer  to stack mem (but the actual addres isn't known until runtime)
+	//  allocate both the requested space and room for the pointer
+
 	EWC_ASSERT(m_pProcCur, "no active procedure");
 
-	auto pInst = PInstCreateRaw(IROP_Alloca, nullptr, nullptr, pChzName);
+	u64 cB; 
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+
+	auto pInst = PInstCreateRaw(IROP_Alloca, cB, nullptr, nullptr, pChzName);
 	if (pInst->m_irop == IROP_Error)
 		return pInst;
-		*/
 
 	if (cElement > 1)
 	{
@@ -539,20 +455,15 @@ SValue *	CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char *
 	}
 	else
 	{
-		u64 cB; 
-		u64 cBAlign;
-		CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+		pInst->m_wordLhs.m_s32 = S32Coerce(IBStackAlloc(cB, cBAlign));
 
-		s32 iBStack = S32Coerce(IBStackAlloc(cB, cBAlign));
-		//pInst->m_iBStackOut = S32Coerce(IBStackAlloc(cB, cBAlign));
-		//pInst->m_cBOperand = 4;
+		pInst->m_cBOperand = cB;
 
-		return PReg(iBStack, int(cB * 8));
-
-		//pInst->m_pLval = LLVMBuildAlloca(m_pLbuild, pLtype, OPNAME(pChzName));
+		s32 iBStackPointer = S32Coerce(IBStackAlloc(sizeof(u8*), EWC_ALIGN_OF(u8*)));
+		pInst->m_iBStackOut = iBStackPointer;
 	}
 
-	return nullptr;
+	return pInst;
 }
 
 CBuilder::Instruction * CBuilder::PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill)
@@ -620,57 +531,6 @@ CBuilder::ProcArg *	CBuilder::PProcArg(SValue * pVal)
 	return pVal;
 }
 
-/*
-void CBuilder::AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg)
-{
-	auto rec = RecAddCall(pProc, aRecArg, cRecArg);
-	EWC_ASSERT(rec.m_word.m_s32 = -1, "ignoring return argument");
-}
-
-SRecord CBuilder::RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg)
-{
-	if (!EWC_FVERIFY(m_pProcCur, "Cannot add a procedure call outside of a procedure"))
-		return RecSigned(-1);
-
-	if (!EWC_FVERIFY(pProc->m_pTinproc->m_arypTinParams.C() == cRecArg, "variadic args not yet supported"))
-		return RecSigned(-1);
-
-	s32 iBStackRet = -1;
-	u64 cB;
-	u64 cBAlign;
-	auto pTinproc = pProc->m_pTinproc;
-	auto cBArg = pProc->m_cBArg;
-	int cpTinReturn = (int)pTinproc->m_arypTinReturns.C();
-	for (int ipTinReturn = 0; ipTinReturn < cpTinReturn; ++ipTinReturn)
-	{
-		auto pTinRet = pTinproc->m_arypTinReturns[ipTinReturn];
-
-		CalculateByteSizeAndAlign(m_pDlay, pTinRet, &cB, &cBAlign);
-		auto iBStack = IBStackAlloc(cB, cBAlign);
-		if (!ipTinReturn)
-		{
-			iBStackRet = iBStack;
-		}
-
-		auto pParam = &pProc->m_aParamRet[ipTinReturn];
-		(void) RecAddInst(IROP_Store, pParam->m_cB, RecSigned(pParam->m_iBStack - cBArg), RecSigned(iBStack));
-	}
-
-	for (int iRec = 0; iRec < cRecArg; ++iRec)
-	{
-		// NOTE: Lhs is relative to called function stack frame, Rhs is relative to calling stack frame
-		auto pParam = &pProc->m_aParamArg[iRec];
-		(void) RecAddInst(IROP_Store, pParam->m_cB, RecSigned(pParam->m_iBStack - cBArg), aRecArg[iRec]);
-	}
-
-	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, IROP_Call, 0, RecPointer(pProc), RecPointer(m_pProcCur));
-	pInst->m_iBStackOut = 0;
-
-	return RecStack(iBStackRet);
-}
-*/
-
 SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArgs, int cpLvalArg)
 {
 	if (!EWC_FVERIFY(m_pProcCur, "Cannot add a procedure call outside of a procedure"))
@@ -680,7 +540,6 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 	if (!EWC_FVERIFY(pProc->m_pTinproc->m_arypTinParams.C() == cpLvalArg, "variadic args not yet supported"))
 		return PInstCreateError();
 
-	s32 iBStackRet = -1;
 	u64 cB;
 	u64 cBAlign;
 	auto pTinproc = pProc->m_pTinproc;
@@ -691,15 +550,12 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 		auto pTinRet = pTinproc->m_arypTinReturns[ipTinReturn];
 
 		CalculateByteSizeAndAlign(m_pDlay, pTinRet, &cB, &cBAlign);
-		auto iBStack = IBStackAlloc(cB, cBAlign);
-		if (!ipTinReturn)
-		{
-			iBStackRet = iBStack;
-		}
+		auto iBStackRet = IBStackAlloc(cB, cBAlign);
 
 		auto pParam = &pProc->m_aParamRet[ipTinReturn];
-		//(void) RecAddInst(IROP_Store, pParam->m_cB, RecSigned(pParam->m_iBStack - cBArg), RecSigned(iBStack));
-		(void) PInstCreate(IROP_RegStore, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStack));
+
+		// subtract cBArg here because we're still in the caller's stack frame
+		(void) PInstCreate(IROP_RegStore, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStackRet, 32));
 	}
 
 	for (int iRec = 0; iRec < cpLvalArg; ++iRec)
@@ -708,11 +564,17 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 
 		auto pParam = &pProc->m_aParamArg[iRec];
 		(void) PInstCreate(IROP_RegStore, PReg(pParam->m_iBStack - cBArg), apLvalArgs[iRec]);
-		//(void) RecAddInst(IROP_Store, pParam->m_cB, RecSigned(pParam->m_iBStack - cBArg), aRecArg[iRec]);
 	}
 
-	auto pInstCall = PInstCreateRaw(IROP_Call, PConstPointer(pProc), PConstPointer(m_pProcCur));
+	u8 cBReturnOp = 0;
+	if (cpTinReturn)
+	{
+		cBReturnOp = pProc->m_aParamRet[0].m_cB;
+	}
+
+	auto pInstCall = PInstCreateRaw(IROP_Call, cBReturnOp, PConstPointer(pProc), PConstPointer(m_pProcCur));
 	pInstCall->m_iBStackOut = 0;
+
 
 	return pInstCall;
 }
@@ -724,38 +586,24 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal)
 
 	for (int iReturn = 0; iReturn < cpVal; ++iReturn)
 	{
-		auto pInstOffset = PInstCreateRaw(IROP_NAdd, PRegArg(m_pProcCur->m_aParamRet[0].m_iBStack), PConstArg(m_pProcCur->m_cBArg));
+		// add the returnIdx(callee relative) stored as an argument to (cBArg + cBStack)
 
-// TODO - This needs to be updated once storing arguments is worked out!!!
-//(void) PInstCreateRaw(IROP_Store, pInstOffset, apVal[iReturn]);
+		// add the calling stack relative return index to (cBArg + cBStack)
+		auto pInstOffset = PInstCreateRaw(IROP_NAdd, PRegArg(m_pProcCur->m_aParamRet[0].m_iBStack, 32), PConstArg(m_pProcCur->m_cBArg, 32));
+
+		(void) PInstCreate(IROP_RegAddrStore, pInstOffset, apVal[iReturn]);
 	}
 
-	//auto pInst = PInstAlloc(); 
-	//RecSetupInst(pInst, IROP_Return, 0, RecArgLiteral(m_pProcCur->m_cBArg), RecSigned(cReturn));
-	//pInst->m_iBStackOut = 0;
-
-	PInstCreateRaw(IROP_Ret, PConstArg(m_pProcCur->m_cBArg, 32), nullptr);
-}
-
-/*
-void CBuilder::AddReturn(SRecord * aRecRet, int cReturn)
-{
-	if (!EWC_FVERIFY(m_pProcCur, "Cannot add a return opcode outside of a procedure"))
-		return;
-
-	for (int iReturn = 0; iReturn < cReturn; ++iReturn)
+	auto pTinproc = m_pProcCur->m_pTinproc;
+	s32 cBReturnOp = 0;
+	if (!pTinproc->m_arypTinReturns.FIsEmpty())
 	{
-		auto recOffset = RecAddInst(IROP_NAdd, 4, RecArg(m_pProcCur->m_aParamRet[0].m_iBStack), RecArgLiteral(m_pProcCur->m_cBArg));
-		RecAddInst(IROP_Store, 4, recOffset, aRecRet[iReturn]);
+		cBReturnOp = m_pProcCur->m_aParamRet[0].m_cB;
 	}
 
-	auto pInst = PInstAlloc(); 
-
-	RecSetupInst(pInst, IROP_Return, 0, RecArgLiteral(m_pProcCur->m_cBArg), RecSigned(cReturn));
-	pInst->m_iBStackOut = 0;
+	PInstCreateRaw(IROP_Ret, cBReturnOp, PConstArg(m_pProcCur->m_cBArg, 32), nullptr);
 }
 
-*/
 SInstruction * CBuilder::PInstCreateTraceStore(SValue * pVal, STypeInfo * pTin)
 {
 	return PInstCreateRaw(IROP_TraceStore, pVal, PConstPointer(pTin));
@@ -853,6 +701,35 @@ SInstruction * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, SValue * pValR
 	return PInstCreateRaw(irop, pValLhs, pValRhs, pChzName);
 }
 
+const OpSignature * POpsig(IROP irop)
+{
+	#define OP(x) 
+	#define OPMN(RANGE, x) 
+	#define OPMX(RANGE, x) 
+	#define OPSIZE(LHS, RHS, RET) {OPSZ_##LHS, OPSZ_##RHS, OPSZ_##RET, (OPSZ_##LHS == OPSZ_CB || OPSZ_##LHS == OPSZ_PCB) ? CBSRC_Lhs : ((OPSZ_##RHS == OPSZ_CB || OPSZ_##RHS == OPSZ_PCB) ? CBSRC_Rhs : CBSRC_Nil) },
+	static const OpSignature s_mpIropOpsig [] =
+	{
+		OPCODE_LIST
+	};
+	#undef OPSIZE
+	#undef OPMX
+	#undef OPMN
+	#undef OP
+
+	EWC_CASSERT(EWC_DIM(s_mpIropOpsig) == IROP_Max, "missing OpSignature string");
+	return &s_mpIropOpsig[irop];
+}
+
+static inline bool FIsValidCBOperand(int cBOperand)
+{
+	return (cBOperand == 1) | (cBOperand == 2) | (cBOperand == 4) | (cBOperand == 8);
+}
+
+static inline bool FDefinesCB(OPSZ opsz)
+{
+	return (opsz == OPSZ_CB) || (opsz == OPSZ_PCB);
+}
+
 inline void SetOperandFromValue(SValue * pValSrc, OPK * pOpkOut, SWord * pWordOut, int * pCBOperand)
 {
 	if (!pValSrc)
@@ -863,45 +740,33 @@ inline void SetOperandFromValue(SValue * pValSrc, OPK * pOpkOut, SWord * pWordOu
 	case VALK_Constant:
 	case VALK_BCodeRegister:
 	{
-		auto pConst = (SConstant *)pValSrc;
+		auto pConst = PValDerivedCast<SConstant *>(pValSrc);
+
 		*pOpkOut = pConst->m_opk;
 		pWordOut->m_u64 = pConst->m_word.m_u64;
 		*pCBOperand = pConst->m_litty.m_cBit / 8;
+		EWC_ASSERT(FIsValidCBOperand(*pCBOperand), "unexpected operand size.");
 	} break;
 	case VALK_Instruction:
 	{
-		auto pInst = (SInstruction *)pValSrc;
+		auto pInst = PValDerivedCast<SInstruction *>(pValSrc);
 		//*pOpkOut = OPK_Literal; // BB - is this ever an arg register?
 		*pOpkOut = OPK_Register; // BB - is this ever an arg register?
 		pWordOut->m_s32 = pInst->m_iBStackOut;
 		*pCBOperand = pInst->m_cBOperand;
+		EWC_ASSERT(FIsValidCBOperand(*pCBOperand), "unexpected operand size from instruction.");
 	} break;
 	default: 
 		EWC_ASSERT(false, "unhandled VALK");
 		break;
 	}
 }
-
-const OpSignature * POpsig(IROP irop)
+CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName)
 {
-	#define OP(x) 
-	#define OPSIZE(LHS, RHS, RET) {OPSZ_##LHS, OPSZ_##RHS, OPSZ_##RET, (OPSZ_##LHS == OPSZ_CB) ? CBSRC_Lhs : ((OPSZ_##RHS == OPSZ_CB) ? CBSRC_Rhs : CBSRC_Nil) } 
-	#define OPARG(x)
-	#define OP_RANGE(x, y)
-	static const OpSignature s_mpIropOpsig [] =
-	{
-		OPCODE_LIST
-	};
-	#undef OP_RANGE
-	#undef OPARG
-	#undef OPSIZE
-	#undef OP
-
-	EWC_CASSERT(EWC_DIM(s_mpIropOpsig) == IROP_Max, "missing OpSignature string");
-	return &s_mpIropOpsig[irop];
+	return PInstCreateRaw(irop, -1, pValLhs, pValRhs, pChzName);
 }
 
-CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName)
+CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SValue * pValLhs, SValue * pValRhs, const char * pChzName)
 {
 	if (!EWC_FVERIFY(m_pBlockCur, "creating instruction with no active block"))
 		return nullptr;
@@ -918,7 +783,6 @@ CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, SValue * pValLhs, SV
 	}
 
 	auto pOpsig = POpsig(irop);
-	auto oparg = OpargFromIrop(irop);
 	auto pInst = PInstAlloc();
 	pInst->m_irop = irop;
 
@@ -929,11 +793,9 @@ CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, SValue * pValLhs, SV
 		SetOperandFromValue(pValLhs, &pInst->m_opkLhs, &pInst->m_wordLhs, &cBLhs);
 
 		// BB - ugly exception for void returns 
-		EWC_ASSERT(cBLhs != 0 || (irop == IROP_Ret), "expected LHS operand, but has zero size");
+		EWC_ASSERT(cBLhs != 0 || (irop == IROP_Ret), "expected LHS operand, but has zero size (irop = %s)", PChzFromIrop(irop));
 	}
-	//pInst->m_wordLhs = pValLhs;
 
-	//if (cpValOperand > 1)
 	int cBRhs = 0;
 	if (pValRhs)
 	{
@@ -945,79 +807,51 @@ CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, SValue * pValLhs, SV
 		}
 		EWC_ASSERT(cBRhs != 0, "expected RHS operand, but has zero size");
 	}
-
-
+	EWC_ASSERT(!FDefinesCB(pOpsig->m_opszRhs) || !FDefinesCB(pOpsig->m_opszLhs) || cBLhs == cBRhs, "operand size mismatch");
 
 	u32 cBOperand = 0;
-	u32 iBStackOut = 0;
-	pInst->m_cBOperand = cBOperand;
-	pInst->m_iBStackOut = iBStackOut;
-
 	switch (pOpsig->m_cbsrc)
 	{
-	case CBSRC_Lhs:		cBOperand = cBLhs;	break;
-	case CBSRC_Rhs:		cBOperand = cBRhs;	break;
-	default:			cBOperand = 0;		break;
-
+	case CBSRC_Lhs:	
+		EWC_ASSERT(cBOperandArg < 0, "passing cBOperand into irop with CBSRC");
+		cBOperand = cBLhs;
+		break;
+	case CBSRC_Rhs:		
+		EWC_ASSERT(cBOperandArg < 0, "passing cBOperand into irop with CBSRC");
+		cBOperand = cBRhs;	
+		break;
+	default:			
+		if (cBOperandArg < 0)
+		{
+			EWC_ASSERT(pOpsig->m_opszRet != OPSZ_CB && pOpsig->m_opszRet != OPSZ_PCB, "unable to determine OPSZ_CB");
+		}
+		else
+		{
+			cBOperand = S8Coerce(cBOperandArg);	
+		}
+		break;
 	}
 
+	u32 iBStackOut = 0;
 	switch (pOpsig->m_opszRet)
 	{
 		case OPSZ_1:	iBStackOut = IBStackAlloc(1, 1);						break;
 		case OPSZ_2:	iBStackOut = IBStackAlloc(2, 2);						break;
 		case OPSZ_4:	iBStackOut = IBStackAlloc(4, 4);						break;
 		case OPSZ_8:	iBStackOut = IBStackAlloc(8, 8);						break;
-		case OPSZ_Ptr:	iBStackOut = IBStackAlloc(m_pDlay->m_cBPointer, m_pDlay->m_cBPointer);		break;
 		case OPSZ_CB:	iBStackOut = IBStackAlloc(cBOperand, cBOperand);		break;
+		case OPSZ_PCB:	iBStackOut = IBStackAlloc(m_pDlay->m_cBPointer, m_pDlay->m_cBPointer);		break;
+		case OPSZ_Ptr:	iBStackOut = IBStackAlloc(m_pDlay->m_cBPointer, m_pDlay->m_cBPointer);		break;
 		case OPSZ_RegIdx:iBStackOut = IBStackAlloc(4, 4);						break;
 
 		case OPSZ_0:	// fallthrough
 		default:		iBStackOut = 0;
 	}
 	
-	/*
-	u32 cBOperand = 0;
-	u32 iBStackOut = 0;
-	switch (oparg)
-	{
-	case OPARG_Binary:
-		iBStackOut = IBStackAlloc(cBLhs, cBLhs);
-		cBOperand = cBLhs;
-		EWC_ASSERT(cBLhs == cBRhs, "rhs/lhs operand size mismatch");
-		break;
-	case OPARG_BinaryNoResult:
-		//cBOperand = cBLhs;
-		EWC_ASSERT(cBLhs == cBRhs, "rhs/lhs operand size mismatch");
-		break;
-	case OPARG_Unary:
-		cBOperand = cBLhs;
-		iBStackOut = IBStackAlloc(cBLhs, cBLhs);
-		break;
-	case OPARG_UnaryNoResult:
-		cBOperand = cBLhs;
-		break;
-	case OPARG_Store:
-		cBOperand = cBRhs;
-		iBStackOut = pInst->m_wordLhs.m_s32;
-		break;
-	case OPARG_Compare:
-		cBOperand = cBLhs;
-		iBStackOut = IBStackAlloc(1, 1);
-		EWC_ASSERT(cBLhs == cBRhs, "rhs/lhs operand size mismatch");
-		break;
-	case OPARG_Branch:
-		cBOperand = (irop == IROP_CondBranch) ? 1 : 0;
-		break;
-	case OPARG_Error:
-		EWC_ASSERT(false, "opcode IROP_%s with IROP_Error", PChzFromIrop(irop));
-		break;
-	default:
-		break;
-	}
-
-	*/
+	EWC_ASSERT(FIsValidCBOperand(cBOperand) || (cBOperand == 0 && pOpsig->m_cbsrc == CBSRC_Nil), "unexpected operand size.");
 	pInst->m_cBOperand = cBOperand;
 	pInst->m_iBStackOut = iBStackOut;
+
 	return pInst;
 }
 
@@ -1037,10 +871,11 @@ SInstruction * CBuilder::PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo 
 	return nullptr;
 }
 
-SInstruction * CBuilder::PInstCreateStore(SValue * pValPT, SValue * pValT)
+SInstruction * CBuilder::PInstCreateStore(SValue * pValPDst, SValue * pValSrc)
 {
-	EWC_ASSERT(false, "codegen TBD");
-	return nullptr;
+	// store pValSrc into the address pointed to by pValPDst
+
+	return PInstCreate(IROP_Store, pValPDst, pValSrc);
 }
 
 void CBuilder::AddManagedVal(SValue * pVal)
@@ -1348,8 +1183,32 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 		case MASHOP(IROP_Alloca, 4):	
 		case MASHOP(IROP_Alloca, 8):	
 			{
-
+				u8 * ptr = &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
+				*(u8 **)&pVm->m_pBStack[pInst->m_iBStackOut] = ptr;
 			} break;
+
+		case MASHOP(IROP_Store, 1):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); 
+			*((u8*)wordLhs.m_pV) = wordRhs.m_u8;	
+			break;
+		case MASHOP(IROP_Store, 2):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u16*)wordLhs.m_pV) = wordRhs.m_u16;	break;
+		case MASHOP(IROP_Store, 4):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u32*)wordLhs.m_pV) = wordRhs.m_u32;	break;
+		case MASHOP(IROP_Store, 8):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u64*)wordLhs.m_pV) = wordRhs.m_u64;	break;
+
+		case MASHOP(IROP_Load, 1):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); 
+			STORE(pInst->m_iBStackOut, u8, *(u8*)wordLhs.m_pV); 
+			break;
+		case MASHOP(IROP_Load, 2):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u16, *(u16*)wordLhs.m_pV); break;
+		case MASHOP(IROP_Load, 4):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u32, *(u32*)wordLhs.m_pV); break;
+		case MASHOP(IROP_Load, 8):	
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u64, *(u64*)wordLhs.m_pV); break;
+
 		case MASHOP(IROP_NAdd, 1):	
 			{ 
 				ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs);
@@ -1389,64 +1248,50 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 			if (pVm->m_pStrbuf)
 			{
 				auto pTin = (STypeInfo *)pInst->m_wordRhs.m_pV;
-				PrintInstance(pVm, pTin, &pVm->m_pBStack[pInst->m_wordLhs.m_s64]);
+				PrintInstance(pVm, pTin, &pVm->m_pBStack[pInst->m_wordLhs.m_s32]);
 				AppendCoz(pVm->m_pStrbuf, ";");
 			}
 		} break;
 
 			// Store value to virtual register (pV, value)
 		case MASHOP(IROP_RegStore, 1):	
-			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u8, wordRhs.m_u8); break;
-		case MASHOP(IROP_RegStore, 2):	
-			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u16, wordRhs.m_u16); break;
-		case MASHOP(IROP_RegStore, 4):	
+			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
 			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(wordLhs.m_s32, u32, wordRhs.m_u32); 
+			STORE(pInst->m_wordLhs.m_s32, u8, wordRhs.m_u8); 
+			break;
+		case MASHOP(IROP_RegStore, 2):	
+			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
+			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+			STORE(pInst->m_wordLhs.m_s32, u16, wordRhs.m_u16);
+			break;
+		case MASHOP(IROP_RegStore, 4):	
+			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
+			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs); 
+			STORE(pInst->m_wordLhs.m_s32, u32, wordRhs.m_u32); 
 			break;
 		case MASHOP(IROP_RegStore, 8):	
-			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u64, wordRhs.m_u64); break;
+			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
+			ReadRegStoreOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+			STORE(pInst->m_wordLhs.m_s32, u64, wordRhs.m_u64); 
 			break;
 
-		/*
-			// Store(pV, value)
-		case MASHOP(IROP_Store, 1):	
-			ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u8, wordRhs.m_u8); break;
-		case MASHOP(IROP_Store, 2):	
-			ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u16, wordRhs.m_u16); break;
-		case MASHOP(IROP_Store, 4):	
+			// Store value to virtual register (pV, value)
+		case MASHOP(IROP_RegAddrStore, 1):	
+			ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); 
+			STORE(wordLhs.m_s32, u8, wordRhs.m_u8); 
+			break;
+		case MASHOP(IROP_RegAddrStore, 2):	
+			ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs);
+			STORE(wordLhs.m_s32, u16, wordRhs.m_u16);
+			break;
+		case MASHOP(IROP_RegAddrStore, 4):	
 			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); 
 			STORE(wordLhs.m_s32, u32, wordRhs.m_u32); 
 			break;
-		case MASHOP(IROP_Store, 8):	
-			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(wordLhs.m_s32, u64, wordRhs.m_u64); break;
+		case MASHOP(IROP_RegAddrStore, 8):	
+			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
+			STORE(wordLhs.m_s32, u64, wordRhs.m_u64); 
 			break;
-			*/
-
-			// Load(pV) -> iBStackOut
-		case MASHOP(IROP_Load, 1):	
-		{
-			ReadOpcodes(pVm, pInst, 1, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cBOperand);
-			STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8);
-		} break;
-		case MASHOP(IROP_Load, 2):	
-		{
-			ReadOpcodes(pVm, pInst, 2, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cBOperand);
-			STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16);
-		} break;
-		case MASHOP(IROP_Load, 4):	
-		{
-			ReadOpcodes(pVm, pInst, 4, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cBOperand);
-			STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32);
-		} break;
-		case MASHOP(IROP_Load, 8):	
-		{
-			ReadOpcodes(pVm, pInst, 8, &wordLhs); 
-			LoadWord(pVm, &wordLhs, wordLhs.m_s32, pInst->m_cBOperand);
-			STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64);
-		} break;
 
 		case MASHOP(IROP_NCmp, 1):
 			{
@@ -1477,6 +1322,10 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 			break;
 
 		case MASHOP(IROP_Call, 0):
+		case MASHOP(IROP_Call, 1):
+		case MASHOP(IROP_Call, 2):
+		case MASHOP(IROP_Call, 4):
+		case MASHOP(IROP_Call, 8):
 		{
 			ReadOpcodes(pVm, pInst, 1, &wordLhs);
 
@@ -1533,8 +1382,6 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc)
 			pVm->m_pBStack += pInst->m_wordLhs.m_s32; // cBArg + cBStack
 			SInstruction ** ppInstRet = ((SInstruction **)pVm->m_pBStack) - 1;
 
-
-			//printf("IROP_Ret ) pBStack = %p, ppInst = %p , dB = %d\n", pVm->m_pBStack, ppInstRet, wordLhs.m_s32);
 			auto pProcCalled = pVm->m_pProcCurDebug;
 			if (pVm->m_pStrbuf && EWC_FVERIFY(pProcCalled, "missing called proc"))
 			{
@@ -1626,56 +1473,6 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, SDataLayout *
 	auto piInstTerm = (u32*)m_pBStack;
 	*piInstTerm = 0;
 }
-
-/*
-SRecord RecFloat(f64 g)
-{
-	SWord word;
-	word.m_f64 = g;
-	return SRecord(OPK_Literal, word);
-}
-
-SRecord RecSigned(s64 nSigned)
-{
-	SWord word;
-	word.m_s64 = nSigned;
-	return SRecord(OPK_Literal, word);
-}
-
-SRecord RecUnsigned(u64 nUnsigned)
-{
-	SWord word;
-	word.m_u64 = nUnsigned;
-	return SRecord(OPK_Literal, word);
-}
-
-SRecord RecStack(s64 iBStack)
-{
-	SWord word;
-	word.m_s64 = iBStack;
-	return SRecord(OPK_Stack, word);
-}
-
-SRecord RecArg(s64 iBStack)
-{
-	SWord word;
-	word.m_s64 = iBStack;
-	return SRecord(OPK_ArgStack, word);
-}
-
-SRecord RecArgLiteral(s64 iBStack)
-{
-	SWord word;
-	word.m_s64 = iBStack;
-	return SRecord(OPK_ArgLiteral, word);
-}
-
-SRecord RecPointer(void * pV)
-{
-	SWord word;
-	word.m_pV = pV;
-	return SRecord(OPK_Literal, word);
-}*/
 
 SConstant * CBuilder::PConstPointer(void * pV)
 {
@@ -1777,7 +1574,6 @@ SRegister * CBuilder::PRegArg(s64 n, int cBit, bool fIsSigned)
 
 
 
-
 void BuildStubDataLayout(SDataLayout * pDlay)
 {
 	pDlay->m_cBBool = 1;
@@ -1786,136 +1582,6 @@ void BuildStubDataLayout(SDataLayout * pDlay)
 	pDlay->m_cBPointer = sizeof(void *);
 	pDlay->m_cBStackAlign = sizeof(void *);
 }
-
-/*
-void BuildTestByteCodeOld(CWorkspace * pWork, EWC::CAlloc * pAlloc)
-{
-	SDataLayout dlay;
-	BuildStubDataLayout(&dlay);
-
-	CBuilder buildBc(pWork, &dlay);
-
-	EWC::CHash<HV, STypeInfo *>	hashHvPTin(pAlloc, BK_ByteCodeTest);
-	SUniqueNameSet unsetTin(pAlloc, BK_ByteCodeTest);
-	auto pSymtab = PSymtabNew(pAlloc, nullptr, "bytecode", &unsetTin, &hashHvPTin);
-	pSymtab->AddBuiltInSymbols(pWork);
-
-	auto pTinprocMain = PTinprocAlloc(pSymtab, 0, 0, "main");
-	pTinprocMain->m_strMangled = pTinprocMain->m_strName;
-
-	auto pTinprocPrint = PTinprocAlloc(pSymtab, 2, 0, "print");
-	pTinprocPrint->m_strMangled = pTinprocPrint->m_strName;
-	auto pTinS16 = pSymtab->PTinBuiltin("s16");
-	auto pTinS32 = pSymtab->PTinBuiltin("s32");
-	pTinprocPrint->m_arypTinParams.Append(pTinS16);
-	pTinprocPrint->m_arypTinParams.Append(pTinS32);
-
-	auto pTinprocSum = PTinprocAlloc(pSymtab, 2, 1, "sum");
-	pTinprocSum->m_strMangled = pTinprocSum->m_strName;
-	pTinprocSum->m_arypTinParams.Append(pTinS32);
-	pTinprocSum->m_arypTinParams.Append(pTinS32);
-	pTinprocSum->m_arypTinReturns.Append(pTinS32);
-
-
-	auto pProcPrint = buildBc.PProcCreate(pWork, pTinprocPrint, nullptr);
-	auto pBlockPrint = buildBc.PBlockCreate(pProcPrint);
-	buildBc.ActivateProc(pProcPrint, pBlockPrint);
-	{
-		(void)buildBc.RecAddInst(IROP_NTrace, 2, RecArg(pProcPrint->m_aParamArg[0].m_iBStack));
-		(void)buildBc.RecAddInst(IROP_NTrace, 4, RecArg(pProcPrint->m_aParamArg[1].m_iBStack));
-
-		buildBc.AddTraceStore(RecArgLiteral(pProcPrint->m_aParamArg[0].m_iBStack), pTinS16);
-		buildBc.AddTraceStore(RecArgLiteral(pProcPrint->m_aParamArg[1].m_iBStack), pTinS32);
-		buildBc.AddReturn(nullptr, 0);
-	}
-
-	buildBc.ActivateProc(nullptr, nullptr);
-	buildBc.FinalizeProc(pProcPrint);
-
-
-	auto pProcSum = buildBc.PProcCreate(pWork, pTinprocSum, nullptr);
-	auto pBlockSum = buildBc.PBlockCreate(pProcSum);
-	buildBc.ActivateProc(pProcSum, pBlockSum);
-	
-	{
-		auto recRhs = buildBc.RecAddInst(
-									IROP_NAdd,
-									4, 
-									RecArg(pProcSum->m_aParamArg[0].m_iBStack),
-									RecArg(pProcSum->m_aParamArg[1].m_iBStack));
-
-		buildBc.AddReturn(&recRhs, 1);
-		//void) buildBc.RecAddInst(IROP_Store, 4, RecSigned(pProcSum->m_aParamRet[0].m_iBStack), recRhs);
-	}
-
-	buildBc.ActivateProc(nullptr, nullptr);
-	buildBc.FinalizeProc(pProcSum);
-
-
-	auto pProc = buildBc.PProcCreate(pWork, pTinprocMain, nullptr);
-	auto pBlockPre = buildBc.PBlockCreate(pProc);
-	buildBc.ActivateProc(pProc, pBlockPre);
-	
-	auto recVarAddr = buildBc.AllocLocalVar(1, 1);
-	auto recVarVal = buildBc.RecAddInst(IROP_Store, 1, recVarAddr, RecSigned(55));
-
-	auto recRhs = buildBc.RecAddInst(IROP_NAdd, 1, RecSigned(5), RecSigned(3));
-	auto recOut = buildBc.RecAddInst(IROP_NAdd, 1, recRhs, recVarVal);
-
-	auto recCmp = buildBc.RecAddNCmp(1, NCMPPRED_SGT, recOut, RecSigned(100));
-	auto pBlockTrue = buildBc.PBlockCreate(pProc);
-	auto pBlockFalse = buildBc.PBlockCreate(pProc);
-	auto pBlockPost = buildBc.PBlockCreate(pProc);
-	buildBc.AddCondBranch(recCmp, pBlockTrue, pBlockFalse);
-
-	buildBc.ActivateBlock(pBlockTrue);
-	(void) buildBc.RecAddInst(IROP_Store, 1, recVarAddr, RecSigned(11));
-	buildBc.CreateBranch(pBlockPost);
-
-	buildBc.ActivateBlock(pBlockFalse);
-	(void) buildBc.RecAddInst(IROP_Store, 1, recVarAddr, RecSigned(22));
-	buildBc.CreateBranch(pBlockPost);
-
-	buildBc.ActivateBlock(pBlockPost);
-	recVarVal = buildBc.RecAddInst(IROP_Load, 1, recVarAddr);
-	(void) buildBc.RecAddInst(IROP_NTrace, 1, recVarVal);
-
-	SRecord aRecArg[2];
-	aRecArg[0] = RecSigned(111);
-	aRecArg[1] = RecSigned(222);
-	buildBc.AddCall(pProcPrint, aRecArg, 2);
-
-	(void) buildBc.RecAddInst(IROP_NTrace, 8, RecSigned(-1));
-
-	auto recIntAddr = buildBc.AllocLocalVar(4, 4);
-	auto recIntVal = buildBc.RecAddInst(IROP_Store, 4, recIntAddr, RecSigned(444));
-	aRecArg[0] = RecSigned(333);
-	aRecArg[1] = recIntVal;
-	buildBc.AddCall(pProcPrint, aRecArg, 2);
-
-	aRecArg[0] = RecSigned(123);
-	aRecArg[1] = RecSigned(111);
-	auto recSumVal = buildBc.RecAddCall(pProcSum, aRecArg, 2);
-	(void) buildBc.RecAddInst(IROP_NTrace, 4, recSumVal);
-
-	buildBc.AddReturn(nullptr, 0);
-	buildBc.ActivateProc(nullptr, nullptr);
-	buildBc.FinalizeProc(pProc);
-
-	static const u32 s_cBStackMax = 2048;
-	u8 * pBStack = (u8 *)pAlloc->EWC_ALLOC(s_cBStackMax, 16);
-
-	char aCh[2048];
-	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-
-	CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &dlay);
-	vm.m_pStrbuf = &strbuf;
-
-	ExecuteBytecode(&vm, pProc);
-
-	EWC::EnsureTerminated(&strbuf, '\0');
-	printf("%s\n", aCh);
-}*/
 
 void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 {
@@ -1950,6 +1616,8 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	auto pBlockPrint = buildBc.PBlockCreate(pProcPrint);
 	buildBc.ActivateProc(pProcPrint, pBlockPrint);
 	{
+		//auto pRegVal = buildBc.PValCreateAlloca(pTinS8, 1);
+
 		(void)buildBc.PInstCreate(IROP_NTrace, buildBc.PRegArg(pProcPrint->m_aParamArg[0].m_iBStack, 16));
 		(void)buildBc.PInstCreate(IROP_NTrace, buildBc.PRegArg(pProcPrint->m_aParamArg[1].m_iBStack, 32));
 
@@ -1970,10 +1638,8 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	{
 		auto pInstRhs = buildBc.PInstCreate(
 									IROP_NAdd,
-									buildBc.PRegArg(pProcSum->m_aParamArg[0].m_iBStack),
-									buildBc.PRegArg(pProcSum->m_aParamArg[1].m_iBStack));
-
-		//(void) buildBc.PInstCreate(IROP_Ret, pInstRhs);
+									buildBc.PRegArg(pProcSum->m_aParamArg[0].m_iBStack, pProcSum->m_aParamArg[0].m_cB * 8),
+									buildBc.PRegArg(pProcSum->m_aParamArg[1].m_iBStack, pProcSum->m_aParamArg[1].m_cB * 8));
 
 		buildBc.CreateReturn((SValue**)&pInstRhs, 1);
 		//void) buildBc.RecAddInst(IROP_Store, 4, RecSigned(pProcSum->m_aParamRet[0].m_iBStack), recRhs);
@@ -1987,8 +1653,9 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	auto pBlockPre = buildBc.PBlockCreate(pProc);
 	buildBc.ActivateProc(pProc, pBlockPre);
 	
-	auto pRegVal = buildBc.PValCreateAlloca(pTinS8, 1);
-	(void) buildBc.PInstCreate(IROP_RegStore, pRegVal, buildBc.PConstInt(55, 8));
+	auto pRegPtr = buildBc.PValCreateAlloca(pTinS8, 1);
+	(void) buildBc.PInstCreate(IROP_Store, pRegPtr, buildBc.PConstInt(55, 8));
+	auto pRegVal = buildBc.PInstCreate(IROP_Load, pRegPtr);
 	(void) buildBc.PInstCreateTraceStore(pRegVal, pTinS8);
 	//auto pConstVarVal = buildBc.PReg(pInstVarAddr->m_iBStackOut, 8);
 
@@ -2019,25 +1686,21 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	SValue * apVal[2];
 	apVal[0] = buildBc.PConstInt(111, 16);
 	apVal[1] = buildBc.PConstInt(222, 32);
-	//SRecord aRecArg[2];
-	//aRecArg[0] = RecSigned(111);
-	//aRecArg[1] = RecSigned(222);
-	//buildBc.AddCall(pProcPrint, aRecArg, 2);
-
 	buildBc.PInstCreateCall(pProcPrint, apVal, 2);
-/*
-	auto recIntAddr = buildBc.AllocLocalVar(4, 4);
-	auto recIntVal = buildBc.RecAddInst(IROP_Store, 4, recIntAddr, RecSigned(444));
-	aRecArg[0] = RecSigned(333);
-	aRecArg[1] = recIntVal;
-	buildBc.AddCall(pProcPrint, aRecArg, 2);
 
-	aRecArg[0] = RecSigned(123);
-	aRecArg[1] = RecSigned(111);
-	auto recSumVal = buildBc.RecAddCall(pProcSum, aRecArg, 2);
-	(void) buildBc.RecAddInst(IROP_NTrace, 4, recSumVal);
-*/
-	//(void) buildBc.PInstCreate(IROP_Ret, nullptr);
+	auto pRegPInt = buildBc.PValCreateAlloca(pTinS32, 1);
+	(void) buildBc.PInstCreate(IROP_Store, pRegPInt, buildBc.PConstInt(444, 32));
+	auto pRegIntVal = buildBc.PInstCreate(IROP_Load, pRegPInt);
+
+	apVal[0] = buildBc.PConstInt(333, 32);
+	apVal[1] = pRegIntVal;
+	buildBc.PInstCreateCall(pProcPrint, apVal, 2);
+
+	apVal[0] = buildBc.PConstInt(123, 32);
+	apVal[1] = buildBc.PConstInt(111, 32);
+	auto pInstRet = buildBc.PInstCreateCall(pProcSum, apVal, 2);
+	(void) buildBc.PInstCreate(IROP_NTrace, pInstRet);
+
 	buildBc.CreateReturn(nullptr, 0);
 
 	buildBc.ActivateProc(nullptr, nullptr);

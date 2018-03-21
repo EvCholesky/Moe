@@ -92,25 +92,6 @@ EWC_ENUM_UTILS(VALK);
 
 
 
-// Stack		- OPK_Stack - will be looked up
-// StackAddr	- OPK_Literal stores address of stack val
-// Literal		- OPK_Literal stored in instruction stream
-
-enum OPARG // OPerand ARGuments - define the expected in->out arguments for a given bytecode opcode
-{
-	OPARG_Error,
-	OPARG_OnlyOpcode,
-	OPARG_Unary,			// (Stack|Literal) -> Stack
-	OPARG_UnaryNoResult,	// (Stack|Literal)
-	OPARG_Binary,			// (Stack|Literal, Stack|Literal) -> Stack
-	OPARG_BinaryNoResult,	// (Stack|Literal, Stack|Literal) 
-	OPARG_Compare,			// (Stack|Literal, Stack|Literal) -> Stack(bool)
-	OPARG_Store,			// (StackAddr, Stack|Literal) -> Stack(lhs)
-	OPARG_Branch,			// (Stack|Literal predicate, pack(iInstTrue, iInstFalse) -> 0
-
-	OPARG_Nil = -1,
-};
-
 enum OPSZ
 {
 	OPSZ_0,
@@ -118,8 +99,9 @@ enum OPSZ
 	OPSZ_2,
 	OPSZ_4,
 	OPSZ_8,
-	OPSZ_Ptr,
 	OPSZ_CB,
+	OPSZ_PCB,	// pointer to a value cB in size
+	OPSZ_Ptr,
 	OPSZ_RegIdx,
 };
 
@@ -139,98 +121,101 @@ struct OpSignature // tag = opsig
 };
 
 #define OPCODE_LIST \
-		OP(Error)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		/* Ret(cBStack+cBArg) -> pValRet */ \
-		OP(Ret)			OPARG(Unary)			OPSIZE(4, 0, CB), \
-		OP_RANGE(TerminalOp, Ret) \
+		OPMN(Terminal,	Error)		OPSIZE(0, 0, 0) \
+						/* Ret(cBStack+cBArg) -> regRet */ \
+		OPMX(Terminal,	Ret)		OPSIZE(4, 0, CB) \
 		\
-		/* Call(pProcNew, pProcOld) -> pValRet */ \
-		OP(Call)		OPARG(BinaryNoResult)	OPSIZE(Ptr, Ptr, 0), \
-		/* CondBranch(fPred, {iInstT,iInstF}) */ \
-		OP(CondBranch)	OPARG(Branch)			OPSIZE(1, 8, 0), \
-		OP(Branch)		OPARG(Branch)			OPSIZE(0, 0, 0), \
-		OP(Phi)			OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP_RANGE(JumpOp, TerminalOpMax) \
+						/* Call(pProcNew, pProcOld) -> regRet */ \
+		OPMN(JumpOp,	Call)		OPSIZE(Ptr, Ptr, CB) \
+						/* CondBranch(fPred, {iInstT,iInstF}) */ \
+		OP(				CondBranch)	OPSIZE(1, 8, 0) \
+		OP(				Branch)		OPSIZE(0, 0, 0) \
+		OPMX(JumpOp,	Phi)		OPSIZE(0, 0, 0) \
 		\
-		OP(NAdd)		OPARG(Binary)			OPSIZE(CB, CB, CB), \
-		OP(GAdd)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(NSub)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GSub)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(NMul)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GMul)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(SDiv)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(UDiv)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GDiv)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(SRem)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(URem)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GRem)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP_RANGE(BinaryOp, JumpOpMax) \
+		OPMN(BinaryOp,	NAdd)		OPSIZE(CB, CB, CB) \
+		OP(				GAdd)		OPSIZE(0, 0, 0) \
+		OP(				NSub)		OPSIZE(0, 0, 0) \
+		OP(				GSub)		OPSIZE(0, 0, 0) \
+		OP(				NMul)		OPSIZE(0, 0, 0) \
+		OP(				GMul)		OPSIZE(0, 0, 0) \
+		OP(				SDiv)		OPSIZE(0, 0, 0) \
+		OP(				UDiv)		OPSIZE(0, 0, 0) \
+		OP(				GDiv)		OPSIZE(0, 0, 0) \
+		OP(				SRem)		OPSIZE(0, 0, 0) \
+		OP(				URem)		OPSIZE(0, 0, 0) \
+		OPMX(BinaryOp,	GRem)		OPSIZE(0, 0, 0) \
 		\
-		OP(NNeg)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GNeg)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(Not)			OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP_RANGE(UnaryOp, BinaryOpMax) \
+		OPMN(UnaryOp,	NNeg)		OPSIZE(0, 0, 0) \
+		OP(				GNeg)		OPSIZE(0, 0, 0) \
+		OPMX(UnaryOp,	Not)		OPSIZE(0, 0, 0) \
 		\
-		OP(NCmp)		OPARG(Compare)			OPSIZE(CB, CB, 1), \
-		OP(GCmp)		OPARG(Compare)			OPSIZE(CB, CB, 1), \
-		OP_RANGE(CmpOp, UnaryOpMax) \
+		OPMN(CmpOp,		NCmp)		OPSIZE(CB, CB, 1) \
+		OPMX(CmpOp,		GCmp)		OPSIZE(CB, CB, 1) \
 		\
-		OP(Shl)			OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(AShr)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(LShr)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(And)			OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(Or)			OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(Xor)			OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP_RANGE(LogicOp, CmpOpMax) \
+		OPMN(LogicOp,	Shl)		OPSIZE(0, 0, 0) \
+		OP(				AShr)		OPSIZE(0, 0, 0) \
+		OP(				LShr)		OPSIZE(0, 0, 0) \
+		OP(				And)		OPSIZE(0, 0, 0) \
+		OP(				Or)			OPSIZE(0, 0, 0) \
+		OPMX(LogicOp,	Xor)		OPSIZE(0, 0, 0) \
 		\
-		OP(Alloca)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(Load)		OPARG(Unary)			OPSIZE(CB, 0, CB), \
-		/* Store(Reg(Pointer), Value) */ \
-		OP(Store)		OPARG(Store)			OPSIZE(CB, CB, 0), \
-		OP(GEP)			OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(PtrDiff)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(Memcpy)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP_RANGE(MemoryOp, LogicOpMax) \
+						/* Alloca(iBStackResult)->iBStack(ref) */ \
+		OPMN(MemoryOp,	Alloca)		OPSIZE(RegIdx, 0, PCB) \
+						/* Load(Reg(Pointer)) -> RegIdx */ \
+		OP(				Load)		OPSIZE(PCB, 0, CB) \
+						/* Store(Reg(Pointer), Value) */ \
+		OP(				Store)		OPSIZE(PCB, CB, 0) \
+		OP(				GEP)		OPSIZE(0, 0, 0) \
+		OP(				PtrDiff)	OPSIZE(0, 0, 0) \
+		OPMX(MemoryOp,	Memcpy)		OPSIZE(0, 0, 0) \
 		\
-		OP(NTrunc)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(SignExt)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(ZeroExt)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GToS)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GToU)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(SToG)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(UToG)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GTrunc)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(GExtend)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(PtrToInt)	OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(IntToPtr)	OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP(Bitcast)		OPARG(Error)			OPSIZE(0, 0, 0), \
-		OP_RANGE(CastOp, MemoryOpMax) \
+		OPMN(CastOp,	NTrunc)		OPSIZE(0, 0, 0) \
+		OP(				SignExt)	OPSIZE(0, 0, 0) \
+		OP(				ZeroExt)	OPSIZE(0, 0, 0) \
+		OP(				GToS)		OPSIZE(0, 0, 0) \
+		OP(				GToU)		OPSIZE(0, 0, 0) \
+		OP(				SToG)		OPSIZE(0, 0, 0) \
+		OP(				UToG)		OPSIZE(0, 0, 0) \
+		OP(				GTrunc)		OPSIZE(0, 0, 0) \
+		OP(				GExtend)	OPSIZE(0, 0, 0) \
+		OP(				PtrToInt)	OPSIZE(0, 0, 0) \
+		OP(				IntToPtr)	OPSIZE(0, 0, 0) \
+		OPMX(CastOp,	Bitcast)	OPSIZE(0, 0, 0) \
 		/* ---- bytecode only opcodes ----*/ \
-		OP(NTrace)		OPARG(UnaryNoResult)	OPSIZE(CB, 0, 0), \
-		/* TraceStore(Reg, pTin) */ \
-		OP(TraceStore)	OPARG(UnaryNoResult)	OPSIZE(CB, Ptr, 0), \
-		/* RegStore(RegDst, ValueSrc) */ \
-		OP(RegStore)	OPARG(Store)			OPSIZE(RegIdx, CB, 0), \
-		OP_RANGE(BytecodeOp, CastOpMax) \
+		OPMN(BCodeOp,	NTrace)		OPSIZE(CB, 0, 0) \
+						/* TraceStore(Reg, pTin) */ \
+		OP(				TraceStore)	OPSIZE(CB, Ptr, 0) \
+						/* RegStore(RegDst, ValueSrc) */ \
+		OP(				RegStore)		OPSIZE(RegIdx, CB, 0) \
+		OPMX(BCodeOp,	RegAddrStore)	OPSIZE(RegIdx, CB, 0) \
 
-#define OPARG(x) 
+
+
 #define OPSIZE(A, B, RET) 
-#define OP(x) IROP_##x
-#define OP_RANGE(range, PREV_VAL) IROP_##range##Max, IROP_##range##Min = IROP_##PREV_VAL, IROP_##range##Last = IROP_##range##Max - 1,
 	enum IROP
 	{
+#define OP(X) IROP_##X,
+#define OPMN(RANGE, X) IROP_##X,
+#define OPMX(RANGE, X) IROP_##X,
 		OPCODE_LIST
-
-		// TODO: Add the ranges to our enum as a second pass (so the debugger will report the enum values rather than the range endpoints
+#undef OPMN
+#undef OPMX
+#undef OP
 
 		IROP_Max,
 		IROP_Min = 0,
 		IROP_Nil = -1,
-	};
-#undef OP_RANGE
+
+		// Add the range values in a second pass over OPCODE_LIST so that the debugger shows values rather than range endpoints
+#define OP(X)
+#define OPMN(RANGE, X) IROP_##RANGE##Min = IROP_##X,
+#define OPMX(RANGE, X) IROP_##RANGE##Max = IROP_##X + 1,
+		OPCODE_LIST
+#undef OPMX
+#undef OPMN
 #undef OP
+	};
 #undef OPSIZE
-#undef OPARG
 
 s8 COperand(IROP irop);
 const char * PChzFromIrop(IROP irop);
