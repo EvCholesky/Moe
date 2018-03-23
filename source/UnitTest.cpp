@@ -934,7 +934,7 @@ TESTRES TestresRunUnitTest(
 
 		if (!fHasExpectedErr && testres == TESTRES_Success && !FIsEmptyString(pCozBytecodeExpected))
 		{
-			CIRProcedure * pProcUnitTest;
+			BCode::SProcedure * pProcUnitTest = nullptr;
 			BCode::CBuilder buildBc(&work, &dlay);
 			CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_arypEntryChecked, &pProcUnitTest);
 
@@ -948,8 +948,11 @@ TESTRES TestresRunUnitTest(
 
 				BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &dlay);
 				vm.m_pStrbuf = &strbufBytecode;
+#if DEBUG_PROC_CALL
+				vm.m_aryDebCall.SetAlloc(work.m_pAlloc, BK_ByteCode, 32);
+#endif
 
-				BCode::ExecuteBytecode(&vm, pProcUnitTest->m_pProcBc);
+				BCode::ExecuteBytecode(&vm, pProcUnitTest);
 				work.m_pAlloc->EWC_DELETE(pBStack);
 			}
 

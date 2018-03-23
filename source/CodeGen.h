@@ -167,7 +167,10 @@ struct OpSignature // tag = opsig
 		OP(				Store)		OPSIZE(PCB, CB, 0) \
 		OP(				GEP)		OPSIZE(0, 0, 0) \
 		OP(				PtrDiff)	OPSIZE(0, 0, 0) \
-		OPMX(MemoryOp,	Memcpy)		OPSIZE(0, 0, 0) \
+						/* Memset(pDst, pDst, valByte);  ExArgs(cB)*/ \
+		OP(				Memset)		OPSIZE(Ptr, 1, 0) \
+						/* Memcpy(pDst, pDst, pSrc);  ExArgs(cB)*/ \
+		OPMX(MemoryOp,	Memcpy)		OPSIZE(Ptr, Ptr, 0) \
 		\
 		OPMN(CastOp,	NTrunc)		OPSIZE(0, 0, 0) \
 		OP(				SignExt)	OPSIZE(0, 0, 0) \
@@ -186,8 +189,10 @@ struct OpSignature // tag = opsig
 						/* TraceStore(Reg, pTin) */ \
 		OP(				TraceStore)	OPSIZE(CB, Ptr, 0) \
 						/* RegStore(RegDst, ValueSrc) */ \
-		OP(				StoreToReg)	OPSIZE(RegIdx, CB, 0) \
-		OPMX(BCodeOp,	StoreToIdx)	OPSIZE(RegIdx, CB, 0) \
+		OP(				StoreToReg)	OPSIZE(RegIdx, CB, 4) \
+		OP(				StoreToIdx)	OPSIZE(RegIdx, CB, 4) \
+						/* extra arguments for preceeding opcode */ \
+		OPMX(BCodeOp,	ExArgs)	OPSIZE(0, 0, 0) \
 
 
 
@@ -491,7 +496,7 @@ public:
 
 	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBlock * pBlockTrue, CIRBlock * pBlockFalse);
 	void				CreateBranch(CIRBlock * pBlock);
-	void				CreateReturn(CIRValue ** ppVal, int cpVal);
+	void				CreateReturn(CIRValue ** ppVal, int cpVal, const char * pChzName);
 
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
@@ -518,6 +523,9 @@ public:
 	CIRInstruction *	PInstCreateMemset(CWorkspace * pWork, CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
 	CIRInstruction *	PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CIRValue * pValRhsRef);
 	CIRInstruction *	PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CSTNode * pStnodInit);
+
+	CIRInstruction *	PInstCreateTraceStore(CIRValue * pVal, STypeInfo * pTin)
+							{ return nullptr; }
 
 	CIRInstruction *	PInstCreateGEP(CIRValue * pValLhs, LLVMOpaqueValue ** apLvalIndices, u32 cpIndices, const char * pChzName);
 	LLVMOpaqueValue *	PGepIndex(u64 idx);
@@ -577,7 +585,7 @@ void CodeGenEntryPointsBytecode(
 	BCode::CBuilder * pBuild, 
 	CSymbolTable * pSymtabTop,
 	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder,
-	CIRProcedure ** ppProcUnitTest);
+	BCode::SProcedure ** ppProcUnitTest);
 
 int NExecuteAndWait(
 	const char * pChzProgram,

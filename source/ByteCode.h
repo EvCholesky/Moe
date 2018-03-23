@@ -118,6 +118,12 @@ namespace BCode
 
 						SInstruction()
 						:SValue(VALK_Instruction)
+						,m_irop(IROP_Error)
+						,m_cBOperand(0)
+						,m_pred(0)
+						,m_opkLhs(OPK_Literal)
+						,m_opkRhs(OPK_Literal)
+						,m_iBStackOut(0)
 							{ ; }
 
 		//BB - doesn't fit 20 bytes because SValue::Valk
@@ -251,31 +257,16 @@ namespace BCode
 							{ return pTin; } 
 		static LType *	PLtypeVoid();
 
-		/*
-		void			AddInst(IROP irop);
-		SRecord			RecAddInst(IROP op, u8 cB, const SRecord & recLhs);
-		SRecord			RecAddInst(IROP cop, u8 cB, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			RecAddNCmp(u8 cB, NCMPPRED npred, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			RecAddGCmp(u8 cB, GCMPPRED gpred, const SRecord & recLhs, const SRecord & recRhs);
-		SRecord			RecAddInstInternal(IROP irop, u8 cB, u8 pred, const SRecord & recLhs, const SRecord & recRhs);
-		*/
-
 		SInstruction *	PInstCreateNCmp(NPRED npred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 		SInstruction *	PInstCreateGCmp(GPRED gpred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 
-		//void			AddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
-		//SRecord			RecAddCall(SProcedure * pProc, SRecord * aRecArg, int cRecArg);
 		SInstruction *	PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArgs, int cpLvalArg);
 
-		void			CreateReturn(SValue ** ppVal, int cpVal);
-		//void			AddReturn(SRecord * aRecArg, int cRecArg);
-		//void			AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
+		void			CreateReturn(SValue ** ppVal, int cpVal, const char * pChzName = "");
 		void			CreateBranch(SBlock * pBlock);
 		SInstruction *	PInstCreateCondBranch(SValue * pValPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
 		SInstruction *	PInstCreateTraceStore(SValue * pVal, STypeInfo * pTin);
 
-		//SRecord			AllocLocalVar(u32 cB, u32 cBAlign);
-		
 		s32				IBStackAlloc(s64 cB, s64 cBAlign);
 		SInstruction *	PInstAlloc();
 

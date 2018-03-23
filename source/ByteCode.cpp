@@ -16,7 +16,8 @@
 #include "ByteCode.h"
 #include "CodeGen.h"
 #include "parser.h"
-#include "stdio.h"
+#include <stdio.h>
+#include <string.h>
 #include "Util.h"
 #include "workspace.h"
 
@@ -154,8 +155,6 @@ SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
 {
 }
 
-
-
 CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
 :CBuilderBase(pWork)
 ,m_pAlloc(pWork->m_pAlloc)
@@ -182,9 +181,26 @@ void CBuilder::Clear()
 	auto ppValMac = m_arypValManaged.PMac();
 	for (auto ppVal = m_arypValManaged.A(); ppVal != ppValMac; ++ppVal)
 	{
-		m_pAlloc->EWC_DELETE(*ppVal);
+		// trying to avoid adding a vTable pointer to SValue, but need a virtual destructor
+		switch((*ppVal)->m_valk)
+		{
+		case VALK_Procedure:
+			{
+				auto pProc = (SProcedure *)*ppVal;
+				m_pAlloc->EWC_DELETE(pProc);
+			} break;
+		default:
+			m_pAlloc->EWC_DELETE(*ppVal);
+		}
 	}
 	m_arypValManaged.Clear();
+
+	auto ppBlockMac = m_arypBlockManaged.PMac();
+	for (auto ppBlock = m_arypBlockManaged.A(); ppBlock != ppBlockMac; ++ppBlock)
+	{
+		m_pAlloc->EWC_DELETE(*ppBlock);
+	}
+	m_arypBlockManaged.Clear();
 }
 
 static inline s64 IBArgAlloc(s64 * pcBArg, s64 cB, s64 cBAlign)
@@ -205,6 +221,8 @@ SProcedure * CBuilder::PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTin
 	u8 * pBAlloc = (u8 *)m_pAlloc->EWC_ALLOC(cBAlloc, EWC_ALIGN_OF(SProcedure));
 
 	auto pProc = new(pBAlloc) SProcedure(m_pAlloc, pTinproc);
+	AddManagedVal(pProc);
+
 	auto fins = m_hashHvMangledPProc.FinsEnsureKeyAndValue(pTinproc->m_strMangled.Hv(), pProc);
 	EWC_ASSERT(fins == FINS_Inserted, "adding procedure that already exists");
 
@@ -468,14 +486,29 @@ SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char *
 
 CBuilder::Instruction * CBuilder::PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill)
 {
-	EWC_ASSERT(false, "bytecode tbd");
-	return nullptr;
+	auto pConstFill = PConstInt(bFill, 8);  
+	auto pInst = PInstCreateRaw(IROP_Memset, pValLhs, pConstFill);
+
+	auto pInstEx = PInstAlloc();
+	pInstEx->m_irop =  IROP_ExArgs;	
+	pInstEx->m_opkLhs = OPK_Literal;
+	pInstEx->m_wordLhs.m_s64 = cBSize;
+	return pInst;
 }
 
 CBuilder::Instruction * CBuilder::PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef)
 {
-	EWC_ASSERT(false, "bytecode tbd");
-	return nullptr;
+	auto pInst = PInstCreateRaw(IROP_Memcpy, pValLhs, pValRhsRef);
+
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+
+	auto pInstEx = PInstAlloc();
+	pInstEx->m_irop =  IROP_ExArgs;	
+	pInstEx->m_opkLhs = OPK_Literal;
+	pInstEx->m_wordLhs.m_s64 = cB;
+	return pInst;
 }
 
 CBuilder::Instruction * CBuilder::PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, CSTNode * pStnodInit)
@@ -580,7 +613,7 @@ SInstruction * CBuilder::PInstCreateCall(SValue * pValProc, ProcArg ** apLvalArg
 	return pInstCall;
 }
 
-void CBuilder::CreateReturn(SValue ** apVal, int cpVal)
+void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 {
 	if (!EWC_FVERIFY(m_pProcCur, "Cannot add a return opcode outside of a procedure"))
 		return;
@@ -688,8 +721,18 @@ SInstruction * CBuilder::PInstAlloc()
 
 SValue * CBuilder::PValFromSymbol(SSymbol * pSym)
 {
-	EWC_ASSERT(false, "codegen TBD");
-	return nullptr;
+	auto pVal = (SValue *)pSym->m_pVValue;
+	if (!EWC_FVERIFY(pVal, "missing value for symbol"))
+		return nullptr;
+
+	if (pVal->m_valk == VALK_Instruction)
+	{
+		auto pInstSym = (SInstruction *)pVal;
+		if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
+			return nullptr;
+	}
+
+	return pVal;
 }
 
 SInstruction * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName)
@@ -1176,7 +1219,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	#define FETCH(IB, TYPE)						*(TYPE *)&pVm->m_pBStack[IB]
 	#define STORE(IBOUT, TYPE, VALUE)			*(TYPE *)&pVm->m_pBStack[IBOUT] = VALUE
 
-	SWord wordLhs, wordRhs;
+	SWord wordLhs, wordRhs, wordLhsEx;
 
 	SInstruction * pInstMin = pVm->m_pInst;
 	SInstruction * pInst = pInstMin;
@@ -1253,8 +1296,9 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		{
 			if (pVm->m_pStrbuf)
 			{
+				ReadOpcodes(pVm, pInst, pInst->m_cBOperand, &wordLhs);
 				auto pTin = (STypeInfo *)pInst->m_wordRhs.m_pV;
-				PrintInstance(pVm, pTin, &pVm->m_pBStack[pInst->m_wordLhs.m_s32]);
+				PrintInstance(pVm, pTin, (u8*)&wordLhs);
 				AppendCoz(pVm->m_pStrbuf, ";");
 			}
 		} break;
@@ -1424,7 +1468,11 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 				{
 					AppendCoz(pVm->m_pStrbuf, "}");
 				}
-				AppendCoz(pVm->m_pStrbuf, "; ");
+
+				if (*ppInstRet != nullptr)
+				{
+					AppendCoz(pVm->m_pStrbuf, "; ");
+				}
 			}
 
 			if (*ppInstRet == nullptr)
@@ -1458,6 +1506,24 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			s32 iInst = pInst->m_wordRhs.m_s32;
 
 			pInst = &pInstMin[iInst - 1]; // -1 because it is incremented below
+		} break;
+		case MASHOP(IROP_Memset, 0):
+		{
+			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
+			++pInst;
+			if (!EWC_FVERIFY(pInst->m_irop == IROP_ExArgs, "expected extended argument block"))
+				break;
+			ReadOpcodes(pVm, pInst, 8, &wordLhsEx);
+			memset(wordLhs.m_pV, wordRhs.m_u8, wordLhsEx.m_u64);
+		} break;
+		case MASHOP(IROP_Memcpy, 0):
+		{
+			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
+			++pInst;
+			if (!EWC_FVERIFY(pInst->m_irop == IROP_ExArgs, "expected extended argument block"))
+				break;
+			ReadOpcodes(pVm, pInst, 8, &wordLhsEx);
+			memcpy(wordLhs.m_pV, wordRhs.m_pV, wordLhsEx.m_u64);
 		} break;
 
 		default:
