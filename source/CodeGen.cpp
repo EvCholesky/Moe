@@ -4045,24 +4045,15 @@ typename BUILD::Instruction * PInstGenerateAssignment(
 	return nullptr;
 }
 
-void GeneratePredicate(
-	CWorkspace * pWork,
-	BCode::CBuilder * pBuild,
-	CSTNode * pStnodPred,
-	BCode::SBlock * pBlockTrue,
-	BCode::SBlock * pBlockPost,
-	STypeInfo * pTinBool)
-{
-	EWC_ASSERT(false, "bytecode TBD");
-}
 
 
+template <typename BUILD>
 void GeneratePredicate(
 	CWorkspace * pWork,
-	CBuilderIR * pBuild,
+	BUILD * pBuild,
 	CSTNode * pStnodPred,
-	CIRBlock * pBlockTrue,
-	CIRBlock * pBlockPost,
+	typename BUILD::Block * pBlockTrue,
+	typename BUILD::Block * pBlockPost,
 	STypeInfo * pTinBool)
 {
 	EWC_ASSERT(pTinBool->m_tink == TINK_Bool, "expected bool type for predicate");
@@ -4074,7 +4065,7 @@ void GeneratePredicate(
 	CSTNode * pStnodOp = pStnodPred;
 	if (pStnodOp->m_park == PARK_LogicalAndOrOp)
 	{
-		CIRBlock *	pBlockRhs = pBuild->PBlockCreate(pBuild->m_pProcCur, "predRhs");
+		BUILD::Block *	pBlockRhs = pBuild->PBlockCreate(pBuild->m_pProcCur, "predRhs");
 		EWC_ASSERT(pStnodOp->CStnodChild() == 2, "expected two children for logical op");
 
 		auto pStnodChildLhs = pStnodPred->PStnodChild(0);
@@ -4099,8 +4090,8 @@ void GeneratePredicate(
 	}
 	else
 	{
-		CIRValue * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
-		CIRValue * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
+		BUILD::Value * pValPred = PValGenerate(pWork, pBuild, pStnodPred, VALGENK_Instance);
+		BUILD::Value * pValPredCast = PValCreateCast(pWork, pBuild, pValPred, pStnodPred->m_pTin, pTinBool);
 		if (!pValPredCast)
 		{
 			EmitError(pWork, &pStnodPred->m_lexloc, ERRID_BadCastGen, 
@@ -4530,12 +4521,13 @@ bool FDoesOperatorExist(TOK tok, const SOpTypes * pOptype)
 	return opinfo.m_irop != IROP_Nil;
 }
 
-static inline CIRInstruction * PInstGenerateOperator(
-	CBuilderIR * pBuild,
+template <typename BUILD>
+static inline typename BUILD::Instruction * PInstGenerateOperator(
+	BUILD * pBuild,
 	TOK tok,
 	const SOpTypes * pOptype,
-	CIRValue * pValLhs,
-	CIRValue * pValRhs)
+	typename BUILD::Value * pValLhs,
+	typename BUILD::Value * pValRhs)
 {
 	SOperatorInfo opinfo;
 	GenerateOperatorInfo(tok, pOptype, &opinfo);
@@ -4546,7 +4538,7 @@ static inline CIRInstruction * PInstGenerateOperator(
 		return nullptr;
 	}
 
-	CIRInstruction * pInstOp = nullptr;
+	BUILD::Instruction * pInstOp = nullptr;
 	switch (opinfo.m_irop)
 	{
 	case IROP_GEP:		// for pointer arithmetic
@@ -4555,7 +4547,8 @@ static inline CIRInstruction * PInstGenerateOperator(
 			{
 				pValRhs = pBuild->PInstCreate(IROP_NNeg, pValRhs, "NNeg");
 			}
-			LLVMOpaqueValue * pLvalIndex = pValRhs->m_pLval;
+
+			auto pLvalIndex = pBuild->PGepIndexFromValue(pValRhs);
 			pInstOp = pBuild->PInstCreateGEP(pValLhs, &pLvalIndex, 1, opinfo.m_pChzName); break;
 		} break;
 	case IROP_PtrDiff:
@@ -4564,7 +4557,7 @@ static inline CIRInstruction * PInstGenerateOperator(
 			u64 cBitAlign;
 
 			auto pTinptr = PTinDerivedCast<STypeInfoPointer*>(pOptype->m_pTinLhs);
-			auto pLtype = CBuilderIR::PLtypeFromPTin(pTinptr->m_pTinPointedTo);
+			auto pLtype = BUILD::PLtypeFromPTin(pTinptr->m_pTinPointedTo);
 			CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
 
 			if (!EWC_FVERIFY(pOptype->m_pTinResult->m_tink == TINK_Integer, "Expected integer type result"))
@@ -4578,11 +4571,7 @@ static inline CIRInstruction * PInstGenerateOperator(
 
 			if (cBitSize > 8)
 			{
-				auto pLval = pBuild->PLvalConstantInt(cBitSize / 8, pTinintResult->m_cBit, false);
-				CIRConstant * pConst = EWC_NEW(pBuild->m_pAlloc, CIRConstant) CIRConstant();
-				pConst->m_pLval = pLval;
-				pBuild->AddManagedVal(pConst);
-
+				auto pConst = pBuild->PConstInt(cBitSize / 8, pTinintResult->m_cBit, false);
 				pInstOp = pBuild->PInstCreate(IROP_SDiv, pInstOp, pConst, "PtrDif");
 			}
 		} break;
@@ -4594,17 +4583,6 @@ static inline CIRInstruction * PInstGenerateOperator(
 	// Note: This should be caught by the type checker! This function should match FDoesOperatorExist
 	EWC_ASSERT(pInstOp, "unexpected op in PInstGenerateOperator '%'", PCozFromTok(tok));
 	return pInstOp;
-}
-
-static inline BCode::SValue * PInstGenerateOperator(
-	BCode::CBuilder * pBuild,
-	TOK tok,
-	const SOpTypes * pOptype,
-	BCode::SValue * pValLhs,
-	BCode::SValue * pValRhs)
-{
-	EWC_ASSERT(false, "bytecode tbd");
-	return nullptr;
 }
 
 static inline bool FIsOverloadedOp(CSTNode * pStnod)
@@ -6969,7 +6947,7 @@ void CBuilderIR::ComputeDataLayout(SDataLayout * pDlay)
 	auto pLtypeInt = LLVMInt64Type();
 	auto pLtypeFloat = LLVMFloatType();
 
-	pDlay->m_cBBool = (s32)LLVMSizeOfTypeInBits(m_pTargd, pLtypeBool) / 8;
+	pDlay->m_cBBool = (s32)(LLVMSizeOfTypeInBits(m_pTargd, pLtypeBool) + 7) / 8;
 	pDlay->m_cBInt = (s32)LLVMSizeOfTypeInBits(m_pTargd, pLtypeInt) / 8;
 	pDlay->m_cBFloat = (s32)LLVMSizeOfTypeInBits(m_pTargd, pLtypeFloat) / 8;
 	pDlay->m_cBPointer = (s32)LLVMPointerSize(m_pTargd);

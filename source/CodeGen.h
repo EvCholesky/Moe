@@ -134,17 +134,17 @@ struct OpSignature // tag = opsig
 		OPMX(JumpOp,	Phi)		OPSIZE(0, 0, 0) \
 		\
 		OPMN(BinaryOp,	NAdd)		OPSIZE(CB, CB, CB) \
-		OP(				GAdd)		OPSIZE(0, 0, 0) \
-		OP(				NSub)		OPSIZE(0, 0, 0) \
-		OP(				GSub)		OPSIZE(0, 0, 0) \
-		OP(				NMul)		OPSIZE(0, 0, 0) \
-		OP(				GMul)		OPSIZE(0, 0, 0) \
-		OP(				SDiv)		OPSIZE(0, 0, 0) \
-		OP(				UDiv)		OPSIZE(0, 0, 0) \
-		OP(				GDiv)		OPSIZE(0, 0, 0) \
-		OP(				SRem)		OPSIZE(0, 0, 0) \
-		OP(				URem)		OPSIZE(0, 0, 0) \
-		OPMX(BinaryOp,	GRem)		OPSIZE(0, 0, 0) \
+		OP(				GAdd)		OPSIZE(CB, CB, CB) \
+		OP(				NSub)		OPSIZE(CB, CB, CB) \
+		OP(				GSub)		OPSIZE(CB, CB, CB) \
+		OP(				NMul)		OPSIZE(CB, CB, CB) \
+		OP(				GMul)		OPSIZE(CB, CB, CB) \
+		OP(				SDiv)		OPSIZE(CB, CB, CB) \
+		OP(				UDiv)		OPSIZE(CB, CB, CB) \
+		OP(				GDiv)		OPSIZE(CB, CB, CB) \
+		OP(				SRem)		OPSIZE(CB, CB, CB) \
+		OP(				URem)		OPSIZE(CB, CB, CB) \
+		OPMX(BinaryOp,	GRem)		OPSIZE(CB, CB, CB) \
 		\
 		OPMN(UnaryOp,	NNeg)		OPSIZE(0, 0, 0) \
 		OP(				GNeg)		OPSIZE(0, 0, 0) \
@@ -182,6 +182,7 @@ struct OpSignature // tag = opsig
 		OP(				UToG)		OPSIZE(0, 0, 0) \
 		OP(				GTrunc)		OPSIZE(0, 0, 0) \
 		OP(				GExtend)	OPSIZE(0, 0, 0) \
+						/* PtrToInt(Reg(Pointer), pTin)->iBStack(int) */ \
 		OP(				PtrToInt)	OPSIZE(0, 0, 0) \
 		OP(				IntToPtr)	OPSIZE(0, 0, 0) \
 		OPMX(CastOp,	Bitcast)	OPSIZE(0, 0, 0) \

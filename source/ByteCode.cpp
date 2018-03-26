@@ -18,6 +18,7 @@
 #include "parser.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include "Util.h"
 #include "workspace.h"
 
@@ -465,13 +466,7 @@ static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWo
 	case OPK_Register:
 	case OPK_RegisterArg:
 		{
-			switch (cBOperand)
-			{
-				case 1: FormatCoz(pStrbuf, "[%d]", word.m_s8);		break;
-				case 2: FormatCoz(pStrbuf, "[%d]", word.m_s16);	break;
-				case 4: FormatCoz(pStrbuf, "[%d]", word.m_s32);	break;
-				case 8: FormatCoz(pStrbuf, "[%lld]", word.m_s64);	break;
-			}
+			FormatCoz(pStrbuf, "[%d]", word.m_s32);
 		} break;
 	default:
 		FormatCoz(pStrbuf, "ERR(0x%x) 0x%x", opk, word.m_u64);
@@ -892,31 +887,24 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 	PInstCreateRaw(IROP_Ret, cBReturnOp, PConstArg(m_pProcCur->m_cBArg, 32), nullptr);
 }
 
+SInstruction * CBuilder::PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName)
+{
+	auto pInst = PInstCreateRaw(IROP_PtrToInt, pValOperand, PConstPointer(pTinint), pChzName);
+	if (pInst->m_irop == IROP_Error)
+		return pInst;
+
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTinint, &cB, &cBAlign);
+	pInst->m_iBStackOut =  IBStackAlloc(cB, cBAlign);
+	return pInst;
+}
+
 SInstruction * CBuilder::PInstCreateTraceStore(SValue * pVal, STypeInfo * pTin)
 {
 	return PInstCreateRaw(IROP_TraceStore, pVal, PConstPointer(pTin));
 }
 
-/*
-void CBuilder::AddCondBranch(SRecord & recPred, SBlock * pBlockTrue, SBlock * pBlockFalse)
-{
-	auto pInst = PInstAlloc(); 
-	RecSetupInst(pInst, IROP_CondBranch, 1, recPred, RecUnsigned(0));
-
-	EWC_ASSERT(m_pBlockCur && !m_pBlockCur->FIsFinalized(), "cannot allocate instructions without a unfinalized basic block");
-
-	s32 * pIInstDst = (s32*)&pInst->m_wordRhs;
-	auto pBranchTrue = m_pBlockCur->m_aryBranch.AppendNew();
-	pBranchTrue->m_pBlockDest = pBlockTrue;
-	pBranchTrue->m_pIInstDst = &pIInstDst[true];
-
-	auto pBranchFalse = m_pBlockCur->m_aryBranch.AppendNew();
-	pBranchFalse->m_pBlockDest = pBlockFalse;
-	pBranchFalse->m_pIInstDst = &pIInstDst[false];
-
-	pInst->m_iBStackOut = 0;
-}
-*/
 void CBuilder::CreateBranch(SBlock * pBlock)
 {
 	EWC_ASSERT(m_pBlockCur && !m_pBlockCur->FIsFinalized(), "cannot allocate instructions without a unfinalized basic block");
@@ -947,13 +935,6 @@ SInstruction * CBuilder::PInstCreateCondBranch(SValue * pValPred, SBlock * pBloc
 	pInst->m_iBStackOut = 0;
 	return pInst;
 }
-
-/*
-SRecord	CBuilder::AllocLocalVar(u32 cB, u32 cBAlign)
-{
-	u32 iBStackOut = IBStackAlloc(cB, cBAlign);
-	return RecUnsigned(iBStackOut);
-}*/
 
 s32	CBuilder::IBStackAlloc(s64 cB, s64 cBAlign)
 {
@@ -1023,7 +1004,7 @@ inline void SetOperandFromValue(SValue * pValSrc, OPK * pOpkOut, SWord * pWordOu
 
 		*pOpkOut = pConst->m_opk;
 		pWordOut->m_u64 = pConst->m_word.m_u64;
-		*pCBOperand = pConst->m_litty.m_cBit / 8;
+		*pCBOperand = (pConst->m_litty.m_cBit + 7) / 8;
 		EWC_ASSERT(FIsValidCBOperand(*pCBOperand), "unexpected operand size.");
 	} break;
 	case VALK_Instruction:
@@ -1495,26 +1476,55 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_Load, 8):	
 			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u64, *(u64*)wordLhs.m_pV); break;
 
-		case MASHOP(IROP_NAdd, 1):	
-			{ 
-				ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs);
-				STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 + wordRhs.m_u8);
-			}	break;
-		case MASHOP(IROP_NAdd, 2):	
-			{ 
-				ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs);
-				STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 + wordRhs.m_u16);
-			}	break;
-		case MASHOP(IROP_NAdd, 4):	
-			{ 
-				ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs);
-				STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 + wordRhs.m_u32);
-			}	break;
-		case MASHOP(IROP_NAdd, 8):	
-			{ 
-				ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
-				STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 + wordRhs.m_u64);
-			}	break;
+		case MASHOP(IROP_NAdd, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 + wordRhs.m_u8);		break;
+		case MASHOP(IROP_NAdd, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 + wordRhs.m_u16);	break;
+		case MASHOP(IROP_NAdd, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 + wordRhs.m_u32);	break;
+		case MASHOP(IROP_NAdd, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 + wordRhs.m_u64);	break;
+
+		case MASHOP(IROP_NSub, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 - wordRhs.m_u8);		break;
+		case MASHOP(IROP_NSub, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 - wordRhs.m_u16);	break;
+		case MASHOP(IROP_NSub, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 - wordRhs.m_u32);	break;
+		case MASHOP(IROP_NSub, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 - wordRhs.m_u64);	break;
+
+		case MASHOP(IROP_NMul, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 * wordRhs.m_u8);		break;
+		case MASHOP(IROP_NMul, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 * wordRhs.m_u16);	break;
+		case MASHOP(IROP_NMul, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 * wordRhs.m_u32);	break;
+		case MASHOP(IROP_NMul, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 * wordRhs.m_u64);	break;
+
+		case MASHOP(IROP_UDiv, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 / wordRhs.m_u8);		break;
+		case MASHOP(IROP_UDiv, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 / wordRhs.m_u16);	break;
+		case MASHOP(IROP_UDiv, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 / wordRhs.m_u32);	break;
+		case MASHOP(IROP_UDiv, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_s64 / wordRhs.m_s64);	break;
+
+		case MASHOP(IROP_SDiv, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_s8 / wordRhs.m_s8);		break;
+		case MASHOP(IROP_SDiv, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_s16 / wordRhs.m_s16);	break;
+		case MASHOP(IROP_SDiv, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_s32 / wordRhs.m_s32); 	break;
+		case MASHOP(IROP_SDiv, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 / wordRhs.m_u64);	break;
+
+		case MASHOP(IROP_URem, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 % wordRhs.m_u8);		break;
+		case MASHOP(IROP_URem, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 % wordRhs.m_u16);	break;
+		case MASHOP(IROP_URem, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 % wordRhs.m_u32);	break;
+		case MASHOP(IROP_URem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_s64 % wordRhs.m_s64);	break;
+
+		case MASHOP(IROP_SRem, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_s8 % wordRhs.m_s8);		break;
+		case MASHOP(IROP_SRem, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_s16 % wordRhs.m_s16);	break;
+		case MASHOP(IROP_SRem, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_s32 % wordRhs.m_s32); 	break;
+		case MASHOP(IROP_SRem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 % wordRhs.m_u64);	break;
+
+		case MASHOP(IROP_GAdd, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, wordLhs.m_f32 + wordRhs.m_f32);	break;
+		case MASHOP(IROP_GAdd, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, wordLhs.m_f64 + wordRhs.m_f64);	break;
+
+		case MASHOP(IROP_GSub, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, wordLhs.m_f32 - wordRhs.m_f32);	break;
+		case MASHOP(IROP_GSub, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, wordLhs.m_f64 - wordRhs.m_f64);	break;
+
+		case MASHOP(IROP_GMul, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, wordLhs.m_f32 * wordRhs.m_f32);	break;
+		case MASHOP(IROP_GMul, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, wordLhs.m_f64 * wordRhs.m_f64);	break;
+
+		case MASHOP(IROP_GDiv, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, wordLhs.m_f32 / wordRhs.m_f32);	break;
+		case MASHOP(IROP_GDiv, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, wordLhs.m_f64 / wordRhs.m_f64);	break;
+
+		case MASHOP(IROP_GRem, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, fmodf(wordLhs.m_f32, wordRhs.m_f32));	break;
+		case MASHOP(IROP_GRem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, fmod(wordLhs.m_f64,  wordRhs.m_f64));	break;
 
 		case MASHOP(IROP_NTrace, 1):	
 			ReadOpcodes(pVm, pInst, 1, &wordLhs); printf("1byte %d\n", wordLhs.m_u8); break;
@@ -1826,7 +1836,10 @@ SConstant * CBuilder::PConstFloat(f64 g, int cBit)
 {
 	auto pConst = m_blistConst.AppendNew();
 	pConst->m_opk = OPK_Literal;
-	pConst->m_word.m_f64 = g;
+	if (cBit == 32) 
+		pConst->m_word.m_f32 = (f32)g;
+	else
+		pConst->m_word.m_f64 = g;
 
 	pConst->m_litty.m_litk = LITK_Float;
 	pConst->m_litty.m_cBit = cBit;

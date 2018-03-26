@@ -880,6 +880,7 @@ TESTRES TestresRunUnitTest(
 		{
 			printf("Unexpected error during type check test %s\n", pUtest->m_strName.PCoz());
 			printf("input = \"%s\"\n", pCozIn);
+			testres = TESTRES_SourceError;
 		}
 
 		fHasExpectedErr = FCheckForExpectedErrors(&errmanTest, ERRID_TypeCheckMin, ERRID_TypeCheckMax, &testres);

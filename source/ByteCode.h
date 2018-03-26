@@ -277,6 +277,7 @@ namespace BCode
 		SInstruction *	PInstCreateError();
 
 		Instruction *	PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
+		SInstruction *	PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
 		Instruction *	PInstCreateStore(SValue * pValPT, SValue * pValT);
 
 		SValue *		PValCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName = "");
