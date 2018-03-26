@@ -100,7 +100,7 @@ enum OPSZ
 	OPSZ_4,
 	OPSZ_8,
 	OPSZ_CB,
-	OPSZ_PCB,	// pointer to a value cB in size
+	OPSZ_PCB,	// stack index of pointer to a value cB in size
 	OPSZ_Ptr,
 	OPSZ_RegIdx,
 };
@@ -129,6 +129,7 @@ struct OpSignature // tag = opsig
 		OPMN(JumpOp,	Call)		OPSIZE(Ptr, Ptr, CB) \
 						/* CondBranch(fPred, {iInstT,iInstF}) */ \
 		OP(				CondBranch)	OPSIZE(1, 8, 0) \
+						/* Branch(0, iInst) */ \
 		OP(				Branch)		OPSIZE(0, 0, 0) \
 		OPMX(JumpOp,	Phi)		OPSIZE(0, 0, 0) \
 		\
@@ -159,8 +160,8 @@ struct OpSignature // tag = opsig
 		OP(				Or)			OPSIZE(0, 0, 0) \
 		OPMX(LogicOp,	Xor)		OPSIZE(0, 0, 0) \
 		\
-						/* Alloca(iBStackResult)->iBStack(ref) */ \
-		OPMN(MemoryOp,	Alloca)		OPSIZE(RegIdx, 0, PCB) \
+						/* Alloca(iBStackResult, pTinDebug)->iBStack(ref) */ \
+		OPMN(MemoryOp,	Alloca)		OPSIZE(RegIdx, Ptr, PCB) \
 						/* Load(Reg(Pointer)) -> RegIdx */ \
 		OP(				Load)		OPSIZE(PCB, 0, CB) \
 						/* Store(Reg(Pointer), Value) */ \
@@ -168,9 +169,9 @@ struct OpSignature // tag = opsig
 		OP(				GEP)		OPSIZE(0, 0, 0) \
 		OP(				PtrDiff)	OPSIZE(0, 0, 0) \
 						/* Memset(pDst, pDst, valByte);  ExArgs(cB)*/ \
-		OP(				Memset)		OPSIZE(Ptr, 1, 0) \
+		OP(				Memset)		OPSIZE(RegIdx, 1, 0) \
 						/* Memcpy(pDst, pDst, pSrc);  ExArgs(cB)*/ \
-		OPMX(MemoryOp,	Memcpy)		OPSIZE(Ptr, Ptr, 0) \
+		OPMX(MemoryOp,	Memcpy)		OPSIZE(RegIdx, RegIdx, 0) \
 		\
 		OPMN(CastOp,	NTrunc)		OPSIZE(0, 0, 0) \
 		OP(				SignExt)	OPSIZE(0, 0, 0) \
@@ -362,7 +363,8 @@ enum NPRED
 #undef MOE_PRED
 #undef LLVM_PRED
 
-
+const char * PChzFromGpred(GPRED gpred);
+const char * PChzFromNpred(NPRED npred);
 
 enum FCOMPILE
 {
@@ -574,16 +576,20 @@ void InitLLVM(EWC::CAry<const char*> * paryPCozArgs);
 void ShutdownLLVM();
 
 bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChzFilenameIn);
+
+typedef EWC::CBlockList<SWorkspaceEntry, 128> BlockListEntry;
 void CodeGenEntryPointsLlvm(
 	CWorkspace * pWork,
 	CBuilderIR * pBuild, 
 	CSymbolTable * pSymtabTop,
+	BlockListEntry * pblistEntry,
 	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder);
 
 void CodeGenEntryPointsBytecode(
 	CWorkspace * pWork,
 	BCode::CBuilder * pBuild, 
 	CSymbolTable * pSymtabTop,
+	BlockListEntry * pblistEntry,
 	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder,
 	BCode::SProcedure ** ppProcUnitTest);
 

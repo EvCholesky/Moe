@@ -477,6 +477,7 @@ inline bool FIsValid(const SStringBuffer & strbuf)
 size_t  CBFree(const SStringBuffer & strbuf);
 size_t	CBCopyCoz(const char * pCozSource, char * aCoDest, size_t cBDest);
 void	AppendCoz(SStringBuffer * pStrbuf, const char * pCozSource);
+void	AppendToCch(SStringBuffer * pStrbuf, char ch, size_t cCh);
 void	FormatCoz(SStringBuffer * pStrbuf, const char * pChzFormat, ...);
 void	EnsureTerminated(SStringBuffer * pStrbuf, char ch);
 size_t	CBCoz(const char * pCoz);
@@ -1503,6 +1504,26 @@ void AppendCoz(SStringBuffer * pStrbuf, const char *pCozSource)
 	for ( ; (*pCozSource != '\0') & (pCozDest != pCozDestEnd); ++pCozSource, ++pCozDest)
 	{
 		*pCozDest = *pCozSource;
+	}
+
+	pStrbuf->m_pCozAppend = pCozDest;
+	EnsureTerminated(pStrbuf, '\0');
+}
+
+void AppendToCch(SStringBuffer * pStrbuf, char ch, size_t cChDesired)
+{
+	auto cChCur = CCh(pStrbuf->m_pCozBegin);
+	if (cChCur >= cChDesired)
+		return;
+
+	size_t dCh = cChDesired -  cChCur;
+
+	char * pCozDest = pStrbuf->m_pCozAppend;
+	char * pCozDestEnd =	 &pStrbuf->m_pCozBegin[pStrbuf->m_cBMax-1];
+	char * pCozDestDesired = &pCozDest[dCh];
+	for ( ; (pCozDest != pCozDestDesired) & (pCozDest != pCozDestEnd); ++pCozDest)
+	{
+		*pCozDest = ch;
 	}
 
 	pStrbuf->m_pCozAppend = pCozDest;

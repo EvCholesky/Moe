@@ -125,6 +125,25 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
 namespace BCode 
 {
 
+const OpSignature * POpsig(IROP irop)
+{
+	#define OP(x) 
+	#define OPMN(RANGE, x) 
+	#define OPMX(RANGE, x) 
+	#define OPSIZE(LHS, RHS, RET) {OPSZ_##LHS, OPSZ_##RHS, OPSZ_##RET, (OPSZ_##LHS == OPSZ_CB || OPSZ_##LHS == OPSZ_PCB) ? CBSRC_Lhs : ((OPSZ_##RHS == OPSZ_CB || OPSZ_##RHS == OPSZ_PCB) ? CBSRC_Rhs : CBSRC_Nil) },
+	static const OpSignature s_mpIropOpsig [] =
+	{
+		OPCODE_LIST
+	};
+	#undef OPSIZE
+	#undef OPMX
+	#undef OPMN
+	#undef OP
+
+	EWC_CASSERT(EWC_DIM(s_mpIropOpsig) == IROP_Max, "missing OpSignature string");
+	return &s_mpIropOpsig[irop];
+}
+
 template <typename T>
 T * PValRtiCast(SValue * pVal)
 {
@@ -139,7 +158,6 @@ T PValDerivedCast(SValue * pVal)
 	EWC_ASSERT(pVal && pVal->m_valk == EWC::SStripPointer<T>::Type::s_valk, "illegal derived cast");
 	return (T)pVal;
 }
-
 
 SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
 :SValue(VALK_Procedure)
@@ -386,8 +404,244 @@ void CBuilder::FinalizeProc(SProcedure * pProc)
 	}
 }
 
+static void PrintFloatOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWord word)
+{
+	switch(opk)
+	{
+	case OPK_Literal:
+	case OPK_LiteralArg:
+		{
+			switch (cBOperand)
+			{
+				case 4: FormatCoz(pStrbuf, "%f", word.m_f32);	break;
+				case 8: FormatCoz(pStrbuf, "%f", word.m_f64);	break;
+			}
+		} break;
+	case OPK_Register:
+	case OPK_RegisterArg:
+		{
+			switch (cBOperand)
+			{
+				case 1: FormatCoz(pStrbuf, "[%d]", word.m_s8);		break;
+				case 2: FormatCoz(pStrbuf, "[%d]", word.m_s16);		break;
+				case 4: FormatCoz(pStrbuf, "[%d]", word.m_s32);		break;
+				case 8: FormatCoz(pStrbuf, "[%lld]", word.m_s64);	break;
+			}
+		} break;
+	default:
+		FormatCoz(pStrbuf, "ERR(0x%x) 0x%x", opk, word.m_u64);
+	}
+}
+
+static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWord word, bool fIsSigned)
+{
+	switch(opk)
+	{
+	case OPK_Literal:
+	case OPK_LiteralArg:
+		{
+
+			if (fIsSigned)
+			{
+				switch (cBOperand)
+				{
+					case 1: FormatCoz(pStrbuf, "%u", word.m_u8);	break;
+					case 2: FormatCoz(pStrbuf, "%u", word.m_u16);	break;
+					case 4: FormatCoz(pStrbuf, "%u", word.m_u32);	break;
+					case 8: FormatCoz(pStrbuf, "%llu", word.m_u64);	break;
+				}
+			}
+			else
+			{
+				switch (cBOperand)
+				{
+					case 1: FormatCoz(pStrbuf, "%d", word.m_s8);	break;
+					case 2: FormatCoz(pStrbuf, "%d", word.m_s16);	break;
+					case 4: FormatCoz(pStrbuf, "%d", word.m_s32);	break;
+					case 8: FormatCoz(pStrbuf, "%lld", word.m_s64);	break;
+				}
+			}
+		} break;
+	case OPK_Register:
+	case OPK_RegisterArg:
+		{
+			switch (cBOperand)
+			{
+				case 1: FormatCoz(pStrbuf, "[%d]", word.m_s8);		break;
+				case 2: FormatCoz(pStrbuf, "[%d]", word.m_s16);	break;
+				case 4: FormatCoz(pStrbuf, "[%d]", word.m_s32);	break;
+				case 8: FormatCoz(pStrbuf, "[%lld]", word.m_s64);	break;
+			}
+		} break;
+	default:
+		FormatCoz(pStrbuf, "ERR(0x%x) 0x%x", opk, word.m_u64);
+	}
+}
+
+int CBOperandFromOpsz(OPSZ opsz, int cBOperand, SDataLayout * pDlay)
+{
+	switch(opsz)
+	{
+	case OPSZ_0:	return 0;
+	case OPSZ_1:	return 1;
+	case OPSZ_2:	return 2;
+	case OPSZ_4:	return 4;
+	case OPSZ_8:	return 8;
+	case OPSZ_CB:	return cBOperand;
+	case OPSZ_PCB:	return 4;
+	case OPSZ_Ptr:	return pDlay->m_cBPointer;
+	case OPSZ_RegIdx: return 4;
+	default:
+		EWC_ASSERT(false, "unhandled OPSZ");
+		return 0;
+	}
+}
+
 void CBuilder::PrintDump()
 {
+	const int s_operandPos = 22;
+	char aCh[128];
+
+	SProcedure ** ppProc;
+	EWC::CHash<HV, SProcedure *>::CIterator iter(&m_hashHvMangledPProc);
+	while (ppProc = iter.Next())
+	{
+		auto pProc = *ppProc;
+		printf("%s()\n", pProc->m_pTinproc->m_strName.PCoz());
+		auto pInstMac = pProc->m_aryInst.PMac();
+		int iInst = 0;
+
+
+		for (auto pInst = pProc->m_aryInst.A(); pInst != pInstMac; ++pInst, ++iInst)
+		{
+			auto pOpsig = POpsig(pInst->m_irop);
+
+			SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+			FormatCoz(&strbuf, "i%d ", iInst);
+			AppendToCch(&strbuf, ' ', 6);
+
+			FormatCoz(&strbuf, "%s", PChzFromIrop(pInst->m_irop));
+			if (pOpsig->m_opszRet != OPSZ_0)
+			{
+				FormatCoz(&strbuf, "_%d", pInst->m_cBOperand);
+			}
+			AppendCoz(&strbuf, " ");
+
+			auto cBLhs = CBOperandFromOpsz(pOpsig->m_opszLhs, pInst->m_cBOperand, m_pDlay);
+			auto cBRhs = CBOperandFromOpsz(pOpsig->m_opszRhs, pInst->m_cBOperand, m_pDlay);
+			switch (pInst->m_irop)
+			{
+			case IROP_Call:
+				{
+					if ((pInst->m_opkLhs & FOPK_Dereference) == 0)
+					{
+						auto pProc = (SProcedure *)pInst->m_wordLhs.m_pV;
+						FormatCoz(&strbuf, "%s()->[%d]", pProc->m_pTinproc->m_strName.PCoz(), pInst->m_iBStackOut);
+					}
+				} break;
+			case IROP_Branch:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					FormatCoz(&strbuf, "i%d", pInst->m_wordRhs.m_s32);
+				} break;
+			case IROP_CondBranch:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+
+					s32 * pIInst = (s32*)&pInst->m_wordRhs;
+					FormatCoz(&strbuf, " ? i%d : i%d", pIInst[1], pIInst[0]);
+				} break;
+			case IROP_GCmp:
+				{
+					FormatCoz(&strbuf, "(%s) ", PChzFromGpred((GPRED)pInst->m_pred));
+
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintFloatOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs);
+					AppendCoz(&strbuf, ", ");
+					PrintFloatOperand(&strbuf, cBRhs, pInst->m_opkRhs, pInst->m_wordRhs);
+
+					FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
+				} break;
+			case IROP_NCmp:
+				{
+					FormatCoz(&strbuf, "(%s) ", PChzFromNpred((NPRED)pInst->m_pred));
+
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+					AppendCoz(&strbuf, ", ");
+					PrintIntOperand(&strbuf, cBRhs, pInst->m_opkRhs, pInst->m_wordRhs, true);
+
+					FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
+				} break;
+			case IROP_Memset:
+			case IROP_Memcpy:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					if (cBLhs)
+					{
+						PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+					}
+
+					if (cBRhs)
+					{
+						AppendCoz(&strbuf, ", ");
+						PrintIntOperand(&strbuf, cBRhs, pInst->m_opkRhs, pInst->m_wordRhs, true);
+					}
+					++pInst; 
+					if (!EWC_FVERIFY(pInst->m_irop == IROP_ExArgs, "expected exArgs"))
+						break;
+
+					AppendCoz(&strbuf, ", ");
+					PrintIntOperand(&strbuf, 8, pInst->m_opkLhs, pInst->m_wordLhs, true);
+					AppendCoz(&strbuf, " bytes");
+				} break;
+			case IROP_TraceStore:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+
+					auto pTin = (STypeInfo*)pInst->m_wordRhs.m_pV;
+					auto strTin = StrFromTypeInfo(pTin);
+					FormatCoz(&strbuf, " : %s", strTin.PCoz());
+				} break;
+			case IROP_Alloca:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+
+					auto pTin = (STypeInfo*)pInst->m_wordRhs.m_pV;
+					auto strTin = StrFromTypeInfo(pTin);
+					FormatCoz(&strbuf, " : %s", strTin.PCoz());
+
+					FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
+				} break;
+
+			default:
+			{
+				AppendToCch(&strbuf, ' ', s_operandPos);
+				if (cBLhs)
+				{
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+				}
+
+				if (cBRhs)
+				{
+					AppendCoz(&strbuf, ", ");
+					PrintIntOperand(&strbuf, cBRhs, pInst->m_opkRhs, pInst->m_wordRhs, true);
+				}
+
+				if (pOpsig->m_opszRet != OPSZ_0)
+				{
+					FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
+				}
+			} break;
+			}
+			AppendCoz(&strbuf, "\n");
+			printf(aCh);
+		}
+		printf("\n");
+	}
 }
 
 void CBuilder::FinalizeBuild(CWorkspace * pWork)
@@ -462,7 +716,7 @@ SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char *
 	u64 cBAlign;
 	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
 
-	auto pInst = PInstCreateRaw(IROP_Alloca, cB, nullptr, nullptr, pChzName);
+	auto pInst = PInstCreateRaw(IROP_Alloca, cB, nullptr, PConstPointer(pTin), pChzName);
 	if (pInst->m_irop == IROP_Error)
 		return pInst;
 
@@ -745,25 +999,6 @@ SInstruction * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, SValue * pValR
 	return PInstCreateRaw(irop, pValLhs, pValRhs, pChzName);
 }
 
-const OpSignature * POpsig(IROP irop)
-{
-	#define OP(x) 
-	#define OPMN(RANGE, x) 
-	#define OPMX(RANGE, x) 
-	#define OPSIZE(LHS, RHS, RET) {OPSZ_##LHS, OPSZ_##RHS, OPSZ_##RET, (OPSZ_##LHS == OPSZ_CB || OPSZ_##LHS == OPSZ_PCB) ? CBSRC_Lhs : ((OPSZ_##RHS == OPSZ_CB || OPSZ_##RHS == OPSZ_PCB) ? CBSRC_Rhs : CBSRC_Nil) },
-	static const OpSignature s_mpIropOpsig [] =
-	{
-		OPCODE_LIST
-	};
-	#undef OPSIZE
-	#undef OPMX
-	#undef OPMN
-	#undef OP
-
-	EWC_CASSERT(EWC_DIM(s_mpIropOpsig) == IROP_Max, "missing OpSignature string");
-	return &s_mpIropOpsig[irop];
-}
-
 static inline bool FIsValidCBOperand(int cBOperand)
 {
 	return (cBOperand == 1) | (cBOperand == 2) | (cBOperand == 4) | (cBOperand == 8);
@@ -848,7 +1083,7 @@ CBuilder::Instruction *	CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SV
 
 		EWC_ASSERT(cBRhs != 0, "expected RHS operand, but has zero size");
 	}
-	EWC_ASSERT(!FDefinesCB(pOpsig->m_opszRhs) || !FDefinesCB(pOpsig->m_opszLhs) || cBLhs == cBRhs, "operand size mismatch");
+	EWC_ASSERT(pOpsig->m_opszLhs != OPSZ_CB || pOpsig->m_opszRhs != OPSZ_CB || cBLhs == cBRhs, "operand size mismatch");
 
 	u32 cBOperand = 0;
 	switch (pOpsig->m_cbsrc)
@@ -1115,7 +1350,9 @@ void PrintInstance(CVirtualMachine * pVm, STypeInfo * pTin, u8 * pData)
 	} break;
     case TINK_Pointer:
 	{
-		FormatCoz(pVm->m_pStrbuf, "%p", pData);	break;
+		auto pTinptr = (STypeInfoPointer *)pTin;
+		AppendCoz(pVm->m_pStrbuf, "&");
+		PrintInstance(pVm, pTinptr->m_pTinPointedTo, *(u8**)pData);
 	} break;
     case TINK_Procedure:
 	{
@@ -1502,7 +1739,6 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		} break;
 		case MASHOP(IROP_Branch, 0):
 		{	
-			//ReadOpcodes(pVm, pInst, &wordLhs, &wordRhs);
 			s32 iInst = pInst->m_wordRhs.m_s32;
 
 			pInst = &pInstMin[iInst - 1]; // -1 because it is incremented below
@@ -1793,6 +2029,8 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 
 	buildBc.ActivateProc(nullptr, nullptr);
 	buildBc.FinalizeProc(pProc);
+
+	buildBc.PrintDump();
 
 	static const u32 s_cBStackMax = 2048;
 	u8 * pBStack = (u8 *)pAlloc->EWC_ALLOC(s_cBStackMax, 16);

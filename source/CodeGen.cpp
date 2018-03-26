@@ -183,6 +183,48 @@ const char * PChzFromIrop(IROP irop)
 	return s_mpIropPChz[irop];
 }
 
+const char * PChzFromGpred(GPRED gpred)
+{
+	if (!EWC_FVERIFY((gpred >= GPRED_Nil) & (gpred < GPRED_Max), "unknown predicate"))
+		return "(unknown)";
+
+	if (gpred <= GPRED_Nil)
+		return "nil";
+
+	#define MOE_PRED(X) #X,
+	#define LLVM_PRED(X)
+	const char * s_mpGpredPChz[] =
+	{
+		GPRED_LIST
+	};
+	#undef LLVM_PRED
+	#undef MOE_PRED
+
+	EWC_CASSERT(EWC_DIM(s_mpGpredPChz) == GPRED_Max, "missing GPRED string");
+	return s_mpGpredPChz[gpred];
+}
+
+const char * PChzFromNpred(NPRED npred)
+{
+	if (!EWC_FVERIFY((npred >= NPRED_Nil) & (npred < NPRED_Max), "unknown predicate"))
+		return "(unknown)";
+
+	if (npred <= NPRED_Nil)
+		return "nil";
+
+	#define MOE_PRED(X) #X,
+	#define LLVM_PRED(X)
+	const char * s_mpNpredPChz[] =
+	{
+		NPRED_LIST
+	};
+	#undef LLVM_PRED
+	#undef MOE_PRED
+
+	EWC_CASSERT(EWC_DIM(s_mpNpredPChz) == NPRED_Max, "missing NPRED string");
+	return s_mpNpredPChz[npred];
+}
+
 static inline llvm::CallingConv::ID CallingconvFromCallconv(CALLCONV callconv)
 {
 	static const llvm::CallingConv::ID s_mpCallconvCallingconv[] = 
@@ -850,8 +892,8 @@ void CalculateSizeAndAlign(BCode::CBuilder * pBuild, BCode::CBuilder::LType * pT
 	u64 cByteSize;
 	u64 cByteAlign;
 	CalculateByteSizeAndAlign(pBuild->m_pDlay, pTin, &cByteSize, &cByteAlign);
-	*pCBitSize = (cByteSize + 7) / 8;
-	*pCBitAlign = (cByteAlign + 7) / 8;
+	*pCBitSize = cByteSize * 8;
+	*pCBitAlign = cByteAlign * 8;
 }
 
 CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CBuilderIR * pBuild, SSymbol * pSym)
@@ -2032,7 +2074,87 @@ LLVMOpaqueValue * PLvalZeroInType(CBuilderIR * pBuild, STypeInfo * pTin)
 
 BCode::SValue * PLvalZeroInType(BCode::CBuilder * pBuild, STypeInfo * pTin)
 {
-	EWC_ASSERT(false, "bytecode tbd");
+	switch (pTin->m_tink)
+	{
+	case TINK_Bool:		return pBuild->PConstInt(0, 8, false);
+	case TINK_Integer:	return pBuild->PConstInt(0, ((STypeInfoInteger *)pTin)->m_cBit, false);
+	case TINK_Float:	return pBuild->PConstFloat(0.0f, ((STypeInfoFloat *)pTin)->m_cBit);
+	case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTin;
+			return PLvalZeroInType(pBuild, pTinenum->m_pTinLoose);
+		} 
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			return PLvalZeroInType(pBuild, pTinqual->m_pTin);
+		}
+	case TINK_Pointer:
+	case TINK_Procedure:
+		{
+			return pBuild->PConstPointer(nullptr);
+		}
+	case TINK_Array:
+		{
+			EWC_ASSERT(false, "bytecode tbd");
+			return false;
+			/*
+			auto pTinary = (STypeInfoArray *)pTin;
+			LLVMOpaqueType * pLtypeElement = CBuilderIR::PLtypeFromPTin(pTinary->m_pTin);
+			switch (pTinary->m_aryk)
+			{
+			case ARYK_Fixed:
+			{
+				(void) PLvalZeroInType(pBuild, pTinary->m_pTin);
+
+				auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, (size_t)pTinary->m_c);
+
+				auto pLvalZero = PLvalZeroInType(pBuild, pTinary->m_pTin);
+				EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
+
+				for (s64 iElement = 0; iElement < pTinary->m_c; ++iElement)
+				{
+					apLval[iElement] = pLvalZero;
+				}
+
+				auto pLvalReturn = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
+				pBuild->m_pAlloc->EWC_DELETE(apLval);
+				return pLvalReturn;
+			}
+			case ARYK_Reference:
+			{
+				LLVMOpaqueValue * apLvalMember[2]; // pointer, count
+				apLvalMember[ARYMEMB_Count] = LLVMConstInt(LLVMInt64Type(), 0, false);
+				apLvalMember[ARYMEMB_Data] = LLVMConstNull(LLVMPointerType(pLtypeElement, 0));
+
+				return LLVMConstStruct(apLvalMember, EWC_DIM(apLvalMember), false);
+			}
+			default: EWC_ASSERT(false, "Unhandled ARYK");
+			}*/
+		}
+	case TINK_Struct:
+	{
+		EWC_ASSERT(false, "bytecode tbd");
+		return false;
+		/*
+		auto pTinstruct = (STypeInfoStruct *)pTin;
+
+		int cpLvalField = (int)pTinstruct->m_aryTypemembField.C();
+		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalField;
+		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
+
+		for (int ipLval = 0; ipLval < cpLvalField; ++ipLval)
+		{
+			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypemembField[ipLval].m_pTin);
+		}
+
+		return LLVMConstNamedStruct((LLVMTypeRef)pTinstruct->m_pCgtype, apLvalMember, cpLvalField);
+		*/
+	}
+
+	default: break;
+	}
+
 	return nullptr;
 }
 
@@ -2047,8 +2169,10 @@ CIRConstant * PConstZeroInType(CBuilderIR * pBuild, STypeInfo * pTin)
 
 BCode::CBuilder::Constant * PConstZeroInType(BCode::CBuilder * pBuild, STypeInfo * pTin)
 {
-	EWC_ASSERT(false, "bytecode tbd");
-	return nullptr;
+	auto pVal = PLvalZeroInType(pBuild, pTin);
+	EWC_ASSERT(pVal->m_valk == VALK_Constant, "non-constant returned from PValZeroInType()");
+
+	return (BCode::SConstant *)pVal;
 }
 
 struct SReflectTableEntry // reftent
@@ -6695,11 +6819,51 @@ typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 	return pProc;
 }
 
+enum CGEPK // Code Generation Entry Point Kind
+{
+	CGEPK_None,
+	CGEPK_ImplicitProc,	// code will be added in order to an implicit proc for unit tests
+	CGEPK_Normal,
+};
+
+CGEPK CgepkCompute(CWorkspace * pWork, CSTNode * pStnod)
+{
+	if (pStnod->m_grfstnod.FIsSet(FSTNOD_NoCodeGeneration))
+		return CGEPK_None;
+
+	bool fGlobalTypeDeclaration = false;
+
+	bool fImplicitFunction = (pWork->m_globmod == GLOBMOD_UnitTest);
+	switch (pStnod->m_park)
+	{
+	case PARK_StructDefinition:		fGlobalTypeDeclaration = true;	break;
+	case PARK_EnumDefinition:		fGlobalTypeDeclaration = true;	break;
+	case PARK_Typedef:				fGlobalTypeDeclaration = true;	break;
+	case PARK_Nop:					fGlobalTypeDeclaration = true;	break;
+	case PARK_ProcedureDefinition:	fImplicitFunction = false;		break;
+
+	case PARK_Decl:
+	case PARK_ConstantDecl:
+		break;
+	default:
+		EWC_ASSERT(fImplicitFunction, "Unexpected top level PARK (%s)", PChzFromPark(pStnod->m_park));
+		break;
+	}
+
+	if (fGlobalTypeDeclaration)
+		return CGEPK_None;
+
+	if (fImplicitFunction)
+		return CGEPK_ImplicitProc;
+	return CGEPK_Normal;
+}
+
 template <typename BUILD>
 void CodeGenEntryPoints(
 	CWorkspace * pWork,
 	BUILD * pBuild, 
 	CSymbolTable * pSymtabTop,
+	BlockListEntry * pblistEntry,
 	CAry<SWorkspaceEntry *> * parypEntryOrder,
 	typename BUILD::Proc ** ppProcUnitTest)
 {
@@ -6707,46 +6871,18 @@ void CodeGenEntryPoints(
 	BUILD::Proc * pProcImplicit = nullptr;
 
 	CDynAry<CSTNode *> arypStnodUnitTest(pWork->m_pAlloc, BK_UnitTest, (int)parypEntryOrder->C());	// entry points from unit tests that are not procedure definitions
+
+	// Two passes so that entry points added to an implicit procedure are added in lexical order, not 
+	//  Type-checked order.
+
 	SWorkspaceEntry ** ppEntryMac = parypEntryOrder->PMac();
 	for (SWorkspaceEntry ** ppEntry = parypEntryOrder->A(); ppEntry != ppEntryMac; ++ppEntry)
 	{
 		SWorkspaceEntry * pEntry = *ppEntry;
 		CSTNode * pStnod = pEntry->m_pStnod;
+		auto cgepk = CgepkCompute(pWork, pStnod);
 
-		if (pStnod->m_grfstnod.FIsSet(FSTNOD_NoCodeGeneration))
-			continue;
-
-		//EWC_ASSERT(pBuild->m_pProcCur == nullptr, "expected null procedure for entry point.");
-
-		bool fGlobalTypeDeclaration = false;
-
-		bool fImplicitFunction = (pWork->m_globmod == GLOBMOD_UnitTest);
-		switch (pStnod->m_park)
-		{
-		case PARK_StructDefinition:		fGlobalTypeDeclaration = true;	break;
-		case PARK_EnumDefinition:		fGlobalTypeDeclaration = true;	break;
-		case PARK_Typedef:				fGlobalTypeDeclaration = true;	break;
-		case PARK_Nop:					fGlobalTypeDeclaration = true;	break;
-		case PARK_ProcedureDefinition:	fImplicitFunction = false;		break;
-
-		case PARK_Decl:
-		case PARK_ConstantDecl:
-			break;
-		default:
-			EWC_ASSERT(fImplicitFunction, "Unexpected top level PARK (%s)", PChzFromPark(pStnod->m_park));
-			break;
-		}
-
-		if (fGlobalTypeDeclaration)
-		{
-			continue;
-		}
-		else if (fImplicitFunction)
-		{
-			arypStnodUnitTest.Append(pStnod);
-			continue;
-		}
-		else
+		if (cgepk == CGEPK_Normal)
 		{
 			if (pStnod->m_park == PARK_ProcedureDefinition && pStnod->m_pSym->m_symdep != SYMDEP_Used)
 			{
@@ -6772,42 +6908,24 @@ void CodeGenEntryPoints(
 		}
 	}
 
+	BlockListEntry::CIterator iter(pblistEntry);
+	while (SWorkspaceEntry * pEntry = iter.Next()) 
+	{
+		CSTNode * pStnod = pEntry->m_pStnod;
+		auto cgepk = CgepkCompute(pWork, pStnod);
+
+		if (cgepk == CGEPK_ImplicitProc)	
+		{
+			arypStnodUnitTest.Append(pStnod);
+		}
+	}
+
 	if (!arypStnodUnitTest.FIsEmpty() && !pProcImplicit)
 	{
 		char aCh[128];
 		GenerateUniqueName(&pWork->m_unset, "__AnonFunc__", aCh, EWC_DIM(aCh));
 		auto pTinproc = PTinprocAlloc(pWork->m_pSymtab, 0, 0, aCh);
 		pProcImplicit = pBuild->PProcCreate(pWork, pTinproc, arypStnodUnitTest[0]);
-
-		/*
-		if (pGen->m_pBuildCb)
-		{
-			pProcImplicit->m_pProcBc = pGen->m_pBuildCb->PProcCreate();
-		}
-		else if (pGen->m_pBuildL)
-		{
-			pProcImplicit = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
-			auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
-			pProcImplicit->m_pLvalFunction = LLVMAddFunction(pBuild->m_pLmoduleCur, aCh, pLtypeFunction);
-
-			pProcImplicit->m_pBlockLocals = pBuild->PBlockCreate(pProcImplicit, aCh);
-			pProcImplicit->m_pBlockFirst = pBuild->PBlockCreate(pProcImplicit, aCh);
-
-			u64 cBitSize = LLVMPointerSize(pBuild->m_pTargd) * 8;
-			u64 cBitAlign = cBitSize;
-			auto pLvalDIFunctionType = LLVMDIBuilderCreateFunctionType(pBuild->m_pDib, nullptr, 0, cBitSize, cBitAlign);
-
-			pProcImplicit->m_pLvalDIFunction = PLvalCreateDebugFunction(
-													pWork,
-													pBuild,
-													aCh,
-													nullptr,
-													arypStnodUnitTest[0],
-													arypStnodUnitTest[0],
-													pLvalDIFunctionType,
-													pProcImplicit->m_pLvalFunction);
-		}
-		*/
 
 		GenerateMethodBody(pWork, pBuild, pProcImplicit, arypStnodUnitTest.A(), (int)arypStnodUnitTest.C(), true);
 	}
@@ -6828,19 +6946,21 @@ void CodeGenEntryPointsLlvm(
 	CWorkspace * pWork,
 	CBuilderIR * pBuildir,
 	CSymbolTable * pSymtabTop,
+	BlockListEntry * pblistEntry,
 	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder)
 {
-	CodeGenEntryPoints(pWork, pBuildir, pSymtabTop, parypEntryOrder, nullptr);
+	CodeGenEntryPoints(pWork, pBuildir, pSymtabTop, pblistEntry, parypEntryOrder, nullptr);
 }
 
 void CodeGenEntryPointsBytecode(
 	CWorkspace * pWork,
 	BCode::CBuilder * pBuildBc, 
 	CSymbolTable * pSymtabTop,
+	BlockListEntry * pblistEntry,
 	EWC::CAry<SWorkspaceEntry *> * parypEntryOrder,
 	BCode::SProcedure ** pProcUnitTest)
 {
-	CodeGenEntryPoints(pWork, pBuildBc, pSymtabTop, parypEntryOrder, pProcUnitTest);
+	CodeGenEntryPoints(pWork, pBuildBc, pSymtabTop, pblistEntry, parypEntryOrder, pProcUnitTest);
 }
 
 void CBuilderIR::ComputeDataLayout(SDataLayout * pDlay)
@@ -7107,7 +7227,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 #endif
 			CBuilderIR build(pWork, pChzFilenameIn, grfcompile);
 			
-			CodeGenEntryPointsLlvm(pWork, &build, pWork->m_pSymtab, &pWork->m_arypEntryChecked);
+			CodeGenEntryPointsLlvm(pWork, &build, pWork->m_pSymtab, &pWork->m_blistEntry, &pWork->m_arypEntryChecked);
 
 			CompileToObjectFile(pWork, &build, pChzFilenameIn);
 

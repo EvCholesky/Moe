@@ -924,7 +924,7 @@ TESTRES TestresRunUnitTest(
 		SDataLayout dlay;
 		buildir.ComputeDataLayout(&dlay);
 
-		CodeGenEntryPointsLlvm(&work, &buildir, work.m_pSymtab, &work.m_arypEntryChecked);
+		CodeGenEntryPointsLlvm(&work, &buildir, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked);
 
 		if (work.m_pErrman->FHasErrors())
 		{
@@ -936,7 +936,8 @@ TESTRES TestresRunUnitTest(
 		{
 			BCode::SProcedure * pProcUnitTest = nullptr;
 			BCode::CBuilder buildBc(&work, &dlay);
-			CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_arypEntryChecked, &pProcUnitTest);
+			CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, &pProcUnitTest);
+			buildBc.PrintDump();
 
 			char aCh[2048];
 			SStringBuffer strbufBytecode(aCh, EWC_DIM(aCh));
