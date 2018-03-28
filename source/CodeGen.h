@@ -191,8 +191,8 @@ struct OpSignature // tag = opsig
 						/* TraceStore(Reg, pTin) */ \
 		OP(				TraceStore)	OPSIZE(CB, Ptr, 0) \
 						/* RegStore(RegDst, ValueSrc) */ \
-		OP(				StoreToReg)	OPSIZE(RegIdx, CB, 4) \
-		OP(				StoreToIdx)	OPSIZE(RegIdx, CB, 4) \
+		OP(				StoreToReg)	OPSIZE(RegIdx, CB, 0) \
+		OP(				StoreToIdx)	OPSIZE(RegIdx, CB, 0) \
 						/* extra arguments for preceeding opcode */ \
 		OPMX(BCodeOp,	ExArgs)	OPSIZE(0, 0, 0) \
 
@@ -469,7 +469,7 @@ public:
 	void				FinalizeBuild(CWorkspace * pWork);
 	void				ComputeDataLayout(SDataLayout * pDlay);
 
-	CIRProcedure *		PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod); 
+	CIRProcedure *		PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod); 
 	CIRProcedure *		PProcCreate(
 							CWorkspace * pWork,
 							STypeInfoProcedure * pTinproc,
@@ -521,6 +521,8 @@ public:
 	CIRInstruction *	PInstCreateCast(IROP irop, CIRValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
 
 	CIRValue *			PValFromSymbol(SSymbol * pSym);
+	void				SetSymbolValue(SSymbol * pSym, CIRValue * pVal);
+
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
 	CIRValue *			PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
 	CIRInstruction *	PInstCreateMemset(CWorkspace * pWork, CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);

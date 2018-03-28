@@ -612,19 +612,27 @@ void EndWorkspace(CWorkspace * pWork)
 		pAlloc->EWC_DELETE(pEntry->m_pStnod);
 		pEntry->m_pStnod = nullptr;
 		pEntry->m_pSymtab = nullptr;
+	}
 
-		if (pEntry->m_pProc)
+	auto ppValMac = pWork->m_arypValManaged.PMac();
+	for (auto ppVal = pWork->m_arypValManaged.A(); ppVal != ppValMac; ++ppVal)
+	{
+		auto pVal = *ppVal;
+
+		// I don't want vTable pointers in CIRValue, so faux-virtual destructor
+		switch(pVal->m_valk)
 		{
-			pAlloc->EWC_DELETE(pEntry->m_pProc);
-			pEntry->m_pProc = nullptr;
+		case VALK_Procedure:
+			{
+				pAlloc->EWC_DELETE((CIRProcedure *)pVal);
+				break;
+			} break;
+		default:
+			pAlloc->EWC_DELETE(pVal);
+			break;
 		}
 	}
 
-	size_t cpVal = pWork->m_arypValManaged.C();
-	for (size_t ipVal = 0; ipVal < cpVal; ++ipVal)
-	{
-		pAlloc->EWC_DELETE(pWork->m_arypValManaged[ipVal]);
-	}
 	pWork->m_arypValManaged.Clear();
 
 	pWork->m_blistEntry.Clear();

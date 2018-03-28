@@ -896,12 +896,13 @@ void CalculateSizeAndAlign(BCode::CBuilder * pBuild, BCode::CBuilder::LType * pT
 	*pCBitAlign = cByteAlign * 8;
 }
 
-CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CBuilderIR * pBuild, SSymbol * pSym)
+template <typename BUILD>
+typename BUILD::Proc * PProcTryEnsure(CWorkspace * pWork, BUILD * pBuild, SSymbol * pSym)
 {
-	auto pVal = (CIRValue *)pSym->m_pVValue;
+	auto pVal = pBuild->PValFromSymbol(pSym);
 	if (pVal && EWC_FVERIFY(pVal->m_valk == VALK_Procedure, "symbol is not procedure definition"))
 	{
-		return (CIRProcedure *)pVal;
+		return (BUILD::Proc *)pVal;
 	}
 
 	// this happens when calling a method that is defined later
@@ -910,13 +911,12 @@ CIRProcedure * PProcTryEnsure(CWorkspace * pWork, CBuilderIR * pBuild, SSymbol *
 	auto pLvalParentScope = PLvalParentScopeForProcedure(pWork, pBuild, pStnodProc, pDif);
 
 	PushDIScope(pDif, pLvalParentScope);
-	(void) PProcCodegenPrototype<CBuilderIR>(pWork, pBuild, pSym->m_pStnodDefinition);
+	(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
 	PopDIScope(pDif, pLvalParentScope);
 
-	if (pVal && 
-		EWC_FVERIFY(pVal->m_valk == VALK_Procedure, "symbol is not procedure definition"))
+	if (pVal && EWC_FVERIFY(pVal->m_valk == VALK_Procedure, "symbol is not procedure definition"))
 	{
-		return (CIRProcedure *)pVal;
+		return (BUILD::Proc *)pVal;
 	}
 	return nullptr;
 }
@@ -930,7 +930,7 @@ LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CBuilderIR * 
 		auto pSymParentScope = pStproc->m_pStnodParentScope->m_pSym;
 		if (EWC_FVERIFY(pSymParentScope, "expected symbol to be set during type check"))
 		{
-			pProc = (CIRProcedure *)PProcTryEnsure(pWork, pBuild, pSymParentScope);
+			pProc = (CIRProcedure *)PProcTryEnsure<CBuilderIR>(pWork, pBuild, pSymParentScope);
 
 			if (!EWC_FVERIFY(pProc && pProc->m_valk == VALK_Procedure, "expected IR procedure"))
 				pProc = nullptr;
@@ -943,6 +943,11 @@ LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CBuilderIR * 
 	}
 
 	return pBuild->m_pLvalCompileUnit;
+}
+
+BCode::SStub * PLvalParentScopeForProcedure(CWorkspace * pWork, BCode::CBuilder * pBuild, CSTNode * pStnodProc, BCode::SStub * pDif)
+{
+	return nullptr;
 }
 
 static inline LLVMOpaqueValue * PLvalCreateDebugFunction(
@@ -1823,8 +1828,8 @@ LLVMOpaqueValue * CBuilderIR::PGepIndexFromValue(CIRValue * pVal)
 
 CIRValue * CBuilderIR::PValFromSymbol(SSymbol * pSym)
 {
-	auto pVal = (CIRValue *)pSym->m_pVValue;
-	if (!EWC_FVERIFY(pVal, "missing value for symbol"))
+	auto pVal = pSym->m_pValIr;
+	if (!pVal)
 		return nullptr;
 
 	if (pVal->m_valk == VALK_Instruction)
@@ -1839,6 +1844,11 @@ CIRValue * CBuilderIR::PValFromSymbol(SSymbol * pSym)
 	}
 
 	return pVal;
+}
+
+void CBuilderIR::SetSymbolValue(SSymbol * pSym, CIRValue * pVal)
+{
+	pSym->m_pValIr = pVal;
 }
 
 CIRInstruction * CBuilderIR::PInstCreateStore(CIRValue * pValPT, CIRValue * pValT)
@@ -4629,7 +4639,7 @@ typename BUILD::Value * PValGenerateDecl(
 	if (fIsGlobal)
 	{
 		auto pGlob = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
-		pStnod->m_pSym->m_pVValue = pGlob;
+		pBuild->SetSymbolValue(pStnod->m_pSym, pGlob);
 
 		DInfoCreateGlobalVariable(pBuild, pStnod->m_pTin, pLvalScope, pDif, strName.PCoz(), strPunyName.PCoz(), iLine, true, pGlob);
 
@@ -4674,7 +4684,7 @@ typename BUILD::Value * PValGenerateDecl(
 		pBuild->ActivateBlock(pBlockCur);
 
 
-		pStnod->m_pSym->m_pVValue = pValAlloca;
+		pBuild->SetSymbolValue(pStnod->m_pSym, pValAlloca);
 	
 		auto pLvalDIVariable = PLvallDInfoCreateAutoVariable(pBuild, pStnod->m_pTin, pLvalScope, pDif, strPunyName.PCoz(), iLine, false, 0);
 
@@ -4879,10 +4889,9 @@ CIRValue * CBuilderIR::PValGenerateCall(
 
 		PProcTryEnsure(pWork, this, pSym);
 
-		if (!pSym->m_pVValue)
+		if (!pSym->m_pValIr)
 			return nullptr;
 	}
-
 
 	EmitLocation(pWork, this, pStnod->m_lexloc);
 	EWC_ASSERT(valgenk != VALGENK_Reference, "cannot return reference value for procedure call");
@@ -4893,7 +4902,7 @@ CIRValue * CBuilderIR::PValGenerateCall(
 
 	if (fIsDirectCall)
 	{
-		CIRProcedure * pProc = (CIRProcedure *)pSym->m_pVValue;
+		CIRProcedure * pProc = (CIRProcedure *)pSym->m_pValIr;
 		auto pLvalFunction = pProc->m_pLvalFunction;
 		if (LLVMCountParams(pLvalFunction) != parypLvalArgs->C())
 		{
@@ -5095,7 +5104,7 @@ CIRValue * PValGenerateProcCall(
 
 		PProcTryEnsure(pWork, pBuild, pSym);
 
-		if (!pSym->m_pVValue)
+		if (!pSym->m_pValIr)
 			return nullptr;
 	}
 
@@ -5128,7 +5137,7 @@ CIRValue * PValGenerateProcCall(
 
 	if (fIsDirectCall)
 	{
-		CIRProcedure * pProc = (CIRProcedure *)pSym->m_pVValue;
+		CIRProcedure * pProc = (CIRProcedure *)pSym->m_pValIr;
 		EWC_ASSERT(pProc, "missing proc codegen");
 
 		auto pLvalFunction = pProc->m_pLvalFunction;
@@ -5195,8 +5204,90 @@ BCode::SValue * PValGenerateProcCall(
 	STypeInfoProcedure * pTinproc,
 	VALGENK valgenk)
 {
-	EWC_ASSERT(false, "bytecode TBD");
-	return nullptr;
+	bool fIsDirectCall = FIsDirectCall(pStnod);
+	auto pSym = pStnod->m_pSym;
+	if (fIsDirectCall)
+	{
+		if (!EWC_FVERIFY(pSym, "calling function without generated code"))
+			return nullptr;
+
+		EWC_ASSERT(pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused %p %s", pSym, pSym->m_strName.PCoz());
+
+		PProcTryEnsure(pWork, pBuild, pSym);
+
+		if (!pSym->m_pValBc)
+			return nullptr;
+	}
+
+	size_t cStnodArgs = pStnod->CStnodChild() - 1; // don't count the identifier
+
+	EmitLocation(pWork, pBuild, pStnod->m_lexloc);
+
+	CDynAry<BCode::SValue *> arypValArgs(pBuild->m_pAlloc, EWC::BK_Stack);
+	for (size_t iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
+	{
+		CSTNode * pStnodArg = pStnod->PStnodChild((int)iStnodChild + 1);
+		STypeInfo * pTinParam = pStnodArg->m_pTin;
+		if (iStnodChild < pTinproc->m_arypTinParams.C())
+		{
+			pTinParam = pTinproc->m_arypTinParams[iStnodChild];
+		}
+
+		auto pValRhsCast = PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnodArg, pTinParam);
+
+		arypValArgs.Append(pBuild->PProcArg(pValRhsCast));
+		if (!EWC_FVERIFY(*arypValArgs.PLast(), "missing argument value"))
+			return nullptr;
+	}
+
+	EWC_ASSERT(valgenk != VALGENK_Reference, "cannot return reference value for procedure call");
+
+
+	if (fIsDirectCall)
+	{
+		if (pTinproc->m_arypTinParams.C() != cStnodArgs)
+		{
+			if (!EWC_FVERIFY(pTinproc->FHasVarArgs(), "unexpected number of arguments"))
+				return nullptr;
+		}
+
+		auto pProc = (BCode::SProcedure *)pSym->m_pValBc;
+		EWC_ASSERT(pProc, "missing proc codegen");
+
+		auto pInst = pBuild->PInstCreateCall(pProc, arypValArgs.A(), (int)arypValArgs.C());
+		if (pInst->m_irop == IROP_Error)
+			return pInst;
+
+		if (pTinproc->m_callconv != CALLCONV_Nil)
+		{
+			//LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
+		}
+		return pInst;
+	}
+	else
+	{
+		EWC_ASSERT(false, "bytecode TBD (call by ref)");
+		return nullptr;
+		/*
+		CSTNode * pStnodProcref = pStnod->PStnodChildSafe(0);
+		if (!EWC_FVERIFY(pStnodProcref, "expected procedure reference"))
+			return nullptr;
+
+		auto pValProcref = PValGenerate(pWork, pBuild, pStnodProcref, VALGENK_Instance);
+
+		pInst->m_pLval = LLVMBuildCall(
+			pBuild->m_pLbuild,
+			pValProcref->m_pLval,
+			arypLvalArgs.A(),
+			(u32)arypLvalArgs.C(),
+			"");
+		if (pTinproc->m_callconv != CALLCONV_Nil)
+		{
+			LLVMSetInstructionCallConv(pInst->m_pLval, CallingconvFromCallconv(pTinproc->m_callconv));
+		}
+		return pInst;
+		*/
+	}
 }
 
 template <typename BUILD>
@@ -5236,13 +5327,14 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			}*/
 
 			BUILD::Proc * pProc = nullptr;
-			if (!pStnod->m_pSym->m_pVValue)
+			auto pValSym = pBuild->PValFromSymbol(pStnod->m_pSym);
+			if (!pValSym)
 			{
 				pProc = PProcCodegenPrototype<BUILD>(pWork, pBuild, pStnod);
 			}
 			else
 			{
-				pProc = (BUILD::Proc *)pStnod->m_pSym->m_pVValue;
+				pProc = (BUILD::Proc *)pValSym;
 				if (!EWC_FVERIFY(pProc->m_valk == VALK_Procedure, "expected IR procedure"))
 					return nullptr;
 			}
@@ -5730,7 +5822,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 	case PARK_Identifier:
 		{
-			if (!pStnod->m_pSym || !pStnod->m_pSym->m_pVValue)
+			if (!pStnod->m_pSym || !pBuild->PValFromSymbol(pStnod->m_pSym))
 			{
 				CString strName(StrFromIdentifier(pStnod));
 				EmitError(pWork, &pStnod->m_lexloc, ERRID_UnknownError, "INTERNAL ERROR: Missing value for symbol %s", strName.PCoz());
@@ -6419,6 +6511,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CBuilderIR * pBuild, 
 
 	CAlloc * pAlloc = pBuild->m_pAlloc;
 	CIRProcedure * pProc = EWC_NEW(pAlloc, CIRProcedure) CIRProcedure(pAlloc);
+	pBuild->AddManagedVal(pProc);
 
 	pProc->m_pLvalFunction = pLvalFunc;
 	pProc->m_pBlockFirst = pBuild->PBlockCreate(pProc, aChName);
@@ -6505,9 +6598,10 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CBuilderIR * pBuild, 
 	return pProc;
 }
 
-CIRProcedure * CBuilderIR::PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod)
+CIRProcedure * CBuilderIR::PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod)
 {
 	auto pProc = EWC_NEW(m_pAlloc, CIRProcedure) CIRProcedure(m_pAlloc);
+	AddManagedVal(pProc);
 
 	auto pLtypeFunction = LLVMFunctionType(LLVMVoidType(), nullptr, 0, false);
 	const char * pCozName = pTinproc->m_strName.PCoz();
@@ -6544,6 +6638,8 @@ CIRProcedure * CBuilderIR::PProcCreate(
 
 	bool fHasVarArgs = pTinproc->m_grftinproc.FIsSet(FTINPROC_HasVarArgs);
 	auto pProc = EWC_NEW(m_pAlloc, CIRProcedure) CIRProcedure(m_pAlloc);
+	AddManagedVal(pProc);
+
 	auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, parypLtype->A(), (u32)parypLtype->C(), fHasVarArgs);
 
 	pProc->m_pLvalFunction = LLVMAddFunction(m_pLmoduleCur, pChzMangled, pLtypeFunction);
@@ -6614,7 +6710,7 @@ CIRProcedure * CBuilderIR::PProcCreate(
 
 	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
 	{
-		pStnod->m_pSym->m_pVValue = pProc;
+		SetSymbolValue(pStnod->m_pSym, pProc);
 	}
 
 	return pProc;
@@ -6665,7 +6761,7 @@ void CBuilderIR::SetupParamBlock(
 			if (!pStproc->m_fIsForeign)
 			{
 				auto pInstAlloca = PValCreateAlloca((*parypLtype)[ipLvalParam], 1, strArgName.PCoz());
-				pStnodParam->m_pSym->m_pVValue = pInstAlloca;
+				pStnodParam->m_pSym->m_pValIr = pInstAlloca;
 
 				s32 iLine;
 				s32 iCol;
@@ -6693,7 +6789,7 @@ void CBuilderIR::SetupParamBlock(
 					iCol,
 					m_pBlockCur->m_pLblock);
 
-				(void) PInstCreateStore((CIRValue *)pStnodParam->m_pSym->m_pVValue, pArg);
+				(void) PInstCreateStore((CIRValue *)pStnodParam->m_pSym->m_pValIr, pArg);
 			}
 		}
 		++ipLvalParam;
@@ -6877,11 +6973,11 @@ void CodeGenEntryPoints(
 
 			if (pStnod->m_park == PARK_ProcedureDefinition)
 			{
-				CIRProcedure * pProc = (CIRProcedure *)pStnod->m_pSym->m_pVValue;
-				if (!EWC_FVERIFY(pProc && pProc->m_valk, "Expected procedure"))
+				auto pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
+				if (!EWC_FVERIFY(pVal && pVal->m_valk, "Expected procedure"))
 					return;
 
-				pEntry->m_pProc = pProc;
+				//pEntry->m_pProc = pProc;
 			}
 		}
 	}
@@ -6903,7 +6999,7 @@ void CodeGenEntryPoints(
 		char aCh[128];
 		GenerateUniqueName(&pWork->m_unset, "__AnonFunc__", aCh, EWC_DIM(aCh));
 		auto pTinproc = PTinprocAlloc(pWork->m_pSymtab, 0, 0, aCh);
-		pProcImplicit = pBuild->PProcCreate(pWork, pTinproc, arypStnodUnitTest[0]);
+		pProcImplicit = pBuild->PProcCreateImplicit(pWork, pTinproc, arypStnodUnitTest[0]);
 
 		GenerateMethodBody(pWork, pBuild, pProcImplicit, arypStnodUnitTest.A(), (int)arypStnodUnitTest.C(), true);
 	}
@@ -6913,10 +7009,6 @@ void CodeGenEntryPoints(
 	if (ppProcUnitTest)
 	{
 		*ppProcUnitTest = pProcImplicit;
-	}
-	else if (pProcImplicit)
-	{
-		pAlloc->EWC_DELETE(pProcImplicit);
 	}
 }
 

@@ -38,6 +38,11 @@ namespace EWC
 	struct SStringEditBuffer;
 }
 
+namespace BCode
+{
+	struct SValue;
+}
+
 // type should only indicate storage type - actual type info should come from STypeInfoLiteral
 enum STVALK
 {
@@ -568,7 +573,8 @@ struct SSymbol	// tag = sym
 	SYMDEP					m_symdep;
 
 	STypeInfo *				m_pTin;
-	void *					m_pVValue;		// CIRValue or BCode::SValue
+	CIRValue *				m_pValIr;
+	BCode::SValue *			m_pValBc;
 
 	SSymbol *				m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
 

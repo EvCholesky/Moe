@@ -230,7 +230,7 @@ namespace BCode
 		void			PrintDump();
 		void			FinalizeBuild(CWorkspace * pWork);
 
-		SProcedure *	PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod);
+		SProcedure *	PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod);
 		SProcedure *	PProcCreate(
 							CWorkspace * pWork,
 							STypeInfoProcedure * pTinproc,
@@ -327,6 +327,7 @@ namespace BCode
 
 		Constant *			PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
 		SValue *			PValFromSymbol(SSymbol * pSym);
+		void				SetSymbolValue(SSymbol * pSym, SValue * pVal);
 
 		void				AddManagedVal(SValue * pVal);
 
@@ -351,7 +352,7 @@ namespace BCode
 #if DEBUG_PROC_CALL
 	struct SDebugCall // tag = debcall
 	{
-		SInstruction *	m_pInstCall;
+		SInstruction **	m_ppInstCall;
 		u8 *			m_pBReturnStorage;
 		u8 *			m_pBStackSrc; // calling stack frame
 		u8 *			m_pBStackArg;
@@ -372,7 +373,6 @@ namespace BCode
 						CVirtualMachine(u8 * pBStack, u8 * pBStackMax, SDataLayout * pDlay);
 
 		SDataLayout *	m_pDlay;
-		SInstruction *	m_pInst;
 		SInstruction *  m_pInstArgMin;		// first argument to push when executing a call instruction
 
 		u8 *			m_pBStackMin;

@@ -123,6 +123,7 @@ struct STypeInfo	// tag = tin
 	EWC::CString		m_strUnique;			// unique name (if a named type)
 	EWC::CString		m_strDesc;				// unique descriptor for this type 
 
+	// BB - This shouldn't ve embeedded in the typeinfo - it won't work for multiple codegens
 	CodeGenValueRef		m_pCgvalDIType;
 	CodeGenValueRef		m_pCgvalReflectGlobal;	// global variable pointing to the type info struct
 												// const TypeInfo entry in ahe reflectioa te table

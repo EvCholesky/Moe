@@ -111,11 +111,16 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
 		EWC_ASSERT(false, "generic types should be resolved prior to codegen");
 		break;
 
+    case TINK_Void:
+	{
+		*pcB = 0;
+		*pcBAlign = 1;
+		return;
+	}break;
 	case TINK_ForwardDecl:
     case TINK_Any:
-    case TINK_Void:
 	default:
-		EWC_ASSERT(false, "unhandled type kind in CBFromTin");
+		EWC_ASSERT(false, "unhandled type kind in CBFromTin. TINK_%s", PChzFromTink(pTin->m_tink));
 		break;
 	}
 
@@ -230,7 +235,7 @@ static inline s64 IBArgAlloc(s64 * pcBArg, s64 cB, s64 cBAlign)
 	return cBStack;
 }
 
-SProcedure * CBuilder::PProcCreate(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod)
+SProcedure * CBuilder::PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod)
 {
 	size_t cArg = pTinproc->m_arypTinParams.C();
 	size_t cRet = pTinproc->m_arypTinReturns.C();
@@ -297,8 +302,21 @@ SProcedure * CBuilder::PProcCreate(
 	EWC::CDynAry<LType *> * parypLtype,
 	LType * pLtypeReturn)
 {
-	EWC_ASSERT(false, "bytecode tbd");
-	return nullptr;
+	bool fHasVarArgs = pTinproc->m_grftinproc.FIsSet(FTINPROC_HasVarArgs);
+	auto pProc = PProcCreateImplicit(pWork, pTinproc, pStnod);
+
+	auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
+	if (!EWC_FVERIFY(pStproc, "expected stproc"))
+		return nullptr;
+
+	EWC_ASSERT(!pStproc->m_fIsForeign, "bytecode TBD (ffi)");
+
+	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
+	{
+		SetSymbolValue(pStnod->m_pSym, pProc);
+	}
+
+	return pProc;
 }
 
 void CBuilder::SetupParamBlock(
@@ -332,7 +350,7 @@ void CBuilder::SetupParamBlock(
 			if (!pStproc->m_fIsForeign)
 			{
 				auto pInstAlloca = PValCreateAlloca(pTinproc->m_arypTinParams[iParam], 1, strArgName.PCoz());
-				pStnodParam->m_pSym->m_pVValue = pInstAlloca;
+				pStnodParam->m_pSym->m_pValBc = pInstAlloca;
 
 				(void) PInstCreateStore(pInstAlloca, PRegArg(pProc->m_aParamArg[iParam].m_iBStack));
 
@@ -502,7 +520,10 @@ void CBuilder::PrintDump()
 	while (ppProc = iter.Next())
 	{
 		auto pProc = *ppProc;
-		printf("%s()\n", pProc->m_pTinproc->m_strName.PCoz());
+		printf("%s()\t\t\t\t\tcBStack=%lld, cBArg=%lld\n",
+			pProc->m_pTinproc->m_strName.PCoz(),
+			pProc->m_cBStack,
+			pProc->m_cBArg);
 		auto pInstMac = pProc->m_aryInst.PMac();
 		int iInst = 0;
 
@@ -516,7 +537,7 @@ void CBuilder::PrintDump()
 			AppendToCch(&strbuf, ' ', 6);
 
 			FormatCoz(&strbuf, "%s", PChzFromIrop(pInst->m_irop));
-			if (pOpsig->m_opszRet != OPSZ_0)
+			if (pInst->m_cBOperand != 0)
 			{
 				FormatCoz(&strbuf, "_%d", pInst->m_cBOperand);
 			}
@@ -867,6 +888,11 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 	if (!EWC_FVERIFY(m_pProcCur, "Cannot add a return opcode outside of a procedure"))
 		return;
 
+	if (cpVal && apVal[0] == nullptr)
+	{
+		cpVal = 0;
+	}
+
 	for (int iReturn = 0; iReturn < cpVal; ++iReturn)
 	{
 		// add the returnIdx(callee relative) stored as an argument to (cBArg + cBStack)
@@ -956,11 +982,8 @@ SInstruction * CBuilder::PInstAlloc()
 
 SValue * CBuilder::PValFromSymbol(SSymbol * pSym)
 {
-	auto pVal = (SValue *)pSym->m_pVValue;
-	if (!EWC_FVERIFY(pVal, "missing value for symbol"))
-		return nullptr;
-
-	if (pVal->m_valk == VALK_Instruction)
+	auto pVal = pSym->m_pValBc;
+	if (pVal && pVal->m_valk == VALK_Instruction)
 	{
 		auto pInstSym = (SInstruction *)pVal;
 		if (!EWC_FVERIFY(pInstSym->m_irop = IROP_Alloca, "expected alloca for symbol"))
@@ -968,6 +991,11 @@ SValue * CBuilder::PValFromSymbol(SSymbol * pSym)
 	}
 
 	return pVal;
+}
+
+void CBuilder::SetSymbolValue(SSymbol * pSym, SValue * pVal)
+{
+	pSym->m_pValBc = pVal;
 }
 
 SInstruction * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName)
@@ -1409,7 +1437,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 {
 #if DEBUG_PROC_CALL
 	auto pDebcall = pVm->m_aryDebCall.AppendNew();
-	pDebcall->m_pInstCall = nullptr;
+	pDebcall->m_ppInstCall = nullptr;
 	pDebcall->m_pBStackSrc = pVm->m_pBStack;
 	pDebcall->m_pBStackArg = pVm->m_pBStack - pProcEntry->m_cBArg;
 	pDebcall->m_pBStackDst = pVm->m_pBStack - (pProcEntry->m_cBArg + pProcEntry->m_cBStack);
@@ -1417,7 +1445,6 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 #endif
 
 	pVm->m_pProcCurDebug = pProcEntry;
-	pVm->m_pInst = pProcEntry->m_aryInst.A();
 
 	// build the stack frame for our top level procedure
 	u8 * pBStack = pVm->m_pBStack;
@@ -1439,7 +1466,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 
 	SWord wordLhs, wordRhs, wordLhsEx;
 
-	SInstruction * pInstMin = pVm->m_pInst;
+	SInstruction * pInstMin = pProcEntry->m_aryInst.A();
 	SInstruction * pInst = pInstMin;
 	while (1)
 	{
@@ -1629,7 +1656,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			
 #if DEBUG_PROC_CALL
 			auto pDebcall = pVm->m_aryDebCall.AppendNew();
-			pDebcall->m_pInstCall = pInst;
+			pDebcall->m_ppInstCall = ppInstRet;
 			pDebcall->m_pBStackSrc = pVm->m_pBStack;
 			pDebcall->m_pBStackArg = pVm->m_pBStack - pProc->m_cBArg;
 			pDebcall->m_pBStackDst = pVm->m_pBStack - (pProc->m_cBArg + pProc->m_cBStack);
@@ -1660,7 +1687,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			
 			*ppInstRet = pInst;
 
-			pInst = pProc->m_aryInst.A() - 1; // this will be incremented below
+			pInstMin = pProc->m_aryInst.A();
+			pInst = pInstMin - 1; // this will be incremented below
 			pVm->m_pProcCurDebug = pProc;
 
 		} break;
@@ -1686,10 +1714,10 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			auto pProcCalled = pVm->m_pProcCurDebug;
 #if DEBUG_PROC_CALL
 			auto debcall = pVm->m_aryDebCall.TPopLast();
-			EWC_ASSERT(debcall.m_pInstCall == *ppInstRet, "bad return instruction");
+			EWC_ASSERT(debcall.m_pBStackSrc == pVm->m_pBStack, "source proc stack frame mismatch");
+			EWC_ASSERT(*ppInstRet == nullptr || debcall.m_ppInstCall == ppInstRet, "bad return instruction");
 			EWC_ASSERT(debcall.m_pBStackDst == pBStackCalled, "called proc stack frame mismatch");
 			EWC_ASSERT(debcall.m_pBStackArg == pBStackCalled + pProcCalled->m_cBStack, "called proc stack frame mismatch");
-			EWC_ASSERT(debcall.m_pBStackSrc == pVm->m_pBStack, "source proc stack frame mismatch");
 #endif
 
 			if (pVm->m_pStrbuf && EWC_FVERIFY(pProcCalled, "missing called proc"))
@@ -1697,23 +1725,26 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 				u8 * pBStackArg = pBStackCalled + pProcCalled->m_cBStack;
 				auto pTinproc = pProcCalled->m_pTinproc;
 
+				AppendCoz(pVm->m_pStrbuf, "}");
 				if (pTinproc->m_arypTinReturns.C())
 				{
-					AppendCoz(pVm->m_pStrbuf, "}->");
 					for (int ipTin = 0; ipTin < pTinproc->m_arypTinReturns.C(); ++ipTin)
 					{
 						SParameter * pParam = &pProcCalled->m_aParamRet[ipTin];
+						if (pParam->m_cB == 0)
+							continue;
+
 						auto iBStackRet = *(s32*)&pBStackArg[pParam->m_iBStack];
 
+						if (ipTin == 0)
+						{
 #if DEBUG_PROC_CALL
-						EWC_ASSERT(ipTin > 0 || debcall.m_pBReturnStorage == &pVm->m_pBStack[iBStackRet], "bad return storage calculation");
+							EWC_ASSERT(debcall.m_pBReturnStorage == &pVm->m_pBStack[iBStackRet], "bad return storage calculation");
 #endif
+							AppendCoz(pVm->m_pStrbuf, "->");
+						}
 						PrintInstance(pVm, pTinproc->m_arypTinReturns[ipTin], &pVm->m_pBStack[iBStackRet]);
 					}
-				}
-				else
-				{
-					AppendCoz(pVm->m_pStrbuf, "}");
 				}
 
 				if (*ppInstRet != nullptr)
@@ -1732,6 +1763,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 
 			auto pProcPrev = (SProcedure *)pInstCall->m_wordRhs.m_pV;
 			pVm->m_pProcCurDebug = pProcPrev;
+			pInstMin = pProcPrev->m_aryInst.A();
 			pInst = pInstCall;
 			
 		} break;
@@ -1795,7 +1827,6 @@ SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv)
 
 CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, SDataLayout * pDlay)
 :m_pDlay(pDlay)
-,m_pInst(nullptr)
 ,m_pInstArgMin(nullptr)
 ,m_pBStackMin(pBStackMin)
 ,m_pBStackMax(pBStackMax)
@@ -1949,7 +1980,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	pTinprocSum->m_arypTinParams.Append(pTinS32);
 	pTinprocSum->m_arypTinReturns.Append(pTinS32);
 
-	auto pProcPrint = buildBc.PProcCreate(pWork, pTinprocPrint, nullptr);
+	auto pProcPrint = buildBc.PProcCreateImplicit(pWork, pTinprocPrint, nullptr);
 	auto pBlockPrint = buildBc.PBlockCreate(pProcPrint);
 	buildBc.ActivateProc(pProcPrint, pBlockPrint);
 	{
@@ -1968,7 +1999,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	buildBc.FinalizeProc(pProcPrint);
 
 
-	auto pProcSum = buildBc.PProcCreate(pWork, pTinprocSum, nullptr);
+	auto pProcSum = buildBc.PProcCreateImplicit(pWork, pTinprocSum, nullptr);
 	auto pBlockSum = buildBc.PBlockCreate(pProcSum);
 	buildBc.ActivateProc(pProcSum, pBlockSum);
 	
@@ -1986,7 +2017,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	buildBc.FinalizeProc(pProcSum);
 
 
-	auto pProc = buildBc.PProcCreate(pWork, pTinprocMain, nullptr);
+	auto pProc = buildBc.PProcCreateImplicit(pWork, pTinprocMain, nullptr);
 	auto pBlockPre = buildBc.PBlockCreate(pProc);
 	buildBc.ActivateProc(pProc, pBlockPre);
 	

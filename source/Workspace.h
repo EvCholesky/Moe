@@ -207,15 +207,12 @@ struct SWorkspaceEntry // tag = entry
 							SWorkspaceEntry()
 							:m_pStnod(nullptr)
 							,m_pSymtab(nullptr)
-							,m_pProc(nullptr)
 							,m_fHideDebugString(false)
 								{ ; }
 
 	CSTNode *				m_pStnod;
 	CSymbolTable *		 	m_pSymtab;	// symbol table for this entry, local symbols for lambdas 
 
-	// BB - could remove? (just use CSTNode::m_pVal for PARK_ProcedureDefinition?)
-	CIRProcedure *			m_pProc;
 	bool					m_fHideDebugString;	// don't print during WriteDebugStringForEntries()
 };
 
