@@ -378,8 +378,6 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 										STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
 										:STypeInfo(strName, strUnique, s_tink)
 										,m_pVGlobInit(nullptr)
-										,m_pCgvalInitMethod(nullptr)
-										,m_pCgtype(nullptr)
 										,m_pStnodStruct(nullptr)
 										,m_aryTypemembField()
 										,m_arypTinGenericParam()
@@ -391,8 +389,6 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 											{ return m_arypTinGenericParam.C() > 0; }
 
 	void *								m_pVGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
-	CodeGenValueRef						m_pCgvalInitMethod;
-	CodeGenTypeRef						m_pCgtype;			// type reference, here to avoid infinite recursion in
 															//  self referential member pointers
 
 	CSTNode *							m_pStnodStruct;

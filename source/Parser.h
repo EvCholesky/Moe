@@ -573,9 +573,6 @@ struct SSymbol	// tag = sym
 	SYMDEP					m_symdep;
 
 	STypeInfo *				m_pTin;
-	CIRValue *				m_pValIr;
-	BCode::SValue *			m_pValBc;
-
 	SSymbol *				m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
 
 	EWC::CDynAry<SSymbol *>	m_aryPSymReferencedBy;

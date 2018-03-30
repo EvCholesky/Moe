@@ -1988,22 +1988,27 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex)
 	{
 		// TODO : handle multiple return types
 
-		return PStnodParseTypeSpecifier(pParctx, pLex, "return value", FPDECL_AllowBakedTypes);
+		auto pStnodRet = PStnodParseTypeSpecifier(pParctx, pLex, "return value", FPDECL_AllowBakedTypes);
+
+		if (pStnodRet)
+		{
+			return pStnodRet;
+		}
+
+		ParseError(pParctx, pLex, "expected type specification following return arrow.");
 	}
-	else
-	{
-		SLexerLocation lexloc(pLex);
-		CSTNode * pStnodVoid = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 
-		pStnodVoid->m_tok = TOK_Identifier;
-		pStnodVoid->m_park = PARK_Identifier;
+	SLexerLocation lexloc(pLex);
+	CSTNode * pStnodVoid = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 
-		auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
-		pStident->m_str = CString("void");
-		pStnodVoid->m_pStident = pStident;
+	pStnodVoid->m_tok = TOK_Identifier;
+	pStnodVoid->m_park = PARK_Identifier;
 
-		return pStnodVoid;
-	}
+	auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+	pStident->m_str = CString("void");
+	pStnodVoid->m_pStident = pStident;
+
+	return pStnodVoid;
 }
 
 CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload)
@@ -2614,7 +2619,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				if (pStproc->m_iStnodBody >= 0)
 				{
 					bool fReturnsVoid = false;
-					if (EWC_FVERIFY(pStproc->m_iStnodReturnType != -1, "implicit return should be set"))
+					if (EWC_FVERIFY(pStproc->m_iStnodReturnType != -1, "return type expected. implicit void should be set by here"))
 					{
 						CSTNode * pStnodReturn = pStnodProc->PStnodChild(pStproc->m_iStnodReturnType);
 						fReturnsVoid = FIsIdentifier(pStnodReturn, "void");
@@ -3909,8 +3914,6 @@ SSymbol * CSymbolTable::PSymGenericInstantiate(SSymbol * pSymGeneric, STypeInfo 
 	m_arypSymGenerics.Append(pSymNew);
 
 	pSymNew->m_pTin = pTinInstance;
-	pSymNew->m_pValIr = pSymGeneric->m_pValIr;
-	pSymNew->m_pValBc = pSymGeneric->m_pValBc;
 
 	pSymNew->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
 	return pSymNew;
@@ -3980,8 +3983,6 @@ SSymbol * CSymbolTable::PSymNewUnmanaged(const CString & strName, CSTNode * pStn
 	pSym->m_pStnodDefinition = pStnodDefinition;
 	pSym->m_grfsym = grfsym;
 	pSym->m_pTin = nullptr;
-	pSym->m_pValIr = nullptr;
-	pSym->m_pValBc = nullptr;
 	pSym->m_pSymPrev = nullptr;
 	return pSym;
 }

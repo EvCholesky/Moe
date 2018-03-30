@@ -42,6 +42,7 @@ struct STypeInfo;
 struct STypeInfoEnum;
 struct STypeInfoInteger;
 struct STypeInfoProcedure;
+struct STypeInfoStruct;
 struct SWorkspaceEntry;
 struct SLexerLocation;
 
@@ -296,7 +297,6 @@ public:
 						:CIRValue(VALK_Procedure)
 						,m_pAlloc(pAlloc)
 						,m_pLvalDIFunction(nullptr)
-						,m_pLvalFunction(nullptr)
 						,m_pLvalDebugLocCur(nullptr)
 						,m_pBlockLocals(nullptr)
 						,m_pBlockFirst(nullptr)
@@ -308,7 +308,6 @@ public:
 
 	EWC::CAlloc *		m_pAlloc;
 	LLVMOpaqueValue *	m_pLvalDIFunction;
-	LLVMOpaqueValue *	m_pLvalFunction;		// null if anonymous function
 	LLVMOpaqueValue *	m_pLvalDebugLocCur;
 	CIRBlock *		m_pBlockLocals;			// entry basic block containing argument stores and local variable allocas
 	CIRBlock *		m_pBlockFirst;			// first
@@ -458,6 +457,17 @@ public:
 	typedef LLVMOpaqueValue GepIndex;
 	typedef LLVMOpaqueValue ProcArg;
 
+	struct SCodeGenStruct // tag = cgstruct
+	{
+								SCodeGenStruct()
+								:m_pProcInitMethod(nullptr)
+								,m_pLtype(nullptr)
+									{ ; }
+
+		CIRProcedure *			m_pProcInitMethod;
+		LLVMOpaqueType *		m_pLtype;			// type reference, here to avoid infinite recursion in
+	};
+
 						CBuilderIR(
 							CWorkspace * pWork,
 							const char * pChzFilename,
@@ -491,8 +501,8 @@ public:
 	void				ActivateBlock(CIRBlock * pBlock);
 	void				FinalizeProc(CIRProcedure * pProc);
 
-	static LType *		PLtypeFromPTin(STypeInfo * pTin);
-	static LType *		PLtypeVoid();
+	LType *				PLtypeFromPTin(STypeInfo * pTin);
+	LType *				PLtypeVoid();
 
 	CIRInstruction *	PInstCreateNCmp(NPRED npred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGCmp(GPRED gpred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
@@ -503,15 +513,17 @@ public:
 
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
-	CIRInstruction *	PInstCreateCall(LValue * pLvalProc, ProcArg ** apLvalArgs, unsigned cArg);
+	CIRInstruction *	PInstCreateCall(LValue * pLvalProc, LLVMOpaqueType * pLtypeProc, ProcArg ** apLvalArgs, unsigned cArg);
 
 	CIRValue *			PValGenerateCall(
 							CWorkspace * pWork,
 							CSTNode * pStnod,
+							SSymbol * pSym,
 							EWC::CDynAry<ProcArg *> * parypArgs,
 							bool fIsDirectCall,
 							STypeInfoProcedure * pTinproc, 
 							VALGENK valgenk);
+
 	static ProcArg *	PProcArg(CIRValue * pVal);
 
 	CIRInstruction *	PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
@@ -522,6 +534,7 @@ public:
 
 	CIRValue *			PValFromSymbol(SSymbol * pSym);
 	void				SetSymbolValue(SSymbol * pSym, CIRValue * pVal);
+	SCodeGenStruct *	PCgstructEnsure(STypeInfoStruct * pTinstruct);
 
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
 	CIRValue *			PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
@@ -549,6 +562,7 @@ public:
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddManagedVal(CIRValue * pVal);
 
+
 	LLVMOpaqueModule *					m_pLmoduleCur;
 	LLVMOpaqueBuilder *					m_pLbuild;
 
@@ -570,6 +584,9 @@ public:
 	EWC::CDynAry<CIRProcedure *>		m_arypProcVerify;	// all the procedures that need verification.
 	EWC::CDynAry<CIRValue *> *			m_parypValManaged;
 	EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
+	EWC::CHash<SSymbol *, CIRValue *>	m_hashPSymPVal;
+	EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>	
+										m_hashPTinstructPCgstruct;
 };
 
 
