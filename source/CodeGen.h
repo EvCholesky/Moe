@@ -200,7 +200,7 @@ struct OpSignature // tag = opsig
 
 
 #define OPSIZE(A, B, RET) 
-	enum IROP
+	enum IROP : s8
 	{
 #define OP(X) IROP_##X,
 #define OPMN(RANGE, X) IROP_##X,

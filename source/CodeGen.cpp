@@ -109,7 +109,7 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 	CIRValue * pValLhs,
 	CIRValue * pValRhsRef);
 
-BCode::SInstruction * PInstGenerateAssignmentFromRef(
+BCode::SInstructionValue * PInstGenerateAssignmentFromRef(
 	CWorkspace * pWork,
 	BCode::CBuilder * pBuild,
 	STypeInfo * pTinLhs,
@@ -429,10 +429,9 @@ static inline bool FIsError(CIRInstruction * pInst)
 	return (pInst->m_irop == IROP_Error); 
 }
 
-static inline bool FIsError(BCode::CBuilder::Instruction * pInst)
+inline bool FIsError(BCode::CBuilder::Instruction * pInstval)
 { 
-	EWC_ASSERT(false, "bytecode tbd");
-	return false;
+	return pInstval->FIsError();
 }
 
 CIRValue::CIRValue(VALK valk)
@@ -2018,7 +2017,12 @@ LLVMOpaqueValue * PLvalZeroInType(CBuilderIR * pBuild, STypeInfo * pTin)
 	switch (pTin->m_tink)
 	{
 	case TINK_Bool:		return LLVMConstInt(LLVMInt1Type(), 0, false);
-	case TINK_Integer:	return CBuilderIR::PLvalConstantInt(0, ((STypeInfoInteger *)pTin)->m_cBit, false);
+	case TINK_Integer:	
+		{
+			auto pTinint = (STypeInfoInteger *)pTin;
+			return CBuilderIR::PLvalConstantInt(0, pTinint->m_cBit, pTinint->m_fIsSigned);
+		}
+
 	case TINK_Float:	return CBuilderIR::PLvalConstantFloat(0.0f, ((STypeInfoFloat *)pTin)->m_cBit);
 	case TINK_Enum:
 		{
@@ -2101,7 +2105,11 @@ BCode::SValue * PLvalZeroInType(BCode::CBuilder * pBuild, STypeInfo * pTin)
 	switch (pTin->m_tink)
 	{
 	case TINK_Bool:		return pBuild->PConstInt(0, 8, false);
-	case TINK_Integer:	return pBuild->PConstInt(0, ((STypeInfoInteger *)pTin)->m_cBit, false);
+	case TINK_Integer:	
+		{
+			auto pTinint = (STypeInfoInteger *)pTin;
+			return pBuild->PConstInt(0, pTinint->m_cBit, pTinint->m_fIsSigned);
+		} 
 	case TINK_Float:	return pBuild->PConstFloat(0.0f, ((STypeInfoFloat *)pTin)->m_cBit);
 	case TINK_Enum:
 		{
@@ -2116,7 +2124,7 @@ BCode::SValue * PLvalZeroInType(BCode::CBuilder * pBuild, STypeInfo * pTin)
 	case TINK_Pointer:
 	case TINK_Procedure:
 		{
-			return pBuild->PConstPointer(nullptr);
+			return pBuild->PConstPointer(nullptr, pTin);
 		}
 	case TINK_Array:
 		{
@@ -3849,7 +3857,7 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 	return nullptr;
 }
 
-BCode::SInstruction * PInstGenerateAssignmentFromRef(
+BCode::SInstructionValue * PInstGenerateAssignmentFromRef(
 	CWorkspace * pWork,
 	BCode::CBuilder * pBuild,
 	STypeInfo * pTinLhs,
@@ -5008,7 +5016,7 @@ BCode::SValue * BCode::CBuilder::PValGenerateCall(
 	}
 
 	auto pInst = PInstCreateCall(pValProc, pTinproc, parypValArgs->A(), (int)parypValArgs->C());
-	if (pInst->m_irop == IROP_Error)
+	if (FIsError(pInst))
 		return pInst;
 
 	if (pTinproc->m_callconv != CALLCONV_Nil)

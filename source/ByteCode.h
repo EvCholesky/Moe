@@ -96,6 +96,7 @@ namespace BCode
 						:SValue(VALK_Constant)
 							{ ; }
 
+		STypeInfo *		m_pTin;
 		OPK				m_opk;
 		SLiteralType	m_litty;
 
@@ -112,33 +113,51 @@ namespace BCode
 							{ ; }
 	};
 
-	struct SInstruction : public SValue // tag = inst
+	// packed instruction - just the info needed for runtime - not for building bytecode
+	struct SInstruction // tag = inst
 	{
-		static const VALK s_valk = VALK_Instruction;
-
 						SInstruction()
-						:SValue(VALK_Instruction)
-						,m_irop(IROP_Error)
-						,m_cBOperand(0)
-						,m_pred(0)
+						:m_irop(IROP_Error)
 						,m_opkLhs(OPK_Literal)
 						,m_opkRhs(OPK_Literal)
+						,m_cBOperand(0)
+						,m_pred(0)
 						,m_iBStackOut(0)
 							{ ; }
 
-		//BB - doesn't fit 20 bytes because SValue::Valk
 		IROP			m_irop;
-		//OPK				m_opk;
-		u8				m_cBOperand:4;		// operand byte count
-		u8				m_pred:4;
-
 		OPK				m_opkLhs;
 		OPK				m_opkRhs;
+
+		u8				m_cBOperand:4;		// operand byte count
+		u8				m_pred:4;
 
 		u32				m_iBStackOut;
 		SWord			m_wordLhs;
 		SWord			m_wordRhs;
+
 	};
+
+	EWC_CASSERT(sizeof(SInstruction) == 24, "runtime instruction packing is wrong");
+
+	// instruction with extra info used during building
+	struct SInstructionValue : public SValue // tag = instval
+	{
+		static const VALK s_valk = VALK_Instruction;
+
+						SInstructionValue()
+						:SValue(VALK_Instruction)
+						,m_pInst(nullptr)
+						,m_pTinOperand(nullptr)
+							{ ; }
+
+		bool			FIsError() const
+							{ return m_pInst == nullptr || m_pInst->m_irop == IROP_Error; }
+
+		SInstruction *	m_pInst;
+		STypeInfo *		m_pTinOperand;
+	};
+
 
 
 
@@ -153,6 +172,7 @@ namespace BCode
 						SBlock()
 						:m_iInstFinal(-1)
 						,m_pProc(nullptr)
+						,m_aryInstval()
 						,m_aryInst()
 						,m_aryBranch()
 							{ ; }
@@ -160,10 +180,11 @@ namespace BCode
 						bool FIsFinalized() const
 							{ return m_iInstFinal >= 0; }
 
-		s32							m_iInstFinal;
-		SProcedure *				m_pProc;
-		EWC::CDynAry<SInstruction>	m_aryInst;
-		EWC::CDynAry<SBranch>		m_aryBranch;	// outgoing links in control flow graph.
+		s32									m_iInstFinal;
+		SProcedure *						m_pProc;
+		EWC::CDynAry<SInstructionValue>		m_aryInstval;
+		EWC::CDynAry<SInstruction>			m_aryInst;
+		EWC::CDynAry<SBranch>				m_aryBranch;	// outgoing links in control flow graph.
 	};
 
 	struct SParameter // tag = param
@@ -187,15 +208,16 @@ namespace BCode
 
 									SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure *pTinproc);
 
-		STypeInfoProcedure *		m_pTinproc;
-		SProcedureSignature *		m_pProcsig;
+		STypeInfoProcedure *				m_pTinproc;
+		SProcedureSignature *				m_pProcsig;
 
-		s64							m_cBStack;		// allocated bytes on stack
+		s64									m_cBStack;		// allocated bytes on stack
 
-		SBlock *					m_pBlockLocals;
-		SBlock *					m_pBlockFirst;
-		EWC::CDynAry<SBlock *>		m_arypBlock;	// blocks that have written to this procedure 
-		EWC::CDynAry<SInstruction>	m_aryInst;
+		SBlock *							m_pBlockLocals;
+		SBlock *							m_pBlockFirst;
+		EWC::CDynAry<SBlock *>				m_arypBlock;	// blocks that have written to this procedure 
+
+		EWC::CDynAry<SInstruction>			m_aryInst;
 	};
 
 	struct SJumpTargets // tag = jumpt
@@ -222,7 +244,7 @@ namespace BCode
 		typedef SBlock Block;
 		typedef SConstant Constant;
 		typedef SValue Global;
-		typedef SInstruction Instruction;
+		typedef SInstructionValue Instruction;
 		typedef SProcedure Proc;
 		typedef SValue Value;
 		typedef SValue LValue;
@@ -276,27 +298,27 @@ namespace BCode
 								{ return pTin; } 
 		static LType *		PLtypeVoid();
 
-		SInstruction *		PInstCreateNCmp(NPRED npred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
-		SInstruction *		PInstCreateGCmp(GPRED gpred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
+		Instruction *		PInstCreateNCmp(NPRED npred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
+		Instruction *		PInstCreateGCmp(GPRED gpred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 
-		SInstruction *		PInstCreateCall(SValue * pValProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, int cpLvalArg);
+		Instruction *		PInstCreateCall(SValue * pValProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, int cpLvalArg);
 
 		void				CreateReturn(SValue ** ppVal, int cpVal, const char * pChzName = "");
 		void				CreateBranch(SBlock * pBlock);
-		SInstruction *		PInstCreateCondBranch(SValue * pValPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
-		SInstruction *		PInstCreateTraceStore(SValue * pVal, STypeInfo * pTin);
+		Instruction *		PInstCreateCondBranch(SValue * pValPred, SBlock * pBlockTrue, SBlock * pBlockFalse);
+		Instruction *		PInstCreateTraceStore(SValue * pVal, STypeInfo * pTin);
 
 		s32					IBStackAlloc(s64 cB, s64 cBAlign);
-		SInstruction *		PInstAlloc();
+		Instruction *		PInstAlloc();
 
 		Instruction *		PInstCreateRaw(IROP irop, s64 cBOperand, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 		Instruction *		PInstCreateRaw(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 		Instruction *		PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName = nullptr);
 		Instruction *		PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName = nullptr);
-		SInstruction *		PInstCreateError();
+		Instruction *		PInstCreateError();
 
 		Instruction *		PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
-		SInstruction *		PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
+		Instruction *		PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
 		Instruction *		PInstCreateStore(SValue * pValPT, SValue * pValT);
 
 		SValue *			PValCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName = "");
@@ -321,7 +343,7 @@ namespace BCode
 
 		static ProcArg *	PProcArg(SValue * pVal);
 
-		SInstruction *		PInstCreatePhi(LType * pLtype, const char * pChzName);
+		Instruction *		PInstCreatePhi(LType * pLtype, const char * pChzName);
 		void				AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock);
 
 
@@ -330,7 +352,7 @@ namespace BCode
 		SRegister *			PReg(s64 n, int cBit = 64, bool fIsSigned = true);
 		SRegister *			PRegArg(s64 n, int cBit = 64, bool fIsSigned = true);
 
-		SConstant *			PConstPointer(void * pV);
+		SConstant *			PConstPointer(void * pV, STypeInfo * pTin = nullptr);
 		SConstant *			PConstRegAddr(s32 iBStack, int cBitRegister);
 		SConstant *			PConstInt(u64 nUnsigned, int cBit = 64, bool fIsSigned = true);
 		SConstant *			PConstFloat(f64 g, int cBit = 64);
@@ -356,6 +378,7 @@ namespace BCode
 		void				AddManagedVal(SValue * pVal);
 
 		EWC::CAlloc *						m_pAlloc;
+		CSymbolTable *						m_pSymtab;
 		CIRBuilderErrorContext *			m_pBerrctx;
 		SDataLayout *						m_pDlay;
 		EWC::CHash<HV, SProcedure *>		m_hashHvMangledPProc;
@@ -381,11 +404,11 @@ namespace BCode
 #if DEBUG_PROC_CALL
 	struct SDebugCall // tag = debcall
 	{
-		SInstruction **	m_ppInstCall;
-		u8 *			m_pBReturnStorage;
-		u8 *			m_pBStackSrc; // calling stack frame
-		u8 *			m_pBStackArg;
-		u8 *			m_pBStackDst;
+		SInstruction **			m_ppInstCall;
+		u8 *					m_pBReturnStorage;
+		u8 *					m_pBStackSrc; // calling stack frame
+		u8 *					m_pBStackArg;
+		u8 *					m_pBStackDst;
 	};
 #endif
 
@@ -402,7 +425,6 @@ namespace BCode
 						CVirtualMachine(u8 * pBStack, u8 * pBStackMax, SDataLayout * pDlay);
 
 		SDataLayout *	m_pDlay;
-		SInstruction *  m_pInstArgMin;		// first argument to push when executing a call instruction
 
 		u8 *			m_pBStackMin;
 		u8 *			m_pBStackMax;
