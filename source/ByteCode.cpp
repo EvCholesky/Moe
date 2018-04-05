@@ -44,6 +44,8 @@ using namespace EWC;
 
 #define CHECK_INST_TYPES 1
 
+
+
 void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign)
 {
 	// return the embeded size of a type (ie. how many bytes would be needed to include it in a struct)
@@ -133,6 +135,27 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
 namespace BCode 
 {
 
+struct SValueOutput // tag = valout
+{
+					SValueOutput()
+					:m_cBRegister(0)
+					,m_pTin(nullptr)
+						{ ; }
+
+	u8				m_cBRegister;
+	STypeInfo *		m_pTin;
+};
+
+inline void SetOperandFromValue(
+	SDataLayout * pDlay,
+	SValue * pValSrc,
+	OPK * pOpkOut,
+	SWord * pWordOut,
+	OPSZ opsz,
+	SValueOutput * pValout);
+
+
+
 const OpSignature * POpsig(IROP irop)
 {
 	#define OP(x) 
@@ -188,7 +211,6 @@ CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
 ,m_hashHvMangledPProc(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_arypBlockManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_aryJumptStack(pWork->m_pAlloc, EWC::BK_ByteCodeCreator)
-,m_blistGep(pWork->m_pAlloc, BK_ByteCodeCreator)
 ,m_arypValManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_hashPSymPVal(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_hashPTinstructPCgstruct(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
@@ -704,10 +726,132 @@ CBuilder::Instruction * CBuilder::PInstCreateGCmp(GPRED gpred, SValue * pValLhs,
 	return pInstval;
 }
 
-CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName)
+u64 DBOffsetFromField(STypeInfoStruct * pTinstruct, u64 idx)
 {
-	EWC_ASSERT(false, "bytecode tbd");
-	return nullptr;
+	if (idx < pTinstruct->m_aryTypemembField.C())
+	{
+		auto dBOffset = pTinstruct->m_aryTypemembField[idx].m_dBOffset;
+		if (EWC_FVERIFY(dBOffset >= 0, "bad struct offset"))
+			return dBOffset;
+		return 0;
+	}
+
+	EWC_ASSERT(false, "invalid field index %d", idx);
+	return 0;
+}
+
+CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apLvalIndices, u32 cpValIndices, const char * pChzName)
+{
+	// GEP(ptr,	offs)					(u8*)ptr + (val*dBStride1) + ... + offs
+	// ExArgs(val1, dBStride1)
+
+	SValueOutput valout;
+
+	auto pInstvalGep = PInstAlloc();
+	auto pInstGep = pInstvalGep->m_pInst;
+	pInstGep->m_irop =  IROP_GEP;	
+	SetOperandFromValue(m_pDlay, pValLhs, &pInstGep->m_opkLhs, &pInstGep->m_wordLhs, OPSZ_Ptr, &valout);
+
+	auto pInstval = pInstvalGep;
+	STypeInfo * pTin = valout.m_pTin;
+
+	u64 cB;
+	u64 cBAlign;
+	u64 dBOffset = 0;
+	for (u32 ipValIndices = 0; ipValIndices < cpValIndices; ++ipValIndices)
+	{
+		STypeInfoStruct * pTinstruct = nullptr;
+		u32 cBStride = 1;
+		auto pValIndex = apLvalIndices[ipValIndices]; 	
+		switch (pTin->m_tink)
+		{
+		case TINK_Struct:
+			{
+				pTinstruct = (STypeInfoStruct *)pTin;
+			} break;
+		case TINK_Pointer:
+			{
+				auto pTinptr = (STypeInfoPointer*)pTin;
+
+				CalculateByteSizeAndAlign(m_pDlay, pTinptr->m_pTinPointedTo, &cB, &cBAlign);
+				cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
+				pTin = pTinptr->m_pTinPointedTo;
+			} break;
+		case TINK_Array:
+			{
+				auto pTinary = (STypeInfoArray*)pTin;
+
+				CalculateByteSizeAndAlign(m_pDlay, pTinary->m_pTin, &cB, &cBAlign);
+				cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
+				pTin = pTinary->m_pTin;
+			} break;
+		default:
+			EWC_ASSERT(false, "unexpected type info kind %s", PChzFromTink(pTin->m_tink));
+		}
+
+		switch (pValIndex->m_valk)
+		{
+		case VALK_Constant:
+			{
+				auto pConst = PValDerivedCast<SConstant *>(pValIndex);
+				if (!EWC_FVERIFY(pConst && pConst->m_litty.m_litk == LITK_Integer, "struct indices must be const int"))	
+					break;
+			
+				if (pTinstruct)
+				{
+					EWC_ASSERT(pConst->m_litty.m_cBit == 64 && pConst->m_litty.m_fIsSigned == false, "unexpected int type");
+					if (EWC_FVERIFY(pConst->m_word.m_u64 < pTinstruct->m_aryTypemembField.C()))
+					{
+						auto pTypememb = &pTinstruct->m_aryTypemembField[pConst->m_word.m_u64];
+						dBOffset += pTypememb->m_dBOffset;
+						pTin = pTypememb->m_pTin;
+					}
+				}
+				else
+				{
+					// BB - Just asserting that we need to have this ugly switch
+					EWC_ASSERT(pConst->m_litty.m_cBit == 64, "unexpected int type");
+
+					#define MASHLIT(CBIT, SIGNED) (SIGNED << 16) | (CBIT)
+					switch (MASHLIT(pConst->m_litty.m_cBit, pConst->m_litty.m_fIsSigned))
+					{
+						case MASHLIT(8,  false):	dBOffset += cBStride * pConst->m_word.m_u8; break;
+						case MASHLIT(16, false):	dBOffset += cBStride * pConst->m_word.m_u16; break;
+						case MASHLIT(32, false):	dBOffset += cBStride * pConst->m_word.m_u32; break;
+						case MASHLIT(64, false):	dBOffset += cBStride * pConst->m_word.m_u64; break;
+						case MASHLIT(8,  true):		dBOffset += cBStride * pConst->m_word.m_s8; break;
+						case MASHLIT(16, true):		dBOffset += cBStride * pConst->m_word.m_s16; break;
+						case MASHLIT(32, true):		dBOffset += cBStride * pConst->m_word.m_s32; break;
+						case MASHLIT(64, true):		dBOffset += cBStride * pConst->m_word.m_s64; break;
+					}
+					#undef MASHLIT
+				}
+			} break;
+		case VALK_BCodeRegister:
+			{
+				auto pInstval = PInstAlloc();
+				auto pInst = pInstval->m_pInst;
+
+				pInst->m_irop =  IROP_ExArgs;	
+				pInst->m_opkRhs = OPK_Literal;
+				pInst->m_wordRhs.m_u64 = cBStride;
+
+				SetOperandFromValue(m_pDlay, pValIndex, &pInst->m_opkLhs, &pInst->m_wordLhs, OPSZ_8, &valout);
+
+			} break;
+		default:
+			EWC_ASSERT(false, "unexpected value kind in GEP instruction");
+		}
+	}
+
+	pInstvalGep->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTin);
+	pInstGep->m_opkRhs = OPK_Literal;
+	pInstGep->m_wordRhs.m_u64 = dBOffset;
+
+	s32 iBStackPointer = S32Coerce(IBStackAlloc(sizeof(u8*), EWC_ALIGN_OF(u8*)));
+	pInstGep->m_iBStackOut = iBStackPointer;
+
+	return pInstvalGep;
 }
 
 SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char * pChzName)
@@ -780,26 +924,24 @@ CBuilder::Instruction * CBuilder::PInstCreateLoopingInit(CWorkspace * pWork, STy
 
 CBuilder::GepIndex * CBuilder::PGepIndex(u64 idx)
 {
-	GepIndex * pGep = m_blistGep.AppendNew();
-	*pGep = (GepIndex)idx;
-	return pGep;
+	auto pConst = PConstInt(idx, 64, false);
+	return pConst;
 }
 
 CBuilder::GepIndex * CBuilder::PGepIndexFromValue(SValue * pVal)
 {
-	EWC_ASSERT(false, "GEP index should be SValue, not raw int");
-	return nullptr;
+	return pVal;
 }
 
 CBuilder::Instruction * CBuilder::PInstCreatePhi(LType * pLtype, const char * pChzName)
 {
-	EWC_ASSERT(false, "GEP index should be SValue, not raw int");
+	EWC_ASSERT(false, "bytecode tbd (phi)");
 	return nullptr;
 }
 
 void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 {
-	EWC_ASSERT(false, "GEP index should be SValue, not raw int");
+	EWC_ASSERT(false, "bytecode tbd (phi incoming)");
 }
 
 CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName)
@@ -1081,16 +1223,6 @@ static inline bool FDefinesCB(OPSZ opsz)
 	return (opsz == OPSZ_CB) || (opsz == OPSZ_PCB);
 }
 
-struct SValueOutput // tag = valout
-{
-					SValueOutput()
-					:m_cBRegister(0)
-					,m_pTin(nullptr)
-						{ ; }
-
-	u8				m_cBRegister;
-	STypeInfo *		m_pTin;
-};
 
 
 inline void SetOperandFromValue(
@@ -1969,7 +2101,21 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			ReadOpcodes(pVm, pInst, 8, &wordLhsEx);
 			memcpy(wordLhs.m_pV, wordRhs.m_pV, wordLhsEx.m_u64);
 		} break;
+		case MASHOP(IROP_GEP, 0):
+		{
+			auto pInstGep = pInst;
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); 
 
+			u64 dB = pInst->m_wordRhs.m_u64;
+			while ((pInst + 1)->m_irop == IROP_ExArgs)
+			{
+				++pInst;
+				ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhsEx); 
+				dB += wordLhsEx.m_u64 * pInst->m_wordRhs.m_u64;
+			}
+
+			*(u8 **)&pVm->m_pBStack[pInstGep->m_iBStackOut] = (u8*)wordLhs.m_pV + dB;
+		} break;
 		default:
 
 			EWC_ASSERT(false, "unhandled opcode IROP_%s\n", PChzFromIrop(pInst->m_irop));

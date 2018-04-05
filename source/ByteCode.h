@@ -249,7 +249,7 @@ namespace BCode
 		typedef SValue Value;
 		typedef SValue LValue;
 		typedef STypeInfo LType;
-		typedef int GepIndex;
+		typedef SValue GepIndex;
 		typedef SValue ProcArg;
 
 		struct SCodeGenStruct // tag = cgstruct
@@ -384,7 +384,6 @@ namespace BCode
 		EWC::CHash<HV, SProcedure *>		m_hashHvMangledPProc;
 		EWC::CDynAry<SBlock *>				m_arypBlockManaged;
 		EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
-		EWC::CBlockList<GepIndex, 128>		m_blistGep;
 		EWC::CDynAry<SValue *>				m_arypValManaged;
 		EWC::CHash<SSymbol *, SValue *>		m_hashPSymPVal;
 		EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>	

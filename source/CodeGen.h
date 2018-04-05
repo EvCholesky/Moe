@@ -167,7 +167,8 @@ struct OpSignature // tag = opsig
 		OP(				Load)		OPSIZE(PCB, 0, CB) \
 						/* Store(Reg(Pointer), Value) */ \
 		OP(				Store)		OPSIZE(PCB, CB, 0) \
-		OP(				GEP)		OPSIZE(0, 0, 0) \
+						/* GEP(Reg(Pointer), dBOffset)->iBStack  ExArgs(val, cBStride) ...*/ \
+		OP(				GEP)		OPSIZE(Ptr, 8, Ptr) \
 		OP(				PtrDiff)	OPSIZE(0, 0, 0) \
 						/* Memset(pDst, pDst, valByte);  ExArgs(cB)*/ \
 		OP(				Memset)		OPSIZE(RegIdx, 1, 0) \

@@ -411,7 +411,7 @@ static void SetInitializer(CIRGlobal * pGlob, LLVMValueRef pLconst)
 
 static void SetInitializer(BCode::SValue * pGlob, BCode::SValue * pConst)
 {
-	EWC_ASSERT(false, "bytecode TBD");
+	EWC_ASSERT(false, "bytecode TBD (SetInitializer)");
 }
 
 static unsigned CParamFromProc(CIRProcedure * pProc)
@@ -2697,7 +2697,7 @@ void EnsureReftent(SReflectGlobalTable * pReftab, STypeInfo * pTin, CDynAry<STyp
 
 static inline BCode::CBuilder::LValue * PLvalGenerateReflectTypeTable(CWorkspace * pWork, BCode::CBuilder * pBuild)
 {
-	EWC_ASSERT(false, "bytecode TBD");
+	EWC_ASSERT(false, "bytecode TBD (reflect type table)");
 	return nullptr;
 }
 
@@ -3313,7 +3313,7 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CBuilderIR *
 
 BCode::CBuilder::LValue * PLvalBuildConstantInitializer(CWorkspace * pWork, BCode::CBuilder * pBuild, STypeInfo * pTin, CSTNode * pStnodInit)
 {
-	EWC_ASSERT(false, "bytecode TBD");
+	EWC_ASSERT(false, "bytecode TBD (build constant init)");
 	return nullptr;
 }
 
@@ -3869,7 +3869,7 @@ BCode::SInstructionValue * PInstGenerateAssignmentFromRef(
 	{
 		case TINK_Array:
 		{
-			EWC_ASSERT(false, "bytecode TBD");
+			EWC_ASSERT(false, "bytecode TBD (generate assignment from ref - array)");
 			return nullptr;
 			/*
 			ARYK arykRhs;
@@ -4776,7 +4776,7 @@ CIRValue * PValGenerateArrayLiteralReference(CWorkspace * pWork, CBuilderIR * pB
 
 BCode::SValue * PValGenerateArrayLiteralReference(CWorkspace * pWork, BCode::CBuilder * pBuild, CSTNode * pStnod)
 {
-	EWC_ASSERT(false, "Bytecode TBD");
+	EWC_ASSERT(false, "Bytecode TBD (generate array literal ref)");
 	return nullptr;
 }
 
@@ -4883,7 +4883,7 @@ void GenerateArguments(
 	CDynAry<BCode::SValue *> * parypValArgs = nullptr)
 {
 	// what's with passing both a val array and a LVal array arguments? we need the LVal array for llvm, the val for postInc op overload
-	EWC_ASSERT(false, "bytecode tbd");
+	EWC_ASSERT(false, "bytecode tbd (generate arguments - overloaded ops)");
 }
 
 CBuilderIR::ProcArg * CBuilderIR::PProcArg(CIRValue * pVal)
@@ -5159,7 +5159,7 @@ void GenerateSwitch(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnod, C
 
 void GenerateSwitch(CWorkspace * pWork, BCode::CBuilder * pBuild, CSTNode * pStnod, BCode::SValue * pValExp)
 {
-	EWC_ASSERT(false, "bytecode TBD");
+	EWC_ASSERT(false, "bytecode TBD (generate switch)");
 }
 
 static inline bool FIsNull(CIRValue * pVal)
