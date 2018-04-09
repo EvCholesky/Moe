@@ -404,14 +404,9 @@ static inline LLVMValueRef PLvalFromPVal(CIRValue * pVal)
 static inline BCode::SValue * PLvalFromPVal(BCode::SValue * pVal)
 	{ return pVal; }
 
-static void SetInitializer(CIRGlobal * pGlob, LLVMValueRef pLconst)
+void CBuilderIR::SetInitializer(CIRGlobal * pGlob, LLVMValueRef pLconst)
 {
 	LLVMSetInitializer(pGlob->m_pLval, pLconst);
-}
-
-static void SetInitializer(BCode::SValue * pGlob, BCode::SValue * pConst)
-{
-	EWC_ASSERT(false, "bytecode TBD (SetInitializer)");
 }
 
 static unsigned CParamFromProc(CIRProcedure * pProc)
@@ -1981,6 +1976,12 @@ CBuilderIR::LValue * CBuilderIR::PLvalConstantArray(LType * pLtypeElem, LValue *
 	return LLVMConstArray(pLtypeElem, apLval, cpLval);
 }
 
+CBuilderIR::LValue * CBuilderIR::PLvalConstantStruct(LType * pLtype, LValue ** apLval, u32 cpLval)
+{
+	return LLVMConstNamedStruct(pLtype, apLval, cpLval);
+}
+
+
 
 CIRConstant * CBuilderIR::PConstFloat(f64 g, int cBit)
 {
@@ -2864,7 +2865,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 			if (!EWC_FVERIFY(pLtype, "could not find llvm type for null pointer"))
 				return nullptr;
 
-			pLval = BUILD::PLvalConstantNull(pLtype);
+			pLval = pBuild->PLvalConstantNull(pLtype);
 		} break;
 	case LITK_Array:
 		{
@@ -2897,7 +2898,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 			}
 
 			auto pLtypeElement = pBuild->PLtypeFromPTin(pTinlit->m_pTinSource);
-			return BUILD::PLvalConstantArray(pLtypeElement, apLval, u32(pTinlit->m_c));
+			return pBuild->PLvalConstantArray(pLtypeElement, apLval, u32(pTinlit->m_c));
 		} break;
 	default:
 		break;
@@ -3110,7 +3111,6 @@ CIRInstruction * CBuilderIR::PInstCreateMemcpy(
 	LLVMOpaqueValue * apLvalArgs[5];
 	apLvalArgs[0] = LLVMBuildBitCast(m_pLbuild, pValLhs->m_pLval, pLtypePInt8, OPNAME("memDst")); // dest
 
-
 	apLvalArgs[1] = LLVMBuildBitCast(m_pLbuild, pValRhsRef->m_pLval, pLtypePInt8, OPNAME("memSrc")); // source
 	apLvalArgs[2] =	LLVMConstInt(LLVMInt64Type(), cBitSize / 8, false);		// cB
 	apLvalArgs[3] =	LLVMConstInt(LLVMInt32Type(), cBitAlign / 8, false);	// cBAlign
@@ -3143,7 +3143,7 @@ CIRInstruction * CBuilderIR::PInstCreateMemset( CWorkspace * pWork, CIRValue * p
 	apLvalArgs[3] =	LLVMConstInt(LLVMInt32Type(), cBAlign, false);	// cBAlign
 	apLvalArgs[4] = LLVMConstInt(LLVMInt1Type(), false, false);	// fIsVolitile
 
-	CIRInstruction * pInstMemcpy = PInstCreateRaw(IROP_Memcpy, nullptr, nullptr, "memcpy");
+	CIRInstruction * pInstMemcpy = PInstCreateRaw(IROP_Memset, nullptr, nullptr, "memcpy");
 	pInstMemcpy->m_pLval = LLVMBuildCall(
 							m_pLbuild,
 							m_mpIntfunkPLval[INTFUNK_Memset],
@@ -3201,15 +3201,16 @@ CIRInstruction * CBuilderIR::PInstCreateLoopingInit(CWorkspace * pWork, STypeInf
 
 
 // allocate a global constant used to initialize type with memcpy
-LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CBuilderIR * pBuild, STypeInfo * pTin, CSTNode * pStnodInit)
+template <typename BUILD>
+typename BUILD::LValue * PLvalBuildConstantInitializer(CWorkspace * pWork, BUILD * pBuild, STypeInfo * pTin, CSTNode * pStnodInit)
 {
 	if (pTin->m_tink == TINK_Struct)
 	{
 		auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTin);
 
 		int cTypememb = (int)pTinstruct->m_aryTypemembField.C();
-		size_t cB = sizeof(LLVMOpaqueValue *) * cTypememb;
-		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
+		size_t cB = sizeof(BUILD::LValue *) * cTypememb;
+		auto apLvalMember = (BUILD::LValue **)(alloca(cB));
 		EWC::ZeroAB(apLvalMember, cB);
 
 		CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
@@ -3223,7 +3224,7 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CBuilderIR *
 			if (!EWC_FVERIFY(pStdecl, "expected decl"))
 				continue;
 
-			LLVMOpaqueValue * pLvalMember = nullptr;
+			BUILD::LValue * pLvalMember = nullptr;
 			auto pStnodInitMemb = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
 
 			if (pStnodInitMemb && pStnodInitMemb->m_park != PARK_Uninitializer)
@@ -3243,7 +3244,7 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CBuilderIR *
 		}
 
 		auto pCgstruct = pBuild->PCgstructEnsure(pTinstruct);
-		return LLVMConstNamedStruct(pCgstruct->m_pLtype, apLvalMember, cTypememb);
+		return pBuild->PLvalConstantStruct(pCgstruct->m_pLtype, apLvalMember, cTypememb);
 	}
 	else if (pTin->m_tink == TINK_Array)
 	{
@@ -3266,15 +3267,16 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CBuilderIR *
 					if (cginitk == CGINITK_MemcpyGlobal)
 					{
 						auto pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pTinary->m_pTin, nullptr);
-						auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, (size_t)pTinary->m_c);
+						auto apLval = (BUILD::LValue **)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(BUILD::LValue*, (size_t)pTinary->m_c);
 
 						for (s64 iElement = 0; iElement < pTinary->m_c; ++iElement)
 						{
 							apLval[iElement] = pLvalInit;
 						}
 
-						LLVMOpaqueType * pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
-						auto pLvalReturn = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
+						BUILD::LType * pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
+
+						auto pLvalReturn = pBuild->PLvalConstantArray(pLtypeElement, apLval, u32(pTinary->m_c));
 						pBuild->m_pAlloc->EWC_DELETE(apLval);
 
 						return pLvalReturn;
@@ -3309,12 +3311,6 @@ LLVMOpaqueValue * PLvalBuildConstantInitializer(CWorkspace * pWork, CBuilderIR *
 	}
 
 	return PLvalZeroInType(pBuild, pTin);
-}
-
-BCode::CBuilder::LValue * PLvalBuildConstantInitializer(CWorkspace * pWork, BCode::CBuilder * pBuild, STypeInfo * pTin, CSTNode * pStnodInit)
-{
-	EWC_ASSERT(false, "bytecode TBD (build constant init)");
-	return nullptr;
 }
 
 CGINITK CginitkCompute(STypeInfo * pTin, CSTNode * pStnodInit)
@@ -3463,7 +3459,7 @@ static inline typename BUILD::Value * PValInitialize(
 					auto pLtype = pBuild->PLtypeFromPTin(pTin);
 
 					auto pGlob = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
-					SetInitializer(pGlob, pLvalInit);
+					pBuild->SetInitializer(pGlob, pLvalInit);
 					pValInit = pGlob;
 				}
 				else
@@ -3493,7 +3489,7 @@ static inline typename BUILD::Value * PValInitialize(
 					auto pGlobInit = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
 					pTinstruct->m_pVGlobInit = pGlobInit;
 
-					SetInitializer(pGlobInit, pLvalInit);
+					pBuild->SetInitializer(pGlobInit, pLvalInit);
 				}
 
 				return pBuild->PInstCreateMemcpy(pWork, pTin, pValPT, (BUILD::Global*)pTinstruct->m_pVGlobInit);
@@ -4693,7 +4689,7 @@ typename BUILD::Value * PValGenerateDecl(
 			pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pStnod->m_pTin, pStnodInit);
 		}
 
-		SetInitializer(pGlob, pLvalInit);
+		pBuild->SetInitializer(pGlob, pLvalInit);
 
 		return pGlob;
 	}
@@ -4768,7 +4764,7 @@ CIRValue * PValGenerateArrayLiteralReference(CWorkspace * pWork, CBuilderIR * pB
 		auto pGlob = pBuild->PGlobCreate(pLtypeArray, "");
 		LLVMSetGlobalConstant(pGlob->m_pLval, true);
 
-		SetInitializer(pGlob, pLvalConstInit);
+		pBuild->SetInitializer(pGlob, pLvalConstInit);
 		pTinlit->m_pGlob = pGlob;
 	}
 	return pTinlit->m_pGlob;

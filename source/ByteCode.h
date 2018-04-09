@@ -28,34 +28,23 @@ namespace BCode
 	struct SProcedure;
 
 
-
-	enum FOPK : u8
-	{
-		FOPK_Dereference	= 0x1,	// endless register values, stored on the stack - "dereferenced" upon use.
-		FOPK_Arg			= 0x2,	// index onto the stack, adjusted to before the pushed current stack frame
-	};
-
-
-	// notes for keeping this straight in my head:
-	// "SValues" only exist during build time, they are completely baked into the stack and the instruction stream by
-	// invocation time.
-
-	//  stack opk values are essentially endless register values, they need both Arg and non-arg variants as they
-	//  can exist in the argument stack block. using stack indices rather than pointers as the stack positions change
-	//  from invocation to invocation
-	// 
-	//	this is different from an actual pointer value which will be stored in a location on the stack, but have a stack 
-	//  "register" denoting its location.
-
-
 	enum OPK : u8	// tag = Byte Code OPERand Kind
 	{
-		OPK_Literal			= 0,
-		OPK_LiteralArg		= FOPK_Arg, 
+		OPK_Literal,		// literal value stored in the instruction stream
+		OPK_LiteralArg,		// literal that needs to have the argument stack frame offset added during FinalizeProc
 
-		OPK_Register		= FOPK_Dereference,
-		OPK_RegisterArg		= FOPK_Dereference | FOPK_Arg,
+		OPK_Register,		// stack indexed "register" value (relative to local stack frame)
+		OPK_RegisterArg,	// stack indexed "register" value (relative to argument stack frame)
+
+		OPK_Global			// global index, lives in the data segment
 	};
+
+	inline bool FIsLiteral(OPK opk)
+		{ return (opk == OPK_Literal) | (opk == OPK_LiteralArg); }
+	inline bool FIsRegister(OPK opk)
+		{ return (opk == OPK_Register) | (opk == OPK_RegisterArg); }
+	inline bool FIsArg(OPK opk)
+		{ return (opk == OPK_LiteralArg) | (opk == OPK_RegisterArg); }
 
 
 
@@ -79,6 +68,9 @@ namespace BCode
 		};
 	};
 
+
+
+	// Build time values - baked into the instructions/globals by runtime.
 	struct SValue	// tag = val
 	{
 						SValue(VALK valk)
@@ -103,7 +95,7 @@ namespace BCode
 		SWord			m_word;
 	};
 
-	// BB - should this really be a distict struct?
+	// BB - should this really be a different struct?
 	struct SRegister : public SConstant // tag = reg
 	{
 		static const VALK s_valk = VALK_BCodeRegister;
@@ -232,8 +224,43 @@ namespace BCode
 		EWC::CString	m_strLabel;
 	};
 
-	struct CallStack
+
+
+	struct SDataBlock // tag = datab
 	{
+	public:
+		size_t			m_iBStart;
+		size_t			m_cB;
+		size_t			m_cBMax;
+		SDataBlock *	m_pDatabNext;
+		u8 *			m_pB;
+	};
+
+	class CDataSegment // tag = dataseg
+	{
+	public:
+						CDataSegment(EWC::CAlloc * pAlloc)
+						:m_pAlloc(pAlloc)
+						,m_pDatabFirst(nullptr)
+						,m_pDatabCur(nullptr)
+						,m_cBBlockMin(64 * 1024)
+							{ ; }
+
+						~CDataSegment()
+						{
+							Clear();
+						}
+
+		void			Clear();
+		u8 *			PBFromIndex(s32 iB);
+		u8 *			PBBakeCopy(EWC::CAlloc * pAlloc);
+		void			AllocateDataBlock(size_t cBMin);
+		void			AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB);
+
+		EWC::CAlloc *	m_pAlloc;
+		SDataBlock *	m_pDatabFirst;
+		SDataBlock *	m_pDatabCur;
+		size_t			m_cBBlockMin;
 
 	};
 
@@ -331,6 +358,7 @@ namespace BCode
 		GepIndex *			PGepIndexFromValue(SValue * pVal);
 
 		Global *			PGlobCreate(STypeInfo * pTin, const char * pChzName);
+		void				SetInitializer(SValue * pValGlob, SValue * pValInit);
 
 		SValue *			PValGenerateCall(
 								CWorkspace * pWork,
@@ -346,8 +374,6 @@ namespace BCode
 		Instruction *		PInstCreatePhi(LType * pLtype, const char * pChzName);
 		void				AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock);
 
-
-		//Constant *			PConst();
 		SConstant *			PConstArg(s64 n, int cBit = 64, bool fIsSigned = true);
 		SRegister *			PReg(s64 n, int cBit = 64, bool fIsSigned = true);
 		SRegister *			PRegArg(s64 n, int cBit = 64, bool fIsSigned = true);
@@ -363,8 +389,9 @@ namespace BCode
 								{ return PConstFloat(g, cBit); }
 
 		LValue *			PLvalConstantGlobalStringPtr(const char * pChzString, const char * pChzName);
-		static LValue *		PLvalConstantNull(LType * pLtype);
-		static LValue *		PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval);
+		LValue *			PLvalConstantNull(LType * pLtype);
+		LValue *			PLvalConstantArray(LType * pLtypeElement, LValue ** apLval, u32 cpLval);
+		LValue *			PLvalConstantStruct(LType * pLtype, LValue ** apLval, u32 cpLval);
 
 
 		Constant *			PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
@@ -385,6 +412,7 @@ namespace BCode
 		EWC::CDynAry<SBlock *>				m_arypBlockManaged;
 		EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
 		EWC::CDynAry<SValue *>				m_arypValManaged;
+		CDataSegment						m_dataseg;
 		EWC::CHash<SSymbol *, SValue *>		m_hashPSymPVal;
 		EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>	
 											m_hashPTinstructPCgstruct;
@@ -421,13 +449,18 @@ namespace BCode
 	class CVirtualMachine	// tag = vm
 	{
 	public:
-						CVirtualMachine(u8 * pBStack, u8 * pBStackMax, SDataLayout * pDlay);
+						CVirtualMachine(u8 * pBStack, u8 * pBStackMax, CBuilder * pBuild);
+						~CVirtualMachine()
+							{ Clear(); }
 
+		void			Clear();
+
+		EWC::CAlloc *	m_pAlloc;
 		SDataLayout *	m_pDlay;
-
 		u8 *			m_pBStackMin;
 		u8 *			m_pBStackMax;
 		u8 *			m_pBStack;			// current stack bottom (grows down)
+		u8 *			m_pBGlobal;			// global data segment
 		SProcedure *	m_pProcCurDebug;	// current procedure being executed (not available in release)
 		EWC::SStringBuffer *
 						m_pStrbuf;			

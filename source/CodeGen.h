@@ -555,12 +555,14 @@ public:
 	static LValue *		PLvalConstantInt(u64 nUnsigned, int cBit, bool fIsSigned);
 	static LValue *		PLvalConstantFloat(f64 g, int cBit);
 	LValue *			PLvalConstantGlobalStringPtr(const char * pChzString, const char * pChzName);
-	static LValue *		PLvalConstantNull(LType * pLtype);
-	static LValue *		PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval);
+	LValue *			PLvalConstantNull(LType * pLtype);
+	LValue *			PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval);
+	LValue *			PLvalConstantStruct(LType * pLtype, LValue ** apLval, u32 cpLval);
 
 	CIRConstant *		PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
 
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
+	void				SetInitializer(CIRGlobal * pGlob, LValue * pLconst);
 	void				AddManagedVal(CIRValue * pVal);
 
 

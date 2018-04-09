@@ -948,7 +948,7 @@ TESTRES TestresRunUnitTest(
 				static const u32 s_cBStackMax = 2048;
 				u8 * pBStack = (u8 *)work.m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
 
-				BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &dlay);
+				BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
 				vm.m_pStrbuf = &strbufBytecode;
 #if DEBUG_PROC_CALL
 				vm.m_aryDebCall.SetAlloc(work.m_pAlloc, BK_ByteCode, 32);

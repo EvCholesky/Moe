@@ -45,6 +45,30 @@ using namespace EWC;
 #define CHECK_INST_TYPES 1
 
 
+void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign);
+
+void CalculateStructAlignment(SDataLayout * pDlay, STypeInfoStruct * pTinstruct)
+{
+	u64 cB = 0;
+	u64 cBAlignStruct = 1;
+
+	auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
+	for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb)
+	{
+		u64 cBField;
+		u64 cBAlignField;
+		CalculateByteSizeAndAlign(pDlay, pTypememb->m_pTin, &cBField, &cBAlignField);
+
+		cB = CBAlign(cB, cBAlignField);
+		pTypememb->m_dBOffset = s32(cB);
+
+		cB += cBField;
+		cBAlignStruct = ewcMax(cBAlignStruct, cBAlignField);
+	}
+
+	pTinstruct->m_cB = cB;
+	pTinstruct->m_cBAlign = cBAlignStruct;
+}
 
 void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign)
 {
@@ -66,12 +90,14 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
     case TINK_Struct: 
 	{
 		auto pTinstruct = (STypeInfoStruct *)pTin;
-		if (EWC_FVERIFY(pTinstruct->m_cB > 0, "checking size of struct before it is calculated"))
+		if (pTinstruct->m_cB < 0)
 		{
-			*pcB = pTinstruct->m_cB;
-			*pcBAlign = pTinstruct->m_cBAlign;
-			return;	
+			CalculateStructAlignment(pDlay, pTinstruct);
 		}
+
+		*pcB = pTinstruct->m_cB;
+		*pcBAlign = pTinstruct->m_cBAlign;
+		return;	
 	}
 
     case TINK_Array:
@@ -212,6 +238,7 @@ CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
 ,m_arypBlockManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_aryJumptStack(pWork->m_pAlloc, EWC::BK_ByteCodeCreator)
 ,m_arypValManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
+,m_dataseg(pWork->m_pAlloc)
 ,m_hashPSymPVal(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_hashPTinstructPCgstruct(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
 ,m_hashPTinprocPProcsig(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
@@ -383,6 +410,16 @@ void CBuilder::ActivateProc(SProcedure * pProc, SBlock * pBlock)
 	m_pBlockCur = pBlock;
 }
 
+inline void RemoveOpkArg(OPK * pOpk)
+{
+	EWC_CASSERT(OPK_Literal == OPK(OPK_LiteralArg - 1), "bad Arg opk value"); 
+	EWC_CASSERT(OPK_Register == OPK(OPK_RegisterArg - 1), "bad Arg opk value"); 
+
+	OPK opk = *pOpk;
+	EWC_ASSERT(FIsArg(opk), "non-argument passed into RemoveOpkArg");
+	*pOpk = OPK(opk - 1);
+}
+
 void CBuilder::FinalizeProc(SProcedure * pProc)
 {
 	s32 cInst = 0;
@@ -415,20 +452,125 @@ void CBuilder::FinalizeProc(SProcedure * pProc)
 			pProc->m_aryInst.Append(*pInst);
 			auto pInstNew = pProc->m_aryInst.PLast();
 			
-			if ((pInstNew->m_opkLhs & FOPK_Arg) == FOPK_Arg)
+			if (FIsArg(pInstNew->m_opkLhs))
 			{
 				pInstNew->m_wordLhs.m_s32 += iBArgFFrame;
+				RemoveOpkArg(&pInstNew->m_opkLhs);
 			}
 
-			if ((pInstNew->m_opkRhs & FOPK_Arg) == FOPK_Arg)
+			if (FIsArg(pInstNew->m_opkRhs))
 			{
 				pInstNew->m_wordRhs.m_s32 += iBArgFFrame;
+				RemoveOpkArg(&pInstNew->m_opkRhs);
 			}
 
 			pBlock->m_aryInstval.Clear();
 		}
 	}
+}
 
+
+
+static const size_t s_cBDataBlockAlign = 8;
+
+void CDataSegment::Clear()
+{
+	auto pDatabIt = m_pDatabFirst;
+	while (pDatabIt)
+	{
+		auto pDatab = pDatabIt;
+		pDatabIt = pDatabIt->m_pDatabNext;
+
+		m_pAlloc->EWC_FREE(pDatab);
+	}
+		
+	m_pDatabFirst = nullptr;
+	m_pDatabCur = nullptr;
+}
+
+u8 * CDataSegment::PBFromIndex(s32 iB)
+{
+	for (auto pDatab = m_pDatabFirst; pDatab; pDatab = pDatab->m_pDatabNext)
+	{
+		auto dB = iB - pDatab->m_iBStart;
+		if (dB < pDatab->m_cB)
+		{
+			return &pDatab->m_pB[dB];
+		}
+	}
+
+	return nullptr;
+}
+
+u8 * CDataSegment::PBBakeCopy(EWC::CAlloc * pAlloc)
+{
+	if (!m_pDatabFirst)
+		return nullptr;
+
+	size_t cB = m_pDatabCur->m_iBStart + m_pDatabCur->m_cB;
+
+	u8 * pB = (u8*)m_pAlloc->EWC_ALLOC(cB, s_cBDataBlockAlign);
+
+	for (auto pDatabIt = m_pDatabFirst; pDatabIt; pDatabIt = pDatabIt->m_pDatabNext)
+	{
+		EWC_ASSERT(pDatabIt->m_iBStart + pDatabIt->m_cB <= cB, "bad size calculation");
+		memcpy(&pB[pDatabIt->m_iBStart], pDatabIt->m_pB, pDatabIt->m_cB);
+	}
+
+	return pB;
+}
+void CDataSegment::AllocateDataBlock(size_t cBMin)
+{
+	size_t cBDatabStride = CBAlign(sizeof(SDataBlock), s_cBDataBlockAlign);
+	size_t cBBlock = ewcMax(cBMin, m_cBBlockMin);
+	auto pB = (u8*)m_pAlloc->EWC_ALLOC(cBDatabStride + cBBlock, 64);
+
+	SDataBlock * pDatabNew = (SDataBlock *)pB;
+	pDatabNew->m_cB = 0;
+	pDatabNew->m_cBMax = cBBlock;
+	pDatabNew->m_pB = pB + cBDatabStride;
+	pDatabNew->m_pDatabNext = nullptr;
+
+	if (m_pDatabFirst == nullptr)
+	{
+		m_pDatabFirst = pDatabNew;
+		pDatabNew->m_iBStart = 0;
+	}
+	else
+	{
+		pDatabNew->m_iBStart = m_pDatabCur->m_iBStart + CBAlign(m_pDatabCur->m_cB, s_cBDataBlockAlign);
+		m_pDatabCur->m_pDatabNext = pDatabNew;
+	}
+
+	m_pDatabCur = pDatabNew;
+}
+
+void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB)
+{
+	size_t cBStride = ewcMax(cB, cBAlign);
+	if (m_pDatabCur == nullptr)
+	{
+		EWC_ASSERT(m_pDatabFirst == nullptr, "bad data block init");
+		AllocateDataBlock(cBStride);
+	}
+	else
+	{
+		auto pVEnd = PVAlign(m_pDatabCur->m_pB + m_pDatabCur->m_cB + cB, cBAlign);
+		auto uEnd = uintptr_t(pVEnd);
+		auto uCmp = uintptr_t(m_pDatabCur->m_pB + m_pDatabCur->m_cBMax);
+		if (uintptr_t(pVEnd) > uintptr_t(m_pDatabCur->m_pB + m_pDatabCur->m_cBMax))
+		{
+			AllocateDataBlock(cBStride);
+		}
+	}
+
+	*piB = m_pDatabCur->m_iBStart + m_pDatabCur->m_cB;
+	auto pBStart = &m_pDatabCur->m_pB[m_pDatabCur->m_cB];
+	*ppB = pBStart;
+
+	auto pVEnd = (u8*)PVAlign(pBStart + cB, cBAlign);
+	m_pDatabCur->m_cB += pVEnd - pBStart;
+	EWC_ASSERT(m_pDatabCur->m_cB <= m_pDatabCur->m_cBMax, "data block overflow")
 }
 
 static void PrintFloatOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWord word)
@@ -490,9 +632,16 @@ static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWo
 			}
 		} break;
 	case OPK_Register:
-	case OPK_RegisterArg:
 		{
 			FormatCoz(pStrbuf, "[%d]", word.m_s32);
+		} break;
+	case OPK_RegisterArg:
+		{
+			FormatCoz(pStrbuf, "a[%d]", word.m_s32);
+		} break;
+	case OPK_Global:
+		{
+			FormatCoz(pStrbuf, "g[%d]", word.m_s32);
 		} break;
 	default:
 		FormatCoz(pStrbuf, "ERR(0x%x) 0x%x", opk, word.m_u64);
@@ -558,7 +707,7 @@ void CBuilder::PrintDump()
 			{
 			case IROP_Call:
 				{
-					if ((pInst->m_opkLhs & FOPK_Dereference) == 0)
+					if (FIsRegister(pInst->m_opkLhs) == 0)
 					{
 						auto pProc = (SProcedure *)pInst->m_wordLhs.m_pV;
 						FormatCoz(&strbuf, "%s()->[%d]", pProc->m_pTinproc->m_strName.PCoz(), pInst->m_iBStackOut);
@@ -828,6 +977,7 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 				}
 			} break;
 		case VALK_BCodeRegister:
+		case VALK_Instruction:
 			{
 				auto pInstval = PInstAlloc();
 				auto pInst = pInstval->m_pInst;
@@ -837,7 +987,6 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 				pInst->m_wordRhs.m_u64 = cBStride;
 
 				SetOperandFromValue(m_pDlay, pValIndex, &pInst->m_opkLhs, &pInst->m_wordLhs, OPSZ_8, &valout);
-
 			} break;
 		default:
 			EWC_ASSERT(false, "unexpected value kind in GEP instruction");
@@ -946,9 +1095,61 @@ void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 
 CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName)
 {
-	EWC_ASSERT(false,"bytecode tbd");
-	return nullptr;
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+
+	auto pConst = m_blistConst.AppendNew();
+	pConst->m_pTin = pTin;
+	pConst->m_opk = OPK_Global;
+
+	u8 * pBGlobal;
+	s64 iBGlobal;
+	m_dataseg.AllocateData(cB, cBAlign, &pBGlobal, &iBGlobal);
+	pConst->m_word.m_s64 = iBGlobal;
+
+	return pConst;
 }
+
+void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit)
+{
+	BCode::SConstant * pConstGlob = PValDerivedCast<SConstant *>(pValGlob);
+	if (!EWC_FVERIFY(pConstGlob || pConstGlob->m_opk != OPK_Global, "initializing non global"))
+		return;
+
+	BCode::SConstant * pConstInit = PValDerivedCast<SConstant *>(pValInit);
+	if (!EWC_FVERIFY(pConstInit, "initializer must be constant"))
+		return;
+	
+	u64 cBGlob;
+	u64 cBGlobAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pConstGlob->m_pTin, &cBGlob, &cBGlobAlign);
+
+	auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
+	if (pConstInit->m_opk == OPK_Global)
+	{
+		if (EWC_FVERIFY(FTypesAreSame(pConstGlob->m_pTin, pConstInit->m_pTin), "initializer type mismatch"))
+		{
+			memcpy(pBGlob, m_dataseg.PBFromIndex(pConstInit->m_word.m_s32), cBGlob);
+			return;
+		}
+	}
+
+	if (EWC_FVERIFY(FIsLiteral(pConstInit->m_opk), "expected literal"))
+	{
+		switch (cBGlob)
+		{
+		case 1:	*(u8*)pBGlob = pConstInit->m_word.m_u8;			break;
+		case 2:	*(u16*)pBGlob = pConstInit->m_word.m_u16;		break;
+		case 4:	*(u32*)pBGlob = pConstInit->m_word.m_u32;		break;
+		case 8:	*(u64*)pBGlob = pConstInit->m_word.m_u64;		break;
+		default:
+			EWC_ASSERT(false, "unexpected constant literal size");
+			break;
+		}
+	}
+}
+
 
 CBuilder::ProcArg *	CBuilder::PProcArg(SValue * pVal)
 {
@@ -1248,10 +1449,13 @@ inline void SetOperandFromValue(
 
 		*pOpkOut = pConst->m_opk;
 		pWordOut->m_u64 = pConst->m_word.m_u64;
-
-		pValout->m_cBRegister = (pConst->m_litty.m_cBit + 7) / 8;
 		pValout->m_pTin = pConst->m_pTin;
-		EWC_ASSERT(FIsValidCBRegister(pValout->m_cBRegister), "unexpected operand size.");
+
+		if (pConst->m_opk != OPK_Global)
+		{
+			pValout->m_cBRegister = (pConst->m_litty.m_cBit + 7) / 8;
+			EWC_ASSERT(FIsValidCBRegister(pValout->m_cBRegister), "unexpected operand size.");
+		}
 	} break;
 	case VALK_Instruction:
 	{
@@ -1380,7 +1584,7 @@ SInstructionValue * CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SValue
 		EWC_ASSERT(pOpsig->m_opszRhs != OPSZ_0, "unexpected RHS operand");
 		SetOperandFromValue(m_pDlay, pValRhs, &pInst->m_opkRhs, &pInst->m_wordRhs, pOpsig->m_opszRhs, &valoutRhs);
 
-		EWC_ASSERT(valoutRhs.m_cBRegister != 0, "expected RHS operand, but has zero size");
+		//EWC_ASSERT(valoutRhs.m_cBRegister != 0, "expected RHS operand, but has zero size");
 	}
 	EWC_ASSERT(pOpsig->m_opszLhs != OPSZ_CB || pOpsig->m_opszRhs != OPSZ_CB || 
 		valoutLhs.m_cBRegister == valoutRhs.m_cBRegister, "operand size mismatch");
@@ -1466,9 +1670,9 @@ void CBuilder::AddManagedVal(SValue * pVal)
 }
 
 
-static inline void LoadWord(CVirtualMachine * pVm, SWord * pWord, u32 iB, int cB)
+static inline void LoadWord(u8 * aB, SWord * pWord, u32 iB, int cB)
 {
-	u8 * pB = &pVm->m_pBStack[iB];
+	u8 * pB = &aB[iB];
 	switch (cB)
 	{
 		case 1:	pWord->m_u8 = *pB;			break;
@@ -1480,52 +1684,56 @@ static inline void LoadWord(CVirtualMachine * pVm, SWord * pWord, u32 iB, int cB
 	}
 }
 
-static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int cB, SWord * pWordLhs)
+static inline void ReadOpcode(CVirtualMachine * pVm, SInstruction * pInst, int cB, SWord * pWordLhs)
 {
-	if ((pInst->m_opkLhs & FOPK_Dereference) == FOPK_Dereference)
+	switch (pInst->m_opkLhs)
 	{
-		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_s32, cB);
-	}
-	else
-	{
-		*pWordLhs = pInst->m_wordLhs;
+	case OPK_Literal:
+	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
+	case OPK_Register:
+	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
+	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
+		break;
 	}
 }
 
 static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int cB, SWord * pWordLhs, SWord * pWordRhs)
 {
-	if ((pInst->m_opkLhs & FOPK_Dereference) == FOPK_Dereference)
+	switch (pInst->m_opkLhs)
 	{
-		LoadWord(pVm, pWordLhs, pInst->m_wordLhs.m_s32, cB);
-	}
-	else
-	{
-		*pWordLhs = pInst->m_wordLhs;
+	case OPK_Literal:
+	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
+	case OPK_Register:
+	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
+	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
+		break;
 	}
 
-	if ((pInst->m_opkRhs & FOPK_Dereference) == FOPK_Dereference)
+	switch (pInst->m_opkRhs)
 	{
-		LoadWord(pVm, pWordRhs, pInst->m_wordRhs.m_s32, cB);
-	}
-	else
-	{
-		*pWordRhs = pInst->m_wordRhs;
+	case OPK_Literal:
+	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
+	case OPK_Register:
+	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
+	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
+		break;
 	}
 }
 
 static inline void ReadOpcodesStoreToReg(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs, SWord * pWordRhs)
 {
 	u8 cB = pInst->m_cBOperand;
-	EWC_ASSERT ((pInst->m_opkLhs & FOPK_Dereference) == FOPK_Dereference, "expected register lhs");
+	EWC_ASSERT (FIsRegister(pInst->m_opkLhs), "expected register lhs");
 	*pWordLhs = pInst->m_wordLhs;
 
-	if ((pInst->m_opkRhs & FOPK_Dereference) == FOPK_Dereference)
+	switch (pInst->m_opkRhs)
 	{
-		LoadWord(pVm, pWordRhs, pInst->m_wordRhs.m_s32, cB);
-	}
-	else
-	{
-		*pWordRhs = pInst->m_wordRhs;
+	case OPK_Literal:
+	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
+	case OPK_Register:
+	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
+	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordRhs, pInst->m_wordRhs.m_s32, cB);	break;
+		break;
 	}
 }
 
@@ -1789,15 +1997,15 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u64*)wordLhs.m_pV) = wordRhs.m_u64;	break;
 
 		case MASHOP(IROP_Load, 1):	
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); 
+			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); 
 			STORE(pInst->m_iBStackOut, u8, *(u8*)wordLhs.m_pV); 
 			break;
 		case MASHOP(IROP_Load, 2):	
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u16, *(u16*)wordLhs.m_pV); break;
+			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u16, *(u16*)wordLhs.m_pV); break;
 		case MASHOP(IROP_Load, 4):	
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u32, *(u32*)wordLhs.m_pV); break;
+			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u32, *(u32*)wordLhs.m_pV); break;
 		case MASHOP(IROP_Load, 8):	
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u64, *(u64*)wordLhs.m_pV); break;
+			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u64, *(u64*)wordLhs.m_pV); break;
 
 		case MASHOP(IROP_NAdd, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 + wordRhs.m_u8);		break;
 		case MASHOP(IROP_NAdd, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 + wordRhs.m_u16);	break;
@@ -1850,13 +2058,13 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_GRem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, fmod(wordLhs.m_f64,  wordRhs.m_f64));	break;
 
 		case MASHOP(IROP_NTrace, 1):	
-			ReadOpcodes(pVm, pInst, 1, &wordLhs); printf("1byte %d\n", wordLhs.m_u8); break;
+			ReadOpcode(pVm, pInst, 1, &wordLhs); printf("1byte %d\n", wordLhs.m_u8); break;
 		case MASHOP(IROP_NTrace, 2):	
-			ReadOpcodes(pVm, pInst, 2, &wordLhs); printf("2byte %d\n", wordLhs.m_u16); break;
+			ReadOpcode(pVm, pInst, 2, &wordLhs); printf("2byte %d\n", wordLhs.m_u16); break;
 		case MASHOP(IROP_NTrace, 4):	
-			ReadOpcodes(pVm, pInst, 4, &wordLhs); printf("4byte %d\n", wordLhs.m_u32); break;
+			ReadOpcode(pVm, pInst, 4, &wordLhs); printf("4byte %d\n", wordLhs.m_u32); break;
 		case MASHOP(IROP_NTrace, 8):	
-			ReadOpcodes(pVm, pInst, 8, &wordLhs); printf("8byte %lld\n", wordLhs.m_u64); break;
+			ReadOpcode(pVm, pInst, 8, &wordLhs); printf("8byte %lld\n", wordLhs.m_u64); break;
 
 		case MASHOP(IROP_TraceStore, 0):	
 		case MASHOP(IROP_TraceStore, 1):	
@@ -1866,7 +2074,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		{
 			if (pVm->m_pStrbuf)
 			{
-				ReadOpcodes(pVm, pInst, pInst->m_cBOperand, &wordLhs);
+				ReadOpcode(pVm, pInst, pInst->m_cBOperand, &wordLhs);
 				auto pTin = (STypeInfo *)pInst->m_wordRhs.m_pV;
 				PrintInstance(pVm, pTin, (u8*)&wordLhs);
 				AppendCoz(pVm->m_pStrbuf, ";");
@@ -1887,7 +2095,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			STORE(pInst->m_wordLhs.m_s32, u32, wordRhs.m_u32); 
 			break;
 		case MASHOP(IROP_StoreToReg, 8):	
-			EWC_ASSERT((pInst->m_opkLhs & FOPK_Dereference) != 0, "expected register for destination");
+			EWC_ASSERT(FIsRegister(pInst->m_opkLhs), "expected register for destination");
 			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
 			STORE(pInst->m_wordLhs.m_s32, u64, wordRhs.m_u64); 
 			break;
@@ -1944,7 +2152,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_Call, 4):
 		case MASHOP(IROP_Call, 8):
 		{
-			ReadOpcodes(pVm, pInst, sizeof(SProcedure *), &wordLhs);
+			ReadOpcode(pVm, pInst, sizeof(SProcedure *), &wordLhs);
 
 			auto pProc = (SProcedure *)wordLhs.m_pV;
 			auto pProcsig = pProc->m_pProcsig;
@@ -2002,7 +2210,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			}
 			else
 			{
-				ReadOpcodes(pVm, pInst, pInst->m_cBOperand, &wordLhs);
+				ReadOpcode(pVm, pInst, pInst->m_cBOperand, &wordLhs);
 			}
 
 			u8 * pBStackCalled = pVm->m_pBStack;
@@ -2068,7 +2276,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 
 		case MASHOP(IROP_CondBranch, 0):
 		{
-			ReadOpcodes(pVm, pInst, 1, &wordLhs);
+			ReadOpcode(pVm, pInst, 1, &wordLhs);
 			EWC_ASSERT(wordLhs.m_u8 >= 0 && wordLhs.m_u8 <= 1, "expected 0 or 1");
 
 			u8 iOp = (wordLhs.m_u8 != 0);
@@ -2089,7 +2297,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			++pInst;
 			if (!EWC_FVERIFY(pInst->m_irop == IROP_ExArgs, "expected extended argument block"))
 				break;
-			ReadOpcodes(pVm, pInst, 8, &wordLhsEx);
+			ReadOpcode(pVm, pInst, 8, &wordLhsEx);
 			memset(wordLhs.m_pV, wordRhs.m_u8, wordLhsEx.m_u64);
 		} break;
 		case MASHOP(IROP_Memcpy, 0):
@@ -2098,19 +2306,19 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			++pInst;
 			if (!EWC_FVERIFY(pInst->m_irop == IROP_ExArgs, "expected extended argument block"))
 				break;
-			ReadOpcodes(pVm, pInst, 8, &wordLhsEx);
+			ReadOpcode(pVm, pInst, 8, &wordLhsEx);
 			memcpy(wordLhs.m_pV, wordRhs.m_pV, wordLhsEx.m_u64);
 		} break;
 		case MASHOP(IROP_GEP, 0):
 		{
 			auto pInstGep = pInst;
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs); 
+			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); 
 
 			u64 dB = pInst->m_wordRhs.m_u64;
 			while ((pInst + 1)->m_irop == IROP_ExArgs)
 			{
 				++pInst;
-				ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhsEx); 
+				ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhsEx); 
 				dB += wordLhsEx.m_u64 * pInst->m_wordRhs.m_u64;
 			}
 
@@ -2137,8 +2345,9 @@ SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv)
 	return *ppProc;
 }
 
-CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, SDataLayout * pDlay)
-:m_pDlay(pDlay)
+CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, CBuilder * pBuild)
+:m_pAlloc(pBuild->m_pAlloc)
+,m_pDlay(pBuild->m_pDlay)
 ,m_pBStackMin(pBStackMin)
 ,m_pBStackMax(pBStackMax)
 ,m_pBStack(pBStackMax)
@@ -2148,6 +2357,18 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, SDataLayout *
 ,m_aryDebCall()
 #endif
 {
+	m_pBGlobal = pBuild->m_dataseg.PBBakeCopy(m_pAlloc);
+}
+
+void CVirtualMachine::Clear()
+{
+	if (m_pBGlobal)
+	{
+		m_pAlloc->EWC_FREE(m_pBGlobal);
+		m_pBGlobal = nullptr;
+	}
+
+	m_hashHvMangledPProc.Clear(0);
 }
 
 SConstant * CBuilder::PConstPointer(void * pV, STypeInfo * pTin)
@@ -2157,7 +2378,7 @@ SConstant * CBuilder::PConstPointer(void * pV, STypeInfo * pTin)
 	pConst->m_word.m_pV = pV;
 	pConst->m_pTin = pTin;
 
-	pConst->m_litty.m_litk = LITK_Pointer;
+	pConst->m_litty.m_litk = (pV == nullptr) ? LITK_Null : LITK_Pointer;
 	pConst->m_litty.m_cBit = sizeof(pV) * 8;
 	pConst->m_litty.m_fIsSigned = false;
 	return pConst;
@@ -2202,14 +2423,108 @@ CBuilder::LValue * CBuilder::PLvalConstantGlobalStringPtr(const char * pChzStrin
 
 CBuilder::LValue * CBuilder::PLvalConstantNull(LType * pLtype)
 {
-	EWC_ASSERT(false, "codegen TBD");
-	return nullptr;
+	return PConstPointer(nullptr, pLtype);
 }
 
-CBuilder::LValue * CBuilder::PLvalConstantArray(LType * pLtype, LValue ** apLval, u32 cpLval)
+CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue ** apLval, u32 cpLval)
 {
-	EWC_ASSERT(false, "codegen TBD");
-	return nullptr;
+	// BB - this array type info is not unique
+	STypeInfoArray * pTinary = EWC_NEW(m_pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+	m_pSymtab->AddManagedTin(pTinary);
+	pTinary->m_pTin = pTinElement;
+	pTinary->m_c = cpLval;
+	pTinary->m_aryk = ARYK_Fixed;
+
+	auto pConst = m_blistConst.AppendNew();
+	pConst->m_pTin = pTinary;
+	pConst->m_opk = OPK_Global;
+
+	u64 cBElement;
+	u64 cBAlignElement;
+	CalculateByteSizeAndAlign(m_pDlay, pTinElement, &cBElement, &cBAlignElement);
+
+	u8 * pBGlobal;
+	s64 iBGlobal;
+	u64 cBStride = CBAlign(cBElement, cBAlignElement);
+	m_dataseg.AllocateData(cBStride * cpLval, cBAlignElement, &pBGlobal, &iBGlobal);
+	pConst->m_word.m_s64 = iBGlobal;
+
+	for (u32 ipLval = 0; ipLval < cpLval; ++ipLval)
+	{
+		auto pConst = (SConstant *)apLval[ipLval];
+		if (!EWC_FVERIFY(pConst->m_valk == VALK_Constant && FIsLiteral(pConst->m_opk), "must initialize constant array with constant literals"))
+			continue;
+
+		EWC_ASSERT(pConst->m_litty.m_cBit == cBElement * 8, "element size mismatch");	
+
+		switch (cBElement)
+		{
+		case 1: *(u8*)pBGlobal = pConst->m_word.m_u8;		break;
+		case 2: *(u16*)pBGlobal = pConst->m_word.m_u16;		break;
+		case 4: *(u32*)pBGlobal = pConst->m_word.m_u32;		break;
+		case 8: *(u64*)pBGlobal = pConst->m_word.m_u64;		break;
+		default:
+			EWC_ASSERT(false, "unexpected element sizei in pLvalConstantArray")
+			break;
+		}
+		pBGlobal += cBElement;
+	}
+
+	return pConst;
+}
+
+CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apLval, u32 cpLval)
+{
+	auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTin);
+	if (!pTinstruct)
+	{
+		return nullptr;
+	}
+
+	auto pConst = m_blistConst.AppendNew();
+	pConst->m_pTin = pTinstruct;
+	pConst->m_opk = OPK_Global;
+
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTinstruct, &cB, &cBAlign);
+
+	u8 * pBGlobal;
+	s64 iBGlobal;
+	m_dataseg.AllocateData(cB, cBAlign, &pBGlobal, &iBGlobal);
+	auto pBGlobalStart = pBGlobal;
+	pConst->m_word.m_s64 = iBGlobal;
+
+	for (u32 ipLval = 0; ipLval < cpLval; ++ipLval)
+	{
+		auto pConst = (SConstant *)apLval[ipLval];
+		if (!EWC_FVERIFY(pConst->m_valk == VALK_Constant && FIsLiteral(pConst->m_opk), "must initialize constant struct with constant literals"))
+			continue;
+
+		auto pTypememb = &pTinstruct->m_aryTypemembField[ipLval];
+
+		u64 cBField;
+		u64 cBAlignField;
+		CalculateByteSizeAndAlign(m_pDlay, pTypememb->m_pTin, &cBField, &cBAlignField);
+
+		pBGlobal = (u8 *)PVAlign(pBGlobal, cBAlignField);
+		EWC_ASSERT(pConst->m_litty.m_cBit == cBField * 8, "element size mismatch");	
+		EWC_ASSERT(ptrdiff_t(pTypememb->m_dBOffset) == (pBGlobal - pBGlobalStart), "element layout error");	
+
+		switch (cBField)
+		{
+		case 1: *(u8*)pBGlobal = pConst->m_word.m_u8;		break;
+		case 2: *(u16*)pBGlobal = pConst->m_word.m_u16;		break;
+		case 4: *(u32*)pBGlobal = pConst->m_word.m_u32;		break;
+		case 8: *(u64*)pBGlobal = pConst->m_word.m_u64;		break;
+		default:
+			EWC_ASSERT(false, "unexpected element sizei in pLvalConstantArray")
+			break;
+		}
+		pBGlobal += cBField;
+	}
+
+	return pConst;
 }
 
 CBuilder::Constant * CBuilder::PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval)
@@ -2266,6 +2581,27 @@ SRegister * CBuilder::PRegArg(s64 n, int cBit, bool fIsSigned)
 }
 
 
+void TestDataSegment(CAlloc * pAlloc)
+{
+	CDataSegment dataseg(pAlloc);
+	dataseg.m_cBBlockMin = 20;
+
+	s64 aiB[10];
+	for (int i = 0; i < EWC_DIM(aiB); ++i)
+	{
+		s64 * pN;
+		dataseg.AllocateData(sizeof(s64), EWC_ALIGN_OF(s64), (u8**)&pN, &aiB[i]); 
+		*pN = i;
+	}
+
+	u8 * pBCopy = dataseg.PBBakeCopy(pAlloc);
+	for (int i = 0; i < EWC_DIM(aiB); ++i)
+	{
+		s64 * pN = (s64 *)&pBCopy[aiB[i]];
+		EWC_ASSERT(i == *pN, "data segment write fail");
+	}
+	
+}
 
 void BuildStubDataLayout(SDataLayout * pDlay)
 {
@@ -2278,6 +2614,7 @@ void BuildStubDataLayout(SDataLayout * pDlay)
 
 void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 {
+	TestDataSegment(pAlloc);
 	SDataLayout dlay;
 	BuildStubDataLayout(&dlay);
 
@@ -2287,6 +2624,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	SUniqueNameSet unsetTin(pAlloc, BK_ByteCodeTest);
 	auto pSymtab = PSymtabNew(pAlloc, nullptr, "bytecode", &unsetTin, &hashHvPTin);
 	pSymtab->AddBuiltInSymbols(pWork);
+	buildBc.m_pSymtab = pSymtab;
 
 	auto pTinprocMain = PTinprocAlloc(pSymtab, 0, 0, "main");
 	pTinprocMain->m_strMangled = pTinprocMain->m_strName;
@@ -2409,7 +2747,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	char aCh[2048];
 	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
 
-	CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &dlay);
+	CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
 	vm.m_pStrbuf = &strbuf;
 
 #if DEBUG_PROC_CALL
