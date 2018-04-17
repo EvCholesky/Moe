@@ -63,12 +63,10 @@ public:
 
 	void				Append(CIRInstruction * pInst);
 
-	BCode::SBlock *					m_pBlockBc;
 	LLVMOpaqueBasicBlock *			m_pLblock;
 	EWC::CDynAry<CIRInstruction *>	m_arypInst;		// BB - eventually this should be replaced with something that has 
 													// better random insertion performance.
 	bool				m_fIsTerminated;
-	bool				m_fHasErrors;
 };
 
 
@@ -301,7 +299,6 @@ public:
 						,m_pLvalDebugLocCur(nullptr)
 						,m_pBlockLocals(nullptr)
 						,m_pBlockFirst(nullptr)
-						,m_pProcBc(nullptr)
 						,m_arypBlockManaged(pAlloc, EWC::BK_IR)
 							{ ; }
 
@@ -312,7 +309,6 @@ public:
 	LLVMOpaqueValue *	m_pLvalDebugLocCur;
 	CIRBlock *		m_pBlockLocals;			// entry basic block containing argument stores and local variable allocas
 	CIRBlock *		m_pBlockFirst;			// first
-	BCode::SProcedure *	m_pProcBc;
 
 	EWC::CDynAry<CIRBlock *>
 						m_arypBlockManaged;
@@ -463,10 +459,12 @@ public:
 								SCodeGenStruct()
 								:m_pProcInitMethod(nullptr)
 								,m_pLtype(nullptr)
+								,m_pGlobInit(nullptr)
 									{ ; }
 
 		CIRProcedure *			m_pProcInitMethod;
 		LLVMOpaqueType *		m_pLtype;			// type reference, here to avoid infinite recursion in
+		CIRGlobal *				m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
 	};
 
 						CBuilderIR(
@@ -514,7 +512,7 @@ public:
 
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
-	CIRInstruction *	PInstCreateCall(LValue * pLvalProc, LLVMOpaqueType * pLtypeProc, ProcArg ** apLvalArgs, unsigned cArg);
+	CIRInstruction *	PInstCreateCall(LValue * pLvalProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, unsigned cArg);
 
 	CIRValue *			PValGenerateCall(
 							CWorkspace * pWork,
@@ -541,7 +539,6 @@ public:
 	CIRValue *			PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
 	CIRInstruction *	PInstCreateMemset(CWorkspace * pWork, CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
 	CIRInstruction *	PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CIRValue * pValRhsRef);
-	CIRInstruction *	PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CSTNode * pStnodInit);
 
 	CIRInstruction *	PInstCreateTraceStore(CIRValue * pVal, STypeInfo * pTin)
 							{ return nullptr; }

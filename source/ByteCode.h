@@ -252,6 +252,7 @@ namespace BCode
 						}
 
 		void			Clear();
+		size_t			CB();
 		u8 *			PBFromIndex(s32 iB);
 		u8 *			PBBakeCopy(EWC::CAlloc * pAlloc);
 		void			AllocateDataBlock(size_t cBMin);
@@ -270,7 +271,7 @@ namespace BCode
 	public:
 		typedef SBlock Block;
 		typedef SConstant Constant;
-		typedef SValue Global;
+		typedef SConstant Global;
 		typedef SInstructionValue Instruction;
 		typedef SProcedure Proc;
 		typedef SValue Value;
@@ -284,10 +285,12 @@ namespace BCode
 									SCodeGenStruct()
 									:m_pProcInitMethod(nullptr)
 									,m_pLtype(nullptr)
+									,m_pGlobInit(nullptr)
 										{ ; }
 
 			SProcedure *			m_pProcInitMethod;
-			STypeInfoProcedure *	m_pLtype;			// type reference, here to avoid infinite recursion in
+			STypeInfoStruct *		m_pLtype;			// type reference, here to avoid infinite recursion in
+			SConstant *				m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
 		};
 
 							CBuilder(CWorkspace * pWork, SDataLayout * pDlay);
@@ -351,11 +354,10 @@ namespace BCode
 		SValue *			PValCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName = "");
 		Instruction *		PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
 		Instruction *		PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef);
-		Instruction *		PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, CSTNode * pStnodInit);
 
 		Instruction *		PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName);
 		GepIndex *			PGepIndex(u64 idx);
-		GepIndex *			PGepIndexFromValue(SValue * pVal);
+ 	GepIndex *			PGepIndexFromValue(SValue * pVal);
 
 		Global *			PGlobCreate(STypeInfo * pTin, const char * pChzName);
 		void				SetInitializer(SValue * pValGlob, SValue * pValInit);
@@ -377,6 +379,7 @@ namespace BCode
 		SConstant *			PConstArg(s64 n, int cBit = 64, bool fIsSigned = true);
 		SRegister *			PReg(s64 n, int cBit = 64, bool fIsSigned = true);
 		SRegister *			PRegArg(s64 n, int cBit = 64, bool fIsSigned = true);
+		SRegister *			PRegArg(s64 n, STypeInfo * pTin);
 
 		SConstant *			PConstPointer(void * pV, STypeInfo * pTin = nullptr);
 		SConstant *			PConstRegAddr(s32 iBStack, int cBitRegister);

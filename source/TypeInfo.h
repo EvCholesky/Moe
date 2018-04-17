@@ -268,9 +268,10 @@ enum FTINPROC
 	FTINPROC_HasBakedTypeArgs	= 0x2,
 	FTINPROC_HasBakedValueArgs	= 0x4,
 	FTINPROC_IsCommutative		= 0x8,
+	FTINPROC_Initializer		= 0x10,
 
 	FTINPROC_None				= 0x0,
-	FTINPROC_All				= 0xF,
+	FTINPROC_All				= 0x1F,
 	FTINPROC_HasGenericArgs		= FTINPROC_HasBakedTypeArgs | FTINPROC_HasBakedValueArgs,
 };
 EWC_DEFINE_GRF(GRFTINPROC, FTINPROC, u8);
@@ -377,10 +378,10 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 
 										STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
 										:STypeInfo(strName, strUnique, s_tink)
-										,m_pVGlobInit(nullptr)
 										,m_pStnodStruct(nullptr)
 										,m_aryTypemembField()
 										,m_arypTinGenericParam()
+										,m_pTinprocInit(nullptr)
 										,m_cB(-1)
 										,m_cBAlign(-1)
 											{ ; }
@@ -388,12 +389,10 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	bool								FHasGenericParams() const
 											{ return m_arypTinGenericParam.C() > 0; }
 
-	void *								m_pVGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
-															//  self referential member pointers
-
 	CSTNode *							m_pStnodStruct;
 	EWC::CAllocAry<STypeStructMember>	m_aryTypemembField;
 	EWC::CAllocAry<STypeInfo *>			m_arypTinGenericParam;
+	STypeInfoProcedure *				m_pTinprocInit;			// procedure used when cginitk == CGINITK_InitializerProc
 
 	s64									m_cB;
 	s64									m_cBAlign;

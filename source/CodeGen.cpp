@@ -439,8 +439,7 @@ CIRValue::CIRValue(VALK valk)
 
 
 CIRBlock::CIRBlock(EWC::CAlloc * pAlloc)
-:m_pBlockBc(nullptr)
-,m_pLblock(nullptr)
+:m_pLblock(nullptr)
 ,m_arypInst(pAlloc, EWC::BK_IR)
 ,m_fIsTerminated(false)
 {
@@ -1105,7 +1104,7 @@ static inline void CreateDebugInfo(CWorkspace * pWork, CBuilderIR * pBuild, CSTN
 					mpArymembPLtype[ARYMEMB_Count] = LLVMInt64Type();
 					mpArymembPLtype[ARYMEMB_Data] = LLVMPointerType(pLtypeMember, 0);
 
-					auto pTinCount = pWork->m_pSymtab->PTinBuiltin("s64");
+					auto pTinCount = pWork->m_pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
 					CreateDebugInfo(pWork, pBuild, pStnodRef, pTinCount);
 
 					LLVMValueRef mpArymembPLvalDIType[ARYMEMB_Max]; // pointer, count
@@ -1507,6 +1506,16 @@ CBuilderIR::~CBuilderIR()
 		LLVMDisposeDIBuilder(m_pDib);
 		m_pDib = nullptr;
 	}
+
+	{
+		EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>::CIterator iter(&m_hashPTinstructPCgstruct);
+		while (SCodeGenStruct ** ppCgstruct = iter.Next())
+		{
+			m_pAlloc->EWC_DELETE(*ppCgstruct);
+		}
+
+		m_hashPTinstructPCgstruct.Clear(0);
+	}
 }
 
 void CBuilderIR::PrintDump()
@@ -1578,7 +1587,7 @@ void CBuilderIR::AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRB
 	LLVMAddIncoming(pInstPhi->m_pLval, &pVal->m_pLval, &pBlock->m_pLblock, 1);
 }
 
-CIRInstruction * CBuilderIR::PInstCreateCall(LValue * pLvalProc, LLVMTypeRef pLtypeProc, ProcArg ** apLvalArgs, unsigned cArg)
+CIRInstruction * CBuilderIR::PInstCreateCall(LValue * pLvalProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, unsigned cArg)
 {
 	auto pInst = PInstCreateRaw(IROP_Call, nullptr, nullptr, "RetTmp");
 	if (FIsError(pInst))
@@ -3153,49 +3162,52 @@ CIRInstruction * CBuilderIR::PInstCreateMemset( CWorkspace * pWork, CIRValue * p
 	return pInstMemcpy;
 }
 
-CIRInstruction * CBuilderIR::PInstCreateLoopingInit(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CSTNode * pStnodInit)
+template <typename BUILD>
+typename BUILD::Instruction * PInstCreateLoopingInit(CWorkspace * pWork, BUILD * pBuild, STypeInfo * pTin, typename BUILD::Value * pValLhs, CSTNode * pStnodInit)
 {
-	// This should be an array, we need to loop over the elements and either memcpy a global or call an 
+	// This should be an arry, we need to loop over the elements and either memcpy a global or call an 
 	//  initializer proc:
 		
-	CIRProcedure * pProc = m_pProcCur;
+	BUILD::Proc * pProc = pBuild->m_pProcCur;
 	auto pTinary = (STypeInfoArray *)pTin;
 	EWC_ASSERT(pTinary->m_aryk == ARYK_Fixed, "unexpected ARYK");
 
-	auto pLvalZero = PLvalConstantInt(0, 64, false);
-	auto pLvalOne = PLvalConstantInt(1, 64, false);
-	auto pLvalCount = PLvalConstantInt(pTinary->m_c, 64, false);
+	auto pLvalZero = pBuild->PConstInt(0, 64, false);
+	auto pLvalOne = pBuild->PConstInt(1, 64, false);
+	auto pLvalCount = pBuild->PConstInt(pTinary->m_c, 64, false);
 	
-	auto pLvalAlloca = LLVMBuildAlloca(m_pLbuild, LLVMInt64Type(), "iInit");
-	LLVMBuildStore(m_pLbuild, pLvalZero, pLvalAlloca);
+	auto pTinS64 = pWork->m_pSymtab->PTinBuiltin(CSymbolTable::s_strUsize);
+	auto pLtypeIndex = pBuild->PLtypeFromPTin(pTinS64);
+	auto pValAlloca = pBuild->PValCreateAlloca(pLtypeIndex, 1, "iInit");
 
-	CIRBlock *	pBlockPred = PBlockCreate(pProc, "initPred");
-	CIRBlock *	pBlockBody = PBlockCreate(pProc, "initBody");
-	CIRBlock * pBlockPost = PBlockCreate(pProc, "initPost");
+	pBuild->PInstCreateStore(pValAlloca, pLvalZero);
 
-	CreateBranch(pBlockPred);	
+	BUILD::Block *	pBlockPred = pBuild->PBlockCreate(pProc, "initPred");
+	BUILD::Block *	pBlockBody = pBuild->PBlockCreate(pProc, "initBody");
+	BUILD::Block * pBlockPost = pBuild->PBlockCreate(pProc, "initPost");
 
-	ActivateBlock(pBlockPred);
-	auto pLvalLoadIndex = LLVMBuildLoad(m_pLbuild, pLvalAlloca, "iLoad");
-	auto pLvalCmp = LLVMBuildICmp(m_pLbuild, LLVMIntULT, pLvalLoadIndex, pLvalCount, "NCmp");
+	pBuild->CreateBranch(pBlockPred);	
 
-	LLVMBuildCondBr(m_pLbuild, pLvalCmp, pBlockBody->m_pLblock, pBlockPost->m_pLblock);
+	pBuild->ActivateBlock(pBlockPred);
+	auto pLvalLoadIndex = pBuild->PInstCreate(IROP_Load, pValAlloca, "iLoad");
+	auto pLvalCmp = pBuild->PInstCreateNCmp(NPRED_ULT, pLvalLoadIndex, pLvalCount, "NCmp");
 
-	ActivateBlock(pBlockBody);
+	(void) pBuild->PInstCreateCondBranch(pLvalCmp, pBlockBody, pBlockPost);
+	pBuild->ActivateBlock(pBlockBody);
 
-	LLVMOpaqueValue * apLvalIndex[2] = {};
-	apLvalIndex[0] = LLVMConstInt(LLVMInt32Type(), 0, false);
-	apLvalIndex[1] = pLvalLoadIndex;
-	auto pInstGEP = PInstCreateGEP(pValLhs, apLvalIndex, 2, "initGEP");
+	BUILD::GepIndex * apLvalIndex[2] = {};
+	apLvalIndex[0] = pBuild->PGepIndex(0);
+	apLvalIndex[1] = pBuild->PGepIndexFromValue(pLvalLoadIndex);
+	auto pInstGEP = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, 2, "initGEP");
 
 	EWC_ASSERT(!pStnodInit, "expected null initializer - ignoring");
-	(void) PValInitialize(pWork, this, pTinary->m_pTin, pInstGEP, nullptr);
+	(void) PValInitialize(pWork, pBuild, pTinary->m_pTin, pInstGEP, nullptr);
 
-	auto pLvalInc = LLVMBuildAdd(m_pLbuild, pLvalLoadIndex, pLvalOne, "iInc");
-	LLVMBuildStore(m_pLbuild, pLvalInc, pLvalAlloca);
-	LLVMBuildBr(m_pLbuild, pBlockPred->m_pLblock);
+	auto pLvalInc = pBuild->PInstCreate(IROP_NAdd, pLvalLoadIndex, pLvalOne, "iInc");
+	pBuild->PInstCreateStore(pValAlloca, pLvalInc);
+	pBuild->CreateBranch(pBlockPred);
 
-	ActivateBlock(pBlockPost);
+	pBuild->ActivateBlock(pBlockPost);
 	return nullptr;
 }
 
@@ -3476,8 +3488,8 @@ static inline typename BUILD::Value * PValInitialize(
 			auto pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTin);
 			if (EWC_FVERIFY(pTinstruct, "non-struct value without initializer should not be MemmcpyGlobal"))
 			{
-
-				if (!pTinstruct->m_pVGlobInit)
+				auto pCgstruct = pBuild->PCgstructEnsure(pTinstruct);
+				if (!pCgstruct->m_pGlobInit)
 				{
 					auto strName = pTin->m_strName;
 					auto strPunyName = StrPunyEncode(strName.PCoz());
@@ -3487,22 +3499,21 @@ static inline typename BUILD::Value * PValInitialize(
 					auto pLtype = pBuild->PLtypeFromPTin(pTin);
 
 					auto pGlobInit = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
-					pTinstruct->m_pVGlobInit = pGlobInit;
-
 					pBuild->SetInitializer(pGlobInit, pLvalInit);
+					pCgstruct->m_pGlobInit = pGlobInit;
 				}
 
-				return pBuild->PInstCreateMemcpy(pWork, pTin, pValPT, (BUILD::Global*)pTinstruct->m_pVGlobInit);
+				return pBuild->PInstCreateMemcpy(pWork, pTin, pValPT, (BUILD::Global*)pCgstruct->m_pGlobInit);
 			}
 		} break;
 	case CGINITK_LoopingInit:
 		{
-			return pBuild->PInstCreateLoopingInit(pWork, pTin, pValPT, pStnodInit);
+			return PInstCreateLoopingInit(pWork, pBuild, pTin, pValPT, pStnodInit);
 
 		} break;
 	case CGINITK_InitializerProc:
 		{
-			if (!EWC_FVERIFY(pTin->m_tink == TINK_Struct, "expected structure"))
+			if (EWC_FVERIFY(pTin->m_tink == TINK_Struct, "expected structure"))
 			{
 				auto pTinstruct = (STypeInfoStruct*)pTin;
 				auto pCgstruct = pBuild->PCgstructEnsure(pTinstruct);
@@ -3524,7 +3535,7 @@ static inline typename BUILD::Value * PValInitialize(
 				BUILD::LValue * apLvalArgs[1];
 				apLvalArgs[0] = BUILD::PProcArg(pValPT);
 
-				auto pInst = pBuild->PInstCreateCall(PLvalFromPVal(pProcInit), pCgstruct->m_pLtype, apLvalArgs, 1);
+				auto pInst = pBuild->PInstCreateCall(PLvalFromPVal(pProcInit), pTinstruct->m_pTinprocInit, apLvalArgs, 1);
 				return pInst;
 			}
 		} break;
@@ -5484,7 +5495,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 					{
 						pBuild->ActivateBlock(pBlockPred);
 
-						STypeInfo * pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
+						STypeInfo * pTinBool = pWork->m_pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 						GeneratePredicate(pWork, pBuild, pStnodPred, pBlockBody, pBlockPost, pTinBool);
 					}
 
@@ -5930,7 +5941,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			// BB - What is the right thing here, C++ logical op overloads don't short circuit, C# breaks
 			// it into two operators (false and &)
 
-			auto pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
+			auto pTinBool = pWork->m_pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 			auto pLtypeBool = pBuild->PLtypeFromPTin(pTinBool);
 
 			BUILD::Proc * pProc = pBuild->m_pProcCur;
@@ -6002,7 +6013,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 					// set val: (n & ~flag) | (sext(rhs) & flag)
 
-					auto pTinBool = pWork->m_pSymtab->PTinBuiltin("bool");
+					auto pTinBool = pWork->m_pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 					auto pValRhs = PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnodRhs, pTinBool);
 
 					auto pInstSExt = pBuild->PInstCreateCast(IROP_SignExt, pValRhs, pTinLoose, "SignExt");
@@ -6394,8 +6405,75 @@ CBuilderIR::LType * CBuilderIR::PLtypeVoid()
 
 BCode::SProcedure * PProcCodegenInitializer(CWorkspace * pWork, BCode::CBuilder * pBuild, CSTNode * pStnodStruct)
 {
-	EWC_ASSERT(false, "bytecode tbd");
-	return nullptr;
+	STypeInfoStruct * pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pStnodStruct->m_pTin);
+	if (!pTinstruct)
+		return nullptr;
+
+	if (!pTinstruct->m_pTinprocInit)
+	{
+		char aChName[128];
+		EWC::SStringBuffer strbufName(aChName, EWC_DIM(aChName));
+		auto strPunyName = StrPunyEncode(pTinstruct->m_strName.PCoz());
+		FormatCoz(&strbufName, "__%s_INIT", strPunyName.PCoz());
+
+		auto pTinproc = PTinprocAlloc(pWork->m_pSymtab, 1, 0, aChName);
+		pTinstruct->m_pTinprocInit = pTinproc;
+		pTinproc->m_strMangled = aChName;
+		pTinproc->m_arypTinParams.Append(pWork->m_pSymtab->PTinptrAllocate(pTinstruct));
+		pTinproc->m_grftinproc.AddFlags(FTINPROC_Initializer);
+	}
+
+	auto pTinproc = pTinstruct->m_pTinprocInit;
+	auto pProc = pBuild->PProcCreateImplicit(pWork, pTinproc, nullptr);
+	auto pProcsig = pProc->m_pProcsig;
+
+	auto pBlockPrev = pBuild->m_pBlockCur;
+	auto pProcPrev = pBuild->m_pProcCur;
+
+	pBuild->ActivateProc(nullptr, nullptr);
+	pBuild->ActivateProc(pProc, pProc->m_pBlockFirst);
+
+	// setup 'this' arg
+	auto pValPThis = pBuild->PValCreateAlloca(pTinproc->m_arypTinParams[0], 1, "this");
+	(void) pBuild->PInstCreateStore(pValPThis, pBuild->PRegArg(pProcsig->m_aParamArg[0].m_iBStack, pTinproc->m_arypTinParams[0]));
+	auto pValThis = pBuild->PInstCreate(IROP_Load, pValPThis);
+
+	BCode::SValue * apValIndex[2] = {};
+	apValIndex[0] = pBuild->PConstInt(0, 32, false);
+
+	CSTNode * pStnodList = pStnodStruct->PStnodChildSafe(1);
+	if (pStnodList && !EWC_FVERIFY(pStnodList->m_park == PARK_List, "expected member decl list"))
+		pStnodList = nullptr;
+
+	int cTypemembField = (int)pTinstruct->m_aryTypemembField.C();
+	for (int iTypememb = 0; iTypememb < cTypemembField; ++iTypememb)
+	{
+		apValIndex[1] = pBuild->PConstInt(iTypememb, 64, false);
+
+		CSTNode * pStnodInit = nullptr;
+		if (pStnodList)
+		{
+			CSTNode * pStnodDecl = pStnodList->PStnodChild(iTypememb);
+			if (EWC_FVERIFY(pStnodDecl->m_park == PARK_Decl, "expected member declaration"))
+			{
+				auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnodDecl->m_pStmap);
+				pStnodInit = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
+			}
+		}
+
+		auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
+
+		auto pInstGEP = pBuild->PInstCreateGEP(pValThis, apValIndex, 2, "initGEP");
+		(void)PValInitialize(pWork, pBuild, pTypememb->m_pTin, pInstGEP, pStnodInit);
+	}
+
+	pBuild->CreateReturn(nullptr, 0);
+	pBuild->FinalizeProc(pProc);
+
+	pBuild->ActivateProc(nullptr, nullptr);
+	pBuild->ActivateProc(pProcPrev, pBlockPrev);
+
+	return pProc;
 }
 
 CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnodStruct)
@@ -6412,7 +6490,7 @@ CIRProcedure * PProcCodegenInitializer(CWorkspace * pWork, CBuilderIR * pBuild, 
 	char aChName[128];
 	EWC::SStringBuffer strbufName(aChName, EWC_DIM(aChName));
 	auto strPunyName = StrPunyEncode(pTinstruct->m_strName.PCoz());
-	FormatCoz(&strbufName, "_%s_INIT", strPunyName.PCoz());
+	FormatCoz(&strbufName, "__%s_INIT", strPunyName.PCoz());
 
 	LLVMOpaqueValue * pLvalFunc = LLVMAddFunction(pBuild->m_pLmoduleCur, aChName, pLtypeFunction);
 	LLVMSetLinkage(pLvalFunc, LLVMPrivateLinkage);

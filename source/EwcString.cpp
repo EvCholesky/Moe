@@ -15,6 +15,7 @@
 
 #include "EwcString.h"
 #include "EwcHash.h"
+#include "Parser.h"
 #include <stdio.h>
 
 using namespace EWC;
@@ -200,7 +201,7 @@ void CString::StaticShutdown(CAlloc * pAlloc)
 
 void CString::SetPCoz(const char * pCozNew)
 {
-	EWC_ASSERT(s_pStrtab, "String table has not been allocated");
+	EWC_ASSERT(s_pStrtab || (!pCozNew && !m_pCoz), "String table has not been allocated");
 	if (!s_pStrtab)
 	{
 		m_shash = CStringHash(0);
@@ -299,10 +300,16 @@ void StaticInitStrings(CAlloc * pAlloc)
 	CString::s_pStrtab = EWC_NEW(pAlloc, CStringTable) CStringTable(pAlloc);
 						
 	s_pHashOidStr = EWC_NEW(pAlloc, OidTable) OidTable(pAlloc, EWC::BK_StringTable);
+
+	// BB - We wouldn't need this if we switched to an interned string table
+	CSymbolTable::StaticStringInit();
 }
 
 void StaticShutdownStrings(CAlloc * pAlloc)
 {
+	// BB - We wouldn't need this if we switched to an interned string table
+	CSymbolTable::StaticStringShutdown();
+
 	pAlloc->EWC_DELETE(s_pHashOidStr);
 	s_pHashOidStr = nullptr;
 

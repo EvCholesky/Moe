@@ -3736,6 +3736,26 @@ CSymbolTable * PSymtabPop(CParseContext * pParctx)
 	return pSymtabPrev;
 }
 
+CString CSymbolTable::s_strVoid;
+CString CSymbolTable::s_strChar;
+CString CSymbolTable::s_strBool;
+CString CSymbolTable::s_strInt;
+CString CSymbolTable::s_strUint;
+CString CSymbolTable::s_strSsize;
+CString CSymbolTable::s_strUsize;
+CString CSymbolTable::s_strFloat;
+CString CSymbolTable::s_strDouble;
+CString CSymbolTable::s_strS8;
+CString CSymbolTable::s_strS16;
+CString CSymbolTable::s_strS32;
+CString CSymbolTable::s_strS64;
+CString CSymbolTable::s_strU8;
+CString CSymbolTable::s_strU16;
+CString CSymbolTable::s_strU32;
+CString CSymbolTable::s_strU64;
+CString CSymbolTable::s_strF32;
+CString CSymbolTable::s_strF64;
+
 CSymbolTable::~CSymbolTable()
 {
 	CHash<HV, SSymbol *>::CIterator iterPSym(&m_hashHvPSym);
@@ -3858,39 +3878,85 @@ void AddBuiltInLiteral(CWorkspace * pWork, CSymbolTable * pSymtab, const CString
 	paryPTinlit->Append(pTinlit);
 }
 
+void CSymbolTable::StaticStringInit()
+{
+	s_strVoid = CString("void");
+	s_strChar = CString("char");
+	s_strBool = CString("bool");
+	s_strInt = CString("int");
+	s_strUint = CString("uint");
+	s_strSsize = CString("sSize");
+	s_strUsize = CString("uSize");
+	s_strFloat = CString("float");
+	s_strDouble = CString("double");
+	s_strS8 = CString("s8");
+	s_strS16 = CString("s16");
+	s_strS32 = CString("s32");
+	s_strS64 = CString("s64");
+	s_strU8 = CString("u8");
+	s_strU16 = CString("u16");
+	s_strU32 = CString("u32");
+	s_strU64 = CString("u64");
+	s_strF32 = CString("f32");
+	s_strF64 = CString("f64");
+}
+void CSymbolTable::StaticStringShutdown()
+{
+	s_strVoid = CString();
+	s_strChar = CString();
+	s_strBool = CString();
+	s_strInt = CString();
+	s_strUint = CString();
+	s_strSsize = CString();
+	s_strUsize = CString();
+	s_strFloat = CString();
+	s_strDouble = CString();
+	s_strS8 = CString();
+	s_strS16 = CString();
+	s_strS32 = CString();
+	s_strS64 = CString();
+	s_strU8 = CString();
+	s_strU16 = CString();
+	s_strU32 = CString();
+	s_strU64 = CString();
+	s_strF32 = CString();
+	s_strF64 = CString();
+}
+
 void CSymbolTable::AddBuiltInSymbols(CWorkspace * pWork)
 {
-	AddSimpleBuiltInType(pWork, this, "bool", TINK_Bool);
+
+	AddSimpleBuiltInType(pWork, this, s_strBool.PCoz(), TINK_Bool);
 	AddSimpleBuiltInType(pWork, this, "_flag", TINK_Flag, FSYM_InternalUseOnly);
 	AddSimpleBuiltInType(pWork, this, "void", TINK_Void);
 
-	AddBuiltInInteger(pWork, this, "u8", 8, false);
-	AddBuiltInInteger(pWork, this, "u16", 16, false);
-	AddBuiltInInteger(pWork, this, "u32", 32, false);
+	AddBuiltInInteger(pWork, this, s_strU8.PCoz(), 8, false);
+	AddBuiltInInteger(pWork, this, s_strU16.PCoz(), 16, false);
+	AddBuiltInInteger(pWork, this, s_strU32.PCoz(), 32, false);
 	AddBuiltInInteger(pWork, this, "char", 32, false);
-	AddBuiltInInteger(pWork, this, "u64", 64, false);
+	AddBuiltInInteger(pWork, this, s_strU64, 64, false);
 
-	AddBuiltInInteger(pWork, this, "s8", 8, true);
-	AddBuiltInInteger(pWork, this, "s16", 16, true);
-	AddBuiltInInteger(pWork, this, "s32", 32, true);
-	AddBuiltInInteger(pWork, this, "s64", 64, true);
+	AddBuiltInInteger(pWork, this, s_strS8.PCoz(), 8, true);
+	AddBuiltInInteger(pWork, this, s_strS16.PCoz(), 16, true);
+	AddBuiltInInteger(pWork, this, s_strS32.PCoz(), 32, true);
+	AddBuiltInInteger(pWork, this, s_strS64.PCoz(), 64, true);
 
 #if EWC_X64
-	AddBuiltInAlias(pWork, this, "int", "s64");
-	AddBuiltInAlias(pWork, this, "uint", "u64");
-	AddBuiltInAlias(pWork, this, "sSize", "s64");
-	AddBuiltInAlias(pWork, this, "uSize", "u64");
+	AddBuiltInAlias(pWork, this, s_strInt.PCoz(), "s64");
+	AddBuiltInAlias(pWork, this, s_strUint.PCoz(), "u64");
+	AddBuiltInAlias(pWork, this, s_strSsize.PCoz(), "s64");
+	AddBuiltInAlias(pWork, this, s_strUsize.PCoz(), "u64");
 #else
-	AddBuiltInAlias(pWork, this, "int", "s32");
-	AddBuiltInAlias(pWork, this, "uint", "u32");
-	AddBuiltInAlias(pWork, this, "sSize", "s32");
-	AddBuiltInAlias(pWork, this, "uSize", "u32");
+	AddBuiltInAlias(pWork, this, s_strInt.PCoz(), "s32");
+	AddBuiltInAlias(pWork, this, s_strUint.PCoz(), "u32");
+	AddBuiltInAlias(pWork, this, s_strSsize.PCoz(), "s32");
+	AddBuiltInAlias(pWork, this, s_strUsize.PCoz(), "u32");
 #endif
 
-	AddBuiltInFloat(pWork, this, "f32", 32);
-	AddBuiltInFloat(pWork, this, "f64", 64);
-	AddBuiltInAlias(pWork, this, "float", "f32");
-	AddBuiltInAlias(pWork, this, "double", "f64");
+	AddBuiltInFloat(pWork, this, s_strF32.PCoz(), 32);
+	AddBuiltInFloat(pWork, this, s_strF64.PCoz(), 64);
+	AddBuiltInAlias(pWork, this, s_strFloat.PCoz(), "f32");
+	AddBuiltInAlias(pWork, this, s_strDouble.PCoz(), "f64");
 
 	AddBuiltInLiteral(pWork, this, "__bool_Literal", LITK_Bool, 8, false);
 	AddBuiltInLiteral(pWork, this, "__u8_Literal", LITK_Integer, 8, false);

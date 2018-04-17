@@ -482,7 +482,7 @@ STypeInfo * PTinAfterRValueAssignment(STypeCheckWorkspace * pTcwork, SLexerLocat
 {
 	if (pTin->m_tink == TINK_Flag)
 	{
-		return pSymtab->PTinBuiltin("bool");
+		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 	}
 	if (pTin->m_tink == TINK_Procedure)
 	{
@@ -620,11 +620,11 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 
 				return pSymtab->PTinBuiltin(aCh);
 			} 
-		case 'g':	return pSymtab->PTinBuiltin("f32");
-		case 'd':	return pSymtab->PTinBuiltin("f64");
-		case 'f':	return pSymtab->PTinBuiltin("bool");
+		case 'g':	return pSymtab->PTinBuiltin(CSymbolTable::s_strF32);
+		case 'd':	return pSymtab->PTinBuiltin(CSymbolTable::s_strF64);
+		case 'f':	return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 		case 's':	return pSymtab->PTinBuiltin("string");
-		case 'v':	return pSymtab->PTinBuiltin("void");
+		case 'v':	return pSymtab->PTinBuiltin(CSymbolTable::s_strVoid);
 		default: EWC_ASSERT(false, "unknown built-in type during de-mangling");
 		}
 	}
@@ -1115,14 +1115,14 @@ STypeInfo * PTinFromBint(
 		u64 nUnsigned = bint.U64Coerce();
 
 		if (nUnsigned >  LLONG_MAX)
-			return pSymtab->PTinBuiltin("u64");
+			return pSymtab->PTinBuiltin(CSymbolTable::s_strU64);
 	}
 	
 	s64 nSigned = bint.S64Coerce();
-	if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
-	if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
-	if ((nSigned <= INT_MAX) & (nSigned > INT_MIN))		return pSymtab->PTinBuiltin("s32");
-	return pSymtab->PTinBuiltin("s64");
+	if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
+	if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
+	if ((nSigned <= INT_MAX) & (nSigned > INT_MIN))		return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
+	return pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
 }
 
 inline void SetIntegerValue(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSTValue * pStval, const SBigInt bint)
@@ -1574,7 +1574,7 @@ STypeInfo *PTinPromoteVarArg(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymt
 			STypeInfoInteger * pTinint = (STypeInfoInteger*)pTinIn;
 			if (pTinint->m_cBit < 32)
 			{
-				return pSymtab->PTinBuiltin((pTinint->m_fIsSigned) ? "s32" : "u32");
+				return pSymtab->PTinBuiltin((pTinint->m_fIsSigned) ? CSymbolTable::s_strS32 : CSymbolTable::s_strU32);
 			}
 			return pTinIn;
 		}
@@ -1583,7 +1583,7 @@ STypeInfo *PTinPromoteVarArg(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymt
 			STypeInfoFloat * pTinfloat = (STypeInfoFloat *)pTinIn;
 			if (pTinfloat->m_cBit < 64)
 			{
-				return pSymtab->PTinBuiltin("f64");
+				return pSymtab->PTinBuiltin(CSymbolTable::s_strF64);
 			}
 			return pTinIn;
 		}
@@ -1617,20 +1617,20 @@ inline STypeInfo * PTinFromLiteralFinalized(
 			{
 				switch (litty.m_cBit)
 				{
-				case 8:		return pSymtab->PTinBuiltin("s8");
-				case 16:	return pSymtab->PTinBuiltin("s16");
-				case 32:	return pSymtab->PTinBuiltin("s32");
-				case 64:	return pSymtab->PTinBuiltin("s64");
+				case 8:		return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
+				case 16:	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
+				case 32:	return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
+				case 64:	return pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
 				}
 			}
 			else
 			{
 				switch (litty.m_cBit)
 				{
-				case 8:		return pSymtab->PTinBuiltin("u8");
-				case 16:	return pSymtab->PTinBuiltin("u16");
-				case 32:	return pSymtab->PTinBuiltin("u32");
-				case 64:	return pSymtab->PTinBuiltin("u64");
+				case 8:		return pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
+				case 16:	return pSymtab->PTinBuiltin(CSymbolTable::s_strU16);
+				case 32:	return pSymtab->PTinBuiltin(CSymbolTable::s_strU32);
+				case 64:	return pSymtab->PTinBuiltin(CSymbolTable::s_strU64);
 				}
 			}
 		}break;
@@ -1638,16 +1638,16 @@ inline STypeInfo * PTinFromLiteralFinalized(
 		{ 
 			switch (litty.m_cBit)
 			{
-			case 32:	return pSymtab->PTinBuiltin("f32");
-			case 64:	return pSymtab->PTinBuiltin("f64");
+			case 32:	return pSymtab->PTinBuiltin(CSymbolTable::s_strF32);
+			case 64:	return pSymtab->PTinBuiltin(CSymbolTable::s_strF64);
 			}
 		} break;
-	case LITK_Char:		return pSymtab->PTinBuiltin("char");
-	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
+	case LITK_Char:		return pSymtab->PTinBuiltin(CSymbolTable::s_strChar);
+	case LITK_Bool:		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 	case LITK_String:
 		{
 			// right now string literals just promote to *u8, but will eventually promote to string
-			auto pTinU8 = pSymtab->PTinBuiltin("u8");
+			auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
 			return pSymtab->PTinptrAllocate(pTinU8);
 		} break;
 	case LITK_Enum:
@@ -1757,21 +1757,21 @@ STypeInfo * PTinPromoteUntypedDefault(
 				s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
 				fIsSigned = (nUnsigned < LLONG_MAX);
 			}
-			return pSymtab->PTinBuiltin((fIsSigned) ? "int" : "uint");
+			return pSymtab->PTinBuiltin((fIsSigned) ? CSymbolTable::s_strInt : CSymbolTable::s_strUint);
 		}
-	case LITK_Float:	return pSymtab->PTinBuiltin("float");
-	case LITK_Char:		return pSymtab->PTinBuiltin("char");
+	case LITK_Float:	return pSymtab->PTinBuiltin(CSymbolTable::s_strFloat);
+	case LITK_Char:		return pSymtab->PTinBuiltin(CSymbolTable::s_strChar);
 	case LITK_String:
 	{
 		// right now string literals just promote to *u8, but will eventually promote to string
-		auto pTinU8 = pSymtab->PTinBuiltin("u8");
+		auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
 		auto pTinqual = pSymtab->PTinqualEnsure(pTinU8, FQUALK_Const);
 		return pSymtab->PTinptrAllocate(pTinqual);
 	}
-	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
+	case LITK_Bool:		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 	case LITK_Null:
 		{
-			auto pTinU8 = pSymtab->PTinBuiltin("void");
+			auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strVoid);
 			return pSymtab->PTinptrAllocate(pTinU8);
 		}break;
 	case LITK_Enum:
@@ -1805,7 +1805,7 @@ STypeInfo * PTinPromoteUntypedArgument(
 			if (pTinArgument && pTinArgument->m_tink == TINK_Pointer )
 				return pTinArgument;
 
-			return pSymtab->PTinptrAllocate(pSymtab->PTinBuiltin("void"));
+			return pSymtab->PTinptrAllocate(pSymtab->PTinBuiltin(CSymbolTable::s_strVoid));
 		}
 	}
 
@@ -1894,7 +1894,7 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 			if (pTinDst->m_tink == TINK_Float)
 			{
 				// integer literals can be used to initialize floating point numbers
-				return pSymtab->PTinBuiltin("f32");
+				return pSymtab->PTinBuiltin(CSymbolTable::s_strF32);
 			}
 
 			const CSTValue * pStval = pStnodLit->m_pStval;
@@ -1904,30 +1904,30 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 			if (fDestIsSigned == false && fIsValNegative == false)
 			{
 				s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
-				if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
-				if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
-				if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin("u32");
-				return pSymtab->PTinBuiltin("u64");
+				if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
+				if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU16);
+				if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU32);
+				return pSymtab->PTinBuiltin(CSymbolTable::s_strU64);
 			}
 
 			s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
 			if (fIsValNegative)
 			{
-				if (nSigned >= SCHAR_MIN)	return pSymtab->PTinBuiltin("s8");
-				if (nSigned >= SHRT_MIN)	return pSymtab->PTinBuiltin("s16");
-				if (nSigned >= INT_MIN)	return pSymtab->PTinBuiltin("s32");
-				return pSymtab->PTinBuiltin("s64");
+				if (nSigned >= SCHAR_MIN)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
+				if (nSigned >= SHRT_MIN)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
+				if (nSigned >= INT_MIN)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
+				return pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
 			}
 
 			// NOTE - if this value isn't explicitly negative, allow code to initialize it with 
 			//  values large enough to cause it to be negative. ie. n:s32=0xFFFFFFFF;
 
-			if (nSigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("s8");
-			if (nSigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("s16");
-			if (nSigned <= UINT_MAX)	return pSymtab->PTinBuiltin("s32");
-			return pSymtab->PTinBuiltin("s64");
+			if (nSigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
+			if (nSigned <= USHRT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
+			if (nSigned <= UINT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
+			return pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
 		}
-	case LITK_Float:	return pSymtab->PTinBuiltin("float");
+	case LITK_Float:	return pSymtab->PTinBuiltin(CSymbolTable::s_strFloat);
 	case LITK_Char:
 		{
 			const CSTValue * pStval = pStnodLit->m_pStval;
@@ -1935,24 +1935,24 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 			if (fDestIsSigned)
 			{
 				s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
-				if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin("s8");
-				if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin("s16");
-				return pSymtab->PTinBuiltin("s32");
+				if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
+				if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
+				return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
 			}
 
 			s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
-			if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin("u8");
-			if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin("u16");
-			return pSymtab->PTinBuiltin("char");
+			if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
+			if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU16);
+			return pSymtab->PTinBuiltin(CSymbolTable::s_strU32);
 		}
 	case LITK_String:
 	{
 		// right now string literals just promote to *u8, but will eventually promote to string
-		auto pTinU8 = pSymtab->PTinBuiltin("u8");
+		auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
 		auto pTinqual = pSymtab->PTinqualEnsure(pTinU8, FQUALK_Const);
 		return pSymtab->PTinptrAllocate(pTinqual);
 	}
-	case LITK_Bool:		return pSymtab->PTinBuiltin("bool");
+	case LITK_Bool:		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 	case LITK_Null:		
 		{
 			if (pTinDst && (pTinDst->m_tink == TINK_Pointer || pTinDst->m_tink == TINK_Procedure))
@@ -2119,7 +2119,7 @@ bool FDoesOperatorReturnBool(PARK park)
 inline STypeInfo * PTinResult(PARK park, CSymbolTable * pSymtab, STypeInfo * pTinOp)
 {
 	if (FDoesOperatorReturnBool(park))
-		return pSymtab->PTinBuiltin("bool");
+		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 	return pTinOp;
 }
 
@@ -2133,7 +2133,7 @@ SOpTypes OptypeFromPark(
 {
 	if (parkOperator == PARK_LogicalAndOrOp)
 	{
-		auto pTinBool = pSymtab->PTinBuiltin("bool");
+		auto pTinBool = pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 		return SOpTypes(pTinBool, pTinBool, pTinBool);
 	}
 
@@ -2194,7 +2194,7 @@ SOpTypes OptypeFromPark(
 						(pTinLhs->m_tink != TINK_Pointer || ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo->m_tink != TINK_Void))
 						return SOpTypes();
 
-					return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin("bool"));
+					return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin(CSymbolTable::s_strBool));
 				}
 			}
 
@@ -2202,14 +2202,14 @@ SOpTypes OptypeFromPark(
 			if (parkOperator == PARK_EqualityOp && (fAreRefTypesSame | fIsOneTypeVoid))
 			{
 				// cast the array to a pointer before comparing
-				return SOpTypes(pTinMin, pTinMin, pSymtab->PTinBuiltin("bool"));
+				return SOpTypes(pTinMin, pTinMin, pSymtab->PTinBuiltin(CSymbolTable::s_strBool));
 			}
 
 			if (parkOperator == PARK_AdditiveOp)
 			{
 				if (tok == TOK('-') && fAreRefTypesSame)
 				{
-					return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin("sSize"));
+					return SOpTypes(pTinLhs, pTinRhs, pSymtab->PTinBuiltin(CSymbolTable::s_strSsize));
 				}
 			}
 
@@ -3553,7 +3553,7 @@ STypeInfo * PTinFromTypeSpecification(
 					}
 					else
 					{
-						STypeInfo * pTinCount = pSymtab->PTinBuiltin("int");
+						STypeInfo * pTinCount = pSymtab->PTinBuiltin(CSymbolTable::s_strInt);
 						STypeInfo * pTinPromoted = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
 						if (!FCanImplicitCast(pTinPromoted, pTinCount))
 						{
@@ -6259,7 +6259,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					STypeInfoLiteral * pTinlitValue = pSymtab->PTinlitFromLitk(LITK_Integer, cBitLoose, fIsSignedLoose);
 					STypeInfoLiteral * pTinlitName = pSymtab->PTinlitFromLitk(LITK_String);
 
-					auto pTinU8 = pSymtab->PTinBuiltin("u8");
+					auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
 					STypeInfo * pTinString = pSymtab->PTinptrAllocate(pTinU8);
 
 					SpoofLiteralArray(pTcwork, pSymtab, pStnodNames, cStnodChild - cStnodChildImplicit, pTinString);
@@ -7514,7 +7514,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									case ARYK_Reference:
 									case ARYK_Dynamic:
 										{
-											pTinMember = pSymtab->PTinBuiltin("s64");
+											pTinMember = pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
 										} break;
 									default:
 										EWC_ASSERT(false, "unknown array kind");
@@ -7685,7 +7685,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 							else
 							{
-								pStnod->m_pTin = pSymtab->PTinBuiltin("uSize");
+								pStnod->m_pTin = pSymtab->PTinBuiltin(CSymbolTable::s_strUsize);
 							}
 
 							pStnod->m_strees = STREES_TypeChecked;
@@ -7716,7 +7716,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							if (pStnodPredicate)
 							{
 								auto pSymtab = pTcsentTop->m_pSymtab;
-								STypeInfo * pTinBool = pSymtab->PTinBuiltin("bool");
+								STypeInfo * pTinBool = pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 								STypeInfo * pTinPredPromoted = PTinPromoteUntypedRvalueTightest(pTcwork, pTcsentTop->m_pSymtab, pStnodPredicate, pTinBool);
 
 								if (!FCanImplicitCast(pTinPredPromoted, pTinBool))
@@ -8023,7 +8023,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							CSTNode * pStnodPred = pStnod->PStnodChild(0);
 
 							auto pSymtab = pTcsentTop->m_pSymtab;
-							STypeInfo * pTinBool = pSymtab->PTinBuiltin("bool");
+							STypeInfo * pTinBool = pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 							STypeInfo * pTinPredPromoted = PTinPromoteUntypedRvalueTightest(
 															pTcwork,
 															pTcsentTop->m_pSymtab,
@@ -8436,7 +8436,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 								case TOK('!'):
 									{
-										STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinBuiltin("bool");
+										STypeInfo * pTinBool = pTcsentTop->m_pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
 										if (!EWC_FVERIFY(pTinBool, "missing bool type"))
 											return TCRET_StoppingError;
 										if (!FCanImplicitCast(pTinOperand, pTinBool))

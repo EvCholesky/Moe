@@ -684,6 +684,26 @@ protected:
 								{ ; }
 
 public:
+	static EWC::CString s_strVoid;
+	static EWC::CString s_strChar;
+	static EWC::CString s_strBool;
+	static EWC::CString s_strInt;
+	static EWC::CString s_strUint;
+	static EWC::CString s_strSsize;
+	static EWC::CString s_strUsize;
+	static EWC::CString s_strFloat;
+	static EWC::CString s_strDouble;
+	static EWC::CString s_strS8;
+	static EWC::CString s_strS16;
+	static EWC::CString s_strS32;
+	static EWC::CString s_strS64;
+	static EWC::CString s_strU8;
+	static EWC::CString s_strU16;
+	static EWC::CString s_strU32;
+	static EWC::CString s_strU64;
+	static EWC::CString s_strF32;
+	static EWC::CString s_strF64;
+
 	class CSymbolIterator // tag = symiter
 	{
 	public:
@@ -729,7 +749,7 @@ public:
 								GRFSYMLOOK grfsymlook = FSYMLOOK_Default,
 								CSymbolTable ** ppSymtabOut = nullptr);
 
-	STypeInfo *				PTinBuiltin( const EWC::CString & str);
+	STypeInfo *				PTinBuiltin(const EWC::CString & str);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
 	STypeInfoPointer *		PTinptrAllocate(STypeInfo * pTinPointedTo);
@@ -749,6 +769,9 @@ public:
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
 
 	void					PrintDump();
+
+	static void				StaticStringInit();
+	static void				StaticStringShutdown();
 
 	EWC::CString				m_strNamespace;	// unique name for this symbol table's scope
 	EWC::CAlloc *				m_pAlloc;
