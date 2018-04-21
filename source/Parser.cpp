@@ -1545,7 +1545,7 @@ CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
 
 			CString strIdent = StrFromIdentifier(pStnodIdent).PCoz();
 			STypeInfoGeneric * pTingen = EWC_NEW(pSymtab->m_pAlloc, STypeInfoGeneric) 
-											STypeInfoGeneric(strIdent, StrUniqueName(pSymtab->m_pUnsetTin, strIdent));
+											STypeInfoGeneric(strIdent, pSymtab->m_scopid);
 			pSymtab->AddManagedTin(pTingen);
 			pTingen->m_pStnodDefinition = pStnod;
 			pStnod->m_pTin = pTingen;
@@ -2711,7 +2711,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 								cConstant * sizeof(STypeInfoEnumConstant);
 				u8 * pB = (u8 *)pParctx->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent, StrUniqueName(pSymtabParent->m_pUnsetTin, strIdent));
+				STypeInfoEnum * pTinenum = new(pB) STypeInfoEnum(strIdent, pSymtabParent->m_scopid);
 				pTinenum->m_enumk = pStenum->m_enumk;
 
 				auto aTinecon = (STypeInfoEnumConstant *)PVAlign( pB + sizeof(STypeInfoEnum), EWC_ALIGN_OF(STypeInfoEnumConstant));
@@ -3795,7 +3795,7 @@ void AddSimpleBuiltInType(CWorkspace * pWork, CSymbolTable * pSymtab, const CStr
 {
 	STypeInfo * pTin = EWC_NEW(pSymtab->m_pAlloc, STypeInfo) STypeInfo(
 																strName,
-																StrUniqueName(pSymtab->m_pUnsetTin, strName),
+																pSymtab->m_scopid,
 																tink);
 
 	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTin, grfsym);
@@ -3805,7 +3805,7 @@ void AddBuiltInInteger(CWorkspace * pWork, CSymbolTable * pSymtab, const CString
 {
 	STypeInfoInteger * pTinint = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) STypeInfoInteger(
 																				strName,
-																				StrUniqueName(pSymtab->m_pUnsetTin, strName),
+																				pSymtab->m_scopid,
 																				cBit,
 																				fSigned);
 	pSymtab->AddBuiltInType(pWork->m_pErrman, nullptr, pTinint);
@@ -3825,7 +3825,7 @@ void AddBuiltInAlias(CWorkspace * pWork, CSymbolTable * pSymtab, const CString &
 				auto pTinintNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoInteger) 
 									STypeInfoInteger(
 										strNameNew,
-										StrUniqueName(pSymtab->m_pUnsetTin, strNameNew),
+										pSymtab->m_scopid,
 										pTinintOld->m_cBit,
 										pTinintOld->m_fIsSigned);
 
@@ -3838,7 +3838,7 @@ void AddBuiltInAlias(CWorkspace * pWork, CSymbolTable * pSymtab, const CString &
 				auto pTinfloatNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) 
 										STypeInfoFloat(
 											strNameNew,
-											StrUniqueName(pSymtab->m_pUnsetTin, strNameNew),
+											pSymtab->m_scopid,
 											pTinfloatOld->m_cBit);
 
 				pTinfloatNew->m_pTinNative = (pTinOld->m_pTinNative) ? pTinOld->m_pTinNative : pTinOld;
@@ -3854,7 +3854,7 @@ void AddBuiltInFloat(CWorkspace * pWork, CSymbolTable * pSymtab, const CString &
 {
 	STypeInfoFloat * pTinfloat = EWC_NEW(pSymtab->m_pAlloc, STypeInfoFloat) STypeInfoFloat(
 																				strName,
-																				StrUniqueName(pSymtab->m_pUnsetTin, strName),
+																				pSymtab->m_scopid,
 																				cBit);
 	pSymtab->AddBuiltInType(nullptr, nullptr, pTinfloat);
 }
@@ -4195,6 +4195,16 @@ void CSymbolTable::AddManagedTin(STypeInfo * pTin)
 	
 void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 {
+	if (!pTin->m_strDesc.FIsEmpty())
+	{
+		pSeb->AppendCoz(pTin->m_strDesc.PCoz());
+		return;
+	}
+
+	auto cBPrefix = pSeb->CB();
+	if (cBPrefix > 0)
+		--cBPrefix;
+
 	switch (pTin->m_tink)
 	{
 	case TINK_Array:
@@ -4239,8 +4249,12 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 	case TINK_Procedure:
 		{
 			auto pTinproc = (STypeInfoProcedure *)pTin;
+			char aChScopid[32];
+			SStringBuffer strbuf(aChScopid, EWC_DIM(aChScopid));
+			FormatCoz(&strbuf, "%d)", pTin->m_scopid);
+			pSeb->AppendCoz(aChScopid);
 
-			pSeb->AppendCoz(pTinproc->m_strUnique.PCoz());
+			pSeb->AppendCoz(pTinproc->m_strName.PCoz());
 			pSeb->AppendCoz("(");
 
 			auto ppTinParamMax = pTinproc->m_arypTinParams.PMac();
@@ -4281,23 +4295,151 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 			}
 
 		} break;
+	case TINK_Struct:
+		{
+			char aChScopid[32];
+			SStringBuffer strbuf(aChScopid, EWC_DIM(aChScopid));
+			FormatCoz(&strbuf, "%d)", pTin->m_scopid);
+
+			pSeb->AppendCoz(aChScopid);
+			pSeb->AppendCoz(pTin->m_strName.PCoz());
+
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+			auto ppTinGenericMax = pTinstruct->m_arypTinGenericParam.PMac();
+			for (auto ppTinGeneric = pTinstruct->m_arypTinGenericParam.A(); ppTinGeneric != ppTinGenericMax; ++ppTinGeneric)
+			{
+				AppendTypeDescriptor(*ppTinGeneric, pSeb);
+				if (ppTinGeneric+1 != ppTinGenericMax)
+				{
+					pSeb->AppendCoz(",");
+				}
+			}
+		} break;
 	default:
-		pSeb->AppendCoz(pTin->m_strUnique.PCoz());
+		char aChScopid[32];
+		SStringBuffer strbuf(aChScopid, EWC_DIM(aChScopid));
+		FormatCoz(&strbuf, "%d)", pTin->m_scopid);
+
+		pSeb->AppendCoz(aChScopid);
+		pSeb->AppendCoz(pTin->m_strName.PCoz());
 	}
+
+	pTin->m_strDesc = CString(&pSeb->PCoz()[cBPrefix], pSeb->CB());
 }
 
-STypeInfo * CSymbolTable::PTinMakeUniqueBase(STypeInfo * pTin, SStringEditBuffer * pSeb)
+CUniqueTypeRegistry::CUniqueTypeRegistry(CAlloc * pAlloc)
+:m_pAlloc(pAlloc)
+,m_hashHvPTinUnique(pAlloc, BK_UniqueTypeRegistry, 0)
+,m_scopidNext(SCOPID_Min)
 {
-	if (pTin->m_grftin.FIsSet(FTIN_IsUnique) || pTin->m_tink == TINK_Literal)
+}
+
+void CUniqueTypeRegistry::Clear()
+{
+	m_scopidNext = SCOPID_Min;
+	m_hashHvPTinUnique.Clear(0);
+}
+
+static inline u64 HvForPTin(STypeInfo * pTin, TINK tink, u8 other = 0)
+{
+	EWC_ASSERT(!pTin->m_strDesc.FIsEmpty(), "expected descriptor string");
+	return u64(u64(pTin->m_strDesc.Hv()) | (u64(tink) << 32) | (u64(other) << 40));
+}
+
+static inline u64 HvForPTin(const CString & str, TINK tink)
+{
+	// really not needed, should switch back to just a string HV
+	return u64(str.Hv() ^ (u64(tink) << 56));
+}
+
+STypeInfo * CUniqueTypeRegistry::PTinMakeUnique(STypeInfo * pTin)
+{
+	// NOTES ON UNIQUE TYPES (to avoid me getting it wrong again)
+	// named types are unique'd based on name + definition namespace + parameters (if needed)
+	//    not: based on type footprint ala LLVM type
+
+	// unnamed types (pointer, array, qualifier) are named relative to contained types
+
+	if (pTin->m_grftin.FIsSet(FTIN_IsUnique))
 		return pTin;
 
-	pSeb->Clear();
-	AppendTypeDescriptor(pTin, pSeb);
+	u64 hv;
+	switch (pTin->m_tink)
+	{
+	case TINK_Literal:
+	case TINK_Generic:
+		// these types are not 'unique'd
+		return pTin;
+#if 0 // probably not worth the hassle here
+	case TINK_Pointer:
+		{
+			auto pTinptr = (STypeInfoPointer *)pTin;
+			auto pTinPointedTo = PTinMakeUnique(pTinptr->m_pTinPointedTo);
+			pTinptr->m_pTinPointedTo = pTinPointedTo;
 
-	pTin->m_strDesc = CString(pSeb->PCoz(), pSeb->CB());
+			hv = HvForPTin(pTinPointedTo, TINK_Pointer);
+		} break;
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			auto pTinUnqual = PTinMakeUnique(pTinqual->m_pTin);
+			pTinqual->m_pTin = pTinUnqual;
+
+			hv = HvForPTin(pTinUnqual, TINK_Qualifier, pTinqual->m_grfqualk.m_raw);
+		} break;
+	case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTin;
+			auto pTinElement = PTinMakeUnique(pTinary->m_pTin);
+			pTinary->m_pTin = pTinElement;
+
+			if (pTinary->m_aryk != ARYK_Fixed)
+			{
+				hv = HvForPTin(pTinElement, TINK_Array, u8(pTinary->m_aryk));
+			}
+		} // fallthrough
+#else
+	case TINK_Pointer:
+	{
+		auto pTinptr = (STypeInfoPointer *)pTin;
+		if (pTinptr->m_pTinPointedTo->m_tink == TINK_Pointer)
+		{
+			printf("");
+		}
+		EWC::SStringEditBuffer seb(m_pAlloc);
+
+		seb.Clear();
+		AppendTypeDescriptor(pTin, &seb);
+		hv = HvForPTin(pTin->m_strDesc, pTin->m_tink);
+
+	} break;
+	case TINK_Qualifier:
+	case TINK_Array:
+#endif
+	case TINK_Bool:
+	case TINK_Void:
+	case TINK_Null:
+	case TINK_Any:
+	case TINK_Integer:
+	case TINK_Float:
+	case TINK_Enum:
+	case TINK_Procedure:
+	case TINK_Struct:
+		{
+			EWC::SStringEditBuffer seb(m_pAlloc);
+
+			seb.Clear();
+			AppendTypeDescriptor(pTin, &seb);
+			hv = HvForPTin(pTin->m_strDesc, pTin->m_tink);
+
+		} break;
+	default:
+		EWC_ASSERT(false, "unhandled type kind");
+		break;
+	}
 
 	STypeInfo ** ppTin;
-	FINS fins = m_phashHvPTinUnique->FinsEnsureKey(pTin->m_strDesc.Hv(), &ppTin);
+	FINS fins = m_hashHvPTinUnique.FinsEnsureKey(hv, &ppTin);
 	if (fins == FINS_AlreadyExisted)
 	{
 		// NOTE: doesn't delete non-unique type!
@@ -4307,13 +4449,57 @@ STypeInfo * CSymbolTable::PTinMakeUniqueBase(STypeInfo * pTin, SStringEditBuffer
 	if (ppTin)
 	{
 		pTin->m_grftin.AddFlags(FTIN_IsUnique);
-
 		if (pTin->m_pTinNative)
 		{
-			pTin->m_pTinNative = PTinMakeUniqueBase(pTin->m_pTinNative, pSeb);
+			pTin->m_pTinNative = PTinMakeUnique(pTin->m_pTinNative);
 		}
 
 		*ppTin = pTin;
+
+		// make sure the types referred to by this type are unique
+		// NOTE: cyclical references shouldn't be a problem now that we've added this type
+		switch (pTin->m_tink)
+		{
+		case TINK_Pointer:
+			{
+				auto pTinptr = (STypeInfoPointer *)pTin;
+				pTinptr->m_pTinPointedTo = PTinMakeUnique(pTinptr->m_pTinPointedTo);
+			} break;
+		case TINK_Qualifier:
+			{
+				auto pTinqual = (STypeInfoQualifier *)pTin;
+				pTinqual->m_pTin = PTinMakeUnique(pTinqual->m_pTin);
+			} break;
+		case TINK_Array:
+			{
+				auto pTinary = (STypeInfoArray *)pTin;
+				pTinary->m_pTin = PTinMakeUnique(pTinary->m_pTin);
+			} break;
+		case TINK_Procedure:
+			{
+				auto pTinproc = (STypeInfoProcedure *)pTin;
+				for (size_t ipTin = 0; ipTin < pTinproc->m_arypTinParams.C(); ++ipTin)
+				{
+					pTinproc->m_arypTinParams[ipTin] =  PTinMakeUnique(pTinproc->m_arypTinParams[ipTin]);
+				}
+
+				for (size_t ipTin = 0; ipTin < pTinproc->m_arypTinReturns.C(); ++ipTin)
+				{
+					pTinproc->m_arypTinReturns[ipTin] =  PTinMakeUnique(pTinproc->m_arypTinReturns[ipTin]);
+				}
+			} break;
+		case TINK_Struct:
+			{
+				auto pTinstruct = (STypeInfoStruct *)pTin;
+				for (size_t ipTin = 0; ipTin < pTinstruct->m_arypTinGenericParam.C(); ++ipTin)
+				{
+					pTinstruct->m_arypTinGenericParam[ipTin] =  PTinMakeUnique(pTinstruct->m_arypTinGenericParam[ipTin]);
+				}
+			} break;
+
+		default:
+			break;
+		}
 	}
 	return pTin;
 }

@@ -56,7 +56,13 @@ class CSTNode;
 
 // opaque CodeGen types and values used for both LLVM IR and bytecode
 typedef void * CodeGenValueRef;		// tag = cgval
-typedef void * CodeGenTypeRef;		// tag = cgtype
+
+// unique scope id used for uniquify-ing types
+enum SCOPID : s32
+{
+	SCOPID_Min = 0,
+	SCOPID_Nil = -1,
+};
 
 enum TINK : s8
 {
@@ -105,11 +111,11 @@ struct SDataLayout		// tag = dlay
 
 struct STypeInfo	// tag = tin
 {
-						STypeInfo(const EWC::CString & strName, const EWC::CString & strUnique, TINK tink)
+						STypeInfo(const EWC::CString & strName, SCOPID scopid, TINK tink)
 						:m_tink(tink)
 						,m_grftin(FTIN_None)
+						,m_scopid(SCOPID_Nil)
 						,m_strName(strName)
-						,m_strUnique(strUnique)
 						,m_strDesc()
 						,m_pCgvalDIType(nullptr)
 						,m_pCgvalReflectGlobal(nullptr)
@@ -118,15 +124,16 @@ struct STypeInfo	// tag = tin
 
     TINK				m_tink;
 	GRFTIN				m_grftin;
+	SCOPID				m_scopid;				// definition scope (for unique-ing)
 
 	EWC::CString		m_strName;				// user facing name 
-	EWC::CString		m_strUnique;			// unique name (if a named type)
-	EWC::CString		m_strDesc;				// unique descriptor for this type 
+	EWC::CString		m_strDesc;				// unique descriptor used to unique this type 
 
-	// BB - This shouldn't ve embeedded in the typeinfo - it won't work for multiple codegens
+
+	// BB - This shouldn't be embedded in the typeinfo - it won't work for multiple codegen passes
 	CodeGenValueRef		m_pCgvalDIType;
 	CodeGenValueRef		m_pCgvalReflectGlobal;	// global variable pointing to the type info struct
-												// const TypeInfo entry in ahe reflectioa te table
+												// const TypeInfo entry in the reflection type table
 
 	STypeInfo *			m_pTinNative;			// native non-aliased source type (ie sSize->s64)
 
@@ -152,8 +159,8 @@ struct STypeInfoInteger : public STypeInfo // tag = tinint
 {
 	static const TINK s_tink = TINK_Integer;
 
-			STypeInfoInteger(const EWC::CString & strName, const EWC::CString & strUnique, u32 cBit, bool fSigned)
-			:STypeInfo(strName, strUnique, s_tink)
+			STypeInfoInteger(const EWC::CString & strName, SCOPID scopid, u32 cBit, bool fSigned)
+			:STypeInfo(strName, scopid, s_tink)
 			,m_cBit(cBit)
 			,m_fIsSigned(fSigned)
 				{ ; }
@@ -166,8 +173,8 @@ struct STypeInfoFloat : public STypeInfo	// tag = tinfloat
 {
 	static const TINK s_tink = TINK_Float;
 
-			STypeInfoFloat(const EWC::CString & strName, const EWC::CString & strUnique, u32 cBit)
-			:STypeInfo(strName, strUnique, s_tink)
+			STypeInfoFloat(const EWC::CString & strName, SCOPID scopid, u32 cBit)
+			:STypeInfo(strName, scopid, s_tink)
 			,m_cBit(cBit)
 				{ ; }
 
@@ -179,16 +186,14 @@ struct STypeInfoPointer : public STypeInfo	// tag = tinptr
 	static const TINK s_tink = TINK_Pointer;
 
 						STypeInfoPointer()
-						:STypeInfo("", "", s_tink)
+						:STypeInfo("", SCOPID_Nil, s_tink)
 						,m_pTinPointedTo(nullptr)
-						,m_soaPacking(-1)
 							{ ; }
 
 	STypeInfo *			m_pTinPointedTo;
-	s32					m_soaPacking;	// -1 means no SOA. 0 means no size limit. >0 is AOSOA of that chunk size.
 };
 
-enum QUALK
+enum QUALK : s8
 {
 	QUALK_Const,		// Read only value, transitive ie. members of an const struct or target of a const ref are const
 						// - implies that the values will not change during program execution,
@@ -222,7 +227,7 @@ struct STypeInfoQualifier : public STypeInfo // tag == tinqual
 	static const TINK s_tink = TINK_Qualifier;
 
 						STypeInfoQualifier(GRFQUALK grfqualk)
-						:STypeInfo("", "", s_tink)
+						:STypeInfo("", SCOPID_Nil, s_tink)
 						,m_grfqualk(grfqualk)
 							{ ; }
 
@@ -280,8 +285,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 {
 	static const TINK s_tink = TINK_Procedure;
 
-						STypeInfoProcedure(const EWC::CString & strName, const EWC::CString & strUnique)
-						:STypeInfo(strName, strUnique, s_tink)
+						STypeInfoProcedure(const EWC::CString & strName, SCOPID scopid)
+						:STypeInfo(strName, scopid, s_tink)
 						,m_strMangled()
 						,m_pStnodDefinition(nullptr)
 						,m_arypTinParams()
@@ -313,8 +318,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 {
 	static const TINK s_tink = TINK_ForwardDecl;
-						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const EWC::CString & strName, const EWC::CString & strUnique)
-						:STypeInfo(strName, strUnique, s_tink)
+						STypeInfoForwardDecl(EWC::CAlloc * pAlloc, const EWC::CString & strName, SCOPID scopid)
+						:STypeInfo(strName, scopid, s_tink)
 						,m_arypTinReferences(pAlloc, EWC::BK_TypeCheck)
 							{ ; }
 
@@ -324,8 +329,8 @@ struct STypeInfoForwardDecl : public STypeInfo	// tag = tinfwd
 struct STypeInfoGeneric : public STypeInfo // tag = tingen
 {
 	static const TINK s_tink = TINK_Generic;
-						STypeInfoGeneric(const EWC::CString & strName, const EWC::CString & strUnique)
-						:STypeInfo(strName, strUnique, s_tink)
+						STypeInfoGeneric(const EWC::CString & strName, SCOPID scopid)
+						:STypeInfo(strName, scopid, s_tink)
 						,m_pStnodDefinition(nullptr)
 							{ ; }
 
@@ -340,7 +345,7 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 {
 	static const TINK s_tink = TINK_Literal;
 						STypeInfoLiteral()
-						:STypeInfo("", "", s_tink)
+						:STypeInfo("", SCOPID_Nil, s_tink)
 						,m_c(-1)
 						,m_pTinSource(nullptr)
 						,m_fIsFinalized(false)
@@ -376,8 +381,8 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 {
 	static const TINK s_tink = TINK_Struct;
 
-										STypeInfoStruct(const EWC::CString & strName, const EWC::CString & strUnique)
-										:STypeInfo(strName, strUnique, s_tink)
+										STypeInfoStruct(const EWC::CString & strName, SCOPID scopid)
+										:STypeInfo(strName, scopid, s_tink)
 										,m_pStnodStruct(nullptr)
 										,m_aryTypemembField()
 										,m_arypTinGenericParam()
@@ -416,14 +421,14 @@ struct STypeInfoEnum : public STypeInfo	// tag = tinenum
 {
 	static const TINK s_tink = TINK_Enum;
 
-						STypeInfoEnum(const EWC::CString & strName, const EWC::CString & strUnique)
-						:STypeInfo(strName, strUnique, s_tink)
+						STypeInfoEnum(const EWC::CString & strName, SCOPID scopid)
+						:STypeInfo(strName, scopid, s_tink)
 						,m_pTinLoose(nullptr)
 						,m_enumk(ENUMK_Basic)
 						,m_bintMin()
 						,m_bintMax()
 						,m_bintLatest()
-						,m_tinstructProduced(strName, "")
+						,m_tinstructProduced(strName, scopid)
 							{ ; }
 
 	STypeInfo *			m_pTinLoose;
@@ -463,15 +468,17 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 	static const TINK s_tink = TINK_Array;
 
 					STypeInfoArray()
-					:STypeInfo("", "", s_tink)
+					:STypeInfo("", SCOPID_Nil, s_tink)
 					,m_pTin(nullptr)
+					,m_pTinstructImplicit(nullptr)
 					,m_c(0)
 					,m_aryk(ARYK_Fixed)
 					{ ; }
 
-	STypeInfo *		m_pTin;
-	s64				m_c;
-	ARYK			m_aryk;
+	STypeInfo *			m_pTin;
+	STypeInfoStruct *	m_pTinstructImplicit;
+	s64					m_c;
+	ARYK				m_aryk;
 };
 
 void DeleteTypeInfo(EWC::CAlloc * pAlloc, STypeInfo * pTin);

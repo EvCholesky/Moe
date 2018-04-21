@@ -198,7 +198,6 @@ struct SUniqueNameSet // tag = unset
 };
 
 extern void			GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCozOut, size_t cBOutMax);
-extern EWC::CString	StrUniqueName(SUniqueNameSet * pUnset, const EWC::CString & strIn);
 
 
 
@@ -295,7 +294,7 @@ public:
 	const char *					m_pChzObjectFilename;
 
 	CSymbolTable *					m_pSymtab;				// top level symbols
-	EWC::CHash<HV, STypeInfo *>		m_hashHvPTin;			// global unique typeinfo table
+	CUniqueTypeRegistry *			m_pUntyper;
 	SUniqueNameSet					m_unset;
 	SUniqueNameSet					m_unsetTin;				// unique names used by types
 

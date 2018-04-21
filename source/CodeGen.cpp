@@ -530,6 +530,27 @@ typename BUILD::LType * PLtypeFromPTin(BUILD * pBuild, STypeInfo * pTin, u64 * p
 	return pBuild->PLtypeFromPTin(pTin);
 }
 
+STypeInfoStruct * PTinstructEnsureImplicit(CSymbolTable * pSymtab, STypeInfoArray * pTinary)
+{
+	EWC_ASSERT(pTinary->m_grftin.FIsSet(FTIN_IsUnique), "expected unique array");
+	EWC_ASSERT(pTinary->m_pTin->m_grftin.FIsSet(FTIN_IsUnique), "expected unique array element type");
+	if (!pTinary->m_pTinstructImplicit)
+	{
+		STypeInfoStruct * pTinstruct = PTinstructAlloc(pSymtab, CString(), 2, 0);
+		pTinary->m_pTinstructImplicit = pTinstruct;
+
+		STypeStructMember * pTypemembCount = pTinstruct->m_aryTypemembField.AppendNew();
+		pTypemembCount->m_strName = PChzFromArymemb(ARYMEMB_Count);
+		pTypemembCount->m_pTin = pSymtab->PTinBuiltin(CSymbolTable::s_strU64);
+
+		STypeStructMember * pTypemembData = pTinstruct->m_aryTypemembField.AppendNew();
+		pTypemembData->m_strName = PChzFromArymemb(ARYMEMB_Data);
+		pTypemembData->m_pTin = pSymtab->PTinptrAllocate(pTinary->m_pTin);
+	}
+
+	return pTinary->m_pTinstructImplicit;
+}
+
 LLVMOpaqueType * CBuilderIR::PLtypeFromPTin(STypeInfo * pTin)
 {
 	if (!pTin)
@@ -2138,60 +2159,50 @@ BCode::SValue * PLvalZeroInType(BCode::CBuilder * pBuild, STypeInfo * pTin)
 		}
 	case TINK_Array:
 		{
-			EWC_ASSERT(false, "bytecode tbd");
-			return false;
-			/*
 			auto pTinary = (STypeInfoArray *)pTin;
-			LLVMOpaqueType * pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
+			auto pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
 			switch (pTinary->m_aryk)
 			{
 			case ARYK_Fixed:
 			{
-				(void) PLvalZeroInType(pBuild, pTinary->m_pTin);
+				//(void) PLvalZeroInType(pBuild, pTinary->m_pTin);
 
-				auto apLval = (LLVMValueRef *)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMValueRef, (size_t)pTinary->m_c);
+				auto apVal = (BCode::SValue **)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(BCode::SValue*, (size_t)pTinary->m_c);
 
 				auto pLvalZero = PLvalZeroInType(pBuild, pTinary->m_pTin);
 				EWC_ASSERT(pLvalZero != nullptr, "expected zero value");
 
 				for (s64 iElement = 0; iElement < pTinary->m_c; ++iElement)
 				{
-					apLval[iElement] = pLvalZero;
+					apVal[iElement] = pLvalZero;
 				}
 
-				auto pLvalReturn = LLVMConstArray(pLtypeElement, apLval, u32(pTinary->m_c));
-				pBuild->m_pAlloc->EWC_DELETE(apLval);
-				return pLvalReturn;
+				auto pValReturn = pBuild->PLvalConstantArray(pLtypeElement, apVal, u32(pTinary->m_c));
+				pBuild->m_pAlloc->EWC_DELETE(apVal);
+				return pValReturn;
 			}
 			case ARYK_Reference:
 			{
-				LLVMOpaqueValue * apLvalMember[2]; // pointer, count
-				apLvalMember[ARYMEMB_Count] = LLVMConstInt(LLVMInt64Type(), 0, false);
-				apLvalMember[ARYMEMB_Data] = LLVMConstNull(LLVMPointerType(pLtypeElement, 0));
-
-				return LLVMConstStruct(apLvalMember, EWC_DIM(apLvalMember), false);
+				auto pTinstructImplicit = PTinstructEnsureImplicit(pBuild->m_pSymtab, pTinary);
+				return PLvalZeroInType(pBuild, pTinstructImplicit);
 			}
 			default: EWC_ASSERT(false, "Unhandled ARYK");
-			}*/
+			}
 		}
 	case TINK_Struct:
 	{
-		EWC_ASSERT(false, "bytecode tbd");
-		return false;
-		/*
 		auto pTinstruct = (STypeInfoStruct *)pTin;
 
-		int cpLvalField = (int)pTinstruct->m_aryTypemembField.C();
-		size_t cB = sizeof(LLVMOpaqueValue *) * cpLvalField;
-		auto apLvalMember = (LLVMOpaqueValue **)(alloca(cB));
+		int cpValField = (int)pTinstruct->m_aryTypemembField.C();
+		size_t cB = sizeof(BCode::SValue *) * cpValField;
+		auto apValField = (BCode::SValue **)(alloca(cB));
 
-		for (int ipLval = 0; ipLval < cpLvalField; ++ipLval)
+		for (int ipLval = 0; ipLval < cpValField; ++ipLval)
 		{
-			apLvalMember[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypemembField[ipLval].m_pTin);
+			apValField[ipLval] = PLvalZeroInType(pBuild, pTinstruct->m_aryTypemembField[ipLval].m_pTin);
 		}
 
-		return LLVMConstNamedStruct((LLVMTypeRef)pTinstruct->m_pCgtype, apLvalMember, cpLvalField);
-		*/
+		return pBuild->PLvalConstantStruct(pTinstruct, apValField, cpValField);
 	}
 
 	default: break;
@@ -2721,7 +2732,7 @@ static inline LLVMOpaqueValue * PLvalGenerateReflectTypeTable(CWorkspace * pWork
 	CSymbolTable * pSymtab = pWork->m_pSymtab;
 
 	STypeInfo ** ppTin;
-	EWC::CHash<HV, STypeInfo *>::CIterator iter(pSymtab->m_phashHvPTinUnique);
+	EWC::CHash<u64, STypeInfo *>::CIterator iter(&pSymtab->m_pUntyper->m_hashHvPTinUnique);
 	while ((ppTin = iter.Next()))
 	{
 		auto pTin = *ppTin;

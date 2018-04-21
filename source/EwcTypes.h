@@ -534,6 +534,7 @@ enum BK // block kind
 	BK_Workspace,
 	BK_WorkspaceVal,
 	BK_WorkspaceFile,
+	BK_UniqueTypeRegistry,
 	BK_Parse,
 	BK_TypeCheck,
 	BK_TypeCheckProcmatch,

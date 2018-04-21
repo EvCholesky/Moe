@@ -326,7 +326,7 @@ namespace BCode
 
 		static LType *		PLtypeFromPTin(STypeInfo * pTin)
 								{ return pTin; } 
-		static LType *		PLtypeVoid();
+		LType *				PLtypeVoid();
 
 		Instruction *		PInstCreateNCmp(NPRED npred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
 		Instruction *		PInstCreateGCmp(GPRED gpred, SValue * pValLhs, SValue * pValRhs, const char * pChzName = "");
@@ -357,7 +357,7 @@ namespace BCode
 
 		Instruction *		PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName);
 		GepIndex *			PGepIndex(u64 idx);
- 	GepIndex *			PGepIndexFromValue(SValue * pVal);
+	 	GepIndex *			PGepIndexFromValue(SValue * pVal);
 
 		Global *			PGlobCreate(STypeInfo * pTin, const char * pChzName);
 		void				SetInitializer(SValue * pValGlob, SValue * pValInit);

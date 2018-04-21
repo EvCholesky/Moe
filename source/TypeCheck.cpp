@@ -524,7 +524,7 @@ STypeInfoStruct * PTinstructAlloc(
 					cGenericParam  * sizeof (STypeInfo *);
 	u8 * pB = (u8 *)pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-	STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent, StrUniqueName(pSymtab->m_pUnsetTin, strIdent));
+	STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(strIdent, pSymtab->m_scopid);
 	pSymtab->AddManagedTin(pTinstruct);
 
 	auto aTypememb = (STypeStructMember*)PVAlign(
@@ -551,7 +551,7 @@ STypeInfoProcedure * PTinprocAlloc(
 
 	u8 * pB = (u8 *)pAlloc->EWC_ALLOC(cBAlloc,8);
 	CString strName(pCozName);
-	STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName, StrUniqueName(pSymtab->m_pUnsetTin, strName));
+	STypeInfoProcedure * pTinproc = new(pB) STypeInfoProcedure(strName, pSymtab->m_scopid);
 	STypeInfo ** ppTin = (STypeInfo**)PVAlign( pB + sizeof(STypeInfoProcedure), EWC_ALIGN_OF(STypeInfo *));
 
 	pTinproc->m_arypTinParams.SetArray(ppTin, 0, cParam);
@@ -2787,7 +2787,7 @@ STypeInfo * PTinSubstituteGenerics(
 								cTypememb * sizeof(STypeStructMember);
 				u8 * pB = (u8 *)pTcwork->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
 
-				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(pTinUnsub->m_strName, pTinUnsub->m_strUnique);
+				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(pTinUnsub->m_strName, pTinstructUnsub->m_scopid);
 				pSymtab->AddManagedTin(pTinstruct);
 
 				pTinstruct->m_pStnodStruct = pTinstructUnsub->m_pStnodStruct;

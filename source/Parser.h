@@ -658,29 +658,47 @@ struct SGenericMap // tag = genmap
 
 };
 
+class CUniqueTypeRegistry // tag untyper
+{
+public:
+							CUniqueTypeRegistry(EWC::CAlloc * pAlloc);
+							~CUniqueTypeRegistry()
+								{ Clear(); }
+
+	void					Clear();
+	STypeInfo *				PTinMakeUnique(STypeInfo * pTin);
+	SCOPID					ScopidAlloc()
+								{ m_scopidNext = SCOPID(m_scopidNext + 1); return m_scopidNext; }
+
+	EWC::CAlloc *						m_pAlloc;
+	EWC::CHash<u64, STypeInfo *>		m_hashHvPTinUnique;
+	SCOPID								m_scopidNext;		// global id for symbol tables, used in for unique types strings
+};
+
 class CSymbolTable		// tag = symtab
 {
 protected:
-	friend CSymbolTable * PSymtabNew(EWC::CAlloc *, CSymbolTable *, const EWC::CString &, SUniqueNameSet *, EWC::CHash<HV, STypeInfo *> *);
+	friend CSymbolTable * PSymtabNew(EWC::CAlloc *, CSymbolTable *, const EWC::CString &, CUniqueTypeRegistry *, SUniqueNameSet *);
 
 							// protected constructor to force use of CWorkspace::PSymtabNew()
 							CSymbolTable(
 								const EWC::CString & strNamespace,
 								EWC::CAlloc * pAlloc,
-								EWC::CHash<HV, STypeInfo *> * phashHvPTinUnique,
+								CUniqueTypeRegistry * pUntyper,
 								SUniqueNameSet * pUnsetTin)
 							:m_strNamespace(strNamespace)
 							,m_pAlloc(pAlloc)
 							,m_hashHvPSym(pAlloc, EWC::BK_Symbol)
 							,m_hashHvPTinBuiltIn(pAlloc, EWC::BK_Symbol)
-							,m_phashHvPTinUnique(phashHvPTinUnique)
 							,m_hashHvPTinfwd(pAlloc, EWC::BK_Symbol)
 							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
 							,m_arypSymGenerics(pAlloc, EWC::BK_Symbol)	
+							,m_pUntyper(pUntyper)
 							,m_pUnsetTin(pUnsetTin)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
 							,m_iNestingDepth(0)
+							,m_scopid(pUntyper->ScopidAlloc())
 								{ ; }
 
 public:
@@ -755,13 +773,10 @@ public:
 	STypeInfoPointer *		PTinptrAllocate(STypeInfo * pTinPointedTo);
 	STypeInfoQualifier *	PTinqualEnsure(STypeInfo * pTinTarget, GRFQUALK grfqualk);
 
-	STypeInfo *				PTinMakeUniqueBase(STypeInfo * pTin, EWC::SStringEditBuffer * pSeb);
-
 	template <typename T>
 	T *						PTinMakeUnique(T * pTin)
 								{ 
-									EWC::SStringEditBuffer seb(m_pAlloc);
-									return (T *)PTinMakeUniqueBase(pTin, &seb); 
+									return (T *)m_pUntyper->PTinMakeUnique(pTin);
 								}
 
 	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin, GRFSYM grfsym = FSYM_None);
@@ -780,13 +795,11 @@ public:
 	EWC::CHash<HV, STypeInfo *>
 								m_hashHvPTinBuiltIn;	// Builtin Types declared in this scope
 
-	EWC::CHash<HV, STypeInfo *> *
-								m_phashHvPTinUnique;	// pointer to global unique type table
-
 	EWC::CHash<HV, STypeInfoForwardDecl *>
 								m_hashHvPTinfwd;	// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.
 	EWC::CDynAry<SSymbol *>		m_arypSymGenerics;	// symbol copies for generics, not mapped to an identifier
+	CUniqueTypeRegistry *		m_pUntyper;			// hashes to find unique type instances
 	SUniqueNameSet *			m_pUnsetTin;		// set of unique names for types (created during parse)
 	EWC::CDynAry<STypeInfoLiteral *>	
 								m_mpLitkArypTinlit[LITK_Max];
@@ -795,6 +808,7 @@ public:
 
 	CSymbolTable *				m_pSymtabNextManaged;	// next table in the global list
 	s32							m_iNestingDepth;					
+	SCOPID						m_scopid;				// unique table id, for unique type strings
 };
 
 

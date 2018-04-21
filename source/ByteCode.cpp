@@ -22,6 +22,14 @@
 #include "Util.h"
 #include "workspace.h"
 
+// Remaining bytecode tasks
+// [ ] Clean up remaining TBDs
+// [ ]   Phi nodes
+// [ ]   Reflection
+// [ ]   Switch nodes
+// [ ]   FFI 
+
+
 
 // Stack layout (grows down)
 //	4 |___null____________________| +
@@ -41,8 +49,6 @@
 //	0 |___local var_______________|_v_														_v_
 
 using namespace EWC;
-
-#define CHECK_INST_TYPES 1
 
 
 void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign);
@@ -505,6 +511,8 @@ u8 * CDataSegment::PBFromIndex(s32 iB)
 
 size_t CDataSegment::CB()
 {
+	if (!m_pDatabCur)
+		return 0;
 	return m_pDatabCur->m_iBStart + m_pDatabCur->m_cB;
 }
 
@@ -849,9 +857,7 @@ void CBuilder::FinalizeBuild(CWorkspace * pWork)
 
 CBuilder::LType * CBuilder::PLtypeVoid()
 {
-	// BB - this should be relocated... somewhere...
-	static STypeInfo s_tinVoid("void", "void", TINK_Void);
-	return &s_tinVoid;
+	return m_pSymtab->PTinBuiltin(CSymbolTable::s_strVoid);
 }
 
 SBlock * CBuilder::PBlockCreate(SProcedure * pProc, const char * pChzName)
@@ -913,11 +919,11 @@ u64 DBOffsetFromField(STypeInfoStruct * pTinstruct, u64 idx)
 	return 0;
 }
 
-static inline void AllocateStackOut(CBuilder * pBuild, SInstruction * pInst, s64 cB, s64 cBAlloc)
+static inline void AllocateStackOut(CBuilder * pBuild, SInstruction * pInst, s64 cB, s64 cBAlign)
 {
 	EWC_ASSERT(pInst->m_iBStackOut == 0, "redundant stack allocation, leaking stack space");
 
-	s32 iBStackPointer = S32Coerce(pBuild->IBStackAlloc(cB, cBAlloc));
+	s32 iBStackPointer = S32Coerce(pBuild->IBStackAlloc(cB, cBAlign));
 	pInst->m_iBStackOut = iBStackPointer;
 }
 
@@ -1189,21 +1195,26 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 		return PInstCreateError();
 
 	s32 iBStackReturnStore = 0;
-	u64 cB = 0;
-	u64 cBAlign = 1;
 	auto cBArg = pProcsig->m_cBArg;
 
+	u32 iBStackOut = 0;
 	int cpTinReturn = (int)pTinproc->m_arypTinReturns.C();
 	for (int ipTinReturn = 0; ipTinReturn < cpTinReturn; ++ipTinReturn)
 	{
 		auto pTinRet = pTinproc->m_arypTinReturns[ipTinReturn];
 
+		u64 cB = 0;
+		u64 cBAlign = 1;
 		CalculateByteSizeAndAlign(m_pDlay, pTinRet, &cB, &cBAlign);
+		if (cB)
+		{
+			iBStackOut = S32Coerce(IBStackAlloc(cB, cBAlign));
+		}
 
 		auto pParam = &pProcsig->m_aParamRet[ipTinReturn];
 
 		// subtract cBArg here because we're still in the caller's stack frame
-		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStackReturnStore, 32));
+		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStackOut, 32));
 	}
 
 	for (int iRec = 0; iRec < cpLvalArg; ++iRec)
@@ -1221,11 +1232,7 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 	}
 
 	auto pInstvalCall = PInstCreateRaw(IROP_Call, cBReturnOp, pValProc, PConstPointer(m_pProcCur));
-
-	if (cB)
-	{
-		AllocateStackOut(this, pInstvalCall->m_pInst, cB, cBAlign);
-	}
+	pInstvalCall->m_pInst->m_iBStackOut = iBStackOut;
 
 	return pInstvalCall;
 }
@@ -2554,9 +2561,7 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 {
 	auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTin);
 	if (!pTinstruct)
-	{
 		return nullptr;
-	}
 
 	auto pConst = m_blistConst.AppendNew();
 	pConst->m_pTin = pTinstruct;
@@ -2725,8 +2730,10 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	CBuilder buildBc(pWork, &dlay);
 
 	EWC::CHash<HV, STypeInfo *>	hashHvPTin(pAlloc, BK_ByteCodeTest);
+	CUniqueTypeRegistry untyper(pAlloc);
 	SUniqueNameSet unsetTin(pAlloc, BK_ByteCodeTest);
-	auto pSymtab = PSymtabNew(pAlloc, nullptr, "bytecode", &unsetTin, &hashHvPTin);
+
+	auto pSymtab = PSymtabNew(pAlloc, nullptr, "global", &untyper, &unsetTin);
 	pSymtab->AddBuiltInSymbols(pWork);
 	buildBc.m_pSymtab = pSymtab;
 

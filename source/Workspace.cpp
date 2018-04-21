@@ -344,7 +344,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_arypFile(pAlloc, EWC::BK_WorkspaceFile, 200)
 ,m_pChzObjectFilename(nullptr)
 ,m_pSymtab(nullptr)
-,m_hashHvPTin(pAlloc, EWC::BK_Workspace, 0)
+,m_pUntyper(nullptr)
 ,m_unset(pAlloc, EWC::BK_Workspace, 0)
 ,m_unsetTin(pAlloc, EWC::BK_Workspace, 0)
 ,m_pErrman(pErrman)
@@ -371,12 +371,12 @@ void CWorkspace::AppendEntry(CSTNode * pStnod, CSymbolTable * pSymtab)
 
 CSymbolTable * PSymtabNew(
 	CAlloc * pAlloc,
-	 CSymbolTable * pSymtabParent,
-	  const EWC::CString & strNamespace,
-	   SUniqueNameSet * pUnsetTin,
-	    EWC::CHash<HV, STypeInfo *> * pHashHvPTin)
+	CSymbolTable * pSymtabParent,
+	const EWC::CString & strNamespace,
+	CUniqueTypeRegistry * pUntyper,
+	SUniqueNameSet * pUnsetTin)
 {
-	CSymbolTable * pSymtabNew = EWC_NEW(pAlloc, CSymbolTable) CSymbolTable(strNamespace, pAlloc, pHashHvPTin, pUnsetTin);
+	CSymbolTable * pSymtabNew = EWC_NEW(pAlloc, CSymbolTable) CSymbolTable(strNamespace, pAlloc, pUntyper, pUnsetTin);
 	if (pSymtabParent)
 	{
 		pSymtabParent->AddManagedSymtab(pSymtabNew);
@@ -390,7 +390,7 @@ CSymbolTable * PSymtabNew(CAlloc * pAlloc, CSymbolTable * pSymtabParent, const E
 	if (!EWC_FVERIFY(pSymtabParent, "Null parent passed into pSymtabNew, use other overload for root."))
 		return nullptr;
 
-	return PSymtabNew(pAlloc, pSymtabParent, strNamespace, pSymtabParent->m_pUnsetTin, pSymtabParent->m_phashHvPTinUnique);
+	return PSymtabNew(pAlloc, pSymtabParent, strNamespace, pSymtabParent->m_pUntyper, pSymtabParent->m_pUnsetTin);
 }
 
 void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCozOut, size_t cBOutMax)
@@ -425,44 +425,6 @@ void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCo
 
 		strbufOut.m_pCozAppend = &strbufOut.m_pCozBegin[iCh+1];
 		FormatCoz(&strbufOut, "%d", *pN); 
-	}
-}
-
-CString	StrUniqueName(SUniqueNameSet * pUnset, const CString & strIn)
-{
-	size_t iCh = strIn.CB() - 2;
-
-	const char * pCozIn = strIn.PCoz();
-	// not handling whitespace...
-	u32 nIn = 0;
-	u32 nMultiple = 1;
-	while ((pCozIn[iCh] >= '0') & (pCozIn[iCh] <= '9'))
-	{
-		nIn = (pCozIn[iCh] - '0') * nMultiple + nIn;
-		nMultiple *= 10;
-		--iCh;
-	}
-
-	HV hv = 0;
-	hv = HvFromPCoz(pCozIn, iCh+1);
-
-	u32 * pN = nullptr;
-	FINS fins = pUnset->m_hashHvNUnique.FinsEnsureKey(hv, &pN);
-
-	if (fins == FINS_Inserted)
-	{
-		*pN = nIn;
-		return strIn;
-	}
-	else
-	{
-		*pN = ewcMax(nIn, *pN + 1);
-
-		char aCh[24];
-		EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-		FormatCoz(&strbuf, "%d", *pN); 
-
-		return StrFromConcat(pCozIn, &pCozIn[iCh+1], strbuf.m_pCozBegin, strbuf.m_pCozAppend);
 	}
 }
 
@@ -548,11 +510,11 @@ void BeginWorkspace(CWorkspace * pWork)
 	}
 	pWork->m_cbFreePrev = pAlloc->CB();
 
-	pWork->m_hashHvPTin.Clear(0);
 	pWork->m_unset.Clear(0);
 	pWork->m_unsetTin.Clear(0);
-
-	pWork->m_pSymtab = PSymtabNew(pAlloc, nullptr, "global", &pWork->m_unsetTin, &pWork->m_hashHvPTin);
+	
+	pWork->m_pUntyper = EWC_NEW(pAlloc, CUniqueTypeRegistry) CUniqueTypeRegistry(pAlloc);
+	pWork->m_pSymtab = PSymtabNew(pAlloc, nullptr, "global", pWork->m_pUntyper, &pWork->m_unsetTin);
 	pWork->m_pSymtab->AddBuiltInSymbols(pWork);
 }
 
@@ -642,7 +604,9 @@ void EndWorkspace(CWorkspace * pWork)
 		pWork->m_mpFilekPHashHvIPFile[filek]->Clear(0);
 	}
 
-	pWork->m_hashHvPTin.Clear(0);
+	pWork->m_pAlloc->EWC_DELETE(pWork->m_pUntyper);
+	pWork->m_pUntyper = nullptr;
+
 	pWork->m_unset.Clear(0);
 	pWork->m_unsetTin.Clear(0);
 
