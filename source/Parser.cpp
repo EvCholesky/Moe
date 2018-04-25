@@ -30,9 +30,10 @@ enum FPDECL
 	FPDECL_AllowUninitializer	= 0x4,	// allow decls to specify explicit uninitializers (n:int=---;}
 	FPDECL_AllowBakedTypes		= 0x8, 	// allow unspecified generic types (aka $T)
 	FPDECL_AllowBakedValues		= 0x10,	// allow types to be marked as baked constant values
+	FPDECL_AllowConstants		= 0x20, // allow constant declarations
 
 	FPDECL_None			= 0x0,
-	FPDECL_All			= 0x1F,
+	FPDECL_All			= 0x2F,
 };
 EWC_DEFINE_GRF(GRFPDECL, FPDECL, u32);
 
@@ -1776,6 +1777,7 @@ CSTNode * PStnodParseParameter(
 	CSTNode * pStnodInit = nullptr;
 	bool fAllowCompoundDecl = grfpdecl.FIsSet(FPDECL_AllowCompoundDecl);
 	bool fAllowBakedValues = grfpdecl.FIsSet(FPDECL_AllowBakedValues);
+	bool fAllowConstants = grfpdecl.FIsSet(FPDECL_AllowConstants);
 
 	SLexer lexPeek = *pLex;
 	int cIdent = 0;
@@ -1923,10 +1925,15 @@ CSTNode * PStnodParseParameter(
 				if (pStnodCompound)
 					ParseError(pParctx, pLex, "Comma separated declarations not supported for constants");
 
-				pStnodDecl->m_park = PARK_ConstantDecl;
-				pStnodInit = PStnodParseExpression(pParctx, pLex);
-				if (!pStnodInit)
-					ParseError(pParctx, pLex, "initial value expected before %s", PCozCurrentToken(pLex));
+				if (!fAllowConstants)
+					ParseError(pParctx, pLex, "constant declarations not supported in parameter list");
+				else
+				{
+					pStnodDecl->m_park = PARK_ConstantDecl;
+					pStnodInit = PStnodParseExpression(pParctx, pLex);
+					if (!pStnodInit)
+						ParseError(pParctx, pLex, "initial value expected before %s", PCozCurrentToken(pLex));
+				}
 			}
 		}
 
@@ -1943,7 +1950,7 @@ CSTNode * PStnodParseDecl(CParseContext * pParctx, SLexer * pLex)
 {
 	// stand alone declaration statement
 
-	GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl;
+	GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl | FPDECL_AllowConstants;
 	auto * pStnod =  PStnodParseParameter(pParctx, pLex, pParctx->m_pSymtab, grfpdecl);
 	if (!pStnod)
 		return nullptr;
@@ -2602,7 +2609,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					{
 						pTinproc->m_grftinproc.AddFlags(FTINPROC_HasVarArgs);
 					}
-					else if (EWC_FVERIFY(pStnodParam->m_park == PARK_Decl, "Expected decl"))
+					else if (EWC_FVERIFY_LOC(pStnodParam->m_park == PARK_Decl, pParctx->m_pWork, &pStnodParam->m_lexloc, "Expected decl"))
 					{
 						pTinproc->m_arypTinParams.Append(pStnodParam->m_pTin);
 					}

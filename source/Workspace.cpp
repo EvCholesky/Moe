@@ -702,3 +702,21 @@ char * CWorkspace::PChzLoadFile(const EWC::CString & strFilename, EWC::CAlloc * 
 	pChzFile[cB] = '\0';
 	return pChzFile;
 }
+
+void AssertHandlerLoc( const char* pChzFile, u32 line, const char* pChzCondition, CWorkspace * pWork, SLexerLocation * pLexloc, const char* pChzMessage, ...)
+{
+	s32 iLine;
+	s32 iCol;
+	CalculateLinePosition(pWork, pLexloc, &iLine, &iCol);
+	
+	printf("Assertion failed: \"%s\" at %s:%u\n", pChzCondition, pChzFile, line);
+	printf("   while compiling %s:%u,%u\n", pLexloc->m_strFilename.PCoz(), iLine, iCol);
+
+	if (pChzMessage)
+	{
+		va_list ap;
+		va_start(ap, pChzMessage);
+		vprintf(pChzMessage, ap);
+		printf("\n");
+	}
+}

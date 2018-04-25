@@ -131,13 +131,14 @@ void AssertHandler( const char* pChzFile, u32 line, const char* pChzCondition, c
 
 #define EWC_CASSERT( PREDICATE, ERROR ) static_assert(PREDICATE, "CASSERT: " ERROR)
 
+
 #if defined( _MSC_VER )
-#define EWC_FVERIFY( PREDICATE, ... )\
+#define EWC_FVERIFY_PROC( PREDICATE, ASSERTPROC, FILE, LINE, ... )\
 (\
   ( ( PREDICATE ) ? \
 	true :\
 	(\
-	  EWC::AssertHandler( __FILE__, __LINE__, #PREDICATE, __VA_ARGS__ ),\
+	  ASSERTPROC( FILE, LINE, #PREDICATE, __VA_ARGS__ ),\
 	  EWC_DEBUG_BREAK(), \
 	  false\
 	)\
@@ -150,13 +151,16 @@ void AssertHandler( const char* pChzFile, u32 line, const char* pChzCondition, c
   ( ( PREDICATE ) ? \
 	true :\
 	({\
-	  EWC::AssertHandler( __FILE__, __LINE__, #PREDICATE, __VA_ARGS__ );\
+	  ASSERTPROC( FILE, LINE, #PREDICATE, __VA_ARGS__ );\
 	  EWC_DEBUG_BREAK(); \
 	  false;\
 	})\
   )\
 )
 #endif
+
+#define EWC_FVERIFY(PREDICATE, ...) \
+	EWC_FVERIFY_PROC (PREDICATE, EWC::AssertHandler, __FILE__, __LINE__, __VA_ARGS__ )
 
 #define EWC_FASSERT( PREDICATE, ... ) EWC_FVERIFY(PREDICATE, __VA_ARGS__)
 

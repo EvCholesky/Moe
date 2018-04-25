@@ -328,3 +328,7 @@ void PerformTypeCheck(
 
 
 void SwapDoubleHashForPlatformBits(const char * pChInput, char * aChOut, size_t cB);
+
+void AssertHandlerLoc( const char* pChzFile, u32 line, const char* pChzCondition, CWorkspace * pWork, SLexerLocation * pLexloc, const char* pChzMessage = 0, ...);
+#define EWC_FVERIFY_LOC(PREDICATE, PWORK, PLEXLOC, ...) \
+	EWC_FVERIFY_PROC (PREDICATE, AssertHandlerLoc, __FILE__, __LINE__, PWORK, PLEXLOC,  __VA_ARGS__ )
