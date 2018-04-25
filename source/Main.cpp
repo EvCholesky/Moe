@@ -220,6 +220,8 @@ int main(int cpChzArg, const char * apChzArg[])
 			static const char * s_pChzPathRelease = "/Release";
 			const char * pChzMoeLibOpt = (work.m_optlevel == OPTLEVEL_Release) ? s_pChzPathRelease : s_pChzPathDebug;
 
+			arypChzOptions.Append("link"); // first option (name of exe) is ignored
+
 			if (work.m_optlevel == OPTLEVEL_Release)
 			{
 				static const char * s_aChzOptimizedDebug[] =
@@ -235,13 +237,14 @@ int main(int cpChzArg, const char * apChzArg[])
 			}
 			else
 			{
-				/*
+				#if _WINDOWS
 				static const char * s_aChzOptimizedRelease[] =
 				{
+					"/debug",
 				};
 
 				arypChzOptions.Append(s_aChzOptimizedRelease, EWC_DIM(s_aChzOptimizedRelease));
-				*/
+				#endif
 			}
 
 			const char * pChzLinkerFull = nullptr;
@@ -290,8 +293,6 @@ int main(int cpChzArg, const char * apChzArg[])
 				static const char * s_pChzMoeLibBit = "/x64";
 				static const char * s_apChzCommand[] = 
 				{
-					"link",	// first argument is ignored, name of self
-
 					#if _WINDOWS
 					"/subsystem:console",
 					"/machine:x64",

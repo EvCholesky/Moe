@@ -369,6 +369,8 @@ GMax proc (gA: f32, gB: f32) -> f32 inline						{ if (gA > gB) { return gA } ret
 GClamp proc (gValue: f32, gMin: f32, gMax: f32) -> f32 inline	{ return GMin(GMax(gValue, gMin), gMax) }
 GLerp proc (gA: f32, gB: f32, uLerp: f32) -> f32 inline			{ return gA + (gB - gA) * uLerp }
 
+Min proc (a: $T, b: T) -> T inline								{ if (a < b) { return a } return b }
+Max proc (a: $T, b: T) -> T inline								{ if (a > b) { return a } return b }
 NMin proc (nA: int, nB: int) -> int inline						{ if (nA < nB) { return nA } return nB }
 NMax proc (nA: int, nB: int) -> int inline						{ if (nA > nB) { return nA } return nB }
 NMin proc (nA: s32, nB: s32) -> s32 inline						{ if (nA < nB) { return nA } return nB }

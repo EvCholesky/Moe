@@ -25,7 +25,7 @@ SColor struct
 	m_a: u8
 }
 
-ColCreate proc (r: u8, g: u8, b: u8, a: u8) -> SColor inline
+ColCreate proc (r: u8, g: u8, b: u8, a: u8 = 255) -> SColor inline
 {
 	col: SColor
 	col.m_r = r

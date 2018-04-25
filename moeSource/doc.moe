@@ -63,7 +63,7 @@ PILLCOL enum u8
 	Green 		:= MaxPills,	// extra color to allow for four player backgrounds
 }
 
-PILLSPEED enum u8
+PILLSPEED enum s8
 {
 	Slow,
 	Medium,
@@ -183,7 +183,7 @@ SPlayer struct // tag = play
 	m_iPlayerTarget: int						// player that will receive this player's garbage
 	m_iStartingLevel := 5						// starting virus count is (m_iStartingLeve + 1)*4
 	m_playinp: SPlayerInput
-	m_pillspeed: PILLSPEED
+	m_pillspeed := PILLSPEED.Medium
 
 	m_mpIplayCGarbagePending: [kCPlayerMax] int	// how much garbage is pending from each player
 	m_cKills: int
@@ -198,6 +198,8 @@ SPlayer struct // tag = play
 	m_cGarbageReceived: int
 	m_cErrors: int
 	m_dTHoldDown: f32
+
+	m_iMenuItem: int = 0
 }
 
 SGame struct // tag = game
@@ -1397,8 +1399,12 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 
 UpdatePlayers proc (pGame : & SGame, dT: f32)
 {
-	kDTStepDownSteer :: 0.4
-	kDTStepDownDrop :: 0.3
+	kDTStepDownSteerSlow :: 0.6
+	kDTStepDownDropSlow :: 0.4
+	kDTStepDownSteerMed :: 0.4
+	kDTStepDownDropMed :: 0.3
+	kDTStepDownSteerFast :: 0.25
+	kDTStepDownDropFast :: 0.2
 
 	kDTHoldRepeatInitial :: 0.2
 	kDTHoldRepeatAgain :: 0.15
@@ -1411,6 +1417,21 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 		pPlay := &g_game.m_aPlay[iPlay]
 		pPlayinp := &pPlay.m_playinp
 
+		dTStepDownSteer: f32
+		dTStepDownDrop: f32
+		switch (pPlay.m_pillspeed)
+		{
+			case PILLSPEED.Slow:
+				dTStepDownSteer = kDTStepDownSteerSlow
+				dTStepDownDrop = kDTStepDownDropSlow
+			case PILLSPEED.Medium:
+				dTStepDownSteer = kDTStepDownSteerMed
+				dTStepDownDrop = kDTStepDownDropMed
+			case PILLSPEED.Fast:
+				dTStepDownSteer = kDTStepDownSteerFast
+				dTStepDownDrop = kDTStepDownDropFast
+		}
+
 		aFStepDown[iPlay] = false
 		if g_fApplyGravity
 		{
@@ -1420,11 +1441,11 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 		dTStepDown: f32
 		if pPlay.m_pEntSteer != null
 		{
-			dTStepDown = kDTStepDownSteer
+			dTStepDown = dTStepDownSteer
 		}
 		else
 		{
-			dTStepDown = kDTStepDownDrop
+			dTStepDown = dTStepDownDrop
 		}
 
 		if pPlay.m_dTStepDown > dTStepDown
@@ -1925,6 +1946,11 @@ SetPlays proc (pPlay: & SPlayer, plays: PLAYS)
 	pPlay.m_plays = plays
 }
 
+CVirusFromLevel proc (iLevel: int) -> int
+{
+	return (iLevel + 1) * 3	
+}
+
 SetGams proc (pGame: & SGame, gams: GAMS)
 {
 	pGame.m_gams = gams
@@ -1948,7 +1974,8 @@ SetGams proc (pGame: & SGame, gams: GAMS)
 			for iBoard := 0; iBoard < pGame.m_cPlay; ++iBoard
 		    {
 			    ClearBoard(&pGame.m_aBoard[iBoard], pGame)
-				InitBoard(iBoard, pGame.m_cPlay, dXyVport, &pGame.m_aBoard[iBoard], kCVirusStarting)
+			    pPlay := &pGame.m_aPlay[iBoard]
+				InitBoard(iBoard, pGame.m_cPlay, dXyVport, &pGame.m_aBoard[iBoard], CVirusFromLevel(pPlay.m_iStartingLevel))
 			}
 
 		case GAMS.InGame:
@@ -1979,11 +2006,24 @@ SetGams proc (pGame: & SGame, gams: GAMS)
 			for iBoard := 0; iBoard < pGame.m_cPlay; ++iBoard
 		    {
 			    ClearBoard(&pGame.m_aBoard[iBoard], pGame)
-				InitBoard(iBoard, pGame.m_cPlay, dXyVport, &pGame.m_aBoard[iBoard], kCVirusStarting)
+			    pPlay := &pGame.m_aPlay[iBoard]
+				InitBoard(iBoard, pGame.m_cPlay, dXyVport, &pGame.m_aBoard[iBoard], CVirusFromLevel(pPlay.m_iStartingLevel))
 			}
 
 		case GAMS.PostGame: 
 			break
+	}
+}
+
+PrepLineOption proc (fSelected: bool, pDrac: & SDrawContext)
+{
+	if (fSelected)
+	{
+		pDrac.m_pDras.m_fontd.m_colMain = ColCreate(255,255,255)
+	}
+	else
+	{
+		pDrac.m_pDras.m_fontd.m_colMain = ColCreate(128,128,128)
 	}
 }
 
@@ -2015,15 +2055,57 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 
 			case PLAYS.PregameOptions:
 
+				kDYWindow :: 25
+
 				aCh: [128] u8		
 				snprintf(aCh, aCh.count, "Level: %d", pPlay.m_iStartingLevel)
+				PrepLineOption(pPlay.m_iMenuItem == 0, pDrac)
+				if pPlay.m_iMenuItem == 0
+				{
+					if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
+					{
+						pPlay.m_iStartingLevel = NMax(1, pPlay.m_iStartingLevel - 1)
+					}
+					else  if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
+					{
+						pPlay.m_iStartingLevel = NMin(20, pPlay.m_iStartingLevel + 1)
+					}
+				}
 				DrawTextCentered(pDrac, posCenter, aCh)
+				posCenter.m_y -= kDYWindow
 
-				snprintf(aCh, aCh.count, "Speed: %d", pPlay.m_iStartingLevel)
+				snprintf(aCh, aCh.count, "Speed: %s", PILLSPEED.names[pPlay.m_pillspeed])
+				PrepLineOption(pPlay.m_iMenuItem == 1, pDrac)
+				if pPlay.m_iMenuItem == 1
+				{
+					if pPlayinp.m_mpButkEdges[BUTK.Left] == EDGES.Press
+					{
+						printf("pillspeed min %d\n",PILLSPEED.min)
+						pPlay.m_pillspeed = Max(PILLSPEED.min, pPlay.m_pillspeed - 1)
+					}
+					else  if pPlayinp.m_mpButkEdges[BUTK.Right] == EDGES.Press
+					{
+						pPlay.m_pillspeed = Min(PILLSPEED.last, pPlay.m_pillspeed + 1)
+					}
+				}
 				DrawTextCentered(pDrac, posCenter, aCh)
+				posCenter.m_y -= kDYWindow
 
+				PrepLineOption(true, pDrac)
 				DrawTextCentered(pDrac, posCenter, "Press 'X' when ready")
 				++cWaiting
+
+				pDrac.m_pDras.m_fontd.m_colMain = ColCreate(255,255,255)
+				cMenuItem :: 2
+
+				if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
+				{
+					pPlay.m_iMenuItem = NMax(0, pPlay.m_iMenuItem - 1)
+				}
+				else  if pPlayinp.m_mpButkEdges[BUTK.Down] == EDGES.Press
+				{
+					pPlay.m_iMenuItem = NMin(cMenuItem, pPlay.m_iMenuItem + 1)
+				}
 
 				if pPlayinp.m_mpButkEdges[BUTK.Select] == EDGES.Press
 				{

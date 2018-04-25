@@ -4400,19 +4400,6 @@ STypeInfo * CUniqueTypeRegistry::PTinMakeUnique(STypeInfo * pTin)
 		} // fallthrough
 #else
 	case TINK_Pointer:
-	{
-		auto pTinptr = (STypeInfoPointer *)pTin;
-		if (pTinptr->m_pTinPointedTo->m_tink == TINK_Pointer)
-		{
-			printf("");
-		}
-		EWC::SStringEditBuffer seb(m_pAlloc);
-
-		seb.Clear();
-		AppendTypeDescriptor(pTin, &seb);
-		hv = HvForPTin(pTin->m_strDesc, pTin->m_tink);
-
-	} break;
 	case TINK_Qualifier:
 	case TINK_Array:
 #endif

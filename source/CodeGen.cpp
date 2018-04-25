@@ -4921,8 +4921,7 @@ CIRValue * CBuilderIR::PValGenerateCall(
 	if (!EWC_FVERIFY(pTinproc->m_pStnodDefinition, "procedure missing definition"))
 		return nullptr;
 
-	auto pValSym = PValFromSymbol(pSym);
-
+	CIRValue * pValSym = nullptr;
 	if (fIsDirectCall)
 	{
 		if (!EWC_FVERIFY(pSym, "calling function without generated code"))
@@ -4932,6 +4931,7 @@ CIRValue * CBuilderIR::PValGenerateCall(
 
 		PProcTryEnsure(pWork, this, pSym);
 
+		pValSym = PValFromSymbol(pSym);
 		if (!pValSym)
 			return nullptr;
 	}
@@ -6635,7 +6635,6 @@ CIRProcedure * CBuilderIR::PProcCreate(
 	CDynAry<LLVMOpaqueType *> * parypLtype,
 	LLVMOpaqueType * pLtypeReturn)
 {
-
 	bool fHasVarArgs = pTinproc->m_grftinproc.FIsSet(FTINPROC_HasVarArgs);
 	auto pProc = EWC_NEW(m_pAlloc, CIRProcedure) CIRProcedure(m_pAlloc);
 	AddManagedVal(pProc);
