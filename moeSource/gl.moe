@@ -183,8 +183,6 @@ glTexCoordPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & v
 
 glDrawArrays proc (mode: glenum, first: glint, count: glsizei) #foreign #stdcall
 
-
-
 // GL extension function pointers
 glCreateProgram: () -> gluint #stdcall
 glDeleteProgram: (program: gluint) #stdcall
@@ -200,6 +198,12 @@ glGetProgramInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLo
 glAttachShader: (program: gluint, shader: gluint) #stdcall
 glUseProgram: (program: gluint) #stdcall
 glGetUniformLocation: (program: gluint, name: & const s8) -> glint #stdcall
+
+
+glBindAttribLocation: (program: gluint, index: gluint, name: & const u8) #stdcall
+glVertexAttribPointer: (index: gluint, size:glint, type: glenum, normalized: glboolean, stride: glsizei, pointer: & void) #stdcall
+glDisableVertexAttribArray:  (index: gluint) #stdcall
+glEnableVertexAttribArray:  (index: gluint) #stdcall
 
 glUniform1f: (location: glint, v0: glfloat) #stdcall
 glUniform2f: (location: glint, v0: glfloat, v1: glfloat) #stdcall
@@ -392,6 +396,10 @@ FTryInitGLExtensions proc () -> bool
     glUniformMatrix4fv = acast FTryInitExtension("glUniformMatrix4fv", &fSuccess)
     glActiveTexture = acast FTryInitExtension ("glActiveTexture", &fSuccess)
     glClientActiveTexture = acast FTryInitExtension ("glClientActiveTexture", &fSuccess)
+    glBindAttribLocation = acast FTryInitExtension("glBindAttribLocation", &fSuccess)
+    glVertexAttribPointer = acast FTryInitExtension("glVertexAttribPointer", &fSuccess)
+    glDisableVertexAttribArray = acast FTryInitExtension("glDisableVertexAttribArray", &fSuccess)
+    glEnableVertexAttribArray = acast FTryInitExtension("glEnableVertexAttribArray", &fSuccess)
     return fSuccess
 }
 

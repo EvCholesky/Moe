@@ -14,10 +14,10 @@
 
 // orig: 64x128 px, 8x8 cells, 8x16 playspace
 
-kDXWindow :: 1280
-kDYWindow :: 720
-//kDXWindow :: 1920
-//kDYWindow :: 1080
+//kDXWindow :: 1280
+//kDYWindow :: 720
+kDXWindow :: 1920
+kDYWindow :: 1080
 
 kDXCellBoard :: 8
 kDYCellBoard :: 17
@@ -30,23 +30,21 @@ kEntMax :: kCCellPerBoard * kCPlayerMax
 kYMaxVirusStart :: 12
 
 kDTStartingSpawn :: 1
-kDTNextPill	:: 0.20
-kDTShowDead :: 0.2
+kDTNextPill	:: 0.3
+kDTShowDead :: 0.3
 kDTStabilize :: 0.05
 
 kDTEndgameMin :: 1.5
-
 kDTPulseTotal :: 1.5
 kDTPulseBell :: 0.25
 
-kDTPulseBellStabilize :: 0.45
+kCVirusStarting :: 15
+kCPlayerMax :: 4
+
+kDTPulseBellStabilize :: 0.35
 
 g_fApplyGravity := true	// debug toggle for falling pieces
 
-kCVirusStarting :: 15
-//kCVirusStarting :: 2
-
-kCPlayerMax :: 4
 
 g_cTickPerSecond: s64 = 1
 
@@ -78,16 +76,170 @@ DIR enum u8
 	Down
 }
 
+FSPRITE flag_enum
+{
+	FlipU,
+	FlipV
+}
+
+SFRAM enum 
+{
+	TopR,
+	TopB,
+	TopY,
+	TopSh,
+	BottomR,
+	BottomB,
+	BottomY,
+	BottomSh,
+	DotR,
+	DotB,
+	DotY,
+	DotSh,
+	VirusR,
+	VirusB,
+	VirusY,
+	VirusRSh,
+	VirusBSh,
+	VirusYSh,
+	DeadR,
+	DeadB,
+	DeadY,
+	GarbageR1,
+	GarbageB1,
+	GarbageY1,
+	GarbageR2,
+	GarbageB2,
+	GarbageY2,
+	GarbageR3,
+	GarbageB3,
+	GarbageY3,
+	GarbageR4,
+	GarbageB4,
+	GarbageY4,
+	Background1, 
+	Background2, 
+	Background3, 
+	Background4, 
+	Untextured,
+}
+
+SSprite struct // tag = sp
+{
+	m_tilak: TILAK
+	m_dX: f32
+	m_dY: f32
+	m_u1, m_u2: f32
+	m_v1, m_v2: f32
+}
+
+SSpriteSet struct // tag = spset
+{
+	m_pTex: & STexture
+	m_mpSframSp: [SFRAM.max] SSprite	// would be better as an ary, need a way to construct arys on the fly
+	m_iParamTex: s32
+}
+
+InitSpriteFrame proc (pSpset: & SSpriteSet, tilak: TILAK, sfram: SFRAM, xMin: f32, xMax: f32, yMin: f32, yMax: f32)
+{
+	dXImage :: 1024
+	dYImage :: 1024
+
+	pSp := &pSpset.m_mpSframSp[sfram]
+	pSp.m_tilak = tilak
+	pSp.m_dX = xMax - xMin
+	pSp.m_dY = yMax - yMin
+	pSp.m_u1 = xMin / dXImage
+	pSp.m_u2 = xMax / dXImage
+	pSp.m_v1 = yMax / dYImage
+	pSp.m_v2 = yMin / dYImage
+}
+
+FTryInitSprites proc (pDrac: & SDrawContext, pSpset: & SSpriteSet, pChzFilename: & const u8) -> bool
+{
+	aCh: [1024] u8
+	ConcatPChz(pChzFilename, ".tga", aCh)
+	pSpset.m_pTex = PTexLoad(aCh, false)
+	pSpset.m_iParamTex = IParamFind(pDrac.m_pShman, pDrac.m_pShman.m_mpCoreshkShhand[CORESHK.Sprite], "s_sampTexture")
+
+	if !pSpset.m_pTex
+	{
+		printf("Failed to load sprite texture %s\n", aCh)
+		return false
+	}
+
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.TopR, 210, 280, 0, 70)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.BottomR, 280, 350, 0, 70)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.DotR, 0, 70, 140, 210)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.VirusR, 0, 70, 210, 280)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.DeadR, 210, 280, 280, 350)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageR1, 0, 70, 280, 350)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageR2, 0, 70, 350, 420)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageR3, 0, 70, 420, 490)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageR4, 0, 70, 490, 560)
+
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.TopB, 210, 280, 140, 210)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.BottomB, 280, 350, 140, 210)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.DotB, 140, 210, 140, 210)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.VirusB, 140, 210, 210, 280)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.DeadB, 350, 420, 280, 350)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageB1, 140, 210, 280, 350)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageB2, 140, 210, 350, 420)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageB3, 140, 210, 420, 490)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageB4, 140, 210, 490, 560)
+
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.TopY, 210, 280, 70, 140)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.BottomY, 280, 350, 70, 140)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.DotY, 70, 140, 140, 210)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.VirusY, 70, 140, 210, 280)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.DeadY, 280, 350, 280, 350)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageY1, 70, 140, 280, 350)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageY2, 70, 140, 350, 420)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageY3, 70, 140, 420, 490)
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.GarbageY4, 70, 140, 490, 560)
+
+	InitSpriteFrame(pSpset, TILAK.Shadow, SFRAM.TopSh, 430, 516, 172, 258)
+	InitSpriteFrame(pSpset, TILAK.Shadow, SFRAM.BottomSh, 516, 602, 172, 258)
+	InitSpriteFrame(pSpset, TILAK.Shadow, SFRAM.DotSh, 430, 516, 258, 344)
+
+	InitSpriteFrame(pSpset, TILAK.Background, SFRAM.Background1, 0, 210, 560, 770)
+	InitSpriteFrame(pSpset, TILAK.Background, SFRAM.Background2, 210, 420, 560, 770)
+	InitSpriteFrame(pSpset, TILAK.Background, SFRAM.Background3, 420, 630, 560, 770)
+	InitSpriteFrame(pSpset, TILAK.Background, SFRAM.Background4, 630, 840, 560, 770)
+
+	InitSpriteFrame(pSpset, TILAK.Entity, SFRAM.Untextured, 1023, 1023, 1023, 1023)
+	return true
+}
+
 ColFromPillcol proc (pillcol: PILLCOL) -> SColor
 {
 	switch pillcol
 	{
-		case PILLCOL.Red:	 	return ColCreate(231, 0, 90, 255)
-		case PILLCOL.Blue:		return ColCreate(57, 189, 255, 255)
-		case PILLCOL.Yellow:	return ColCreate(255, 189, 0, 255)
-		case PILLCOL.Green:		return ColCreate(57, 255, 189, 255)
+		case PILLCOL.Red:	 	return ColCreate(231, 0, 90)
+		case PILLCOL.Blue:		return ColCreate(57, 189, 255)
+		case PILLCOL.Yellow:	return ColCreate(255, 189, 0)
+		case PILLCOL.Green:		return ColCreate(57, 255, 189)
 	}
 	return ColCreate (255, 255, 255, 255)
+}
+
+ColLightFromPillcol proc (pillcol: PILLCOL) -> SColor
+{
+	switch pillcol
+	{
+		case PILLCOL.Red:	 	return ColCreate(255, 160, 198)
+		case PILLCOL.Blue:		return ColCreate(114, 189, 255)
+		case PILLCOL.Yellow:	return ColCreate(255, 255, 125)
+		case PILLCOL.Green:		return ColCreate(57, 255, 189)
+	}
+	return ColCreate (255, 255, 255, 255)
+}
+
+TILAK enum // TIle LAyer Kind
+{
+	Background,
+	Shadow,
+	Entity
 }
 
 STileVertex struct // tag=tilvert
@@ -95,12 +247,19 @@ STileVertex struct // tag=tilvert
 	m_x, m_y: f32
 	m_u, m_v: f32
 	m_r, m_g, m_b, m_a: f32
+	m_rOvr, m_gOvr, m_bOvr, m_aOvr: f32
+}
+
+STileLayer struct // tag = tilay
+{
+	m_aTilvert: [4096] STileVertex
+	m_cTilvert: int
 }
 
 STileVertexBuffer struct // tag=tilbuf
 {
-	m_aTilvert: [4096] STileVertex
-	m_cTilvert: int
+	m_mpTilakTilay: [TILAK.max] STileLayer
+	m_pSpset: & SSpriteSet
 }
 g_tilbuf: STileVertexBuffer
 
@@ -198,6 +357,7 @@ SPlayer struct // tag = play
 	m_cGarbageReceived: int
 	m_cErrors: int
 	m_dTHoldDown: f32
+	m_dTTotal: f32
 
 	m_iMenuItem: int = 0
 }
@@ -289,16 +449,24 @@ InitPlayers proc (pGame: & SGame)
 		pPlay.m_pillcol = cast(PILLCOL)iPlay
 		pPlay.m_iPlayerTarget = (iPlay + 1) % pGame.m_cPlay
 		pPlay.m_dTUntilSpawn = kDTStartingSpawn
+		pPlay.m_dTRepeatHold = 0
 
+		pPlay.m_dTStepDown = 0
 		pPlay.m_cKilledCells = 0
 		pPlay.m_cGarbageSent = 0
 		pPlay.m_cGarbageReceived = 0
 		pPlay.m_cErrors = 0
 		pPlay.m_dTHoldDown = 0
+		pPlay.m_dTTotal = 0
 
 		pPlay.m_pillcolNextHead = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 		pPlay.m_pillcolNextTail = cast(PILLCOL)NRandom(&pBoard.m_rng, PILLCOL.min, PILLCOL.MaxPills)
 
+		for iPlayOther := 0; iPlayOther < kCPlayerMax; ++iPlayOther
+		{
+			pPlay.m_mpIplayCGarbagePending[iPlayOther] = 0
+		}
+		pPlay.m_cKills = 0
 		SetGamres(pPlay, GAMRES.Pending)
 
 		if (pPlay.m_grfplay & FPLAY.Autokill) != 0
@@ -465,6 +633,7 @@ KillCell proc (pPlay: & SPlayer, pBoard: & SBoard, xCell: int, yCell: int)
 		if pEnt.m_fHasTail
 		{
 			pEnt.m_fHasTail = false
+			pEnt.m_dTPulse = 0
 			ReparentBoardEntity(pBoard, pEnt)
 
 			pEntTail := PEntAllocate(&g_game.m_pEntUnusedFirst, pEnt.m_entk)
@@ -633,11 +802,11 @@ InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cViru
 
 DrawOutsideBorder proc (xMin: f32, yMin: f32, xMax: f32, yMax: f32, sWidth: f32, colvec: SColorVec)
 {
-	AppendTile(xMin - sWidth, yMin - sWidth, xMin, yMax + sWidth, &colvec, &g_tilbuf)	// left
-	AppendTile(xMax, yMin - sWidth, xMax + sWidth, yMax + sWidth, &colvec, &g_tilbuf)	// right
+	AppendTile(SFRAM.Untextured, xMin - sWidth, yMin - sWidth, xMin, yMax + sWidth, &colvec, &g_tilbuf)	// left
+	AppendTile(SFRAM.Untextured, xMax, yMin - sWidth, xMax + sWidth, yMax + sWidth, &colvec, &g_tilbuf)	// right
 
-	AppendTile(xMin, yMin - sWidth, xMax, yMin, &colvec, &g_tilbuf)	// bottom
-	AppendTile(xMin, yMax, xMax, yMax + sWidth, &colvec, &g_tilbuf)	// bottom
+	AppendTile(SFRAM.Untextured, xMin, yMin - sWidth, xMax, yMin, &colvec, &g_tilbuf)	// bottom
+	AppendTile(SFRAM.Untextured, xMin, yMax, xMax, yMax + sWidth, &colvec, &g_tilbuf)	// bottom
 }
 
 DrawInsideBorder proc (xMin: f32, yMin: f32, xMax: f32, yMax: f32, sWidth: f32, colvec: SColorVec)
@@ -656,6 +825,7 @@ DrawBoardBackground proc (pBoard: & SBoard, pillcolSelf: PILLCOL, pillcolTarget:
 	xMax : f32 = cast(f32)(pBoard.m_pos.m_x + pBoard.m_dXyBoard.m_x) + pBoard.m_gTileSpacing
 	yMax : f32 = cast(f32)(pBoard.m_pos.m_y + pBoard.m_dXyBoard.m_y) + pBoard.m_gTileSpacing
 
+	/*
 	colvecBorder := ColvecFromCol(ColFromPillcol(pillcolSelf))
 	DrawOutsideBorder(xMin, yMin, xMax, yMax, kBoardBorderWidth, colvecBorder)
 
@@ -663,7 +833,17 @@ DrawBoardBackground proc (pBoard: & SBoard, pillcolSelf: PILLCOL, pillcolTarget:
 	xMin -= kBoardBorderWidth
 	xMax += kBoardBorderWidth
 	yMin -= kBoardBorderWidth
-	AppendTile(xMin, yMin - dYBottom, xMax, yMin, &colvecBorder, &g_tilbuf)
+	AppendTile(SFRAM.Untextured, xMin, yMin - dYBottom, xMax, yMin, &colvecBorder, &g_tilbuf)
+	*/
+
+	kDXBackgroundPad :: 24
+	kMinBackgroundPad :: 20
+	kMaxBackgroundPad :: 30
+	colvecWhite := ColvecFromCol(ColCreate(255,255,255))	
+	posMin := F32x2Create(xMin - kDXBackgroundPad, yMin - kMinBackgroundPad)
+	posMax := F32x2Create(xMax + kDXBackgroundPad, yMax + kMaxBackgroundPad)
+	sfram := SFRAM.Background1 + cast(SFRAM)pillcolSelf	
+	DrawNineCell(sfram, posMin, posMax, &colvecWhite, &g_tilbuf)
 }
 
 CutPos proc (pEnt: & SEntity, pos: f32x2, dir: DIR)
@@ -704,8 +884,90 @@ DPosPillFromDir proc (pBoard: & SBoard, dir: DIR) -> f32x2
 
 }
 
-DrawPill proc (pBoard: & SBoard, pos: f32x2, rad: f32, colHead: SColor, fHasTail: bool, colTail: SColor, rOpacity: f32, rXScale: f32)
+DrawNineCell proc (sfram: SFRAM, posMin: f32x2, posMax: f32x2, pColvec: & SColorVec, pTilbuf: & STileVertexBuffer)
 {
+	pSp := &pTilbuf.m_pSpset.m_mpSframSp[sfram]
+
+	pTilay := &pTilbuf.m_mpTilakTilay[pSp.m_tilak]
+	if pTilay.m_aTilvert.count < pTilay.m_cTilvert + (4 * 9)
+		{ return }
+
+	kRScale :: 0.5	
+	dU := (pSp.m_u2 - pSp.m_u1)
+	dV := (pSp.m_v2 - pSp.m_v1)
+	ddXU := pSp.m_dX / dU
+	ddYV := pSp.m_dY / dV
+
+	dPos := posMax - posMin
+	dXSplit := Min(dPos.m_x * 0.5, ddXU * dU * 0.333)
+	dYSplit := Min(dPos.m_y * 0.5, ddYV * dV * 0.333)
+
+	//	v3
+	//	v2
+	//	v1
+	// 	0	u1	u2	u3
+
+	x0 := posMin.m_x
+	x1 := x0 + dXSplit
+	x2 := posMax.m_x - dXSplit
+	x3 := posMax.m_x
+
+	y0 := posMin.m_y
+	y1 := y0 + dYSplit
+	y2 := posMax.m_y - dYSplit
+	y3 := posMax.m_y
+
+	u0 := pSp.m_u1
+	u1 := pSp.m_u1 + dU * 0.333
+	u2 := pSp.m_u1 + dU * 0.666
+	u3 := pSp.m_u2
+	
+	v0 := pSp.m_v1
+	v1 := pSp.m_v1 + dV * 0.333
+	v2 := pSp.m_v1 + dV * 0.666
+	v3 := pSp.m_v2
+
+	AppendTile(	x0, y0, x1, y1,
+				u0, v0, u1, v1,
+				pColvec, pTilay)
+	AppendTile(	x0, y1, x1, y2,
+				u0, v1, u1, v2,
+				pColvec, pTilay)
+	AppendTile(	x0, y2, x1, y3,
+				u0, v2, u1, v3,
+				pColvec, pTilay)
+
+	AppendTile(	x1, y0, x2, y1,
+				u1, v0, u2, v1,
+				pColvec, pTilay)
+	AppendTile(	x1, y1, x2, y2,
+				u1, v1, u2, v2,
+				pColvec, pTilay)
+
+	AppendTile( x1, y2, x2, y3,
+				u1, v2, u2, v3,
+				pColvec, pTilay)
+
+	AppendTile( x2, y2, x3, y3,
+				u2, v2, u3, v3,
+				pColvec, pTilay)
+	AppendTile( x2, y1, x3, y2,
+				u2, v1, u3, v2,
+				pColvec, pTilay)
+	AppendTile(	x2, y0, x3, y1,
+				u2, v0, u3, v1,
+				pColvec, pTilay)
+}
+
+DrawPill proc (pBoard: & SBoard, pos: f32x2, rad: f32, pillcolHead: PILLCOL, fHasTail: bool, pillcolTail: PILLCOL, rOpacity: f32, rXScale: f32, uPulse: f32 = 0) 
+{
+	kXShadowPad :: 4
+	kYShadowPad :: 4 
+
+	colWhite := ColCreate(255, 255, 255, 255)
+	colHead := ColLerp(ColFromPillcol(pillcolHead), colWhite, uPulse)
+	colTail := ColLerp(ColFromPillcol(pillcolTail), colWhite, uPulse)
+
 	gHalfSpacing := pBoard.m_gTileSpacing * 0.5
 
 	dXySpacing := F32x2Create(pBoard.m_gTileSpacing, pBoard.m_gTileSpacing)
@@ -736,30 +998,74 @@ DrawPill proc (pBoard: & SBoard, pos: f32x2, rad: f32, colHead: SColor, fHasTail
 		posMaxTail.m_x = (posMaxTail.m_x - xMid) * rXScale + xMid
 	}
 
+	kXPulseScale :: 4
+	kYPulseScale :: 4
+	xPulse := kXPulseScale * uPulse
+	yPulse := kYPulseScale * uPulse
+	posMin.m_x -= xPulse
+	posMax.m_x += xPulse
+	posMin.m_y -= yPulse
+	posMax.m_y += yPulse
+	posMinTail.m_x -= xPulse
+	posMaxTail.m_x += xPulse
+	posMinTail.m_y -= yPulse
+	posMaxTail.m_y += yPulse
+
 	dPosRot := F32x2Create(0,0)
 	posOrigin += dPosRot
 
 	colvecEnt := ColvecFromCol(colHead)	
 	colvecEnt.m_w *= rOpacity
 
-	AppendTile(posOrigin, rad, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
+	colvecWhite := ColvecFromCol(colWhite)
+	colvecWhite.m_w *= rOpacity
 
-	// debug marker for primary cell
-	colvecLight := ColvecLerp(ColvecFromCol(ColCreate(255,255,255,255)), colvecEnt, 0.5)
-	AppendTile(posOrigin, rad, posMin.m_x + 5, posMax.m_y - 10, posMin.m_x + 10, posMax.m_y - 5, &colvecLight, &g_tilbuf)
+	colvecShadowPulse := colvecWhite
+	colvecShadowPulse.m_w = 0
+	colvecPulseHead := ColvecFromCol(ColLightFromPillcol(pillcolHead))
+	colvecPulseHead.m_w = uPulse
+
+	sframHead: SFRAM	
+	sframShadow: SFRAM
+	if fHasTail
+	{ 
+		sframHead = SFRAM.TopR + cast(SFRAM)pillcolHead
+		sframShadow = SFRAM.TopSh
+	}
+	else
+	{ 
+		sframHead = SFRAM.DotR + cast(SFRAM)pillcolHead 
+		sframShadow = SFRAM.DotSh
+		rad = 0
+	}
+
+	fsprite : FSPRITE
+	fsprite.FlipV = (rad >= kPi) || (rad < 0)
+
+	AppendTile(sframShadow, posOrigin, rad, fsprite, 
+			posMin.m_x-kXShadowPad, posMin.m_y-kYShadowPad, posMax.m_x+kXShadowPad, posMax.m_y+kYShadowPad, 
+			&colvecWhite, &colvecShadowPulse, &g_tilbuf)
+	AppendTile(sframHead, posOrigin, rad, fsprite, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecWhite, &colvecPulseHead, &g_tilbuf)
 
 	if (fHasTail)
 	{
 		colvecTail := ColvecFromCol(colTail)
 		colvecTail.m_w *= rOpacity
 
-		AppendTile(posOrigin, rad, posMinTail.m_x, posMinTail.m_y, posMaxTail.m_x, posMaxTail.m_y, &colvecTail, &g_tilbuf)
+		colvecPulseTail := ColvecFromCol(ColLightFromPillcol(pillcolTail))
+		colvecPulseTail.m_w = uPulse
+
+		sframTail := SFRAM.BottomR + cast(SFRAM)pillcolTail
+
+		AppendTile(SFRAM.BottomSh, posOrigin, rad, fsprite, 
+			posMinTail.m_x-kXShadowPad, posMinTail.m_y-kYShadowPad, posMaxTail.m_x+kXShadowPad, posMaxTail.m_y+kYShadowPad, 
+			&colvecWhite, &colvecShadowPulse, &g_tilbuf)
+		AppendTile(sframTail, posOrigin, rad, fsprite, posMinTail.m_x, posMinTail.m_y, posMaxTail.m_x, posMaxTail.m_y, &colvecWhite, &colvecPulseTail, &g_tilbuf)
 	}
 }
 
 DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 {
-	kVirusBorderWidth :: 3
 	kVirusBorderSeparation :: 2
 	kDeadEntWidth :: 3
 
@@ -768,7 +1074,7 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 	posMin.m_x += cast(f32)pBoard.m_gTileSpacing
 	posMin.m_y += cast(f32)pBoard.m_gTileSpacing
 
-	colvecEnt := ColvecFromCol(ColFromPillcol(pEnt.m_pillcol))	
+	colvecEnt := ColvecFromCol(ColCreate(255, 255, 255))
 	colvecEnt.m_w *= rOpacity
 
 	kULerpStable :: 1.0 // 0.7
@@ -786,11 +1092,6 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 
 			if pEnt.m_ents != ENTS.Dead
 			{
-				posMin.m_x += kVirusBorderWidth
-				posMin.m_y += kVirusBorderWidth
-				posMax.m_x -= kVirusBorderWidth
-				posMax.m_y -= kVirusBorderWidth
-
 				uPulse := 0.0
 				if pEnt.m_dTPulse >= kDTPulseTotal
 				{
@@ -806,18 +1107,20 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 				kPulseWidthGrow :: 2
 				uShrink := uPulse * kPulseWidthShrink
 				uGrow := uPulse * kPulseWidthGrow
-				AppendTile(posMin.m_x + uShrink, posMin.m_y + uShrink, posMax.m_x - uShrink, posMax.m_y - uShrink, &colvecEnt, &g_tilbuf)
+
+				sfram := SFRAM.VirusR + cast(SFRAM) pEnt.m_pillcol
 
 				posMin.m_x -= kVirusBorderSeparation + uGrow
 				posMin.m_y -= kVirusBorderSeparation + uGrow
 				posMax.m_x += kVirusBorderSeparation + uGrow
 				posMax.m_y += kVirusBorderSeparation + uGrow
 
-				DrawOutsideBorder(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, kVirusBorderWidth, colvecEnt)
+				AppendTile(sfram, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
 			}
 			else
 			{
-				DrawInsideBorder(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, kVirusBorderWidth, colvecEnt)
+				sfram := SFRAM.DeadR + cast(SFRAM)pEnt.m_pillcol
+				AppendTile(sfram, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
 			}
 
 		case ENTK.Pill:
@@ -852,10 +1155,21 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 			if (pEnt.m_ents != ENTS.Dead)	
 			{
 				kRPillPulseScale :: 0.2
+				kPulseEdge:: 0.3 // hold pulse at 0.5 for most of the range
 				uPulse := 0.0
-				if pEnt.m_dTPulse < kDTPulseBellStabilize
+
+				if pEnt.m_dTPulse < 0
 				{
-					u := pEnt.m_dTPulse / kDTPulseBellStabilize
+					u := (pEnt.m_dTPulse + kDTPulseBellStabilize) / kDTPulseBellStabilize
+					if (u < 0.5)
+					{
+						u = 0.5
+					}
+					else
+					{
+						u = 1.0 - Min(0.5, 0.5 * (1.0 - u) / kPulseEdge)
+					}
+
 					uPulse = GCurveBell(u)
 				}
 
@@ -866,63 +1180,38 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 				colPill := ColLerp(ColFromPillcol(pEnt.m_pillcol), colWhite, uPulse)
 				colTail := ColLerp(ColFromPillcol(pEnt.m_pillcolTail), colWhite, uPulse)
 
-				DrawPill(pBoard, posPill, radDir, colPill, pEnt.m_fHasTail, colTail, 0.2, 1)
-
 				posSmoothPill := pEnt.m_posSmooth + F32x2Cast(pBoard.m_pos)
-				DrawPill(pBoard, posSmoothPill, pEnt.m_radSmooth, colPill, pEnt.m_fHasTail, colTail, 1, 1)
+				DrawPill(pBoard, posPill, radDir, pEnt.m_pillcol, pEnt.m_fHasTail, pEnt.m_pillcolTail, 1, 1, uPulse)
 			}
 			else
 			{
-				DrawInsideBorder(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, kDeadEntWidth, colvecEnt)
-
-				if (pEnt.m_fHasTail)
-				{
-					colvecTail := ColvecFromCol(ColFromPillcol(pEnt.m_pillcolTail))
-					colvecTail = ColvecLerp(colvecStable, colvecTail, uLerpStable)
-
-					DrawInsideBorder(posMinTail.m_x, posMinTail.m_y, posMaxTail.m_x, posMaxTail.m_y, kDeadEntWidth, colvecTail)
-				}
+				sfram := SFRAM.DeadR + cast(SFRAM)pEnt.m_pillcol
+				AppendTile(sfram, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
 			}
 		case ENTK.Garbage:
 			if pEnt.m_ents != ENTS.Dead
 			{
-				gHalfSpacing := cast(f32)pBoard.m_gTileSpacing/2
-				posHalf := F32x2Create(gHalfSpacing, gHalfSpacing)
-
-				posSplitBegin := posMin + (posMax - posMin) * 0.5
-				posSplitEnd := posSplitBegin + posHalf
-				posSplitBegin -= posHalf
-
-				AppendTile(posMin.m_x, posMin.m_y, posSplitBegin.m_x, posSplitBegin.m_y, &colvecEnt, &g_tilbuf)
-				AppendTile(posMin.m_x, posSplitEnd.m_y, posSplitBegin.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
-
-				AppendTile(posSplitEnd.m_x, posMin.m_y, posMax.m_x, posSplitBegin.m_y, &colvecEnt, &g_tilbuf)
-				AppendTile(posSplitEnd.m_x, posSplitEnd.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
+				sfram := SFRAM.GarbageR1 + cast(SFRAM)pEnt.m_pillcol
+				AppendTile(sfram, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
 			}
 			else
 			{
-				DrawInsideBorder(posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, kVirusBorderWidth, colvecEnt)
+				sfram := SFRAM.DeadR + cast(SFRAM)pEnt.m_pillcol
+				AppendTile(sfram, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvecEnt, &g_tilbuf)
 			}
 	}
 
 }
 
-DrawGarbage proc (pBoard: & SBoard, posMin: f32x2, colvec: SColorVec)
+DrawGarbage proc (pBoard: & SBoard, posMin: f32x2, pillcol: PILLCOL)
 {
 	posMax := posMin + F32x2Cast(pBoard.m_dXyTile)
 
-	gHalfSpacing := cast(f32)pBoard.m_gTileSpacing/2
-	dPosHalf := F32x2Create(gHalfSpacing, gHalfSpacing)
+	// BB - pillcol is the player pillcol, not which color will drop
+	sfram := SFRAM.GarbageR1 + cast(SFRAM)pillcol
 
-	posSplitBegin := posMin + (posMax - posMin) * 0.5
-	posSplitEnd := posSplitBegin + dPosHalf
-	posSplitBegin -= dPosHalf
-
-	AppendTile(posMin.m_x, posMin.m_y, posSplitBegin.m_x, posSplitBegin.m_y, &colvec, &g_tilbuf)
-	AppendTile(posMin.m_x, posSplitEnd.m_y, posSplitBegin.m_x, posMax.m_y, &colvec, &g_tilbuf)
-
-	AppendTile(posSplitEnd.m_x, posMin.m_y, posMax.m_x, posSplitBegin.m_y, &colvec, &g_tilbuf)
-	AppendTile(posSplitEnd.m_x, posSplitEnd.m_y, posMax.m_x, posMax.m_y, &colvec, &g_tilbuf)
+	colvec := ColvecFromCol(ColCreate(255,255,255))
+	AppendTile(sfram, posMin.m_x, posMin.m_y, posMax.m_x, posMax.m_y, &colvec, &g_tilbuf)
 }
 
 
@@ -969,17 +1258,16 @@ DrawBoards proc (pGame : & SGame, pDrac: & SDrawContext)
 
 			pillWidth := cast(f32)pBoard.m_dXyTile.m_x * 2
 			posPill := F32x2Create(cast(f32)(pBoard.m_pos.m_x + pBoard.m_dXyBoard.m_x + kBoardBorderWidth) - pillWidth, cast(f32)posGarbage.m_y) 
-			DrawPill(pBoard, posPill, 0, ColFromPillcol(pPlay.m_pillcolNextHead), true, ColFromPillcol(pPlay.m_pillcolNextTail), 1, 1)
+			DrawPill(pBoard, posPill, 0, pPlay.m_pillcolNextHead, true, pPlay.m_pillcolNextTail, 1, 1, 0)
 
 			for iPlayOther:=0; iPlayOther < pGame.m_cPlay; ++iPlayOther
 			{
 				pPlayOther := &pGame.m_aPlay[iPlayOther]
-				colvec := ColvecFromCol(ColFromPillcol(pPlayOther.m_pillcol))
 
 				cGarbage := pPlay.m_mpIplayCGarbagePending[iPlayOther]
 				for iGarbage := 0; iGarbage < cGarbage; ++iGarbage
 				{
-					DrawGarbage(pBoard, F32x2Cast(posGarbage), colvec)	
+					DrawGarbage(pBoard, F32x2Cast(posGarbage), pPlayOther.m_pillcol)	
 					posGarbage.m_x += cast(s32)(cast(f32)pBoard.m_dXyTile.m_x * kRGarbageSpacing)
 				}
 
@@ -1250,92 +1538,139 @@ DTElapsed proc (cTickStart: s64, cTickEnd: s64) -> f32 inline
 }
 
 AppendTile proc (
+			sfram: SFRAM,
 			pos: f32x2, rad: f32,
+			fsprite: FSPRITE,
 			xMin: f32, yMin: f32,
 			xMax: f32, yMax: f32,
 			colvec: & SColorVec,
+			colvecOvr: & SColorVec,
 			pTilbuf: & STileVertexBuffer)
 {
-	if pTilbuf.m_aTilvert.count < pTilbuf.m_cTilvert + 4
+	pSp := &pTilbuf.m_pSpset.m_mpSframSp[sfram]
+	pTilay := &pTilbuf.m_mpTilakTilay[pSp.m_tilak]
+
+	if pTilay.m_aTilvert.count < pTilay.m_cTilvert + 4
 		{ return }
 
 	mat := Mat33FromPosRad(pos, rad)
+
+	u1 := pSp.m_u1
+	u2 := pSp.m_u2
+	v1 := pSp.m_v1
+	v2 := pSp.m_v2
+
+	if (fsprite.FlipU)
+	{
+		temp := u1
+		u1 = u2
+		u2 = temp
+	}
+
+	if (fsprite.FlipV)
+	{
+		temp := v1
+		v1 = v2
+		v2 = temp
+	}
 
 	pos0 := F32x2Create(xMin, yMax)
 	pos0 = PosMul(mat, pos0)
 	AppendTilvert(
 		pos0.m_x, pos0.m_y,
-		0,	0,	// u, v
+		u1, v2,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		colvecOvr.m_x, colvecOvr.m_y, colvecOvr.m_z, colvecOvr.m_w,
+		pTilay)
 
 	pos1 := F32x2Create(xMax, yMax)
 	pos1 = PosMul(mat, pos1)
 	AppendTilvert(
 		pos1.m_x, pos1.m_y,
-		0,	0,	// u, v
+		u2, v2,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		colvecOvr.m_x, colvecOvr.m_y, colvecOvr.m_z, colvecOvr.m_w,
+		pTilay)
 
 	pos2 := F32x2Create(xMax, yMin)
 	pos2 = PosMul(mat, pos2)
 	AppendTilvert(
 		pos2.m_x, pos2.m_y,
-		0,	0,	// u, v
+		u2, v1,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		colvecOvr.m_x, colvecOvr.m_y, colvecOvr.m_z, colvecOvr.m_w,
+		pTilay)
 
 	pos3 := F32x2Create(xMin, yMin)
 	pos3 = PosMul(mat, pos3)
 	AppendTilvert(
 		pos3.m_x, pos3.m_y,
-		0,	0,	// u, v
+		u1, v1,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		colvecOvr.m_x, colvecOvr.m_y, colvecOvr.m_z, colvecOvr.m_w,
+		pTilay)
 }
 
 AppendTile proc (
+			sfram: SFRAM,
 			xMin: float, yMin: float,
 			xMax: float, yMax: float,
 			colvec: & SColorVec,
 			pTilbuf: & STileVertexBuffer)
 {
-	if pTilbuf.m_aTilvert.count < pTilbuf.m_cTilvert + 4
+	pSp := &pTilbuf.m_pSpset.m_mpSframSp[sfram]
+
+	AppendTile(
+		xMin, yMin, xMax, yMax, 
+		pSp.m_u1, pSp.m_v1, pSp.m_u2, pSp.m_v2,
+		colvec,
+		&pTilbuf.m_mpTilakTilay[pSp.m_tilak])
+}
+
+AppendTile proc (
+			xMin: float, yMin: float,
+			xMax: float, yMax: float,
+			uMin: float, vMin: float,
+			uMax: float, vMax: float,
+			colvec: & SColorVec,
+			pTilay: & STileLayer)
+{
+	if pTilay.m_aTilvert.count < pTilay.m_cTilvert + 4
 		{ return }
 
 	AppendTilvert(
 		xMin, yMax,
-		0,	0,	// u, v
+		uMin, vMax,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		pTilay)
 
 	AppendTilvert(
 		xMax, yMax,
-		0,	0,	// u, v
+		uMax, vMax,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		pTilay)
 
 	AppendTilvert(
 		xMax, yMin,
-		0,	0,	// u, v
+		uMax, vMin,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		pTilay)
 
 	AppendTilvert(
 		xMin, yMin,
-		0,	0,	// u, v
+		uMin, vMin,
 		colvec.m_x, colvec.m_y, colvec.m_z, colvec.m_w,
-		pTilbuf)
+		pTilay)
 }
 
 AppendTilvert proc (
 				x: float, y: float, 
 				u: float, v: float, 
 				r: float, g: float, b: float, a: float, 
-				pTilbuf: & STileVertexBuffer) inline
+				pTilay: & STileLayer) inline
 {
-	pTilvert: & STileVertex = &pTilbuf.m_aTilvert[pTilbuf.m_cTilvert]
-	++pTilbuf.m_cTilvert
+	pTilvert: & STileVertex = &pTilay.m_aTilvert[pTilay.m_cTilvert]
+	++pTilay.m_cTilvert
 
 	pTilvert.m_x = x
 	pTilvert.m_y = y
@@ -1347,11 +1682,42 @@ AppendTilvert proc (
 	pTilvert.m_g = g
 	pTilvert.m_b = b
 	pTilvert.m_a = a
+
+	pTilvert.m_rOvr = 1
+	pTilvert.m_gOvr = 1
+	pTilvert.m_bOvr = 1
+	pTilvert.m_aOvr = 0
+}
+
+AppendTilvert proc (
+				x: float, y: float, 
+				u: float, v: float, 
+				r: float, g: float, b: float, a: float, 
+				rOvr: float, gOvr: float, bOvr: float, aOvr: float, 
+				pTilay: & STileLayer) inline
+{
+	pTilvert: & STileVertex = &pTilay.m_aTilvert[pTilay.m_cTilvert]
+	++pTilay.m_cTilvert
+
+	pTilvert.m_x = x
+	pTilvert.m_y = y
+
+	pTilvert.m_u = u
+	pTilvert.m_v = v
+
+	pTilvert.m_r = r
+	pTilvert.m_g = g
+	pTilvert.m_b = b
+	pTilvert.m_a = a
+
+	pTilvert.m_rOvr = rOvr
+	pTilvert.m_gOvr = gOvr
+	pTilvert.m_bOvr = bOvr
+	pTilvert.m_aOvr = aOvr
 }
 
 FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 {
-	aTilvert: [] STileVertex = pTilbuf.m_aTilvert
 
 	// push orthographic projection
 	glPushMatrix()
@@ -1360,41 +1726,46 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 	// set scissor rect
 
 	// set up shader
-	//glEnable(GL_BLEND)
-	//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+	glEnable(GL_BLEND)
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 	assert(pDrac.m_pShman != null, "NULL GContext in flushTileVerts", #file, #line)
 	BeginShader(pDrac.m_pShman, pDrac.m_pShman.m_mpCoreshkShhand[CORESHK.Sprite])
 
-	//pTex := pFontman.m_aFont[fontk].m_pTex
-	//SetShaderParam(pFontman.m_mpFontshkIParamTex[iShhand], pTex, 0)
 
-	pTilvert := &aTilvert[0]
-	glVertexPointer(3, GL_FLOAT, cast (s32) sizeof(STileVertex), &aTilvert[0].m_x)
-	glEnableClientState(GL_VERTEX_ARRAY)
-			
-	glColorPointer(4, GL_FLOAT, cast (s32) sizeof(STileVertex), &aTilvert[0].m_r)
-	glEnableClientState(GL_COLOR_ARRAY)
+	pTex := pTilbuf.m_pSpset.m_pTex
+	SetShaderParam(pTilbuf.m_pSpset.m_iParamTex, pTex, 0)
 
-	glClientActiveTexture(GL_TEXTURE0)
-	glTexCoordPointer(2, GL_FLOAT, cast (s32) sizeof(STileVertex), &aTilvert[0].m_u)
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+	for tilak := TILAK.min; tilak < TILAK.max; ++tilak
+	{
+		pTilay := &pTilbuf.m_mpTilakTilay[tilak]
+		aTilvert: [] STileVertex = pTilay.m_aTilvert
+		pTilvert := &aTilvert[0]
 
-	glDrawArrays(GL_QUADS, 0, cast (s32) pTilbuf.m_cTilvert)
+		glVertexAttribPointer(VERTATTR.Position, 3, GL_FLOAT, false, cast (s32) sizeof(STileVertex), &aTilvert[0].m_x)
+		glVertexAttribPointer(VERTATTR.Color, 4, GL_FLOAT, true, cast (s32) sizeof(STileVertex), &aTilvert[0].m_r)
+		glVertexAttribPointer(VERTATTR.ColorOvr, 4, GL_FLOAT, true, cast (s32) sizeof(STileVertex), &aTilvert[0].m_rOvr)
+		glVertexAttribPointer(VERTATTR.TexCoord, 2, GL_FLOAT, false, cast (s32) sizeof(STileVertex), &aTilvert[0].m_u)
+		glEnableVertexAttribArray(VERTATTR.Position)
+		glEnableVertexAttribArray(VERTATTR.Color)
+		glEnableVertexAttribArray(VERTATTR.ColorOvr)
+		glEnableVertexAttribArray(VERTATTR.TexCoord)
 
-	//if (pTex)
-	//{
-	//	glDisable(pTex.m_druTarget)
-	//}
+		glDrawArrays(GL_QUADS, 0, cast (s32) pTilay.m_cTilvert)
+		pTilay.m_cTilvert = 0
+	}
 
-	glDisableClientState(GL_VERTEX_ARRAY)
-	glDisableClientState(GL_COLOR_ARRAY)	
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+	if (pTex)
+	{
+		glDisable(pTex.m_druTarget)
+	}
 
+	glDisableVertexAttribArray(VERTATTR.Position)
+	glDisableVertexAttribArray(VERTATTR.Color)
+	glDisableVertexAttribArray(VERTATTR.ColorOvr)
+	glDisableVertexAttribArray(VERTATTR.TexCoord)
 	EndShader()
 
 	glPopMatrix()
-
-	pTilbuf.m_cTilvert = 0
 }	
 
 UpdatePlayers proc (pGame : & SGame, dT: f32)
@@ -1581,6 +1952,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 				pPlay.m_dTHoldDown += dT
 				pPlay.m_dTStepDown = 0
 			}
+			pPlay.m_dTTotal += dT
 
 			pEntSteer.m_dir = dirNew
 			pEntSteer.m_pos = posNew
@@ -1652,7 +2024,7 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 
 							if pEnt.m_dTStabilize > kDTStabilize && pEnt.m_ents != ENTS.Stable
 							{
-								pEnt.m_dTPulse = 0
+								pEnt.m_dTPulse = -kDTPulseBellStabilize
 
 								SetEnts(pEnt, ENTS.Stable)
 								if pPlay.m_pEntSteer == pEnt
@@ -1676,19 +2048,19 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 		}
 
 		smpPosX: SSmp
-		smpPosX.m_dGMin = 120.0
-		smpPosX.m_dGMax = 500.0
+		smpPosX.m_dGMin = 150.0
+		smpPosX.m_dGMax = 400.0
 		smpPosX.m_dTMax = 0.1
 
 		smpPosY: SSmp
-		smpPosY.m_dGMin = 40.0
-		smpPosY.m_dGMax = 100.0
-		smpPosY.m_dTMax = 1.45
+		smpPosY.m_dGMin = 100.0
+		smpPosY.m_dGMax = 250.0
+		smpPosY.m_dTMax = 1.0
 
 		smpRad: SSmp
 		smpRad.m_dGMin = 5
 		smpRad.m_dGMax = 40
-		smpRad.m_dTMax = 0.15
+		smpRad.m_dTMax = 0.05
 
 		// loop over all cells checking for pills that should be dead
 		cVirusLiving : int
@@ -1800,8 +2172,8 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 					pGame.m_aPlay[iPlayOther].m_mpIplayCGarbagePending[iPlay] += pPlay.m_cKills
 					pGame.m_aPlay[iPlayOther].m_cGarbageReceived += pPlay.m_cKills
 				}
+				pPlay.m_cGarbageSent += pPlay.m_cKills
 			}
-			pPlay.m_cGarbageSent += pPlay.m_cKills
 			pPlay.m_cKills = 0
 		}
 	}
@@ -1960,11 +2332,12 @@ SetGams proc (pGame: & SGame, gams: GAMS)
 	switch (pGame.m_gams)
 	{
 		case GAMS.Pregame:
+			rngSeed := cast(u32)NRandom(&g_rng, 0, 0xFFFFFFFF)
 			for iBoard := 0; iBoard < pGame.m_aBoard.count; ++iBoard
 			{
 				pBoard := &pGame.m_aBoard[iBoard]
 
-				pBoard.m_nRngSeed = cast(u32)NRandom(&g_rng, 0, 0xFFFFFFFF)
+				pBoard.m_nRngSeed = rngSeed
 				SeedRandom(&pBoard.m_rng, pBoard.m_nRngSeed)
 			}
 
@@ -2156,7 +2529,7 @@ DrawGameResults proc (pDrac: & SDrawContext, pPlay: & SPlayer, pBoard: & SBoard)
 			colvecBg = ColvecFromCol(ColCreate(100, 0, 0, 100))
 	}
 
-	AppendTile(xMin, yMin, xMax, yMax, &colvecBg, &g_tilbuf)
+	AppendTile(SFRAM.Untextured, xMin, yMin, xMax, yMax, &colvecBg, &g_tilbuf)
 
 	kGCharSizeWinLose :: 50
 	kGCharSizeStats :: 20
@@ -2174,14 +2547,16 @@ DrawGameResults proc (pDrac: & SDrawContext, pPlay: & SPlayer, pBoard: & SBoard)
 	DrawTextCentered(pDrac, posCenter, aCh)
 
 	posCenter.m_y -= kDYTextLine
-	snprintf(aCh, aCh.count, "%d garbage sent", pPlay.m_cGarbageSent)
+	snprintf(aCh, aCh.count, "%d chain combos", pPlay.m_cGarbageSent)
 	DrawTextCentered(pDrac, posCenter, aCh)
 
 	posCenter.m_y -= kDYTextLine
 	snprintf(aCh, aCh.count, "%d garbage received", pPlay.m_cGarbageReceived)
 	DrawTextCentered(pDrac, posCenter, aCh)
 	posCenter.m_y -= kDYTextLine
-	snprintf(aCh, aCh.count, "%.2f seconds pressing down", pPlay.m_dTHoldDown)
+
+	nPercent := cast(int)(100.0 * pPlay.m_dTHoldDown / pPlay.m_dTTotal)
+	snprintf(aCh, aCh.count, "%d%% pressing down", nPercent)
 	DrawTextCentered(pDrac, posCenter, aCh)
 
 	pFontd.m_gCharSize = kGCharSizePrompt
@@ -2203,6 +2578,12 @@ main proc () -> int
 	pDrac.m_pDras.m_fontd.m_gCharSize = 20
 
 	SetupOrthoViewport(0, 0, kDXWindow, kDYWindow)
+
+	spset: SSpriteSet
+	if !FTryInitSprites(pDrac, &spset, "Assets/Sprites/docSprites")
+		{ return 0 }
+
+	g_tilbuf.m_pSpset = &spset
 
 	//SeedRandom(&g_rng, 0xBADDBEEF)
 	SeedRandom(&g_rng, NTimeSeed())
@@ -2247,8 +2628,6 @@ main proc () -> int
 		gRadSpin += dRadSpin
 
 		DrawBoards(&g_game, pDrac)
-		//DrawMapBackground(aChMap, &g_tilbuf)
-		//DrawEntities(aEnt, &g_tilbuf)
 
 		for iPlay := 0; iPlay < g_game.m_cPlay; ++iPlay
 		{
@@ -2288,9 +2667,6 @@ main proc () -> int
         		}
         }
         g_game.m_dTGams += dTGame
-        //UpdateActors(aAct, &playinp, dTGame)
-		//UpdatePuck(g_pActPuck, &playinp, dTGame, aChMap, &mapdim)
-		//UpdateEntities(aEnt)
 
 // 		if !s_fIsPaused
 	    {

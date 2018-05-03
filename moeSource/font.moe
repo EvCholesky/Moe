@@ -408,12 +408,21 @@ SShader struct// tag=shad
 CORESHK enum // core shader kind
 {
 	Sprite,
+	SpriteUntextured,
 }
 
 SShaderManager  struct // tag=shman
 {
 	m_aShad: [16] SShader
 	m_mpCoreshkShhand : [CORESHK.max] SHHAND
+}
+
+VERTATTR enum u32 // tag VERTex ATTRibute streams
+{
+	Position,
+	Color,
+	ColorOvr,	
+	TexCoord,
 }
 
 PShmanStaticInit proc () -> & SShaderManager
@@ -429,6 +438,25 @@ PShmanStaticInit proc () -> & SShaderManager
 													"BasicSpriteShader",
 													g_spriteMainVertex,
 													g_spriteMainFragment)
+
+	pShad := &g_shman.m_aShad[g_shman.m_mpCoreshkShhand[CORESHK.Sprite]]
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.Position, "s_AttribPosition")
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.Color, "s_AttribColor")
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.ColorOvr, "s_AttribColorOvr")
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.TexCoord, "s_AttribTexCoord")
+
+	g_shman.m_mpCoreshkShhand[CORESHK.SpriteUntextured] = ShhandLoad(
+													&g_shman,
+													"BasicSpriteShader",
+													g_spriteMainVertex,
+													g_spriteUntexturedFragment)
+
+	pShad = &g_shman.m_aShad[g_shman.m_mpCoreshkShhand[CORESHK.SpriteUntextured]]
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.Position, "s_AttribPosition")
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.Color, "s_AttribColor")
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.ColorOvr, "s_AttribColorOvr")
+	glBindAttribLocation(pShad.m_driVertexShader, VERTATTR.TexCoord, "s_AttribTexCoord")
+
 	return &g_shman
 }
 

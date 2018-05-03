@@ -1,11 +1,18 @@
 g_spriteMainVertex :: #string END
 varying vec4 vecColor;
+varying vec4 vecColorOvr;
+
+attribute vec4 s_AttribPosition;
+attribute vec4 s_AttribColor;
+attribute vec4 s_AttribColorOvr;
+attribute vec4 s_AttribTexCoord;
 
 void main()
 {
-	gl_Position 	= gl_ModelViewProjectionMatrix * gl_Vertex;
-	vecColor	    = gl_Color;
-   	gl_TexCoord[0]  = gl_MultiTexCoord0;
+	gl_Position 	= gl_ModelViewProjectionMatrix * s_AttribPosition;
+	vecColor	    = s_AttribColor;
+	vecColorOvr	    = s_AttribColorOvr;
+   	gl_TexCoord[0]  = s_AttribTexCoord;
 }
 END
 
@@ -14,11 +21,24 @@ END
 g_spriteMainFragment :: #string END
 uniform sampler2D s_sampTexture;
 varying vec4 vecColor;
+varying vec4 vecColorOvr;
 
 void main()
 {
-	//vec4 vecSample = texture2D(s_sampTexture, gl_TexCoord[0].xy);
-	//gl_FragColor = vecSample * vecColor;
+	vec4 vecSample = texture2D(s_sampTexture, gl_TexCoord[0].xy) * vecColor;
+
+	vecSample.rgb = mix(vecSample.rgb, vecColorOvr.rgb, vecColorOvr.a);
+	gl_FragColor = vecSample;
+}
+END
+
+
+
+g_spriteUntexturedFragment :: #string END
+varying vec4 vecColor;
+
+void main()
+{
 	gl_FragColor = vecColor;
 }
 END
