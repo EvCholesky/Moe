@@ -94,7 +94,7 @@ void SErrorManager::PushGenmapContext(SGenericMap * pGenmap)
 
 void SErrorManager::PopGenmapContext(SGenericMap * pGenmap)
 {
-	if (EWC_FVERIFY(!m_arypGenmapContext.FIsEmpty(), "instantiate context underflow in error manager"))
+	if (!EWC_FVERIFY(!m_arypGenmapContext.FIsEmpty(), "instantiate context underflow in error manager"))
 		return;
 
 	auto pGenmapTop = m_arypGenmapContext.TPopLast();

@@ -63,9 +63,11 @@ NCeil proc (g: float) -> s32 #foreign
 NFloor proc (g: float) -> s32 #foreign
 NRound proc (g: float) -> s32 #foreign
 
-DebugBreak proc () -> void #foreign
+DebugBreak proc () -> void #foreign DebugBreak_MOE
 PVMalloc proc (cB : uSize) -> & void #foreign
 FreeMalloc proc (pV: &void) #foreign
+PVVirtualMalloc proc(pV: & void, cB: sSize, nAllocationType: u32, nProtect: u32) -> & void #foreign
+VirtualFreeMalloc proc (pV: & void, cB: sSize, nFreeType: u32) #foreign
 
 ProcAlloc typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
 

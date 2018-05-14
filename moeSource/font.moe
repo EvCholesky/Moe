@@ -52,6 +52,7 @@ SFontData struct // tag = fontd
 	m_colMain: SColor
 	m_colShadow: SColor
 	m_gCharSize: f32 	= 48
+	m_rKerning: f32 	= 1
 	m_uOpacit: f32 		= 1
 	m_fontk: FONTK
 	m_alignkX: ALIGNK 	= ALIGNK.Left
@@ -627,7 +628,7 @@ PDracStaticInit proc (procAlloc: ProcAlloc) -> & SDrawContext
 
 PFontmanStaticInit proc (procAlloc: ProcAlloc, pShman: & SShaderManager) -> & SFontManager
 {
-	if !FTryLoadFont(&g_fontman, FONTK.Regular, "Assets/Fonts/Calibri", procAlloc)
+	if !FTryLoadFont(&g_fontman, FONTK.Regular, "Assets/Fonts/Arciform", procAlloc)
 	{ 
 		return null
 	}
@@ -908,6 +909,7 @@ CreateVerts proc (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFont
 	pGlyphf := pFontman.m_aFont[fontk].m_pGlyphf
 
 	gCharSize: f32 = pDras.m_fontd.m_gCharSize
+	rKerning: f32 = pDras.m_fontd.m_rKerning
 	pFvert: & SFontVertex
 
 	//for (const WChar * pWchzIt = pWchz; *pWchzIt != 0; ++pWchzIt)
@@ -965,7 +967,7 @@ CreateVerts proc (pFontman: & SFontManager, pDras: & SDrawState, pFvbuf: & SFont
 								@pWchzIt)
 		}
 		
-		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * gCharSize
+		posCursor.m_x += (pGlyph.m_dXKerningDefault + kerningAdvance) * gCharSize * rKerning
 	}
 
 	pDras.m_fontd.m_posCursor = posCursor
@@ -1042,7 +1044,7 @@ DXDYExtentsFromAWch proc (pDrac: & SDrawContext, pWchz: & u32) -> f32x2
 	posCursor: f32x2
 	yMin: f32 = F32_MAX
 	yMax: f32 = 0
-	rXY := pDras.m_fontd.m_gCharSize
+	rXY := pDras.m_fontd.m_gCharSize * pDras.m_fontd.m_rKerning
 
 	//for(const WChar * pWchzIt = pWchz; *pWchzIt != 0; ++pWchzIt)
 

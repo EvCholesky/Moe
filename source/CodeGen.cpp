@@ -3447,15 +3447,17 @@ static inline typename BUILD::Value * PValInitialize(
 			auto pLtype = pBuild->PLtypeFromPTin(pTin);
 			CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
 
+			int  cB = int((cBitSize + 7)/ 8);
+
 			// if register-sized type just store
-			if (FIsRegisterSize(int(cBitSize/8)))
+			if (FIsRegisterSize(cB))
 			{
 				auto pConstZero = PConstZeroInType(pBuild, pTin);
 				return pBuild->PInstCreateStore(pValPT, pConstZero);
 			}
 			else
 			{
-				return pBuild->PInstCreateMemset(pWork, pValPT, cBitSize/8, int(cBitAlign/8), 0);
+				return pBuild->PInstCreateMemset(pWork, pValPT, cB, int((cBitAlign + 7) / 8), 0);
 			}
 
 		} break;

@@ -442,7 +442,6 @@ GRandom proc (pRng : & SRandomGenJenkinsSmall, gMin: f32, gMax: f32) -> f32
 	return gMin + ( cast(f32) NGenerateRand(pRng) / cast (f32)0xFFFFFFFF) * d
 }
 
-
 NRandom proc (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
 { 
 	d := cast(u32)(nMax-nMin)
@@ -455,29 +454,19 @@ NRandom proc (pRng : & SRandomGenJenkinsSmall, nMin: s32, nMax: s32) -> s32
 	return nMin + cast(s32) (NGenerateRand(pRng) % d)
 }
 
-BuildRandomOrderedArray proc (pRng : & SRandomGenJenkinsSmall, aiN: [] s32)
+ShuffleArray proc (pRng: & SRandomGenJenkinsSmall, aiN : [] s32, c: s32)
 {
-	c := aiN.count
-	if (c <= 0)
-	{
-		return
-	}
-
 	// build a random ordered array containing all values [0..(c-1)] exactly once.
 	//  this is an implementation of the "inside-out" fisher-yates shuffle
 
 	aiN[0] = 0
-	//for (int i = 1; i < c; ++i)
-	i : s32 = 1
-	while (i < c)	
+	for i : s32 = 1; i < c; ++i
 	{
 		iNRand := NRandom(pRng, 0, i+1)
-		printf("iNRand = %d\n", iNRand)
 		if (iNRand != i)
 		{
 			aiN[i] = aiN[iNRand]
 		}
 		aiN[iNRand] = i
-		++i
 	}
 }

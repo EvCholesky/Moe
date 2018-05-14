@@ -7341,7 +7341,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (!optype.FIsValid() || !FDoesOperatorExist(pStnod->m_tok, &optype))
 						{
 							(void)OptypeFromPark(pTcwork, pSymtab, pStnod->m_tok, pStnod->m_park, pTinLhs, pTinRhsPromoted);
-							FDoesOperatorExist(pStnod->m_tok, &optype);
+							//FDoesOperatorExist(pStnod->m_tok, &optype);
 
 							CString strLhs = StrFromTypeInfo(pTinLhs);
 							CString strRhs = StrFromTypeInfo(pTinRhsPromoted);

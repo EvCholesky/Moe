@@ -7,11 +7,13 @@
 
 #ifndef WIN32
 #include <signal.h>
+#include <Windows.h>
+#include <memoryapi.h>
 #endif
 
 extern "C" void * PVMalloc(size_t cB)
 {
-	return malloc((size_t)cB);
+	return malloc(cB);
 }
 
 extern "C" void FreeMalloc(void * pV)
@@ -19,7 +21,25 @@ extern "C" void FreeMalloc(void * pV)
 	free(pV);
 }
 
-extern "C" void DebugBreak()
+extern "C" void * PVVirtualMalloc(void * pV, size_t cB, uint32_t flAllocationType, uint32_t flProtect)
+{
+#ifdef WIN32
+	return VirtualAlloc(pV, cB, flAllocationType, flProtect);
+#elif
+	return malloc(cB);
+#endif
+}
+
+extern "C" void VirtualFreeMalloc(void * pV, size_t cB, uint32_t dwFreeType)
+{
+#ifdef WIN32
+	VirtualFree(pV, cB, dwFreeType);
+#elif
+	return free(pV);
+#endif
+}
+
+extern "C" void DebugBreak_MOE()
 {
 #ifdef _WINDOWS
 	__debugbreak();
