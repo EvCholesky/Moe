@@ -5245,7 +5245,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 			CSTNode * pStnodBody = nullptr;
 			auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
-			if (!pStproc->m_fIsForeign && 
+			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign) && 
 				EWC_FVERIFY(pStproc && pProc->m_pBlockFirst, "Encountered procedure without CSTProcedure"))
 			{
 				pStnodBody = pStnod->PStnodChildSafe(pStproc->m_iStnodBody);
@@ -6649,7 +6649,7 @@ CIRProcedure * CBuilderIR::PProcCreate(
 	if (!EWC_FVERIFY(pStproc, "expected stproc"))
 		return nullptr;
 
-	if (!pStproc->m_fIsForeign && !pStproc->m_fUseUnmangledName)
+	if (!pStproc->m_grfstproc.FIsAnySet(FSTPROC_IsForeign | FSTPROC_UseUnmangledName | FSTPROC_PublicLinkage))
 	{
 		LLVMSetLinkage(pProc->m_pLval, LLVMPrivateLinkage);
 	}
@@ -6680,7 +6680,7 @@ CIRProcedure * CBuilderIR::PProcCreate(
 		//LLVMAddFunctionAttr(pProc->m_pLval, LLVMNoInlineAttribute);	
 	}
 
-	if (!pStproc->m_fIsForeign)
+	if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 	{
 		pProc->m_pBlockLocals = PBlockCreate(pProc, pChzMangled);
 		pProc->m_pBlockFirst = PBlockCreate(pProc, pChzMangled);
@@ -6759,7 +6759,7 @@ void CBuilderIR::SetupParamBlock(
 			pArg->m_pLval = pLvalParam;
 			AddManagedVal(pArg);
 
-			if (!pStproc->m_fIsForeign)
+			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 			{
 				auto pInstAlloca = PValCreateAlloca((*parypLtype)[ipLvalParam], 1, strArgName.PCoz());
 				SetSymbolValue(pStnodParam->m_pSym, pInstAlloca);
@@ -6866,7 +6866,7 @@ typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 	EWC_ASSERT(pTinproc->m_strMangled.PCoz(), "missing procedure mangled name in tinproc '%s', pStnod = %p", pTinproc->m_strName.PCoz(), pStnod);
 	const char * pChzMangled = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());
 
-	if (pStproc->m_fIsForeign)
+	if (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 	{
 		if (pStnodAlias)
 		{
@@ -6885,7 +6885,7 @@ typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
 
-	pBuild->ActivateProc(pProc, (pStproc->m_fIsForeign) ? pBlockPrev : pProc->m_pBlockLocals);
+	pBuild->ActivateProc(pProc, (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign)) ? pBlockPrev : pProc->m_pBlockLocals);
 	if (pStnodParamList)
 	{
 		pBuild->SetupParamBlock(pWork, pProc, pStnod, pStnodParamList, &arypLtype);

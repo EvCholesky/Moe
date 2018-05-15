@@ -237,6 +237,17 @@ public:
 	int				m_iStnodIncrement;
 };
 
+enum FSTPROC
+{
+	FSTPROC_IsForeign			= 0x1,	// This is a reference to a foreign procedure
+	FSTPROC_UseUnmangledName	= 0x2,	// Don't mangle the procedure name (no overloading)
+	FSTPROC_PublicLinkage		= 0x4,	// Expose to the linker, don't cull as unused symbol
+
+	FSTPROC_None				= 0x0,
+	FSTPROC_All					= 0x7,
+};
+EWC_DEFINE_GRF(GRFSTPROC, FSTPROC, u8);
+
 class CSTProcedure : public SSyntaxTreeMap // tag = stproc
 {
 public:
@@ -251,8 +262,7 @@ public:
 					,m_iStnodForeignAlias(-1)
 					,m_pStnodParentScope(nullptr)
 					,m_pTinproc(nullptr)
-					,m_fIsForeign(false)
-					,m_fUseUnmangledName(false)
+					,m_grfstproc(FSTPROC_None)
 						{ ; }
 
 	int						m_iStnodProcName;
@@ -262,8 +272,7 @@ public:
 	int						m_iStnodForeignAlias;
 	CSTNode *				m_pStnodParentScope;	// procedure this proc is nested inside (if there is one)
 	STypeInfoProcedure *	m_pTinproc;
-	bool					m_fIsForeign;
-	bool					m_fUseUnmangledName;
+	GRFSTPROC				m_grfstproc;
 };
 
 
@@ -557,9 +566,10 @@ EWC_DEFINE_GRF(GRFSYMLOOK, FSYMLOOK, u32);
 
 enum SYMDEP		// SYMbol DEPendency 
 {
-						// NIL = Haven't determined if used
-	SYMDEP_Unused,		// Symbol is not referenced by any live code - no need to codeGen
-	SYMDEP_Used,		// Referenced by live code 
+							// NIL = Haven't determined if used
+	SYMDEP_Unused,			// Symbol is not referenced by any live code - no need to codeGen
+	SYMDEP_Used,			// Referenced by live code 
+	SYMDEP_PublicLinkage,	// public linkage procedures will be considered used during symbol dependency determination
 
 	EWC_MAX_MIN_NIL(SYMDEP)
 };

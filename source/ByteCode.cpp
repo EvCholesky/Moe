@@ -346,7 +346,7 @@ SProcedure * CBuilder::PProcCreate(
 	if (!EWC_FVERIFY(pStproc, "expected stproc"))
 		return nullptr;
 
-	EWC_ASSERT(!pStproc->m_fIsForeign, "bytecode TBD (ffi)");
+	EWC_ASSERT(!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign), "bytecode TBD (ffi)");
 
 	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
 	{
@@ -385,7 +385,7 @@ void CBuilder::SetupParamBlock(
 
 		if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 		{
-			if (!pStproc->m_fIsForeign)
+			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 			{
 				auto pTinArg = pTinproc->m_arypTinParams[iParam];
 				auto pInstAlloca = PValCreateAlloca(pTinArg, 1, strArgName.PCoz());

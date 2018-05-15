@@ -1488,8 +1488,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 				{
 				case RWORD_ForeignDirective:
 					{
-						pStproc->m_fIsForeign = true;
-						pStproc->m_fUseUnmangledName = true;
+						pStproc->m_grfstproc.AddFlags(FSTPROC_IsForeign | FSTPROC_UseUnmangledName);
 
 						if (!FIsEndOfStatement(pLex) && pLex->m_tok == TOK_Identifier)
 						{
@@ -1497,10 +1496,10 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 							pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
 						}
 					} break;
-				case RWORD_CDecl:	callconv = CALLCONV_CX86;			break;
-				case RWORD_StdCall: callconv = CALLCONV_StdcallX86;		break;
-				case RWORD_Inline:		inlinek = INLINEK_AlwaysInline;	break;
-				case RWORD_NoInline:	inlinek = INLINEK_NoInline;		break;
+				case RWORD_CDecl:		callconv = CALLCONV_CX86;			break;
+				case RWORD_StdCall:		callconv = CALLCONV_StdcallX86;		break;
+				case RWORD_Inline:		inlinek = INLINEK_AlwaysInline;		break;
+				case RWORD_NoInline:	inlinek = INLINEK_NoInline;			break;
 				default:
 					{
 						ParseError(
@@ -2481,7 +2480,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				CSymbolTable * pSymtabProc = PSymtabNew(pParctx->m_pAlloc, pSymtabParent, strName);
 
 				// BB - don't mangle the main function so the linker can find it. yuck.
-				pStproc->m_fUseUnmangledName |= (strName == "main");
+				if (strName == "main")
+				{
+					pStproc->m_grfstproc.AddFlags(FSTPROC_UseUnmangledName);
+				}
 
 				CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabProc, rword == RWORD_Operator);
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
@@ -2504,8 +2506,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 						{
 						case RWORD_ForeignDirective:
 							{
-								pStproc->m_fIsForeign = true;
-								pStproc->m_fUseUnmangledName = true;
+								pStproc->m_grfstproc.AddFlags(FSTPROC_IsForeign | FSTPROC_UseUnmangledName);
 
 								if (!FIsEndOfStatement(pLex) && pLex->m_tok == TOK_Identifier)
 								{
@@ -2513,10 +2514,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 									pStproc->m_iStnodForeignAlias = pStnodProc->IAppendChild(pStnodAlias);
 								}
 							} break;
-						case RWORD_CDecl:	callconv = CALLCONV_CX86;			break;
-						case RWORD_StdCall: callconv = CALLCONV_StdcallX86;		break;
-						case RWORD_Inline:		inlinek = INLINEK_AlwaysInline;	break;
-						case RWORD_NoInline:	inlinek = INLINEK_NoInline;		break;
+						case RWORD_CDecl:		
+							{
+								callconv = CALLCONV_CX86;
+								pStproc->m_grfstproc.AddFlags(FSTPROC_UseUnmangledName | FSTPROC_PublicLinkage);
+							} break;
+						case RWORD_StdCall:		callconv = CALLCONV_StdcallX86;		break;
+						case RWORD_Inline:		inlinek = INLINEK_AlwaysInline;		break;
+						case RWORD_NoInline:	inlinek = INLINEK_NoInline;			break;
 						case RWORD_Commutative:
 							{
 								if (rword == RWORD_Operator)
@@ -2555,7 +2560,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					pStproc->m_iStnodBody = pStnodProc->IAppendChild(pStnodBody);
 				}
 
-				if (pStproc->m_fIsForeign)
+				if (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 				{
 					if (pStproc->m_iStnodBody != -1)
 					{

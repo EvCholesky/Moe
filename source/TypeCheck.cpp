@@ -4940,7 +4940,7 @@ CString StrComputeMangled(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSymb
 	if (!EWC_FVERIFY(pStproc && pTinproc, "bad procedure definition in StrComputeMangled"))
 		return CString();
 
-	if (pStproc->m_fUseUnmangledName)
+	if (pStproc->m_grfstproc.FIsSet(FSTPROC_UseUnmangledName))
 	{
 		return pTinproc->m_strName;
 	}
@@ -4976,7 +4976,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	if (!EWC_FVERIFY(pStprocSrc, "expected procedure def"))
 		return nullptr;
 
-	if (pStprocSrc->m_fIsForeign)
+	if (pStprocSrc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 	{
 		EmitError(pTcwork, pStnodGeneric, "generic procedures cannot be marked foreign '%s'", pStnodGeneric->m_pTin->m_strName.PCoz());
 		return nullptr;
@@ -5731,6 +5731,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
 						SSymbol * pSymProc = pStnod->m_pSym;
+
+						if (pStproc->m_grfstproc.FIsSet(FSTPROC_PublicLinkage))
+						{
+							pSymProc->m_symdep = SYMDEP_PublicLinkage;
+						}
+
 						pStnod->m_strees = STREES_TypeChecked;
 						OnTypeResolve(pTcwork, pSymProc);
 					}break;
@@ -8658,7 +8664,7 @@ void MarkAllSymbolsUsed(CSymbolTable * pSymtab)
 
 inline void ComputeSymbolUsage(SSymbol * pSym, CDynAry<SSymbol *> * parypSym)
 {
-	if (pSym->m_symdep != SYMDEP_Nil)
+	if (pSym->m_symdep != SYMDEP_Nil && pSym->m_symdep != SYMDEP_PublicLinkage)
 		return;
 
 	parypSym->Append(pSym);
@@ -8668,8 +8674,9 @@ inline void ComputeSymbolUsage(SSymbol * pSym, CDynAry<SSymbol *> * parypSym)
 		size_t ipSym = parypSym->C() - 1;
 
 		int cSymdepNil = 0;
-		int cSymdepUsed = 0;
-		if (pSym->m_symdep == SYMDEP_Nil)
+		int cSymdepUsed = (pSym->m_symdep == SYMDEP_PublicLinkage);
+
+		if (pSym->m_symdep == SYMDEP_Nil || pSym->m_symdep == SYMDEP_PublicLinkage)
 		{
 			SSymbol ** ppSymMac = pSym->m_aryPSymReferencedBy.PMac();
 			for (SSymbol ** ppSymIt = pSym->m_aryPSymReferencedBy.A(); ppSymIt != ppSymMac; ++ppSymIt)
@@ -8685,6 +8692,7 @@ inline void ComputeSymbolUsage(SSymbol * pSym, CDynAry<SSymbol *> * parypSym)
 						
 					} break;
 					case SYMDEP_Used:
+					case SYMDEP_PublicLinkage:
 					{
 						++cSymdepUsed;
 					} break;
@@ -8724,14 +8732,24 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 		SSymbol ** ppSym;
 		while ((ppSym = iterSym.Next()))
 		{
-			ComputeSymbolUsage(*ppSym, &arypSym);
+			SSymbol * pSymIt = *ppSym;
+			while (pSymIt)
+			{
+				ComputeSymbolUsage(pSymIt, &arypSym);
+				pSymIt = pSymIt->m_pSymPrev;
+			}
 		}
 
 		SSymbol ** ppSymMac = pSymtabIt->m_arypSymGenerics.PMac();
 		for (ppSym = pSymtabIt->m_arypSymGenerics.A(); ppSym != ppSymMac; ++ppSym)
 		{
 			EWC_ASSERT(*ppSym, "null symbol");
-			ComputeSymbolUsage(*ppSym, &arypSym);
+			SSymbol * pSymIt = *ppSym;
+			while (pSymIt)
+			{
+				ComputeSymbolUsage(*ppSym, &arypSym);
+				pSymIt = pSymIt->m_pSymPrev;
+			}
 		}
 
 		pSymtabIt = pSymtabIt->m_pSymtabNextManaged;

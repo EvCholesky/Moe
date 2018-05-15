@@ -447,6 +447,35 @@ NSoundObjAlloc proc (pChzName: & const u8) -> u64
 	return nId
 }
 
+AkAllocHook proc (in_size: uSize) -> & void #cdecl
+{
+    return PVMalloc( cast (uSize) in_size )
+}
+
+AkFreeHook proc (in_ptr: & void) #cdecl
+{
+    FreeMalloc( in_ptr )
+}
+
+// Note: VirtualAllocHook() may be used by I/O pools of the default implementation
+// of the Stream Manager, to allow "true" unbuffered I/O (using FILE_FLAG_NO_BUFFERING
+// - refer to the Windows SDK documentation for more details). This is NOT mandatory;
+// you may implement it with a simple malloc().
+AkVirtualAllocHook proc(
+    in_pMemAddress: & void,
+    in_size: sSize,
+    in_dwAllocationType: u32,
+    in_dwProtect: u32
+    ) -> & void #cdecl
+{
+    return PVVirtualMalloc( in_pMemAddress, in_size, in_dwAllocationType, in_dwProtect )
+}
+
+AkVirtualFreeHook proc (in_pMemAddress: & void, in_size: sSize, in_dwFreeType: u32) #cdecl
+{
+    VirtualFreeMalloc( in_pMemAddress, in_size, in_dwFreeType )
+}
+
 InitPlayers proc (pGame: & SGame)
 {
 	for iPlay := 0; iPlay < pGame.m_aPlay.count; ++iPlay
