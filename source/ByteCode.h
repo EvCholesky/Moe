@@ -442,7 +442,7 @@ namespace BCode
 	};
 #endif
 
-	// Do nothing struct used as a proxy for LLVM debug info values
+	// Do-nothing struct used as a proxy for LLVM debug info values
 	struct SStub
 	{
 		int m_pad;
@@ -467,6 +467,7 @@ namespace BCode
 		SProcedure *	m_pProcCurDebug;	// current procedure being executed (not available in release)
 		EWC::SStringBuffer *
 						m_pStrbuf;			
+		s32				m_iInstSource;		// instruction index of branch that jumped to this block (for phi nodes)
 
 		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
 

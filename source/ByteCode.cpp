@@ -24,7 +24,7 @@
 
 // Remaining bytecode tasks
 // [ ] Clean up remaining TBDs
-// [ ]   Phi nodes
+// [x]   Phi nodes
 // [ ]   Reflection
 // [ ]   Switch nodes
 // [ ]   FFI 
@@ -456,6 +456,17 @@ void CBuilder::FinalizeProc(SProcedure * pProc)
 		auto pInstMac = pBlock->m_aryInst.PMac(); 
 		for (auto pInst = pBlock->m_aryInst.A(); pInst != pInstMac; ++pInst)
 		{
+			if (pInst->m_irop == IROP_Phi)
+			{
+				auto pInstIt = pInst;
+				do 
+				{
+					auto pBlock = (SBlock *)pInstIt->m_wordRhs.m_pV;
+					pInstIt->m_wordRhs.m_s32 = pBlock->m_iInstFinal;
+					++pInstIt;
+				} while (pInstIt->m_irop == IROP_ExArgs);
+			}
+
 			pProc->m_aryInst.Append(*pInst);
 			auto pInstNew = pProc->m_aryInst.PLast();
 			
@@ -630,6 +641,7 @@ static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWo
 					case 2: FormatCoz(pStrbuf, "%u", word.m_u16);	break;
 					case 4: FormatCoz(pStrbuf, "%u", word.m_u32);	break;
 					case 8: FormatCoz(pStrbuf, "%llu", word.m_u64);	break;
+					default: EWC_ASSERT(false, "unexpected operand size");
 				}
 			}
 			else
@@ -640,6 +652,7 @@ static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWo
 					case 2: FormatCoz(pStrbuf, "%d", word.m_s16);	break;
 					case 4: FormatCoz(pStrbuf, "%d", word.m_s32);	break;
 					case 8: FormatCoz(pStrbuf, "%lld", word.m_s64);	break;
+					default: EWC_ASSERT(false, "unexpected operand size");
 				}
 			}
 		} break;
@@ -804,6 +817,19 @@ void CBuilder::PrintDump()
 
 					FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
 				} break;
+			case IROP_Phi:
+				{
+					FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
+
+					do
+					{
+						FormatCoz(&strbuf, "\n        Location i%d = ", pInst->m_wordRhs.m_s32);
+						PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+						++pInst;
+
+					} while(pInst->m_irop == IROP_ExArgs);
+
+				} break;
 			case IROP_GEP:
 				{
 					auto pInstGep = pInst;
@@ -894,6 +920,7 @@ void CBuilder::ActivateBlock(SBlock * pBlock)
 CBuilder::Instruction * CBuilder::PInstCreateNCmp(NPRED npred, SValue * pValLhs, SValue * pValRhs, const char * pChz)
 {
 	auto pInstval = PInstCreateRaw(IROP_NCmp, pValLhs, pValRhs);
+	EWC_ASSERT(npred >= NPRED_Min && npred < NPRED_Max, "invalid predicate");
 	pInstval->m_pInst->m_pred = (u8)npred;
 	return pInstval;
 }
@@ -901,6 +928,7 @@ CBuilder::Instruction * CBuilder::PInstCreateNCmp(NPRED npred, SValue * pValLhs,
 CBuilder::Instruction * CBuilder::PInstCreateGCmp(GPRED gpred, SValue * pValLhs, SValue * pValRhs, const char * pChz)
 {
 	auto pInstval = PInstCreateRaw(IROP_GCmp, pValLhs, pValRhs);
+	EWC_ASSERT(gpred >= GPRED_Min && gpred < GPRED_Max, "invalid predicate");
 	pInstval->m_pInst->m_pred = (u8)gpred;
 	return pInstval;
 }
@@ -1108,13 +1136,37 @@ CBuilder::GepIndex * CBuilder::PGepIndexFromValue(SValue * pVal)
 
 CBuilder::Instruction * CBuilder::PInstCreatePhi(LType * pLtype, const char * pChzName)
 {
-	EWC_ASSERT(false, "bytecode tbd (phi)");
-	return nullptr;
+	auto pInstvalPhi = PInstAlloc();
+	EWC_ASSERT(m_pBlockCur->m_aryInstval.C() == 1, "Phi node must be the first node in a basic block");
+
+	auto pInstPhi = pInstvalPhi->m_pInst;
+	pInstPhi->m_irop = IROP_Phi;
+	pInstPhi->m_cBOperand = 0; // this will be filled in by add phi incoming
+
+	return pInstvalPhi;
 }
 
 void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 {
-	EWC_ASSERT(false, "bytecode tbd (phi incoming)");
+	SInstructionValue * pInstvalInc = m_pBlockCur->m_aryInstval.PLast();
+	auto pInstInc = pInstvalInc->m_pInst;
+	bool fIsPhiNode = pInstInc->m_irop == IROP_Phi && pInstInc->m_cBOperand == 0;
+	if (!fIsPhiNode)
+	{
+		pInstvalInc = PInstAlloc();
+		pInstInc = pInstvalInc->m_pInst;
+		pInstInc->m_irop = IROP_ExArgs;
+	}
+
+	SValueOutput valout;
+	SetOperandFromValue(m_pDlay, pVal, &pInstInc->m_opkLhs, &pInstInc->m_wordLhs, OPSZ_CB, &valout);
+	pInstInc->m_cBOperand = valout.m_cBRegister;
+	pInstInc->m_wordRhs.m_pV = pBlock;
+
+	if (fIsPhiNode)
+	{
+		AllocateStackOut(this, pInstInc, valout.m_cBRegister, valout.m_cBRegister);
+	}
 }
 
 CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName)
@@ -1834,7 +1886,7 @@ bool FEvaluateNCmp(NPRED npred, SWord & wordLhs, SWord & wordRhs)
 	switch (npred)
 	{
 	case NPRED_EQ:	return SWordOpsize<CB>::Unsigned(wordLhs) == SWordOpsize<CB>::Unsigned(wordRhs);
-	case NPRED_NE:	return SWordOpsize<CB>::Unsigned(wordLhs) != SWordOpsize<CB>::Unsigned(wordRhs);
+	case NPRED_NE:  return SWordOpsize<CB>::Unsigned(wordLhs) != SWordOpsize<CB>::Unsigned(wordRhs);
 	case NPRED_SGT:	return SWordOpsize<CB>::Signed(wordLhs) > SWordOpsize<CB>::Signed(wordRhs);
 	case NPRED_UGT:	return SWordOpsize<CB>::Unsigned(wordLhs) > SWordOpsize<CB>::Unsigned(wordRhs);
 	case NPRED_SGE:	return SWordOpsize<CB>::Signed(wordLhs) >= SWordOpsize<CB>::Signed(wordRhs);
@@ -2003,6 +2055,27 @@ void PrintInstance(CVirtualMachine * pVm, STypeInfo * pTin, u8 * pData)
 void PrintParameter(CVirtualMachine * pVm, STypeInfo * pTin, SParameter * pParam)
 {
 	PrintInstance(pVm, pTin, &pVm->m_pBStack[pParam->m_iBStack]);
+}
+
+SInstruction * PInstFindPhiIncoming(SInstruction ** ppInstPhi, s32 iInstSource)
+{
+	SInstruction * pInstIncoming = nullptr;
+	auto pInst = *ppInstPhi;
+	EWC_ASSERT(pInst->m_irop == IROP_Phi, "expected phi node.");
+
+	do
+	{
+		if (pInst->m_wordRhs.m_s32 == iInstSource)
+		{
+			pInstIncoming = pInst;
+			break;
+		}
+		++pInst;
+	}
+	while (pInst->m_irop == IROP_ExArgs);
+
+	EWC_ASSERT(pInstIncoming, "didn't find incoming branch");
+	return pInstIncoming;
 }
 
 void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
@@ -2355,13 +2428,75 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			s32 * pIInst = (s32*)&pInst->m_wordRhs;
 			s32 iInst = pIInst[iOp];
 
+			pVm->m_iInstSource = s32(pInst - pInstMin);
 			pInst = &pInstMin[iInst - 1]; // -1 because it is incremented below
 		} break;
 		case MASHOP(IROP_Branch, 0):
 		{	
 			s32 iInst = pInst->m_wordRhs.m_s32;
 
+			pVm->m_iInstSource = s32(pInst - pInstMin);
 			pInst = &pInstMin[iInst - 1]; // -1 because it is incremented below
+		} break;
+		case MASHOP(IROP_Phi, 1):
+		{
+			auto pInstPhi = pInst;
+			SInstruction * pInstIncoming = PInstFindPhiIncoming(&pInst, pVm->m_iInstSource);
+			if (EWC_FVERIFY(pInstIncoming, "couldn't find phi node incoming for source block"))
+			{
+				ReadOpcode(pVm, pInstIncoming, 1, &wordLhs);
+				STORE(pInstPhi->m_iBStackOut, u8, wordLhs.m_u8); 
+			}
+
+			while ((pInst + 1)->m_irop == IROP_ExArgs)
+			{
+				++pInst;
+			}
+		} break;
+		case MASHOP(IROP_Phi, 2):
+		{
+			auto pInstPhi = pInst;
+			SInstruction * pInstIncoming = PInstFindPhiIncoming(&pInst, pVm->m_iInstSource);
+			if (EWC_FVERIFY(pInstIncoming, "couldn't find phi node incoming for source block"))
+			{
+				ReadOpcode(pVm, pInstIncoming, 2, &wordLhs);
+				STORE(pInstPhi->m_iBStackOut, u16, wordLhs.m_u16); 
+			}
+
+			while ((pInst + 1)->m_irop == IROP_ExArgs)
+			{
+				++pInst;
+			}
+		} break;
+		case MASHOP(IROP_Phi, 4):
+		{
+			auto pInstPhi = pInst;
+			SInstruction * pInstIncoming = PInstFindPhiIncoming(&pInst, pVm->m_iInstSource);
+			if (EWC_FVERIFY(pInstIncoming, "couldn't find phi node incoming for source block"))
+			{
+				ReadOpcode(pVm, pInstIncoming, 4, &wordLhs);
+				STORE(pInstPhi->m_iBStackOut, u32, wordLhs.m_u32); 
+			}
+
+			while ((pInst + 1)->m_irop == IROP_ExArgs)
+			{
+				++pInst;
+			}
+		} break;
+		case MASHOP(IROP_Phi, 8):
+		{
+			auto pInstPhi = pInst;
+			SInstruction * pInstIncoming = PInstFindPhiIncoming(&pInst, pVm->m_iInstSource);
+			if (EWC_FVERIFY(pInstIncoming, "couldn't find phi node incoming for source block"))
+			{
+				ReadOpcode(pVm, pInstIncoming, 8, &wordLhs);
+				STORE(pInstPhi->m_iBStackOut, u64, wordLhs.m_u64); 
+			}
+
+			while ((pInst + 1)->m_irop == IROP_ExArgs)
+			{
+				++pInst;
+			}
 		} break;
 		case MASHOP(IROP_Memset, 0):
 		{
@@ -2425,6 +2560,7 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, CBuilder * pB
 ,m_pBStack(pBStackMax)
 ,m_pProcCurDebug(nullptr)
 ,m_pStrbuf(nullptr)
+,m_iInstSource(-1)
 #if DEBUG_PROC_CALL
 ,m_aryDebCall()
 #endif
@@ -2441,6 +2577,7 @@ void CVirtualMachine::Clear()
 	}
 
 	m_hashHvMangledPProc.Clear(0);
+	m_iInstSource = -1;
 }
 
 SConstant * CBuilder::PConstPointer(void * pV, STypeInfo * pTin)

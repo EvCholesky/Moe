@@ -130,7 +130,8 @@ struct OpSignature // tag = opsig
 		OP(				CondBranch)	OPSIZE(1, 8, 0) \
 						/* Branch(0, iInst) */ \
 		OP(				Branch)		OPSIZE(0, 0, 0) \
-		OPMX(JumpOp,	Phi)		OPSIZE(0, 0, 0) \
+						/* Phi(Value, iInstSrc,)->iBStack ExArgs(Value, iInstSrc) */ \
+		OPMX(JumpOp,	Phi)		OPSIZE(CB, 0, 0) \
 		\
 		OPMN(BinaryOp,	NAdd)		OPSIZE(CB, CB, CB) \
 		OP(				GAdd)		OPSIZE(CB, CB, CB) \
@@ -342,7 +343,7 @@ enum GPRED
 
 	GPRED_Max,
 	GPRED_Min = 0,
-	GPRED_Nil = 1,
+	GPRED_Nil = -1,
 };
 #undef MOE_PRED
 #undef LLVM_PRED
@@ -355,7 +356,7 @@ enum NPRED
 
 	NPRED_Max,
 	NPRED_Min = 0,
-	NPRED_Nil = 1,
+	NPRED_Nil = -1,
 };
 #undef MOE_PRED
 #undef LLVM_PRED
