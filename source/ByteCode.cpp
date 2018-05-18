@@ -164,6 +164,15 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
 	*pcBAlign = cB;
 }
 
+void BuildStubDataLayout(SDataLayout * pDlay)
+{
+	pDlay->m_cBBool = 1;
+	pDlay->m_cBInt = sizeof(int);
+	pDlay->m_cBFloat = sizeof(float);
+	pDlay->m_cBPointer = sizeof(void *);
+	pDlay->m_cBStackAlign = sizeof(void *);
+}
+
 namespace BCode 
 {
 
@@ -244,6 +253,7 @@ CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
 ,m_arypBlockManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_aryJumptStack(pWork->m_pAlloc, EWC::BK_ByteCodeCreator)
 ,m_arypValManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
+,m_arypProcManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 128)
 ,m_dataseg(pWork->m_pAlloc)
 ,m_hashPSymPVal(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_hashPTinstructPCgstruct(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
@@ -264,19 +274,16 @@ void CBuilder::Clear()
 	auto ppValMac = m_arypValManaged.PMac();
 	for (auto ppVal = m_arypValManaged.A(); ppVal != ppValMac; ++ppVal)
 	{
-		// trying to avoid adding a vTable pointer to SValue, but need a virtual destructor
-		switch((*ppVal)->m_valk)
-		{
-		case VALK_Procedure:
-			{
-				auto pProc = (SProcedure *)*ppVal;
-				m_pAlloc->EWC_DELETE(pProc);
-			} break;
-		default:
-			m_pAlloc->EWC_DELETE(*ppVal);
-		}
+		m_pAlloc->EWC_DELETE(*ppVal);
 	}
 	m_arypValManaged.Clear();
+
+	auto ppProcMac = m_arypProcManaged.PMac();
+	for (auto ppProc = m_arypProcManaged.A(); ppProc != ppProcMac; ++ppProc)
+	{
+		m_pAlloc->EWC_DELETE(*ppProc);
+	}
+	m_arypProcManaged.Clear();
 
 	auto ppBlockMac = m_arypBlockManaged.PMac();
 	for (auto ppBlock = m_arypBlockManaged.A(); ppBlock != ppBlockMac; ++ppBlock)
@@ -1768,9 +1775,13 @@ SInstructionValue * CBuilder::PInstCreateStore(SValue * pValPDst, SValue * pValS
 
 void CBuilder::AddManagedVal(SValue * pVal)
 {
+	if(pVal->m_valk == VALK_Procedure)
+	{
+		m_arypProcManaged.Append((SProcedure*)pVal);
+		return;
+	}
 	m_arypValManaged.Append(pVal);
 }
-
 
 static inline void LoadWord(u8 * aB, SWord * pWord, u32 iB, int cB)
 {
@@ -2094,8 +2105,38 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	// build the stack frame for our top level procedure
 	u8 * pBStack = pVm->m_pBStack;
 
+	// allocate space for the return type
+	auto pProcsigEntry = pProcEntry->m_pProcsig;
+	int cBReturn = 0;
+	auto pTinprocEntry = pProcEntry->m_pTinproc;
+	int * aiBReturn = (int *)alloca(sizeof(int) * pTinprocEntry->m_arypTinReturns.C());
+	for (int ipTin = 0; ipTin < pTinprocEntry->m_arypTinReturns.C(); ++ipTin)
+	{
+		u64 cBReturn;
+		u64 cBAlignReturn;
+		CalculateByteSizeAndAlign(pVm->m_pDlay, pTinprocEntry->m_arypTinReturns[ipTin], &cBReturn, &cBAlignReturn);
+
+		SParameter * pParam = &pProcsigEntry->m_aParamRet[ipTin];
+		EWC_ASSERT(pParam->m_cB, "return type size mismatch");
+		aiBReturn[ipTin] = S32Coerce(cBReturn);
+		cBReturn += CBAlign(cBReturn, cBAlignReturn);
+	}
+	pBStack -= cBReturn;
+
 	pBStack -= sizeof(SInstruction *);
 	*(SInstruction **)(pBStack) = nullptr;
+	if (EWC_FVERIFY(pProcsigEntry->m_cBArg >= sizeof(SInstruction*), "bad argument stack size"))
+	{
+		pBStack -= pProcsigEntry->m_cBArg - sizeof(SInstruction *);
+	}
+
+	// fill out our return locations
+	for (int ipTin = 0; ipTin < pTinprocEntry->m_arypTinReturns.C(); ++ipTin)
+	{
+		SParameter * pParam = &pProcsigEntry->m_aParamRet[ipTin];
+		*((s32*)&pBStack[pParam->m_iBStack]) = aiBReturn[ipTin];
+	}
+
 	pBStack -= pProcEntry->m_cBStack;
 
 	if (pVm->m_pStrbuf)
@@ -2543,6 +2584,15 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	#undef MASHOP
 }
 
+void CBuilder::SwapToVm(CVirtualMachine * pVm)
+{
+	pVm->m_arypBlockManaged.Swap(&m_arypBlockManaged);
+	pVm->m_arypProcManaged.Swap(&m_arypProcManaged);
+	pVm->m_hashHvMangledPProc.Swap(&m_hashHvMangledPProc);
+	pVm->m_hashPTinprocPProcsig.Swap(&m_hashPTinprocPProcsig);
+	Clear();
+}
+
 SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv)
 {
 	SProcedure ** ppProc = pVm->m_hashHvMangledPProc.Lookup(hv);
@@ -2561,6 +2611,10 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, CBuilder * pB
 ,m_pProcCurDebug(nullptr)
 ,m_pStrbuf(nullptr)
 ,m_iInstSource(-1)
+,m_arypBlockManaged()
+,m_arypProcManaged()
+,m_hashHvMangledPProc(pBuild->m_pAlloc, BK_ByteCode, pBuild->m_hashHvMangledPProc.CCapacity())
+,m_hashPTinprocPProcsig(pBuild->m_pAlloc, BK_ByteCode, 4)
 #if DEBUG_PROC_CALL
 ,m_aryDebCall()
 #endif
@@ -2570,14 +2624,38 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, CBuilder * pB
 
 void CVirtualMachine::Clear()
 {
+	auto ppProcMac = m_arypProcManaged.PMac();
+	for (auto ppProc = m_arypProcManaged.A(); ppProc != ppProcMac; ++ppProc)
+	{
+		m_pAlloc->EWC_DELETE(*ppProc);
+	}
+	m_arypProcManaged.Clear();
+
+	auto ppBlockMac = m_arypBlockManaged.PMac();
+	for (auto ppBlock = m_arypBlockManaged.A(); ppBlock != ppBlockMac; ++ppBlock)
+	{
+		m_pAlloc->EWC_DELETE(*ppBlock);
+	}
+	m_arypBlockManaged.Clear();
+	m_hashHvMangledPProc.Clear(0);
+
 	if (m_pBGlobal)
 	{
 		m_pAlloc->EWC_FREE(m_pBGlobal);
 		m_pBGlobal = nullptr;
 	}
 
-	m_hashHvMangledPProc.Clear(0);
 	m_iInstSource = -1;
+
+	{
+		EWC::CHash<STypeInfoProcedure *, SProcedureSignature *>::CIterator iter(&m_hashPTinprocPProcsig);
+		while (SProcedureSignature ** ppProcsig = iter.Next())
+		{
+			m_pAlloc->EWC_FREE(*ppProcsig);
+		}
+
+		m_hashPTinprocPProcsig.Clear(0);
+	}
 }
 
 SConstant * CBuilder::PConstPointer(void * pV, STypeInfo * pTin)
@@ -2847,15 +2925,6 @@ void TestDataSegment(CAlloc * pAlloc)
 		EWC_ASSERT(i == *pN, "data segment write fail");
 	}
 	
-}
-
-void BuildStubDataLayout(SDataLayout * pDlay)
-{
-	pDlay->m_cBBool = 1;
-	pDlay->m_cBInt = sizeof(int);
-	pDlay->m_cBFloat = sizeof(float);
-	pDlay->m_cBPointer = sizeof(void *);
-	pDlay->m_cBStackAlign = sizeof(void *);
 }
 
 void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)

@@ -7291,22 +7291,67 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 
 		if (!pWork->m_pErrman->FHasErrors())
 		{
+			SDataLayout dlay;
 
-#if EWC_X64
-			printf("Code Generation (x64):\n");
-#else
-			printf("Code Generation (x86):\n");
-#endif
-			CBuilderIR build(pWork, pChzFilenameIn, grfcompile);
-			
-			CodeGenEntryPointsLlvm(pWork, &build, pWork->m_pSymtab, &pWork->m_blistEntry, &pWork->m_arypEntryChecked);
-
-			CompileToObjectFile(pWork, &build, pChzFilenameIn);
-
-			
-			if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+			if (grfcompile.FIsSet(FCOMPILE_Native)) 
 			{
-				build.PrintDump();
+#if EWC_X64
+				printf("Code Generation (x64):\n");
+#else
+				printf("Code Generation (x86):\n");
+#endif
+				CBuilderIR build(pWork, pChzFilenameIn, grfcompile);
+				build.ComputeDataLayout(&dlay);
+				
+				CodeGenEntryPointsLlvm(pWork, &build, pWork->m_pSymtab, &pWork->m_blistEntry, &pWork->m_arypEntryChecked);
+
+				CompileToObjectFile(pWork, &build, pChzFilenameIn);
+
+				
+				if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+				{
+					build.PrintDump();
+				}
+			}
+			else
+			{
+				BuildStubDataLayout(&dlay);
+			}
+
+			if (grfcompile.FIsSet(FCOMPILE_Bytecode)) 
+			{
+				printf("Code Generation (bytecode):\n");
+				BCode::CBuilder buildBc(pWork, &dlay);
+				CodeGenEntryPointsBytecode(pWork, &buildBc, pWork->m_pSymtab, &pWork->m_blistEntry, &pWork->m_arypEntryChecked, nullptr);
+
+				if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+				{
+					buildBc.PrintDump();
+				}
+
+				static const u32 s_cBStackMax = 2048;
+				u8 * pBStack = (u8 *)pWork->m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
+
+				BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
+				buildBc.SwapToVm(&vm);
+
+#if DEBUG_PROC_CALL
+				vm.m_aryDebCall.SetAlloc(pWork->m_pAlloc, BK_ByteCode, 32);
+#endif
+
+				CString strMain("main");
+				BCode::SProcedure * pProcMain = BCode::PProcLookup(&vm, strMain.Hv());
+				if (!pProcMain)
+				{
+					printf("Error: could not find entry point 'main'\n");
+					SLexerLocation lexloc;
+					EmitError(pWork, &lexloc, ERRID_MissingEntryPoint, "Could not find entry point 'main'");
+				}
+				else
+				{
+					BCode::ExecuteBytecode(&vm, pProcMain);
+				}
+				pWork->m_pAlloc->EWC_DELETE(pBStack);
 			}
 		}
 	}

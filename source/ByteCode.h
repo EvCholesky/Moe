@@ -24,8 +24,10 @@
 
 namespace BCode
 {
+	class CVirtualMachine;
 	struct SBlock;
 	struct SProcedure;
+
 
 
 	enum OPK : u8	// tag = Byte Code OPERand Kind
@@ -406,6 +408,7 @@ namespace BCode
 							PProcsigEnsure(STypeInfoProcedure * pTinproc);
 
 		void				AddManagedVal(SValue * pVal);
+		void				SwapToVm(CVirtualMachine * pVm);
 
 		EWC::CAlloc *						m_pAlloc;
 		CSymbolTable *						m_pSymtab;
@@ -415,6 +418,7 @@ namespace BCode
 		EWC::CDynAry<SBlock *>				m_arypBlockManaged;
 		EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
 		EWC::CDynAry<SValue *>				m_arypValManaged;
+		EWC::CDynAry<SProcedure *>			m_arypProcManaged;
 		CDataSegment						m_dataseg;
 		EWC::CHash<SSymbol *, SValue *>		m_hashPSymPVal;
 		EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>	
@@ -458,6 +462,7 @@ namespace BCode
 
 		void			Clear();
 
+
 		EWC::CAlloc *	m_pAlloc;
 		SDataLayout *	m_pDlay;
 		u8 *			m_pBStackMin;
@@ -469,7 +474,11 @@ namespace BCode
 						m_pStrbuf;			
 		s32				m_iInstSource;		// instruction index of branch that jumped to this block (for phi nodes)
 
-		EWC::CHash<HV, SProcedure *>	m_hashHvMangledPProc;
+		EWC::CDynAry<SBlock *>				m_arypBlockManaged;
+		EWC::CDynAry<SProcedure *>			m_arypProcManaged;
+		EWC::CHash<HV, SProcedure *>		m_hashHvMangledPProc;
+		EWC::CHash<STypeInfoProcedure *, SProcedureSignature *>	
+											m_hashPTinprocPProcsig;
 
 #if DEBUG_PROC_CALL
 		EWC::CDynAry<SDebugCall> 		m_aryDebCall;
@@ -483,4 +492,5 @@ namespace BCode
 
 } // namespace BCode
 
+void BuildStubDataLayout(SDataLayout * pDlay);
 void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign);

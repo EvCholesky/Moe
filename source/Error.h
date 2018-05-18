@@ -19,6 +19,7 @@ enum ERRID
 {
 	ERRID_UnknownError				= 0,
 	ERRID_FailedOpeningFile 		= 1,
+	ERRID_MissingEntryPoint			= 2,
 
 	ERRID_ParserMin					= 1000,
 	ERRID_EnumRepeat				= 1001,

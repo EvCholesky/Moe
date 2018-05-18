@@ -368,9 +368,11 @@ enum FCOMPILE
 {
 	FCOMPILE_PrintIR	= 0x1,
 	FCOMPILE_FastIsel	= 0x2,
+	FCOMPILE_Native		= 0x4,
+	FCOMPILE_Bytecode	= 0x8,
 
 	FCOMPILE_None		= 0x0,
-	FCOMPILE_All		= 0x3,
+	FCOMPILE_All		= 0xF,
 };
 
 EWC_DEFINE_GRF(GRFCOMPILE, FCOMPILE, u32);

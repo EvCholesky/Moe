@@ -169,6 +169,10 @@ public:
 						paryTOther->m_a    = m_aTemp;
 						paryTOther->m_c    = m_cTemp;
 						paryTOther->m_cMax = m_cMaxTemp;
+
+						auto bkTemp			= paryTOther->m_bk;
+						paryTOther->m_bk	= m_bk;
+						m_bk				= bkTemp;
 					}
 
 	T *			m_a;
@@ -568,6 +572,29 @@ public:
 						if (aOld)
 							m_pAlloc->EWC_FREE(aOld);
 						m_cMax = cNewMax;
+					}
+
+	void		Swap(CDynAry<T> * paryTOther)
+					{
+						T * m_aTemp    = m_a;
+						size_t m_cTemp    = m_c;
+						size_t m_cMaxTemp = m_cMax;
+
+						m_a    = paryTOther->m_a;
+						m_c    = paryTOther->m_c;
+						m_cMax = paryTOther->m_cMax;
+
+						paryTOther->m_a    = m_aTemp;
+						paryTOther->m_c    = m_cTemp;
+						paryTOther->m_cMax = m_cMaxTemp;
+
+						auto bkTemp			= paryTOther->m_bk;
+						paryTOther->m_bk	= m_bk;
+						m_bk				= bkTemp;
+
+						auto pAllocTemp			= paryTOther->m_pAlloc;
+						paryTOther->m_pAlloc	= m_pAlloc;
+						m_pAlloc				= pAllocTemp;
 					}
 
 	CAlloc *	m_pAlloc;

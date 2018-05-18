@@ -131,7 +131,7 @@ void PrintCommandLineOptions()
 	printf("	-printIR  : Print llvm's intermediate representation\n");
 	printf("    -release  : Generate optimized code and link against optimized local libraries\n");
 	printf("    -test     : Run compiler unit tests\n");
-	printf("    -bytecode : Run bytecode tests\n");
+	printf("    -bytecode : compile and run input files as bytecode\n");
 	printf("    -useLLD   : Use llvm linker (rather than linke.exe) use this to emit DWARF debug data.\n");
 	printf("    -llvm cmd : run an llvm command line\n");
 }
@@ -164,6 +164,15 @@ int main(int cpChzArg, const char * apChzArg[])
 	if (comline.FHasCommand("-printIR"))
 	{
 		grfcompile.AddFlags(FCOMPILE_PrintIR);
+	}
+
+	if (comline.FHasCommand("-bytecode"))
+	{
+		grfcompile.AddFlags(FCOMPILE_Bytecode);
+	}
+	else
+	{
+		grfcompile.AddFlags(FCOMPILE_Native);
 	}
 
 	if (comline.FHasCommand("-fast"))
@@ -212,7 +221,8 @@ int main(int cpChzArg, const char * apChzArg[])
 		// current linker command line:
 		// link simple.obj ..\x64\debug\basic.lib libcmt.lib libucrt.lib /libpath:"c:\Program Files (x86)\Windows Kits\10\lib\10.0.10150.0\ucrt\x64" /libpath:"c:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\lib\amd64" /libpath:"c:\Program Files (x86)\Windows Kits\8.1\lib\winv6.3\um\x64" /subsystem:console /machine:x64
 
-		if (fSuccess && !comline.FHasCommand("-nolink"))
+		bool fWantsLink = (comline.FHasCommand("-nolink") == false) && grfcompile.FIsSet(FCOMPILE_Native);
+		if (fSuccess && fWantsLink)
 		{
 			CDynAry<const char *> arypChzOptions(&alloc, BK_Linker, 32);
 
@@ -497,6 +507,7 @@ int main(int cpChzArg, const char * apChzArg[])
 		delete[] aB;
 	}
 
+	/*
 	if (comline.FHasCommand("-bytecode"))
 	{
 		u8 aBString[1024 * 100];
@@ -514,6 +525,7 @@ int main(int cpChzArg, const char * apChzArg[])
 
 		BCode::BuildTestByteCode(&work, &alloc);
 	}
+	*/
 
 	if (comline.FHasCommand("-test"))
 	{
