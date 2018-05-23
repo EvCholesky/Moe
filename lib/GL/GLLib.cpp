@@ -1,6 +1,7 @@
 #define EWC_TYPES_IMPLEMENTATION
 
 #include "EwcTypes.h"
+#include "MoeLib.h"
 
 #ifdef _WINDOWS
 #include <WindowsStub.h>
@@ -369,7 +370,7 @@ static void GlfwErrorCallback(int nError, const char* pChz)
 }
 
 typedef void (*pfnGlProc)(void);
-extern "C" pfnGlProc PFnGlProcLookup(const char * pChzProcname)
+MOE_EXPORT pfnGlProc PFnGlProcLookup(const char * pChzProcname)
 {
 	auto pFnGlProc = glfwGetProcAddress(pChzProcname);
 	auto nGlError = glGetError();
@@ -434,12 +435,12 @@ SJoystickManager::SJoystickManager()
 static SJoystickManager * s_pJoymanRoot = nullptr;
 
 
-extern "C" bool FIsJoystickConnected(s32 nDeviceId)
+MOE_EXPORT bool FIsJoystickConnected(s32 nDeviceId)
 {
 	return glfwJoystickPresent(nDeviceId) == GLFW_TRUE;
 }
 
-extern "C" u8 * PChzJoystickName(s32 nDeviceId)
+MOE_EXPORT u8 * PChzJoystickName(s32 nDeviceId)
 {
 	return (u8 *)glfwGetJoystickName(nDeviceId);
 }
@@ -519,7 +520,7 @@ static void GlfwJoystickCallback(int iJoy, int event)
 	}
 }
 
-extern "C" void * CreateJoystickManager()
+MOE_EXPORT void * CreateJoystickManager()
 {
 	SJoystickManager * pJoyman = new SJoystickManager;
 	if (!s_pJoymanRoot)
@@ -538,7 +539,7 @@ extern "C" void * CreateJoystickManager()
 	return pJoyman;
 }
 
-extern "C" void UpdateJoystickManager(void * pVJoyman)
+MOE_EXPORT void UpdateJoystickManager(void * pVJoyman)
 {
 	auto pJoyman = (SJoystickManager *)pVJoyman;
 	for (int iJoy = 0; iJoy < EWC_DIM(pJoyman->m_aJoy); ++iJoy)
@@ -565,7 +566,7 @@ extern "C" void UpdateJoystickManager(void * pVJoyman)
 	pJoyman = pJoyman->m_pJoymanNext;
 }
 
-extern "C" void CreateWindow_MOE(s64 dX, s64 dY, const char * pChzName, void ** ppVHwnd)
+MOE_EXPORT void CreateWindow_MOE(s64 dX, s64 dY, const char * pChzName, void ** ppVHwnd)
 {
 	glfwSetErrorCallback(GlfwErrorCallback);
 
@@ -587,7 +588,7 @@ extern "C" void CreateWindow_MOE(s64 dX, s64 dY, const char * pChzName, void ** 
 	printf("CreateWindow %s (%lldx%lld)\n", pChzName, dX, dY);
 }
 
-extern "C" void ClearWindow(float uRed, float uGreen, float uBlue, float uAlpha)
+MOE_EXPORT void ClearWindow(float uRed, float uGreen, float uBlue, float uAlpha)
 {
 //	int dX, dY;
 //	glfwGetFramebufferSize(pWindow, &dX, &dY);
@@ -597,13 +598,13 @@ extern "C" void ClearWindow(float uRed, float uGreen, float uBlue, float uAlpha)
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
-extern "C" void SwapBuffers_MOE(void * pVHwnd)
+MOE_EXPORT void SwapBuffers_MOE(void * pVHwnd)
 {
 	auto pWindow = (GLFWwindow *)pVHwnd;
 	glfwSwapBuffers(pWindow);
 }
 
-extern "C" s32 GetMonitorRefresh(void * pVHwnd)
+MOE_EXPORT s32 GetMonitorRefresh(void * pVHwnd)
 {
 	GLFWmonitor * pMonitor = glfwGetPrimaryMonitor();
 
@@ -616,7 +617,7 @@ extern "C" s32 GetMonitorRefresh(void * pVHwnd)
 	return 0;
 }
 
-extern "C" s64 CTickPerSecond()
+MOE_EXPORT s64 CTickPerSecond()
 {
 #if _WINDOWS
     LARGE_INTEGER lrgintFrequency;
@@ -631,7 +632,7 @@ extern "C" s64 CTickPerSecond()
 #endif
 }
 
-extern "C" s64 CTickWallClock()
+MOE_EXPORT s64 CTickWallClock()
 {
 #if _WINDOWS
     LARGE_INTEGER lrgint;
@@ -642,17 +643,17 @@ extern "C" s64 CTickWallClock()
 #endif
 }
 
-extern "C" bool FTrySetTimerResolution(u32 msResolution)
+MOE_EXPORT bool FTrySetTimerResolution(u32 msResolution)
 {
     return timeBeginPeriod(msResolution) == TIMERR_NOERROR;
 }
 
-extern "C" void UpdateWindowEvents()
+MOE_EXPORT void UpdateWindowEvents()
 {
 	glfwPollEvents();
 }
 
-extern "C" bool FGetNextEvent(SEvent * pEvent)
+MOE_EXPORT bool FGetNextEvent(SEvent * pEvent)
 {
 	if (s_evfifo.C() == 0)
 		return false;
@@ -664,7 +665,7 @@ extern "C" bool FGetNextEvent(SEvent * pEvent)
 	return true;
 }
 
-extern "C" uint32_t NTimeSeed()
+MOE_EXPORT uint32_t NTimeSeed()
 {
  // BB - This should be replaced with a legit get time routine, but I'm too lazy right now
 

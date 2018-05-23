@@ -935,38 +935,51 @@ TESTRES TestresRunUnitTest(
 
 		if (!fHasExpectedErr && testres == TESTRES_Success && !FIsEmptyString(pCozBytecodeExpected))
 		{
-			BCode::SProcedure * pProcUnitTest = nullptr;
-			BCode::CBuilder buildBc(&work, &dlay);
-			CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, &pProcUnitTest);
-			buildBc.PrintDump();
-
-			char aCh[2048];
-			SStringBuffer strbufBytecode(aCh, EWC_DIM(aCh));
-
-			if (EWC_FVERIFY(pProcUnitTest, "expected unit test procedure"))
+			CHash<HV, void *> hashHvPFn(work.m_pAlloc, BK_ForeignFunctions);
+			CDynAry<void *> arypDll(work.m_pAlloc, BK_ForeignFunctions);
+			if (!BCode::LoadForeignLibraries(&work, &hashHvPFn, &arypDll))
 			{
-				static const u32 s_cBStackMax = 2048;
-				u8 * pBStack = (u8 *)work.m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
-
-				BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
-				buildBc.SwapToVm(&vm);
-
-				vm.m_pStrbuf = &strbufBytecode;
-#if DEBUG_PROC_CALL
-				vm.m_aryDebCall.SetAlloc(work.m_pAlloc, BK_ByteCode, 32);
-#endif
-
-				BCode::ExecuteBytecode(&vm, pProcUnitTest);
-				work.m_pAlloc->EWC_DELETE(pBStack);
-			}
-
-			if (!FAreCozEqual(aCh, pCozBytecodeExpected))
-			{
-				// print error location
-				printf("BYTECODE ERROR during test for '%s'\n", pUtest->m_strName.PCoz());
-				PrintTestError(pCozIn, aCh, pCozBytecodeExpected);
+				SLexerLocation lexloc;
+				printf("Failed loading foreign libraries.\n");
 				testres = TESTRES_TypeCheckMismatch;
 			}
+			else
+			{
+				BCode::SProcedure * pProcUnitTest = nullptr;
+				BCode::CBuilder buildBc(&work, &dlay, &hashHvPFn);
+				CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, &pProcUnitTest);
+				buildBc.PrintDump();
+
+				char aCh[2048];
+				SStringBuffer strbufBytecode(aCh, EWC_DIM(aCh));
+
+				if (EWC_FVERIFY(pProcUnitTest, "expected unit test procedure"))
+				{
+					static const u32 s_cBStackMax = 2048;
+					u8 * pBStack = (u8 *)work.m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
+
+					BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
+					buildBc.SwapToVm(&vm);
+
+					vm.m_pStrbuf = &strbufBytecode;
+#if DEBUG_PROC_CALL
+					vm.m_aryDebCall.SetAlloc(work.m_pAlloc, BK_ByteCode, 32);
+#endif
+
+					BCode::ExecuteBytecode(&vm, pProcUnitTest);
+					work.m_pAlloc->EWC_DELETE(pBStack);
+				}
+
+				if (!FAreCozEqual(aCh, pCozBytecodeExpected))
+				{
+					// print error location
+					printf("BYTECODE ERROR during test for '%s'\n", pUtest->m_strName.PCoz());
+					PrintTestError(pCozIn, aCh, pCozBytecodeExpected);
+					testres = TESTRES_TypeCheckMismatch;
+				}
+			}
+
+			BCode::UnloadForeignLibraries(&arypDll);
 		}
 	}
 

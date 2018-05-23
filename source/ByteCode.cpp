@@ -21,13 +21,20 @@
 #include <math.h>
 #include "Util.h"
 #include "workspace.h"
+#include "dyncall\dynload\dynload.h"
+#include "dyncall\dyncall\dyncall.h"
+#include "dyncall\dyncall\dyncall_signature.h"
 
 // Remaining bytecode tasks
 // [ ] Clean up remaining TBDs
 // [x]   Phi nodes
+// [ ]   Casting
 // [ ]   Reflection
 // [ ]   Switch nodes
 // [ ]   FFI 
+// [x]		FFI basics
+// [ ]		FFI variadic functions
+// [ ]		FFI tests
 
 
 
@@ -235,6 +242,7 @@ SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
 :SValue(VALK_Procedure)
 ,m_pTinproc(pTinproc)
 ,m_pProcsig(nullptr)
+,m_pFnForeign(nullptr)
 ,m_cBStack(0)
 ,m_pBlockLocals(nullptr)
 ,m_pBlockFirst(nullptr)
@@ -243,7 +251,7 @@ SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
 {
 }
 
-CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
+CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay, EWC::CHash<HV, void*> * pHashHvPFnForeign)
 :CBuilderBase(pWork)
 ,m_pSymtab(pWork->m_pSymtab)
 ,m_pAlloc(pWork->m_pAlloc)
@@ -258,6 +266,7 @@ CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay)
 ,m_hashPSymPVal(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_hashPTinstructPCgstruct(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
 ,m_hashPTinprocPProcsig(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
+,m_phashHvPFnForeign(pHashHvPFnForeign)
 ,m_blistConst(pWork->m_pAlloc, BK_ByteCodeCreator)
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
@@ -340,7 +349,7 @@ SProcedure * CBuilder::PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedur
 SProcedure * CBuilder::PProcCreate(
 	CWorkspace * pWork,
 	STypeInfoProcedure * pTinproc,
-	const char * pChzMangled,
+	const EWC::CString & strMangled,
 	CSTNode * pStnod,
 	CSTNode * pStnodBody,
 	EWC::CDynAry<LType *> * parypLtype,
@@ -353,7 +362,18 @@ SProcedure * CBuilder::PProcCreate(
 	if (!EWC_FVERIFY(pStproc, "expected stproc"))
 		return nullptr;
 
-	EWC_ASSERT(!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign), "bytecode TBD (ffi)");
+	if (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+	{
+		void ** ppFn = m_phashHvPFnForeign->Lookup(strMangled.Hv());
+		if (!ppFn)
+		{
+			EmitError(pWork->m_pErrman, &pStnod->m_lexloc, ERRID_UndefinedForeignFunction, "undefined foreign function '%s'", pTinproc->m_strName.PCoz());
+		}
+		else
+		{
+			pProc->m_pFnForeign = *ppFn;
+		}
+	}
 
 	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
 	{
@@ -1845,7 +1865,7 @@ static inline void ReadOpcodesStoreToReg(CVirtualMachine * pVm, SInstruction * p
 	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
-	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordRhs, pInst->m_wordRhs.m_s32, cB);	break;
+	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
 		break;
 	}
 }
@@ -2089,6 +2109,165 @@ SInstruction * PInstFindPhiIncoming(SInstruction ** ppInstPhi, s32 iInstSource)
 	return pInstIncoming;
 }
 
+DCstruct * PDcstructFromTinstruct(STypeInfoStruct * pTinstruct, SDataLayout * pDlay)
+{
+	auto pDcstruct = dcNewStruct(DCint(pTinstruct->m_aryTypemembField.C()), DCint(pTinstruct->m_cBAlign));
+
+	auto pTypemembMac = pTinstruct->m_aryTypemembField.PMac();
+	for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMac; ++pTypememb)
+	{
+		auto pTinMember = pTypememb->m_pTin;
+		switch (pTinMember->m_tink)
+		{
+		case TINK_Bool:		dcStructField(pDcstruct, DC_SIGCHAR_BOOL, pDlay->m_cBBool, 0);			break;
+		case TINK_Pointer:	dcStructField(pDcstruct, DC_SIGCHAR_POINTER, pDlay->m_cBPointer, 0);	break;
+		case TINK_Integer:
+		{
+			auto pTinint = (STypeInfoInteger *)pTinMember;
+			switch (pTinint->m_cBit)
+			{
+			case 8: dcStructField(pDcstruct, DC_SIGCHAR_CHAR, 1, 0);	break;
+			case 16: dcStructField(pDcstruct, DC_SIGCHAR_SHORT, 2, 0);	break;
+			case 32: dcStructField(pDcstruct, DC_SIGCHAR_INT, 4, 0);	break;
+			case 64: dcStructField(pDcstruct, DC_SIGCHAR_LONGLONG, 8, 0);	break;
+			default:
+				EWC_ASSERT(false, "unhanded int size in dyncall struct member");
+			}
+		} break;
+		case TINK_Float:
+		{
+			auto pTinfloat = (STypeInfoFloat *)pTinMember;
+			switch (pTinfloat->m_cBit)
+			{
+			case 32: dcStructField(pDcstruct, DC_SIGCHAR_FLOAT, 4, 0);	break;
+			case 64: dcStructField(pDcstruct, DC_SIGCHAR_DOUBLE, 8, 0);	break;
+			default:
+				EWC_ASSERT(false, "unhanded float size in dyncall struct member");
+			}
+		} break;
+		default:
+			EWC_ASSERT(false, "unhandled dyncall struct member type");
+		}
+	}
+
+	dcCloseStruct(pDcstruct);
+	return pDcstruct;
+}
+
+void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack)
+{
+	u8 * pBArg = pBStack - pProc->m_pProcsig->m_cBArg;
+
+	if (!EWC_FVERIFY(pVm->m_pDcvm, "null DynCall VM"))
+		return;
+
+	//EWC_CASSERT(sizeof(DCbool) == sizeof(bool), "size mismatch");
+	EWC_CASSERT(sizeof(DCchar) == sizeof(u8), "size mismatch");
+	EWC_CASSERT(sizeof(DCshort) == sizeof(u16), "size mismatch");
+	EWC_CASSERT(sizeof(DCint) == sizeof(u32), "size mismatch");
+	EWC_CASSERT(sizeof(DClonglong) == sizeof(u64), "size mismatch");
+	EWC_CASSERT(sizeof(DCfloat) == sizeof(f32), "size mismatch");
+	EWC_CASSERT(sizeof(DCdouble) == sizeof(f64), "size mismatch");
+
+	auto pDcvm = pVm->m_pDcvm;
+	auto pProcsig = pProc->m_pProcsig;
+	auto pTinproc = pProc->m_pTinproc;
+	size_t cParam = pTinproc->m_arypTinParams.C();
+	for (size_t iParam = 0; iParam < cParam; ++iParam)
+	{
+		auto pTinParam = pTinproc->m_arypTinParams[iParam];
+		auto pParam = &pProcsig->m_aParamArg[iParam];
+		if (pTinParam->m_tink == TINK_Qualifier)
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTinParam;
+			pTinParam = pTinqual->m_pTin;
+		}
+
+		switch (pTinParam->m_tink)
+		{
+		case TINK_Bool:		dcArgBool(pDcvm, *(bool*)&pBArg[pParam->m_iBStack]);		break;
+		case TINK_Pointer:	dcArgPointer(pDcvm, *(void**)&pBArg[pParam->m_iBStack]);	break;
+		case TINK_Integer:	
+			{
+				auto pTinintParam = (STypeInfoInteger*)pTinParam;
+				switch (pTinintParam->m_cBit)
+				{
+				case 8:		dcArgChar(pDcvm, *(u8*)&pBArg[pParam->m_iBStack]);			break;
+				case 16:	dcArgShort(pDcvm, *(u16*)&pBArg[pParam->m_iBStack]);		break;
+				case 32:	dcArgInt(pDcvm, *(u32*)&pBArg[pParam->m_iBStack]);			break;
+				case 64:	dcArgLongLong(pDcvm, *(u64*)&pBArg[pParam->m_iBStack]);		break;
+				default: EWC_ASSERT(false, "unhandled size dyncall int");
+				}
+			} break;
+		case TINK_Float:	
+			{
+				auto pTinfloatParam = (STypeInfoFloat*)pTinParam;
+				switch (pTinfloatParam->m_cBit)
+				{
+				case 32:	dcArgFloat(pDcvm, *(f32*)&pBArg[pParam->m_iBStack]);		break;
+				case 64:	dcArgDouble(pDcvm, *(f64*)&pBArg[pParam->m_iBStack]);		break;
+				default: EWC_ASSERT(false, "unhandled size dyncall float");
+				}
+			} break;
+		case TINK_Struct:
+			{
+				auto pTinstruct = (STypeInfoStruct *)pTinParam;
+				auto pDcstruct = PDcstructFromTinstruct(pTinstruct, pVm->m_pDlay);
+
+				dcArgStruct(pDcvm, pDcstruct, &pBArg[pParam->m_iBStack]);
+				dcFreeStruct(pDcstruct);
+			} break;
+		default:
+			EWC_ASSERT(false, "unhandled type kind in foreign function args");
+		}
+	}
+
+	auto cParamRet = pTinproc->m_arypTinReturns.C();
+	EWC_ASSERT(cParamRet <= 1, "multiple returns not supported by foreign functions (yet)");
+	u8 * pBReturn = nullptr;
+	TINK tinkReturn = TINK_Void;
+	if (cParamRet)
+	{
+		s32 iBReturn = *(s32*)&pBArg[pProcsig->m_aParamRet->m_iBStack];
+		pBReturn = &pBStack[iBReturn];
+		tinkReturn = pTinproc->m_arypTinReturns[0]->m_tink;
+	}
+
+	switch(tinkReturn)
+	{
+	case TINK_Void:		dcCallVoid(pDcvm, pProc->m_pFnForeign);								break;
+	case TINK_Bool:		*(bool *)pBReturn = dcCallBool(pDcvm, pProc->m_pFnForeign) != 0;	break;
+	case TINK_Pointer:	*(void **)pBReturn = dcCallPointer(pDcvm, pProc->m_pFnForeign);		break;
+	case TINK_Integer:
+	{
+		auto pTinint = (STypeInfoInteger*)pTinproc->m_arypTinReturns[0];
+		switch (pTinint->m_cBit)
+		{
+		case 8:		*(u8 *)pBReturn = dcCallChar(pDcvm, pProc->m_pFnForeign);			break;
+		case 16:	*(u16 *)pBReturn = dcCallShort(pDcvm, pProc->m_pFnForeign);			break;
+		case 32:	*(u32 *)pBReturn = dcCallInt(pDcvm, pProc->m_pFnForeign);			break;
+		case 64:	*(u64 *)pBReturn = dcCallLongLong(pDcvm, pProc->m_pFnForeign);		break;
+		default: EWC_ASSERT(false, "unhandled size dyncall return int");
+		}
+	} break;
+	case TINK_Float:
+	{
+		auto pTinfloat = (STypeInfoFloat*)pTinproc->m_arypTinReturns[0];
+		switch (pTinfloat->m_cBit)
+		{
+		case 32:	*(f32 *)pBReturn = dcCallFloat(pDcvm, pProc->m_pFnForeign);		break;
+		case 64:	*(f64 *)pBReturn = dcCallDouble(pDcvm, pProc->m_pFnForeign);	break;
+		default: EWC_ASSERT(false, "unhandled size dyncall return float");
+		}
+	} break;
+	case TINK_Struct:
+	default:
+		EWC_ASSERT(false, "unhandled return type in foreign function");
+	}
+
+	dcReset(pVm->m_pDcvm);
+}
+
 void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 {
 #if DEBUG_PROC_CALL
@@ -2099,6 +2278,11 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	pDebcall->m_pBStackDst = pVm->m_pBStack - (pProcEntry->m_pProcsig->m_cBArg + pProcEntry->m_cBStack);
 	pDebcall->m_pBReturnStorage = nullptr;
 #endif
+
+	static const int s_cBDynCallStack = 4096;
+	EWC_ASSERT(pVm->m_pDcvm == nullptr, "expected null VM");	
+	pVm->m_pDcvm = dcNewCallVM(s_cBDynCallStack);
+	dcMode(pVm->m_pDcvm, DC_CALL_C_DEFAULT );
 
 	pVm->m_pProcCurDebug = pProcEntry;
 
@@ -2338,6 +2522,12 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			auto pProcsig = pProc->m_pProcsig;
 
 			SInstruction ** ppInstRet = (SInstruction **)(pVm->m_pBStack - sizeof(SInstruction *));
+
+			if (pProc->m_pFnForeign)
+			{
+				CallForeignFunction(pVm, pProc, pVm->m_pBStack);
+				break;
+			}
 
 #if DEBUG_PROC_CALL
 			auto pDebcall = pVm->m_aryDebCall.AppendNew();
@@ -2582,6 +2772,9 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	#undef MASHOP
 	#undef FETCH
 	#undef MASHOP
+
+	dcFree(pVm->m_pDcvm);
+	pVm->m_pDcvm = nullptr;
 }
 
 void CBuilder::SwapToVm(CVirtualMachine * pVm)
@@ -2602,6 +2795,90 @@ SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv)
 	return *ppProc;
 }
 
+void UnloadForeignLibraries(CDynAry<void *> * paryDll)
+{
+	auto pDllMac = paryDll->PMac();
+	for (auto pDllIt = paryDll->A(); pDllIt != pDllMac; ++pDllIt)
+	{
+		DLLib * pDll = (DLLib *)pDllIt;
+		dlFreeLibrary(pDll);
+	}
+
+	paryDll->Clear();
+}
+
+bool LoadForeignLibraries(CWorkspace * pWork, CHash<HV, void*> * pHashHvPFn, CDynAry<void *> * parypDll)
+{
+	char aCozWorking[2048];
+	bool fLoadError = false;  
+
+	CWorkspace::SFile ** ppFileMac = pWork->m_arypFile.PMac();
+	for (CWorkspace::SFile ** ppFile = pWork->m_arypFile.A(); ppFile != ppFileMac; ++ppFile)
+	{
+		const CWorkspace::SFile & file = **ppFile;
+		if (file.m_filek != CWorkspace::FILEK_Library)
+			continue;
+		EWC::SStringBuffer strbufLib(aCozWorking, EWC_PMAC(aCozWorking) - aCozWorking);
+
+		static const char * s_pChzLibraryDirDebug = "..\\x64\\DebugDLL";
+		static const char * s_pChzLibraryDirRelease = "..\\x64\\ReleaseDLL";
+		const char * pChzLibraryDir = (pWork->m_optlevel == OPTLEVEL_Release) ? s_pChzLibraryDirRelease  : s_pChzLibraryDirDebug;
+		FormatCoz(&strbufLib, "%s%\\%s.DLL", pChzLibraryDir, file.m_strFilename.PCoz());
+		EnsureTerminated(&strbufLib, '\0');
+	
+		auto pDll = dlLoadLibrary(aCozWorking);
+		if (!pDll)
+		{
+			printf("failed loading %s\n", aCozWorking);	
+			fLoadError = true;
+		}
+		else
+		{
+			parypDll->Append(pDll);
+
+#define PRINT_DLL_SYMBOLS 0
+#if PRINT_DLL_SYMBOLS
+			auto pDllsym = dlSymsInit(aCozWorking);
+			int cSym = dlSymsCount(pDllsym);
+			for (int iSym = 0; iSym < cSym; ++iSym)
+			{
+				auto pChzSymName = dlSymsName(pDllsym, iSym);
+				if (!pChzSymName)
+				{
+					printf("bad symbol lookup\n");
+				}
+				else
+				{
+					printf("sym: %s\n", pChzSymName);
+
+					void * pFn = dlFindSymbol(pDll, pChzSymName);
+					EWC_ASSERT(pFn, "failed looking up reported foreign fufnction");
+
+					CString strSymName(pChzSymName);
+					FINS fins = pHashHvPFn->FinsEnsureKeyAndValue(strSymName.Hv(), pFn);
+					if (fins != FINS_Inserted)
+					{
+						printf("symbol '%s' was already loaded\n", strSymName.PCoz());
+						fLoadError = false;
+					}
+				}
+			}
+
+			dlSymsCleanup(pDllsym);
+#endif
+		}
+	}
+
+	if (fLoadError)
+	{
+		UnloadForeignLibraries(parypDll);
+		return false;
+	}
+
+	return true;
+}
+
+
 CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, CBuilder * pBuild)
 :m_pAlloc(pBuild->m_pAlloc)
 ,m_pDlay(pBuild->m_pDlay)
@@ -2609,6 +2886,7 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, CBuilder * pB
 ,m_pBStackMax(pBStackMax)
 ,m_pBStack(pBStackMax)
 ,m_pProcCurDebug(nullptr)
+,m_pDcvm(nullptr)
 ,m_pStrbuf(nullptr)
 ,m_iInstSource(-1)
 ,m_arypBlockManaged()
@@ -2933,7 +3211,7 @@ void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
 	SDataLayout dlay;
 	BuildStubDataLayout(&dlay);
 
-	CBuilder buildBc(pWork, &dlay);
+	CBuilder buildBc(pWork, &dlay, nullptr);
 
 	EWC::CHash<HV, STypeInfo *>	hashHvPTin(pAlloc, BK_ByteCodeTest);
 	CUniqueTypeRegistry untyper(pAlloc);

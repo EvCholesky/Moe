@@ -6631,7 +6631,7 @@ CIRProcedure * CBuilderIR::PProcCreateImplicit(CWorkspace * pWork, STypeInfoProc
 CIRProcedure * CBuilderIR::PProcCreate(
 	CWorkspace * pWork,
 	STypeInfoProcedure * pTinproc,
-	const char * pChzMangled,
+	const CString & strMangled,
 	CSTNode * pStnod,
 	CSTNode * pStnodBody,
 	CDynAry<LLVMOpaqueType *> * parypLtype,
@@ -6643,7 +6643,7 @@ CIRProcedure * CBuilderIR::PProcCreate(
 
 	auto pLtypeFunction = LLVMFunctionType(pLtypeReturn, parypLtype->A(), (u32)parypLtype->C(), fHasVarArgs);
 
-	pProc->m_pLval = LLVMAddFunction(m_pLmoduleCur, pChzMangled, pLtypeFunction);
+	pProc->m_pLval = LLVMAddFunction(m_pLmoduleCur, strMangled.PCoz(), pLtypeFunction);
 
 	auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
 	if (!EWC_FVERIFY(pStproc, "expected stproc"))
@@ -6682,8 +6682,8 @@ CIRProcedure * CBuilderIR::PProcCreate(
 
 	if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 	{
-		pProc->m_pBlockLocals = PBlockCreate(pProc, pChzMangled);
-		pProc->m_pBlockFirst = PBlockCreate(pProc, pChzMangled);
+		pProc->m_pBlockLocals = PBlockCreate(pProc, strMangled.PCoz());
+		pProc->m_pBlockFirst = PBlockCreate(pProc, strMangled.PCoz());
 
 		if (EWC_FVERIFY(pTinproc, "expected type info procedure"))
 		{
@@ -6864,24 +6864,24 @@ typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 	char aCh[256];
 	EWC_ASSERT(!pTinproc->FHasGenericArgs(), "generic arg should not make it to codegen");
 	EWC_ASSERT(pTinproc->m_strMangled.PCoz(), "missing procedure mangled name in tinproc '%s', pStnod = %p", pTinproc->m_strName.PCoz(), pStnod);
-	const char * pChzMangled = PChzVerifyAscii(pTinproc->m_strMangled.PCoz());
+	CString strMangled = pTinproc->m_strMangled;
 
 	if (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 	{
 		if (pStnodAlias)
 		{
-			CString strProcAlias = StrFromIdentifier(pStnodAlias);
-			pChzMangled = PChzVerifyAscii(strProcAlias.PCoz());	// BB - should this be punnycoded? needs to match C
+			strMangled = StrFromIdentifier(pStnodAlias);
 		}
 	}
 
-	if (!pChzMangled)
+	if (strMangled.FIsEmpty())
 	{
 		GenerateUniqueName(&pWork->m_unset, "__AnnonFunc__", aCh, EWC_DIM(aCh));
-		pChzMangled = aCh;
+		strMangled = aCh;
 	}
 
-	auto pProc = pBuild->PProcCreate(pWork, pTinproc, pChzMangled, pStnod, pStnodBody, &arypLtype, pLtypeReturn);
+	VerifyAscii(strMangled);
+	auto pProc = pBuild->PProcCreate(pWork, pTinproc, strMangled, pStnod, pStnodBody, &arypLtype, pLtypeReturn);
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
 
@@ -7321,37 +7321,52 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 			if (grfcompile.FIsSet(FCOMPILE_Bytecode)) 
 			{
 				printf("Code Generation (bytecode):\n");
-				BCode::CBuilder buildBc(pWork, &dlay);
-				CodeGenEntryPointsBytecode(pWork, &buildBc, pWork->m_pSymtab, &pWork->m_blistEntry, &pWork->m_arypEntryChecked, nullptr);
+				CHash<HV, void *> hashHvPFn(pWork->m_pAlloc, BK_ForeignFunctions);
+				CDynAry<void *> arypDll(pWork->m_pAlloc, BK_ForeignFunctions);
 
-				if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+				if (!BCode::LoadForeignLibraries(pWork, &hashHvPFn, &arypDll))
 				{
-					buildBc.PrintDump();
-				}
-
-				static const u32 s_cBStackMax = 2048;
-				u8 * pBStack = (u8 *)pWork->m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
-
-				BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
-				buildBc.SwapToVm(&vm);
-
-#if DEBUG_PROC_CALL
-				vm.m_aryDebCall.SetAlloc(pWork->m_pAlloc, BK_ByteCode, 32);
-#endif
-
-				CString strMain("main");
-				BCode::SProcedure * pProcMain = BCode::PProcLookup(&vm, strMain.Hv());
-				if (!pProcMain)
-				{
-					printf("Error: could not find entry point 'main'\n");
 					SLexerLocation lexloc;
-					EmitError(pWork, &lexloc, ERRID_MissingEntryPoint, "Could not find entry point 'main'");
+					EmitError(pWork, &lexloc, ERRID_FailedLoadingDLL, "Failed loading foreign libraries.\n");
 				}
 				else
 				{
-					BCode::ExecuteBytecode(&vm, pProcMain);
+					BCode::CBuilder buildBc(pWork, &dlay, &hashHvPFn);
+					CodeGenEntryPointsBytecode(pWork, &buildBc, pWork->m_pSymtab, &pWork->m_blistEntry, &pWork->m_arypEntryChecked, nullptr);
+
+					if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+					{
+						buildBc.PrintDump();
+					}
+
+					static const u32 s_cBStackMax = 2048;
+					u8 * pBStack = (u8 *)pWork->m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
+
+					BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
+					buildBc.SwapToVm(&vm);
+
+#if DEBUG_PROC_CALL
+					vm.m_aryDebCall.SetAlloc(pWork->m_pAlloc, BK_ByteCode, 32);
+#endif
+
+					CString strMain("main");
+					BCode::SProcedure * pProcMain = BCode::PProcLookup(&vm, strMain.Hv());
+					if (!pProcMain)
+					{
+						printf("Error: could not find entry point 'main'\n");
+						SLexerLocation lexloc;
+						EmitError(pWork, &lexloc, ERRID_MissingEntryPoint, "Could not find entry point 'main'");
+					}
+					else
+					{
+						BCode::ExecuteBytecode(&vm, pProcMain);
+					}
+
+					pWork->m_pAlloc->EWC_DELETE(pBStack);
 				}
-				pWork->m_pAlloc->EWC_DELETE(pBStack);
+
+				hashHvPFn.Clear(0);
+				BCode::UnloadForeignLibraries(&arypDll);
 			}
 		}
 	}

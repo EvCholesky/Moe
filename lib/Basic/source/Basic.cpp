@@ -4,42 +4,43 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stddef.h>
+#include "MoeLib.h"
 
-#ifndef WIN32
+#ifdef _WINDOWS
 #include <signal.h>
 #include <Windows.h>
 #include <memoryapi.h>
 #endif
 
-extern "C" void * PVMalloc(size_t cB)
+MOE_EXPORT void * PVMalloc(size_t cB)
 {
 	return malloc(cB);
 }
 
-extern "C" void FreeMalloc(void * pV)
+MOE_EXPORT void FreeMalloc(void * pV)
 {
 	free(pV);
 }
 
-extern "C" void * PVVirtualMalloc(void * pV, size_t cB, uint32_t flAllocationType, uint32_t flProtect)
+MOE_EXPORT void * PVVirtualMalloc(void * pV, size_t cB, uint32_t flAllocationType, uint32_t flProtect)
 {
-#ifdef WIN32
+#ifdef _WINDOWS
 	return VirtualAlloc(pV, cB, flAllocationType, flProtect);
 #elif
 	return malloc(cB);
 #endif
 }
 
-extern "C" void VirtualFreeMalloc(void * pV, size_t cB, uint32_t dwFreeType)
+MOE_EXPORT void VirtualFreeMalloc(void * pV, size_t cB, uint32_t dwFreeType)
 {
-#ifdef WIN32
+#ifdef _WINDOWS
 	VirtualFree(pV, cB, dwFreeType);
 #elif
 	return free(pV);
 #endif
 }
 
-extern "C" void DebugBreak_MOE()
+MOE_EXPORT void DebugBreak_MOE()
 {
 #ifdef _WINDOWS
 	__debugbreak();
@@ -48,33 +49,44 @@ extern "C" void DebugBreak_MOE()
 #endif
 }
 
-extern "C" void PrintFloat(float g)
+MOE_EXPORT void PrintFloat(float g)
 {
 	printf("%f\n", g);
 }
 
-extern "C" void PrintInt(int n)
+MOE_EXPORT void PrintInt(int n)
 {
 	printf("%d\n", n);
 }
 
-extern "C" void PrintByte(char n)
+MOE_EXPORT void PrintS32(uint32_t n)
 {
 	printf("%d\n", n);
 }
 
-extern "C" void PrintBool(bool f)
+MOE_EXPORT void PrintS64(uint64_t n)
+{
+	printf("%lld\n", n);
+}
+
+
+MOE_EXPORT void PrintByte(char n)
+{
+	printf("%d\n", n);
+}
+
+MOE_EXPORT void PrintBool(bool f)
 {
 	printf("%s\n", (f) ? "true" : "false");
 }
 
 
-extern "C" void PrintPointer(unsigned char * pB)
+MOE_EXPORT void PrintPointer(unsigned char * pB)
 {
 	printf("%p\n", pB);
 }
 
-extern "C" void PrintString(unsigned char * pChz)
+MOE_EXPORT void PrintString(unsigned char * pChz)
 {
 	if (!pChz)
 	{
@@ -85,57 +97,57 @@ extern "C" void PrintString(unsigned char * pChz)
 	printf("%s\n", pChz);
 }
 
-extern "C" float cosf_MOE(float g)
+MOE_EXPORT float cosf_MOE(float g)
 {
 	return cosf(g);
 }
 
-extern "C" float sinf_MOE(float g)
+MOE_EXPORT float sinf_MOE(float g)
 {
 	return sinf(g);
 }
 
-extern "C" float sqrtf_MOE(float g)
+MOE_EXPORT float sqrtf_MOE(float g)
 {
 	return sqrtf(g);
 }
 
-extern "C" float GSign(float g)
+MOE_EXPORT float GSign(float g)
 {
 	return g < 0 ? -1.0f : 1.0f; 
 }
 
-extern "C" float GAbs(float x)
+MOE_EXPORT float GAbs(float x)
 { 
 	return fabsf(x);
 }
 
-extern "C" float GSqrt(float g)
+MOE_EXPORT float GSqrt(float g)
 {
 	return sqrtf(g);
 }
 
-extern "C" float GMod(float x, float y)
+MOE_EXPORT float GMod(float x, float y)
 { 
 	return fmodf(x, y); 
 }
 
-extern "C" int32_t NTrunc(float g)
+MOE_EXPORT int32_t NTrunc(float g)
 {
 	return static_cast<int32_t>(g);
 }
 
-extern "C" int32_t NCeil(float g)
+MOE_EXPORT int32_t NCeil(float g)
 { 
 	return static_cast<int32_t>(ceil(g)); 
 }
 
-extern "C" int32_t NFloor(float g)
+MOE_EXPORT int32_t NFloor(float g)
 { 
 	return static_cast<int32_t>(floor(g)); 
 }
 
-extern "C" int32_t NRound(float g)
+MOE_EXPORT int32_t NRound(float g)
 {
 	float gSign = GSign(g); 
 
@@ -180,7 +192,39 @@ void EnsureTerminatedCopy(char * pCozBegin, char * pCozAppend, size_t cBMax, cha
 	}
 }
 
-extern "C" ptrdiff_t snprintf_MOE(char * aCh, size_t cBMax, const char * pCozFormat, ...)
+/*
+MOE_EXPORT ptrdiff_t printf_MOE(char * aCh, size_t cBMax, const char * pCozFormat, ...)
+{
+	// BB - could just use EWC::FormatCoz if there was a vararg version 
+	// BB - Actually, trying to use EWC functions here causes a mess of duplicate symbols, so I guess I'll just copy this for now.
+
+	char * pCozAppend = nullptr;
+	if (cBMax > 1)
+	{
+		va_list ap;
+		va_start(ap, pCozFormat);
+#ifdef WIN32
+		ptrdiff_t cCh = vsnprintf_s(aCh, cBMax, _TRUNCATE, pCozFormat, ap);
+#else
+		ptrdiff_t cCh = vsnprintf(aCh, cBMax, pCozFormat, ap);
+		aCh[cBMax-1] = 0;
+#endif
+
+		va_end(ap);
+
+		if (cCh == -1)
+		{
+			cCh = cBMax-1;
+		}
+		pCozAppend = aCh + cCh;
+	}
+
+	// handle truncation within utf8 multibyte char
+	EnsureTerminatedCopy(aCh, pCozAppend, cBMax, '\0');
+	return pCozAppend - aCh;
+}*/
+
+MOE_EXPORT ptrdiff_t snprintf_MOE(char * aCh, size_t cBMax, const char * pCozFormat, ...)
 {
 	// BB - could just use EWC::FormatCoz if there was a vararg version 
 	// BB - Actually, trying to use EWC functions here causes a mess of duplicate symbols, so I guess I'll just copy this for now.

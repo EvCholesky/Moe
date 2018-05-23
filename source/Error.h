@@ -20,6 +20,7 @@ enum ERRID
 	ERRID_UnknownError				= 0,
 	ERRID_FailedOpeningFile 		= 1,
 	ERRID_MissingEntryPoint			= 2,
+	ERRID_FailedLoadingDLL			= 3,
 
 	ERRID_ParserMin					= 1000,
 	ERRID_EnumRepeat				= 1001,
@@ -65,6 +66,7 @@ enum ERRID
 	ERRID_BadCastGen				= 3003,
 	ERRID_ObjFileFail				= 3004,
 	ERRID_ZeroSizeInstance			= 3005,
+	ERRID_UndefinedForeignFunction  = 3006,
 	ERRID_CodeGenMax				= 4000,
 	ERRID_ErrorMax					= 10000,
 

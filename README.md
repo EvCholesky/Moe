@@ -17,6 +17,7 @@ There are quite a few upcoming features that are C lacks:
 
 To build the compiler and debug compiled source you will need to get the following dependencies:
   - The base compiler requires LLVM 5.0
+  - dyncall 1.0 is used for calling foreign functions from bytecode
   - Debugging with lldb requires Python 3.6, gnuWin32, swig and ninja 
   - Debugging with Visual Studio has been tested with MSVC 2015 
   - puck.moe has a dependency on GLFW 3.2.1

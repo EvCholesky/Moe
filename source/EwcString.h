@@ -270,6 +270,12 @@ public:
 CString StrFromConcat(const char * pCozA, const char * pCozEndA, const char * pCozB, const char * pCozEndB);
 
 
+inline const void VerifyAscii(const CString & str)
+{
+	(void) PChzVerifyAscii(str.PCoz());
+}
+
+
 
 // OID - Is essentially a hashed string, but you can look up the pChz value at runtime
 

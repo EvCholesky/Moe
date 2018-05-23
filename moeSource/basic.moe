@@ -2,6 +2,8 @@
 
 PrintFloat proc (g : float) #foreign
 PrintInt proc (n : int) #foreign
+PrintS32 proc (n : s32) #foreign
+PrintS64 proc (n : s64) #foreign
 PrintByte proc (n : s8) #foreign
 PrintBool proc (f : bool) #foreign
 PrintPointer proc (pB : & u8) #foreign

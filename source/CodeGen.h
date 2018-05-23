@@ -485,7 +485,7 @@ public:
 	CIRProcedure *		PProcCreate(
 							CWorkspace * pWork,
 							STypeInfoProcedure * pTinproc,
-							const char * pChzMangled,
+							const EWC::CString & strMangled,
 							CSTNode * pStnod,
 							CSTNode * pStnodBody,
 							EWC::CDynAry<LLVMOpaqueType *> * parypLtype,

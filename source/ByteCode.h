@@ -22,13 +22,13 @@
 #include "typeinfo.h"
 
 
+typedef struct DCCallVM_ DCCallVM;
+
 namespace BCode
 {
 	class CVirtualMachine;
 	struct SBlock;
 	struct SProcedure;
-
-
 
 	enum OPK : u8	// tag = Byte Code OPERand Kind
 	{
@@ -204,6 +204,7 @@ namespace BCode
 
 		STypeInfoProcedure *				m_pTinproc;
 		SProcedureSignature *				m_pProcsig;
+		void *								m_pFnForeign;
 
 		s64									m_cBStack;		// allocated bytes on stack
 
@@ -295,7 +296,7 @@ namespace BCode
 			SConstant *				m_pGlobInit;		// global instance to use when CGINITK_MemcpyGlobal
 		};
 
-							CBuilder(CWorkspace * pWork, SDataLayout * pDlay);
+							CBuilder(CWorkspace * pWork, SDataLayout * pDlay, EWC::CHash<HV, void*> * pHashHvPFnForeign);
 							~CBuilder();
 
 		void				Clear();
@@ -307,7 +308,7 @@ namespace BCode
 		SProcedure *		PProcCreate(
 								CWorkspace * pWork,
 								STypeInfoProcedure * pTinproc,
-								const char * pChzMangled,
+								const EWC::CString & strMangled,
 								CSTNode * pStnod,
 								CSTNode * pStnodBody,
 								EWC::CDynAry<LType *> * parypLtype,
@@ -425,6 +426,7 @@ namespace BCode
 											m_hashPTinstructPCgstruct;
 		EWC::CHash<STypeInfoProcedure *, SProcedureSignature *>	
 											m_hashPTinprocPProcsig;
+		EWC::CHash<HV, void *> *			m_phashHvPFnForeign;
 
 		EWC::CBlockList<SConstant, 255>		m_blistConst; // constants / registers used during code generation
 
@@ -470,6 +472,7 @@ namespace BCode
 		u8 *			m_pBStack;			// current stack bottom (grows down)
 		u8 *			m_pBGlobal;			// global data segment
 		SProcedure *	m_pProcCurDebug;	// current procedure being executed (not available in release)
+		DCCallVM *		m_pDcvm;
 		EWC::SStringBuffer *
 						m_pStrbuf;			
 		s32				m_iInstSource;		// instruction index of branch that jumped to this block (for phi nodes)
@@ -486,6 +489,9 @@ namespace BCode
 	};
 
 	SProcedure * PProcLookup(CVirtualMachine * pVm, HV hv);
+
+	bool LoadForeignLibraries(CWorkspace * pWork, EWC::CHash<HV, void*> * pHashHvPFn, EWC::CDynAry<void *> * parypDll);
+	void UnloadForeignLibraries(EWC::CDynAry<void *> * paryDll);
 
 	void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProc);
 	void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc);

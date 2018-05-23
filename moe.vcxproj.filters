@@ -63,6 +63,9 @@
     <ClInclude Include="source\ByteCode.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="source\MoeLib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\EwcString.cpp">
