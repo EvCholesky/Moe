@@ -29,7 +29,7 @@
 // [ ] Clean up remaining TBDs
 // [x]  Phi nodes
 // [x]  Casting
-// [ ]		Casting Tests
+// [x]		Casting Tests
 // [ ]	Bit Shifting
 // [ ]	Bitwise ops
 // [ ]  Reflection

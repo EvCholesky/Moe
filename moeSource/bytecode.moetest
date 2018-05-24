@@ -1,26 +1,25 @@
-/*
-test SimpleBytecode
+test BytecodeInferAlloc
 	input "n := ?val"
 	bytecode "{?val;}"
 	{
 		?val(24|5|"-66")
 	}
 
-test SimpleBytecodeAlloc
+test BytecodeAlloc
 	input "n:s32; n = ?val"
 	bytecode "{?val;}"
 	{
 		?val(24|5|"-66")
 	}
 
-test SimpleBytecodePointer
+test BytecodePointer
 	input "n:s32; pN : &s32; pN = &n; @pN = ?val; n2 := n"
 	bytecode "{&0;?val;?val;}"
 	{
 		?val(24|5|"-66")
 	}
 
-test SimpleBytecodeCompare
+test BytecodeCompare
 	input "n := ?init; if n < ?cmp { n = ?a } else { n = ?b }"
 	bytecode "{?init;?res;}"
 	{
@@ -30,18 +29,18 @@ test SimpleBytecodeCompare
 		?init(5000.000000) + ?cmp(100.0) + ?a(1.0) + ?b(-1.00000) + ?res(-1.000000),
 	}
 
-test SimpleBytecodeBool
+test BytecodeBool
 	input "f:bool = ?init"
 	bytecode "{?init;}"
 	{
 		?init(true|false)
 	}
 
-test SimpleBytecodeWhile
+test BytecodeWhile
 	input "n := 3; while(n >= 0) { n = n - 1 }"
 	bytecode "{3;2;1;0;-1;}"
 
-test SimpleBytecodeWhile
+test BytecodeWhile
 	input "for n:= 0; n < 3; n = n + 1; { }"
 	bytecode "{0;1;2;3;}"
 test BytecodeProcCall
@@ -58,7 +57,7 @@ test BytecodeProcCallByRef
 	input "pFn := retproc; pFn(1234)"
 	bytecode "{retproc(int)->int;retproc(1234){}->1234; }"
 
-test SimpleBytecodeArray
+test BytecodeArray
 	input "a : [3] ?type; a[2] = ?val"
 	bytecode "{?val;}"
 	{
@@ -66,7 +65,7 @@ test SimpleBytecodeArray
 		?type(float) + ?val(123.000000)
 	}
 
-test SimpleBytecodeArrayAccess
+test BytecodeArrayAccess
 	input "{a := {:?type: 1, 2, 3}; n := a[2] }"
 	bytecode "{3;}"
 	{
@@ -74,7 +73,7 @@ test SimpleBytecodeArrayAccess
 		?type(s16),
 	}
 
-test SimpleBytecodeArrayLoop
+test BytecodeArrayLoop
 	prereq "a := {:?type: 11, 22, 33, 44 }"
 	input "for i := 0; i<a.count; ++i; { n := a[i] }"
 	bytecode "{0;11;22;33;44;}"
@@ -83,14 +82,14 @@ test SimpleBytecodeArrayLoop
 		?type(s16),
 	}
 
-test SimpleBytecodeString
+test BytecodeString
 	input "pChz := \"teststring\""
 	bytecode "{&116;}"
 	{
 		?type(int),
 	}
 
-test SimpleBytecodeStruct
+test BytecodeStruct
 	prereq "SFoo struct { m_a: u8; m_b: int}"
 	input "foo: SFoo; a2 := foo.m_a; b2 := foo.m_b"
 	bytecode "{0;0;}"
@@ -98,7 +97,7 @@ test SimpleBytecodeStruct
 		?type(int),
 	}
 
-test SimpleBytecodeInit
+test BytecodeInit
 	prereq "SFoo struct { m_a: u8 = 100; m_b: int = 200}"
 	input "foo: SFoo; a2 := foo.m_a; b2 := foo.m_b"
 	bytecode "{100;200;}"
@@ -106,7 +105,7 @@ test SimpleBytecodeInit
 		?type(int),
 	}
 
-test SimpleBytecodeNestedProcInit
+test BytecodeNestedProcInit
 	prereq "SFoo struct { m_a: u8 = ---; m_b: int = 200} SOuter struct {m_un: int = ---; m_foo: SFoo}"
 	input "out: SOuter; a2 := out.m_foo.m_a; b2 := out.m_foo.m_b"
 	bytecode "{0;200;}"
@@ -114,7 +113,7 @@ test SimpleBytecodeNestedProcInit
 		?type(int),
 	}
 
-test SimpleBytecodeStructArray
+test BytecodeStructArray
 	prereq "SFoo struct { m_a: u8 = 100; m_un: int = ---; m_b: int = 200}"
 	input "aFoo: [4] SFoo; a2 := aFoo[1].m_a; b2 := aFoo[1].m_b"
 	bytecode "{100;200;}"
@@ -122,7 +121,7 @@ test SimpleBytecodeStructArray
 		?type(int),
 	}
 
-test SimpleBytecodeStructArray
+test BytecodeStructArray
 	prereq "SFoo struct { m_a: u8 = 100; m_un: int = ---; m_b: int = 200}; SBar struct { m_aFoo: [3] SFoo }"
 	input "bar: SBar; a2 := bar.m_aFoo[1].m_a; b2 := bar.m_aFoo[1].m_b"
 	bytecode "{__SBar_INIT(){}; 100;200;}"
@@ -130,7 +129,7 @@ test SimpleBytecodeStructArray
 		?type(int),
 	}
 
-test SimpleBytecodeStructZero
+test BytecodeStructZero
 	prereq "SFoo struct { m_a: int }; SBar struct {m_foo: SFoo; m_n: int = ---}"
 	input "bar: SFoo"
 	bytecode "{}"
@@ -138,14 +137,13 @@ test SimpleBytecodeStructZero
 		?type(int),
 	}
 
-test SimpleBytecodeStructZero
+test BytecodeStructZero
 	prereq "SFoo struct {m_a: [] u8 }"
 	input "foo: SFoo"
 	bytecode "{}"
 	{
 	}
-*/
-test SimpleBytecodeStructZero
+test BytecodeStructZero
 	prereq "x := ?xval; y := ?yval"
 	input "f := x ?op y"
 	bytecode "{?xval;?yval;?output;}"
@@ -156,6 +154,26 @@ test SimpleBytecodeStructZero
 		?xval(0) + ?yval(0) + ?op("||") + ?output(false),
 		?xval(1) + ?yval(0) + ?op("||") + ?output(true),
 		?xval(1) + ?yval(1) + ?op("||") + ?output(true),
+	}
+
+test BytecodeCast
+	prereq "src: ?srctype = ?in"
+	input  "dst := cast(?dsttype) src"
+	bytecode  "{?in;?out;}"
+	{
+		?srctype(s64|s32|s16|s8) + ?dsttype(s8|s16|s32|s64) + ?in(123|-123) + ?out("?in"),
+		?srctype(s8) + ?dsttype(u64|u8) + ?in(-1) + ?out(255),
+		?srctype(s16) + ?dsttype(u64|u16) + ?in(-1) + ?out(65535),
+		?srctype(f32|f64) + ?dsttype(s32) + ?in(-123.000000) + ?out(-123),
+		?srctype(s8|s16|s32) + ?dsttype(f32|f64) + ?in(-123) + ?out(-123.000000),
+		?srctype(f32) + ?dsttype(f64) + ?in(-123.000000) + ?out("?in"),
+		?srctype(f64) + ?dsttype(f32) + ?in(-123.000000) + ?out("?in"),
+		?srctype(u64) + ?in(4294967295)
+		{
+			?dsttype(u8) + ?out(255),
+			?dsttype(u16) + ?out(65535),
+			?dsttype(u32) + ?out("?in"),
+		},
 	}
 
 	// To Test:
