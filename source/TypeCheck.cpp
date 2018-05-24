@@ -2491,6 +2491,26 @@ inline bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst, CSymbolTa
 	if (pTinSrc->m_tink == TINK_Procedure && pTinDst->m_tink == TINK_Procedure)
 		return true;
 
+#if 0 // not supported yet - need to write LLVM codegen
+	// allow for ptr->int and int->ptr casts 
+	if (pTinSrc->m_tink == TINK_Pointer || pTinDst->m_tink == TINK_Pointer)
+	{
+		auto pTinOther = pTinDst;
+		if (pTinOther->m_tink == TINK_Pointer)
+		{
+			pTinOther = pTinSrc;
+		}
+
+		// BB - We don't have a formal way to get this during typecheck
+		size_t cBPointer = sizeof(void*);
+		STypeInfoInteger * pTinint = PTinRtiCast<STypeInfoInteger *>(pTinOther);
+		if (pTinint && pTinint->m_cBit == cBPointer * 8 && pTinint->m_fIsSigned == false)
+		{
+			return true;
+		}
+	}
+#endif
+
 	// Result of this cast is an RValue, we can step the const down a level
 	pTinSrc = PTinQualifyAfterAssignment(pTinSrc, pSymtab);
 

@@ -1,0 +1,168 @@
+/*
+test SimpleBytecode
+	input "n := ?val"
+	bytecode "{?val;}"
+	{
+		?val(24|5|"-66")
+	}
+
+test SimpleBytecodeAlloc
+	input "n:s32; n = ?val"
+	bytecode "{?val;}"
+	{
+		?val(24|5|"-66")
+	}
+
+test SimpleBytecodePointer
+	input "n:s32; pN : &s32; pN = &n; @pN = ?val; n2 := n"
+	bytecode "{&0;?val;?val;}"
+	{
+		?val(24|5|"-66")
+	}
+
+test SimpleBytecodeCompare
+	input "n := ?init; if n < ?cmp { n = ?a } else { n = ?b }"
+	bytecode "{?init;?res;}"
+	{
+		?init(2) + ?cmp(100) + ?a(1) + ?b(-1) + ?res(1),
+		?init(5000) + ?cmp(100) + ?a(1) + ?b(-1) + ?res(-1),
+		?init(10.000000) + ?cmp(100.0) + ?a(1.0) + ?b(-1.00000) + ?res(1.000000),
+		?init(5000.000000) + ?cmp(100.0) + ?a(1.0) + ?b(-1.00000) + ?res(-1.000000),
+	}
+
+test SimpleBytecodeBool
+	input "f:bool = ?init"
+	bytecode "{?init;}"
+	{
+		?init(true|false)
+	}
+
+test SimpleBytecodeWhile
+	input "n := 3; while(n >= 0) { n = n - 1 }"
+	bytecode "{3;2;1;0;-1;}"
+
+test SimpleBytecodeWhile
+	input "for n:= 0; n < 3; n = n + 1; { }"
+	bytecode "{0;1;2;3;}"
+test BytecodeProcCall
+	prereq "sum proc(a: int, b: int, pN: & int)->int {return a+b}"
+	input "sum(5, 8, null)"
+	bytecode "{sum(5, 8, null){}->13; }"
+test BytecodeProcCallRecurse
+	prereq "recurse proc(a: int) { if a>0 {recurse(a-1)} }"
+	input "recurse(3)"
+	bytecode "{recurse(3){recurse(2){recurse(1){recurse(0){}; }; }; }; }"
+
+test BytecodeProcCallByRef
+	prereq "retproc proc(a: int)->int { return a }"
+	input "pFn := retproc; pFn(1234)"
+	bytecode "{retproc(int)->int;retproc(1234){}->1234; }"
+
+test SimpleBytecodeArray
+	input "a : [3] ?type; a[2] = ?val"
+	bytecode "{?val;}"
+	{
+		?type(int) + ?val(123),
+		?type(float) + ?val(123.000000)
+	}
+
+test SimpleBytecodeArrayAccess
+	input "{a := {:?type: 1, 2, 3}; n := a[2] }"
+	bytecode "{3;}"
+	{
+		?type(int),
+		?type(s16),
+	}
+
+test SimpleBytecodeArrayLoop
+	prereq "a := {:?type: 11, 22, 33, 44 }"
+	input "for i := 0; i<a.count; ++i; { n := a[i] }"
+	bytecode "{0;11;22;33;44;}"
+	{
+		?type(int),
+		?type(s16),
+	}
+
+test SimpleBytecodeString
+	input "pChz := \"teststring\""
+	bytecode "{&116;}"
+	{
+		?type(int),
+	}
+
+test SimpleBytecodeStruct
+	prereq "SFoo struct { m_a: u8; m_b: int}"
+	input "foo: SFoo; a2 := foo.m_a; b2 := foo.m_b"
+	bytecode "{0;0;}"
+	{
+		?type(int),
+	}
+
+test SimpleBytecodeInit
+	prereq "SFoo struct { m_a: u8 = 100; m_b: int = 200}"
+	input "foo: SFoo; a2 := foo.m_a; b2 := foo.m_b"
+	bytecode "{100;200;}"
+	{
+		?type(int),
+	}
+
+test SimpleBytecodeNestedProcInit
+	prereq "SFoo struct { m_a: u8 = ---; m_b: int = 200} SOuter struct {m_un: int = ---; m_foo: SFoo}"
+	input "out: SOuter; a2 := out.m_foo.m_a; b2 := out.m_foo.m_b"
+	bytecode "{0;200;}"
+	{
+		?type(int),
+	}
+
+test SimpleBytecodeStructArray
+	prereq "SFoo struct { m_a: u8 = 100; m_un: int = ---; m_b: int = 200}"
+	input "aFoo: [4] SFoo; a2 := aFoo[1].m_a; b2 := aFoo[1].m_b"
+	bytecode "{100;200;}"
+	{
+		?type(int),
+	}
+
+test SimpleBytecodeStructArray
+	prereq "SFoo struct { m_a: u8 = 100; m_un: int = ---; m_b: int = 200}; SBar struct { m_aFoo: [3] SFoo }"
+	input "bar: SBar; a2 := bar.m_aFoo[1].m_a; b2 := bar.m_aFoo[1].m_b"
+	bytecode "{__SBar_INIT(){}; 100;200;}"
+	{
+		?type(int),
+	}
+
+test SimpleBytecodeStructZero
+	prereq "SFoo struct { m_a: int }; SBar struct {m_foo: SFoo; m_n: int = ---}"
+	input "bar: SFoo"
+	bytecode "{}"
+	{
+		?type(int),
+	}
+
+test SimpleBytecodeStructZero
+	prereq "SFoo struct {m_a: [] u8 }"
+	input "foo: SFoo"
+	bytecode "{}"
+	{
+	}
+*/
+test SimpleBytecodeStructZero
+	prereq "x := ?xval; y := ?yval"
+	input "f := x ?op y"
+	bytecode "{?xval;?yval;?output;}"
+	{
+		?xval(0) + ?yval(0) + ?op("&&") + ?output(false),
+		?xval(1) + ?yval(0) + ?op("&&") + ?output(false),
+		?xval(1) + ?yval(1) + ?op("&&") + ?output(true),
+		?xval(0) + ?yval(0) + ?op("||") + ?output(false),
+		?xval(1) + ?yval(0) + ?op("||") + ?output(true),
+		?xval(1) + ?yval(1) + ?op("||") + ?output(true),
+	}
+
+	// To Test:
+	// To Test:
+	// [ ] fdir.m_top should be a boolean value as an rvalue or a lvalue
+	// [x] flag lvalues only support assignment, no address of or other assignment ops
+	// [ ] Cannot declare internal use type "_flag"
+	// [ ] Errors are generated on shadowing of global type type symbols (declarations, typedefs)
+	// [ ] assigning flag value via pointer to instance (pFbit.A = true)
+

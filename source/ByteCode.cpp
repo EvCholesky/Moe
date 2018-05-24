@@ -27,11 +27,14 @@
 
 // Remaining bytecode tasks
 // [ ] Clean up remaining TBDs
-// [x]   Phi nodes
-// [ ]   Casting
-// [ ]   Reflection
-// [ ]   Switch nodes
-// [ ]   FFI 
+// [x]  Phi nodes
+// [x]  Casting
+// [ ]		Casting Tests
+// [ ]	Bit Shifting
+// [ ]	Bitwise ops
+// [ ]  Reflection
+// [ ]  Switch nodes
+// [ ]  FFI 
 // [x]		FFI basics
 // [ ]		FFI variadic functions
 // [ ]		FFI tests
@@ -771,6 +774,24 @@ void CBuilder::PrintDump()
 					AppendToCch(&strbuf, ' ', s_operandPos);
 					FormatCoz(&strbuf, "i%d", pInst->m_wordRhs.m_s32);
 				} break;
+			case IROP_NTrunc:
+			case IROP_SignExt:
+			case IROP_ZeroExt:
+			case IROP_GToS:
+			case IROP_GToU:
+			case IROP_SToG:
+			case IROP_UToG:
+			case IROP_GTrunc:
+			case IROP_GExtend:
+			case IROP_PtrToInt:
+			case IROP_IntToPtr:
+			case IROP_Bitcast:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					auto cBLhs = pInst->m_wordRhs.m_s32;
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+					FormatCoz(&strbuf, " %d bytes ->[%d] %d bytes", cBLhs, pInst->m_iBStackOut, pInst->m_cBOperand);
+				} break;
 			case IROP_CondBranch:
 				{
 					AppendToCch(&strbuf, ' ', s_operandPos);
@@ -1349,17 +1370,7 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 
 SInstructionValue * CBuilder::PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName)
 {
-	auto pInstval = PInstCreateRaw(IROP_PtrToInt, pValOperand, PConstPointer(pTinint), pChzName);
-	auto pInst = pInstval->m_pInst;
-	if (pInstval->FIsError())
-		return pInstval;
-
-	u64 cB;
-	u64 cBAlign;
-	CalculateByteSizeAndAlign(m_pDlay, pTinint, &cB, &cBAlign);
-	AllocateStackOut(this, pInst, cB, cBAlign);
-	//pInst->m_iBStackOut =  IBStackAlloc(cB, cBAlign);
-	return pInstval;
+	return PInstCreateCast(IROP_PtrToInt, pValOperand, pTinint, pChzName);
 }
 
 SInstructionValue * CBuilder::PInstCreateTraceStore(SValue * pVal, STypeInfo * pTin)
@@ -1781,10 +1792,26 @@ SInstructionValue * CBuilder::PInstCreateError()
 	return pInstval;
 }
 
-SInstructionValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName)
+SInstructionValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValSrc, STypeInfo * pTinDst, const char * pChzName)
 {
-	EWC_ASSERT(false, "codegen TBD");
-	return nullptr;
+	u64 cBDst;
+	u64 cBAlignDst;
+	CalculateByteSizeAndAlign(m_pDlay, pTinDst, &cBDst, &cBAlignDst);
+
+	OPK opkLhs;
+	SWord wordLhs;
+	SValueOutput valout;
+	SetOperandFromValue(m_pDlay, pValSrc, &opkLhs, &wordLhs, OPSZ_CB, &valout);
+
+	SInstructionValue * pInstval = PInstCreateRaw(irop, cBDst, nullptr, PConstInt(valout.m_cBRegister, 8), pChzName);
+	if (pInstval->FIsError())
+		return pInstval;
+
+	SInstruction * pInst = pInstval->m_pInst;
+	pInst->m_wordLhs = wordLhs;
+	pInst->m_opkLhs = opkLhs;
+
+	return pInstval;
 }
 
 SInstructionValue * CBuilder::PInstCreateStore(SValue * pValPDst, SValue * pValSrc)
@@ -1849,6 +1876,31 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
 	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
+		break;
+	}
+}
+
+static inline void ReadCastOpcodes(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs, SWord * pWordRhs)
+{
+	// Rhs is always 8 bytes, and is cBOperand for Lhs
+
+	switch (pInst->m_opkRhs)
+	{
+	case OPK_Literal:
+	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
+	case OPK_Register:
+	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, 8);		break;
+	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
+		break;
+	}
+
+	switch (pInst->m_opkLhs)
+	{
+	case OPK_Literal:
+	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
+	case OPK_Register:
+	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, int(pWordRhs->m_u64));		break;
+	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
 		break;
 	}
 }
@@ -2421,6 +2473,95 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_GRem, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, fmodf(wordLhs.m_f32, wordRhs.m_f32));	break;
 		case MASHOP(IROP_GRem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, fmod(wordLhs.m_f64,  wordRhs.m_f64));	break;
 
+#define STORE_CAST(TYPE, SIGN) \
+			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
+			switch(wordRhs.m_s32) \
+			{\
+			case 1: STORE(pInst->m_iBStackOut, TYPE, TYPE(wordLhs.m_##SIGN##8));	break; \
+			case 2: STORE(pInst->m_iBStackOut, TYPE, TYPE(wordLhs.m_##SIGN##16));	break; \
+			case 4: STORE(pInst->m_iBStackOut, TYPE, TYPE(wordLhs.m_##SIGN##32));	break; \
+			case 8: STORE(pInst->m_iBStackOut, TYPE, TYPE(wordLhs.m_##SIGN##64));	break; \
+			} 
+
+		case MASHOP(IROP_Bitcast, 1): STORE_CAST(u8, u)		break;
+		case MASHOP(IROP_Bitcast, 2): STORE_CAST(u16, u)	break;
+		case MASHOP(IROP_Bitcast, 4): STORE_CAST(u32, u)	break;
+		case MASHOP(IROP_Bitcast, 8): STORE_CAST(u64, u)	break;
+
+		case MASHOP(IROP_NTrunc, 1): STORE_CAST(u8, u)		break;
+		case MASHOP(IROP_NTrunc, 2): STORE_CAST(u16, u)		break;
+		case MASHOP(IROP_NTrunc, 4): STORE_CAST(u32, u)		break;
+		case MASHOP(IROP_NTrunc, 8): STORE_CAST(u64, u)		break;
+
+		case MASHOP(IROP_ZeroExt, 1): STORE_CAST(u8, u)		break;
+		case MASHOP(IROP_ZeroExt, 2): STORE_CAST(u16, u)	break;
+		case MASHOP(IROP_ZeroExt, 4): STORE_CAST(u32, u)	break;
+		case MASHOP(IROP_ZeroExt, 8): STORE_CAST(u64, u)	break;
+
+		case MASHOP(IROP_SignExt, 1): STORE_CAST(s8, s)		break;
+		case MASHOP(IROP_SignExt, 2): STORE_CAST(s16, s)	break;
+		case MASHOP(IROP_SignExt, 4): STORE_CAST(s32, s)	break;
+		case MASHOP(IROP_SignExt, 8): STORE_CAST(s64, s)	break;
+
+#define STORE_F2INT(TYPE) \
+			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
+			switch(wordRhs.m_s32) \
+			{\
+			case 4: STORE(pInst->m_iBStackOut, TYPE, TYPE(wordLhs.m_f32));	break; \
+			case 8: STORE(pInst->m_iBStackOut, TYPE, TYPE(wordLhs.m_f64));	break; \
+			} 
+
+		case MASHOP(IROP_GToS, 1): STORE_F2INT(s8)	break;
+		case MASHOP(IROP_GToS, 2): STORE_F2INT(s16)	break;
+		case MASHOP(IROP_GToS, 4): STORE_F2INT(s32)	break;
+		case MASHOP(IROP_GToS, 8): STORE_F2INT(s64)	break;
+
+		case MASHOP(IROP_GToU, 1): STORE_F2INT(u8)	break;
+		case MASHOP(IROP_GToU, 2): STORE_F2INT(u16)	break;
+		case MASHOP(IROP_GToU, 4): STORE_F2INT(u32)	break;
+		case MASHOP(IROP_GToU, 8): STORE_F2INT(u64)	break;
+
+		case MASHOP(IROP_SToG, 4): STORE_CAST(f32, s)	break;
+		case MASHOP(IROP_SToG, 8): STORE_CAST(f64, s)	break;
+
+		case MASHOP(IROP_UToG, 4): STORE_CAST(f32, u)	break;
+		case MASHOP(IROP_UToG, 8): STORE_CAST(f64, u)	break;
+
+		case MASHOP(IROP_GTrunc, 4): 
+			{
+				ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+				EWC_ASSERT(wordRhs.m_s64 == 8, "unexpected float truncate source size");
+				STORE(pInst->m_iBStackOut, f32, f32(wordLhs.m_f64));
+			} break;
+		case MASHOP(IROP_GExtend, 8): 
+			{
+				ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+				EWC_ASSERT(wordRhs.m_s64 == 4, "unexpected float extend source size");
+				STORE(pInst->m_iBStackOut, f64, f64(wordLhs.m_f32));
+			} break;
+
+#define STORE_PCAST(TYPE, SIGN) \
+			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
+			switch(wordRhs.m_s32) \
+			{\
+			case 1: STORE(pInst->m_iBStackOut, TYPE, (TYPE)uintptr_t(wordLhs.m_##SIGN##8));		break; \
+			case 2: STORE(pInst->m_iBStackOut, TYPE, (TYPE)uintptr_t(wordLhs.m_##SIGN##16));	break; \
+			case 4: STORE(pInst->m_iBStackOut, TYPE, (TYPE)uintptr_t(wordLhs.m_##SIGN##32));	break; \
+			case 8: STORE(pInst->m_iBStackOut, TYPE, (TYPE)uintptr_t(wordLhs.m_##SIGN##64));	break; \
+			} 
+
+#define STORE_PTRTOINT(TYPE) \
+			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
+			STORE(pInst->m_iBStackOut, TYPE, (TYPE)reinterpret_cast<uintptr_t>(wordLhs.m_pV));
+
+		case MASHOP(IROP_IntToPtr, 4): STORE_PCAST(void*, u)	break;
+		case MASHOP(IROP_IntToPtr, 8): STORE_PCAST(void*, u)	break;
+
+		case MASHOP(IROP_PtrToInt, 1): STORE_PTRTOINT(u8)	break;
+		case MASHOP(IROP_PtrToInt, 2): STORE_PTRTOINT(u16)	break;
+		case MASHOP(IROP_PtrToInt, 4): STORE_PTRTOINT(u32)	break;
+		case MASHOP(IROP_PtrToInt, 8): STORE_PTRTOINT(u64)	break;
+
 		case MASHOP(IROP_NTrace, 1):	
 			ReadOpcode(pVm, pInst, 1, &wordLhs); printf("1byte %d\n", wordLhs.m_u8); break;
 		case MASHOP(IROP_NTrace, 2):	
@@ -2837,7 +2978,6 @@ bool LoadForeignLibraries(CWorkspace * pWork, CHash<HV, void*> * pHashHvPFn, CDy
 			parypDll->Append(pDll);
 
 #define PRINT_DLL_SYMBOLS 0
-#if PRINT_DLL_SYMBOLS
 			auto pDllsym = dlSymsInit(aCozWorking);
 			int cSym = dlSymsCount(pDllsym);
 			for (int iSym = 0; iSym < cSym; ++iSym)
@@ -2849,7 +2989,9 @@ bool LoadForeignLibraries(CWorkspace * pWork, CHash<HV, void*> * pHashHvPFn, CDy
 				}
 				else
 				{
+#if PRINT_DLL_SYMBOLS
 					printf("sym: %s\n", pChzSymName);
+#endif
 
 					void * pFn = dlFindSymbol(pDll, pChzSymName);
 					EWC_ASSERT(pFn, "failed looking up reported foreign fufnction");
@@ -2865,7 +3007,6 @@ bool LoadForeignLibraries(CWorkspace * pWork, CHash<HV, void*> * pHashHvPFn, CDy
 			}
 
 			dlSymsCleanup(pDllsym);
-#endif
 		}
 	}
 

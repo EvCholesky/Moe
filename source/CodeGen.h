@@ -174,16 +174,16 @@ struct OpSignature // tag = opsig
 						/* Memcpy(pDst, pDst, pSrc);  ExArgs(cB)*/ \
 		OPMX(MemoryOp,	Memcpy)		OPSIZE(RegIdx, RegIdx, 0) \
 		\
-		OPMN(CastOp,	NTrunc)		OPSIZE(0, 0, 0) \
-		OP(				SignExt)	OPSIZE(0, 0, 0) \
-		OP(				ZeroExt)	OPSIZE(0, 0, 0) \
-		OP(				GToS)		OPSIZE(0, 0, 0) \
-		OP(				GToU)		OPSIZE(0, 0, 0) \
-		OP(				SToG)		OPSIZE(0, 0, 0) \
-		OP(				UToG)		OPSIZE(0, 0, 0) \
-		OP(				GTrunc)		OPSIZE(0, 0, 0) \
-		OP(				GExtend)	OPSIZE(0, 0, 0) \
-						/* PtrToInt(Reg(Pointer), pTin)->iBStack(int) */ \
+						/* CastOp(reg, cBOperandRhs); */ \
+		OPMN(CastOp,	NTrunc)		OPSIZE(0, 8, CB) \
+		OP(				SignExt)	OPSIZE(0, 8, CB) \
+		OP(				ZeroExt)	OPSIZE(0, 8, CB) \
+		OP(				GToS)		OPSIZE(0, 8, CB) \
+		OP(				GToU)		OPSIZE(0, 8, CB) \
+		OP(				SToG)		OPSIZE(0, 8, CB) \
+		OP(				UToG)		OPSIZE(0, 8, CB) \
+		OP(				GTrunc)		OPSIZE(0, 8, CB) \
+		OP(				GExtend)	OPSIZE(0, 8, CB) \
 		OP(				PtrToInt)	OPSIZE(0, 0, 0) \
 		OP(				IntToPtr)	OPSIZE(0, 0, 0) \
 		OPMX(CastOp,	Bitcast)	OPSIZE(0, 0, 0) \
