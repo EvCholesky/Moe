@@ -29,9 +29,11 @@
 // [ ] Clean up remaining TBDs
 // [x]  Phi nodes
 // [x]  Casting
-// [x]		Casting Tests
-// [ ]	Bit Shifting
+// [x]		Casting tests
+// [x]	Bit shifting
+// [x]		Bit shifting tests
 // [ ]	Bitwise ops
+// [ ]		Bitwise ops tests
 // [ ]  Reflection
 // [ ]  Switch nodes
 // [ ]  FFI 
@@ -2472,6 +2474,21 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 
 		case MASHOP(IROP_GRem, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, fmodf(wordLhs.m_f32, wordRhs.m_f32));	break;
 		case MASHOP(IROP_GRem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, fmod(wordLhs.m_f64,  wordRhs.m_f64));	break;
+
+		case MASHOP(IROP_Shl, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 << wordRhs.m_u8);	break;
+		case MASHOP(IROP_Shl, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 << wordRhs.m_u16);	break;
+		case MASHOP(IROP_Shl, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 << wordRhs.m_u32);	break;
+		case MASHOP(IROP_Shl, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 << wordRhs.m_u64);	break;
+
+		case MASHOP(IROP_LShr, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 >> wordRhs.m_u8);	break;
+		case MASHOP(IROP_LShr, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 >> wordRhs.m_u16);	break;
+		case MASHOP(IROP_LShr, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u32, wordLhs.m_u32 >> wordRhs.m_u32);	break;
+		case MASHOP(IROP_LShr, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u64, wordLhs.m_u64 >> wordRhs.m_u64);	break;
+
+		case MASHOP(IROP_AShr, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s8, wordLhs.m_s8 >> wordRhs.m_s8);	break;
+		case MASHOP(IROP_AShr, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s16, wordLhs.m_s16 >> wordRhs.m_s16);	break;
+		case MASHOP(IROP_AShr, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s32, wordLhs.m_s32 >> wordRhs.m_s32);	break;
+		case MASHOP(IROP_AShr, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s64, wordLhs.m_s64 >> wordRhs.m_s64);	break;
 
 #define STORE_CAST(TYPE, SIGN) \
 			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \

@@ -153,9 +153,9 @@ struct OpSignature // tag = opsig
 		OPMN(CmpOp,		NCmp)		OPSIZE(CB, CB, 1) \
 		OPMX(CmpOp,		GCmp)		OPSIZE(CB, CB, 1) \
 		\
-		OPMN(LogicOp,	Shl)		OPSIZE(0, 0, 0) \
-		OP(				AShr)		OPSIZE(0, 0, 0) \
-		OP(				LShr)		OPSIZE(0, 0, 0) \
+		OPMN(LogicOp,	Shl)		OPSIZE(CB, CB, CB) \
+		OP(				AShr)		OPSIZE(CB, CB, CB) \
+		OP(				LShr)		OPSIZE(CB, CB, CB) \
 		OP(				And)		OPSIZE(0, 0, 0) \
 		OP(				Or)			OPSIZE(0, 0, 0) \
 		OPMX(LogicOp,	Xor)		OPSIZE(0, 0, 0) \

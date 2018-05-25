@@ -176,6 +176,17 @@ test BytecodeCast
 		},
 	}
 
+test BytecodeShift	
+	prereq "src: ?srctype = ?val"
+	input  "dst := src ?shift ?cbits"
+	bytecode  "{?val;?out;}"
+	{
+		?srctype(s64|s32|s16|s8|u64|u32|u16|u8) + ?shift(">>") + ?val(12) + ?cbits(1) + ?out(6),
+		?srctype(s32|u32) + ?shift(">>") + ?val(12) + ?cbits(2) + ?out(3),
+		?srctype(s64|s32|s16|s8) + ?shift(">>") + ?val(-1) + ?cbits(3) + ?out(-1),
+		?srctype(s64|s32|s16|s8|u64|u32|u16|u8) + ?shift("<<") + ?val(7) + ?cbits(2) + ?out(28),
+	}
+
 	// To Test:
 	// To Test:
 	// [ ] fdir.m_top should be a boolean value as an rvalue or a lvalue
