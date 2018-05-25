@@ -26,14 +26,14 @@
 #include "dyncall\dyncall\dyncall_signature.h"
 
 // Remaining bytecode tasks
-// [ ] Clean up remaining TBDs
-// [x]  Phi nodes
 // [x]  Casting
 // [x]		Casting tests
 // [x]	Bit shifting
 // [x]		Bit shifting tests
-// [ ]	Bitwise ops
-// [ ]		Bitwise ops tests
+// [x]	Bitwise ops
+// [x]		Bitwise ops tests
+// [ ] Clean up remaining TBDs
+// [x]  Phi nodes
 // [ ]  Reflection
 // [ ]  Switch nodes
 // [ ]  FFI 
@@ -2490,6 +2490,20 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_AShr, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s32, wordLhs.m_s32 >> wordRhs.m_s32);	break;
 		case MASHOP(IROP_AShr, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s64, wordLhs.m_s64 >> wordRhs.m_s64);	break;
 
+		case MASHOP(IROP_And, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s8, wordLhs.m_s8 & wordRhs.m_s8);	break;
+		case MASHOP(IROP_And, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s16, wordLhs.m_s16 & wordRhs.m_s16);	break;
+		case MASHOP(IROP_And, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s32, wordLhs.m_s32 & wordRhs.m_s32);	break;
+		case MASHOP(IROP_And, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s64, wordLhs.m_s64 & wordRhs.m_s64);	break;
+
+		case MASHOP(IROP_Or, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s8, wordLhs.m_s8 | wordRhs.m_s8);	break;
+		case MASHOP(IROP_Or, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s16, wordLhs.m_s16 | wordRhs.m_s16);	break;
+		case MASHOP(IROP_Or, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s32, wordLhs.m_s32 | wordRhs.m_s32);	break;
+		case MASHOP(IROP_Or, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s64, wordLhs.m_s64 | wordRhs.m_s64);	break;
+
+		case MASHOP(IROP_Xor, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s8, wordLhs.m_s8 ^ wordRhs.m_s8);	break;
+		case MASHOP(IROP_Xor, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s16, wordLhs.m_s16 ^ wordRhs.m_s16);	break;
+		case MASHOP(IROP_Xor, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s32, wordLhs.m_s32 ^ wordRhs.m_s32);	break;
+		case MASHOP(IROP_Xor, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s64, wordLhs.m_s64 ^ wordRhs.m_s64);	break;
 #define STORE_CAST(TYPE, SIGN) \
 			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
 			switch(wordRhs.m_s32) \

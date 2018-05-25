@@ -156,9 +156,9 @@ struct OpSignature // tag = opsig
 		OPMN(LogicOp,	Shl)		OPSIZE(CB, CB, CB) \
 		OP(				AShr)		OPSIZE(CB, CB, CB) \
 		OP(				LShr)		OPSIZE(CB, CB, CB) \
-		OP(				And)		OPSIZE(0, 0, 0) \
-		OP(				Or)			OPSIZE(0, 0, 0) \
-		OPMX(LogicOp,	Xor)		OPSIZE(0, 0, 0) \
+		OP(				And)		OPSIZE(CB, CB, CB) \
+		OP(				Or)			OPSIZE(CB, CB, CB) \
+		OPMX(LogicOp,	Xor)		OPSIZE(CB, CB, CB) \
 		\
 						/* Alloca(iBStackResult, pTinDebug)->iBStack(ref) */ \
 		OPMN(MemoryOp,	Alloca)		OPSIZE(RegIdx, Ptr, PCB) \

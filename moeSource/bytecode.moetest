@@ -1,3 +1,4 @@
+/*
 test BytecodeInferAlloc
 	input "n := ?val"
 	bytecode "{?val;}"
@@ -185,6 +186,16 @@ test BytecodeShift
 		?srctype(s32|u32) + ?shift(">>") + ?val(12) + ?cbits(2) + ?out(3),
 		?srctype(s64|s32|s16|s8) + ?shift(">>") + ?val(-1) + ?cbits(3) + ?out(-1),
 		?srctype(s64|s32|s16|s8|u64|u32|u16|u8) + ?shift("<<") + ?val(7) + ?cbits(2) + ?out(28),
+	}
+*/
+test BytecodeBitwiseOps
+	prereq "a : ?type = ?aval; b : ?type = ?bval"
+	input "c := a ?op b"
+	bytecode "{?aval;?bval;?out;}"
+	{
+		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(8) + ?op("|") + ?out(11),
+		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(7) + ?op("&") + ?out(3),
+		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(6) + ?op("^") + ?out(5),
 	}
 
 	// To Test:
