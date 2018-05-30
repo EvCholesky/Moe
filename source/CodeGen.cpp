@@ -5063,9 +5063,10 @@ BCode::SValue * PValGenerateTypeInfo(BCode::CBuilder * pBuild, CSTNode * pStnod,
 	return nullptr;
 }
 
-void GenerateSwitch(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnod, CIRValue * pValExp)
+template <typename BUILD>
+void GenerateSwitch(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod, typename BUILD::Value * pValExp)
 {
-	CIRProcedure * pProc = pBuild->m_pProcCur;
+	BUILD::Proc * pProc = pBuild->m_pProcCur;
 	auto pBlockPost = pBuild->PBlockCreate(pProc, "PostSw");
 	auto pBlockDefault = pBlockPost;
 
@@ -5078,8 +5079,8 @@ void GenerateSwitch(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnod, C
 		pJumpt->m_strLabel = pStnod->m_pStident->m_str;
 	}
 
-	CDynAry<LLVMOpaqueValue *> arypLval(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
-	CDynAry<CIRBlock *> arypBlock(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
+	CDynAry<BUILD::Value *> arypVal(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
+	CDynAry<BUILD::Block *> arypBlock(pBuild->m_pAlloc, BK_CodeGen, pStnod->CStnodChild()-1);
 
 	u32 cStnodCase = 0;
 	for (int iStnodChild = 1; iStnodChild < pStnod->CStnodChild(); ++iStnodChild)
@@ -5107,7 +5108,7 @@ void GenerateSwitch(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnod, C
 		}
 	}
 
-	auto pLvalSw = LLVMBuildSwitch(pBuild->m_pLbuild, pValExp->m_pLval, pBlockDefault->m_pLblock, cStnodCase);
+	auto pInstSw = pBuild->PInstCreateSwitch(pValExp, pBlockDefault, cStnodCase);
 
 	bool fPrevCaseFallsThrough = false;
 	for (int iStnodChild = 1; iStnodChild < pStnod->CStnodChild(); ++iStnodChild)
@@ -5118,7 +5119,7 @@ void GenerateSwitch(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnod, C
 
 		RWORD rword = pStnodCase->m_pStval->m_rword;
 
-		CIRBlock * pBlockBody = nullptr;
+		BUILD::Block * pBlockBody = nullptr;
 		CSTNode * pStnodBody = nullptr;
 		switch (rword)
 		{
@@ -5133,7 +5134,7 @@ void GenerateSwitch(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnod, C
 				{
 					auto pValLit = PValGenerate(pWork, pBuild, pStnodCase->PStnodChild(iStnodLit), VALGENK_Instance);
 					arypBlock.Append(pBlockCase);
-					arypLval.Append(pValLit->m_pLval);
+					arypVal.Append(pValLit);
 				}
 
 				pBlockBody = pBlockCase;
@@ -5168,18 +5169,28 @@ void GenerateSwitch(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnod, C
 		}
 	}
 
-	for (int ipLval = 0; ipLval < arypLval.C(); ++ipLval)
+	for (int ipLval = 0; ipLval < arypVal.C(); ++ipLval)
 	{
-		LLVMAddCase(pLvalSw, arypLval[ipLval], arypBlock[ipLval]->m_pLblock);
+		pBuild->AddSwitchCase(pInstSw, arypVal[ipLval], arypBlock[ipLval]);
 	}
 	
 	pBuild->m_aryJumptStack.PopLast();
 	pBuild->ActivateBlock(pBlockPost);
 }
 
-void GenerateSwitch(CWorkspace * pWork, BCode::CBuilder * pBuild, CSTNode * pStnod, BCode::SValue * pValExp)
+CIRInstruction * CBuilderIR::PInstCreateSwitch(CIRValue * pVal, CIRBlock * pBlockElse, u32 cCases)
 {
-	EWC_ASSERT(false, "bytecode TBD (generate switch)");
+	CIRInstruction * pInst = PInstCreateRaw(IROP_Switch, nullptr, nullptr, "");
+	if (FIsError(pInst))
+		return pInst;
+
+	pInst->m_pLval = LLVMBuildSwitch(m_pLbuild, pVal->m_pLval, pBlockElse->m_pLblock, cCases);
+	return pInst;
+}
+
+void CBuilderIR::AddSwitchCase(CIRInstruction * pInstSwitch, CIRValue * pValOn, CIRBlock * pBlock)
+{
+	LLVMAddCase(pInstSwitch->m_pLval, pValOn->m_pLval, pBlock->m_pLblock); 
 }
 
 static inline bool FIsNull(CIRValue * pVal)

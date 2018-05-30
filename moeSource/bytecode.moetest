@@ -187,7 +187,6 @@ test BytecodeShift
 		?srctype(s64|s32|s16|s8) + ?shift(">>") + ?val(-1) + ?cbits(3) + ?out(-1),
 		?srctype(s64|s32|s16|s8|u64|u32|u16|u8) + ?shift("<<") + ?val(7) + ?cbits(2) + ?out(28),
 	}
-*/
 test BytecodeBitwiseOps
 	prereq "a : ?type = ?aval; b : ?type = ?bval"
 	input "c := a ?op b"
@@ -196,6 +195,15 @@ test BytecodeBitwiseOps
 		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(8) + ?op("|") + ?out(11),
 		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(7) + ?op("&") + ?out(3),
 		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(6) + ?op("^") + ?out(5),
+	}
+*/
+test BytecodeSwitch
+	prereq "a : ?aType = ?aVal; b:= 0"
+	input "switch ?aVal {case ?first: b = 1; case ?second: b = 2; else: b = 3}"
+	bytecode "{?aVal;0;?res;}"
+	{
+		?aType(u8|s8|u64|s64) + ?aVal(1) + ?first(1) + ?second(10) + ?res(1),
+		?aType(u8|s8|u64|s64) + ?aVal(10) + ?first(1) + ?second(10) + ?res(2),
 	}
 
 	// To Test:

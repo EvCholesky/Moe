@@ -378,6 +378,8 @@ namespace BCode
 
 		Instruction *		PInstCreatePhi(LType * pLtype, const char * pChzName);
 		void				AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock);
+		Instruction *		PInstCreateSwitch(SValue * pVal, SBlock * pBlockElse, u32 cSwitchCase);
+		void				AddSwitchCase(Instruction * pInstSwitch, SValue * pValOn, SBlock * pBlock);
 
 		SConstant *			PConstArg(s64 n, int cBit = 64, bool fIsSigned = true);
 		SRegister *			PReg(s64 n, int cBit = 64, bool fIsSigned = true);
@@ -433,6 +435,10 @@ namespace BCode
 
 		SProcedure *						m_pProcCur;
 		SBlock *							m_pBlockCur;
+
+		SInstructionValue *					m_pInstvalSwitch;	// latest switch instruction (for creating cases)
+		int									m_iInstCase;
+		int									m_cInstCase;
 	};
 
 

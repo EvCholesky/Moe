@@ -35,7 +35,7 @@
 // [ ] Clean up remaining TBDs
 // [x]  Phi nodes
 // [ ]  Reflection
-// [ ]  Switch nodes
+// [x]  Switch nodes
 // [ ]  FFI 
 // [x]		FFI basics
 // [ ]		FFI variadic functions
@@ -275,6 +275,9 @@ CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay, EWC::CHash<HV, void*
 ,m_blistConst(pWork->m_pAlloc, BK_ByteCodeCreator)
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
+,m_pInstvalSwitch(nullptr)
+,m_iInstCase(0)
+,m_cInstCase(0)
 {
 }
 
@@ -461,6 +464,8 @@ inline void RemoveOpkArg(OPK * pOpk)
 
 void CBuilder::FinalizeProc(SProcedure * pProc)
 {
+	EWC_ASSERT(m_pInstvalSwitch == nullptr, "bytecode builder switch wasn't completed (wrong case count?)");
+
 	s32 cInst = 0;
 	for (auto ppBlock = pProc->m_arypBlock.A(); ppBlock != pProc->m_arypBlock.PMac(); ++ppBlock)
 	{
@@ -481,6 +486,7 @@ void CBuilder::FinalizeProc(SProcedure * pProc)
 		for (auto pBranch = pBlock->m_aryBranch.A(); pBranch != pBlock->m_aryBranch.PMac(); ++pBranch)
 		{
 			auto iInstFinal = pBranch->m_pBlockDest->m_iInstFinal;
+
 			EWC_ASSERT(iInstFinal >= 0, "block was not finalized");
 			*pBranch->m_pIInstDst = iInstFinal;
 		}
@@ -880,6 +886,36 @@ void CBuilder::PrintDump()
 					} while(pInst->m_irop == IROP_ExArgs);
 
 				} break;
+			case IROP_Switch:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+					auto pInstSw = pInst;
+
+					while ((pInst + 1)->m_irop == IROP_ExArgs)
+					{
+						++pInst;
+						AppendCoz(&strbuf, "\n");
+						auto cChBase = CCh(strbuf.m_pCozBegin);
+
+						AppendToCch(&strbuf, ' ', 6 + cChBase);
+						AppendCoz(&strbuf, "  case:");
+
+						AppendToCch(&strbuf, ' ', s_operandPos + cChBase);
+						PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+						FormatCoz(&strbuf, " i%d", pInst->m_wordRhs.m_s32);
+					}
+
+					AppendCoz(&strbuf, "\n");
+					auto cChBase = CCh(strbuf.m_pCozBegin);
+
+					AppendToCch(&strbuf, ' ', 6 + cChBase);
+					AppendCoz(&strbuf, "  else:");
+
+					AppendToCch(&strbuf, ' ', s_operandPos + cChBase);
+					FormatCoz(&strbuf, " i%d", pInstSw->m_wordRhs.m_s32);
+
+				} break;
 			case IROP_GEP:
 				{
 					auto pInstGep = pInst;
@@ -1216,6 +1252,60 @@ void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 	if (fIsPhiNode)
 	{
 		AllocateStackOut(this, pInstInc, valout.m_cBRegister, valout.m_cBRegister);
+	}
+}
+
+SInstructionValue * CBuilder::PInstCreateSwitch(SValue * pVal, SBlock * pBlockElse, u32 cSwitchCase)
+{
+	EWC_ASSERT(m_pInstvalSwitch == nullptr, "previous switch was not finished. (wrong case count?)");
+
+	auto pInstvalSwitch = PInstCreateRaw(IROP_Switch, pVal, nullptr);
+	auto pInstSwitch = pInstvalSwitch->m_pInst;
+	m_pInstvalSwitch = pInstvalSwitch;
+	m_iInstCase = 0;
+	m_cInstCase = cSwitchCase;
+
+	s32 * pIInstElse = &pInstSwitch->m_wordRhs.m_s32;
+	auto pBranchElse = m_pBlockCur->m_aryBranch.AppendNew();
+	pBranchElse->m_pBlockDest = pBlockElse;
+	pBranchElse->m_pIInstDst = pIInstElse;
+
+	for (u32 iSwitchCase = 0; iSwitchCase < cSwitchCase; ++iSwitchCase)
+	{
+		auto pInstvalCase = PInstAlloc();
+		auto pInstCase = pInstvalCase->m_pInst;
+		pInstCase->m_irop = IROP_ExArgs;
+		pInstCase->m_wordLhs.m_pV = m_pBlockCur;	// make sure we use the right block when adding this case
+	}
+
+	return pInstvalSwitch;
+}
+
+void CBuilder::AddSwitchCase(SInstructionValue * pInstvalSwitch, SValue * pValCmp, SBlock * pBlock)
+{
+	EWC_ASSERT(m_pInstvalSwitch == pInstvalSwitch, "bytecode builder switch mismatch (wrong case count?)");
+	++m_iInstCase;
+	if (m_iInstCase == m_cInstCase)
+	{
+		m_pInstvalSwitch = nullptr;
+	}
+
+	SValueOutput valout;
+	SInstruction * pInstEx = (pInstvalSwitch->m_pInst + m_iInstCase);
+	if (EWC_FVERIFY(pInstEx->m_irop == IROP_ExArgs, "bad switch case"))
+	{
+		SBlock * pBlockSwitch = (SBlock*)pInstEx->m_wordLhs.m_pV;
+
+		SetOperandFromValue(m_pDlay, pValCmp, &pInstEx->m_opkLhs, &pInstEx->m_wordLhs, OPSZ_CB, &valout);
+		EWC_ASSERT(valout.m_cBRegister == pInstvalSwitch->m_pInst->m_cBOperand, "switch operand size mismatch");
+		
+		s32 * pIInst = &pInstEx->m_wordRhs.m_s32;
+		auto pBranch = pBlockSwitch->m_aryBranch.AppendNew();
+		pBranch->m_pBlockDest = pBlock;
+		pBranch->m_pIInstDst = pIInst;
+
+		*pBranch->m_pIInstDst = 1234;
+		EWC_ASSERT(pInstEx->m_wordRhs.m_s32 == 1234, "wtf");
 	}
 }
 
@@ -2396,33 +2486,33 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	{
 		switch (MASHOP(pInst->m_irop, pInst->m_cBOperand))
 		{
-		case MASHOP(IROP_Alloca, 4):	
-		case MASHOP(IROP_Alloca, 8):	
-			{
-				u8 * ptr = &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
-				*(u8 **)&pVm->m_pBStack[pInst->m_iBStackOut] = ptr;
-			} break;
+		case MASHOP(IROP_Alloca, 4):
+		case MASHOP(IROP_Alloca, 8):
+		{
+			u8 * ptr = &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
+			*(u8 **)&pVm->m_pBStack[pInst->m_iBStackOut] = ptr;
+		} break;
 
-		case MASHOP(IROP_Store, 1):	
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); 
-			*((u8*)wordLhs.m_pV) = wordRhs.m_u8;	
+		case MASHOP(IROP_Store, 1):
+			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs);
+			*((u8*)wordLhs.m_pV) = wordRhs.m_u8;
 			break;
-		case MASHOP(IROP_Store, 2):	
+		case MASHOP(IROP_Store, 2):
 			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u16*)wordLhs.m_pV) = wordRhs.m_u16;	break;
-		case MASHOP(IROP_Store, 4):	
+		case MASHOP(IROP_Store, 4):
 			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u32*)wordLhs.m_pV) = wordRhs.m_u32;	break;
-		case MASHOP(IROP_Store, 8):	
+		case MASHOP(IROP_Store, 8):
 			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u64*)wordLhs.m_pV) = wordRhs.m_u64;	break;
 
-		case MASHOP(IROP_Load, 1):	
-			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); 
-			STORE(pInst->m_iBStackOut, u8, *(u8*)wordLhs.m_pV); 
+		case MASHOP(IROP_Load, 1):
+			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs);
+			STORE(pInst->m_iBStackOut, u8, *(u8*)wordLhs.m_pV);
 			break;
-		case MASHOP(IROP_Load, 2):	
+		case MASHOP(IROP_Load, 2):
 			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u16, *(u16*)wordLhs.m_pV); break;
-		case MASHOP(IROP_Load, 4):	
+		case MASHOP(IROP_Load, 4):
 			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u32, *(u32*)wordLhs.m_pV); break;
-		case MASHOP(IROP_Load, 8):	
+		case MASHOP(IROP_Load, 8):
 			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u64, *(u64*)wordLhs.m_pV); break;
 
 		case MASHOP(IROP_NAdd, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 + wordRhs.m_u8);		break;
@@ -2473,7 +2563,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_GDiv, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, wordLhs.m_f64 / wordRhs.m_f64);	break;
 
 		case MASHOP(IROP_GRem, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f32, fmodf(wordLhs.m_f32, wordRhs.m_f32));	break;
-		case MASHOP(IROP_GRem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, fmod(wordLhs.m_f64,  wordRhs.m_f64));	break;
+		case MASHOP(IROP_GRem, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, f64, fmod(wordLhs.m_f64, wordRhs.m_f64));	break;
 
 		case MASHOP(IROP_Shl, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 << wordRhs.m_u8);	break;
 		case MASHOP(IROP_Shl, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 << wordRhs.m_u16);	break;
@@ -2558,18 +2648,18 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_UToG, 4): STORE_CAST(f32, u)	break;
 		case MASHOP(IROP_UToG, 8): STORE_CAST(f64, u)	break;
 
-		case MASHOP(IROP_GTrunc, 4): 
-			{
-				ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs);
-				EWC_ASSERT(wordRhs.m_s64 == 8, "unexpected float truncate source size");
-				STORE(pInst->m_iBStackOut, f32, f32(wordLhs.m_f64));
-			} break;
-		case MASHOP(IROP_GExtend, 8): 
-			{
-				ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs);
-				EWC_ASSERT(wordRhs.m_s64 == 4, "unexpected float extend source size");
-				STORE(pInst->m_iBStackOut, f64, f64(wordLhs.m_f32));
-			} break;
+		case MASHOP(IROP_GTrunc, 4):
+		{
+			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+			EWC_ASSERT(wordRhs.m_s64 == 8, "unexpected float truncate source size");
+			STORE(pInst->m_iBStackOut, f32, f32(wordLhs.m_f64));
+		} break;
+		case MASHOP(IROP_GExtend, 8):
+		{
+			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs);
+			EWC_ASSERT(wordRhs.m_s64 == 4, "unexpected float extend source size");
+			STORE(pInst->m_iBStackOut, f64, f64(wordLhs.m_f32));
+		} break;
 
 #define STORE_PCAST(TYPE, SIGN) \
 			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
@@ -2593,20 +2683,20 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_PtrToInt, 4): STORE_PTRTOINT(u32)	break;
 		case MASHOP(IROP_PtrToInt, 8): STORE_PTRTOINT(u64)	break;
 
-		case MASHOP(IROP_NTrace, 1):	
+		case MASHOP(IROP_NTrace, 1):
 			ReadOpcode(pVm, pInst, 1, &wordLhs); printf("1byte %d\n", wordLhs.m_u8); break;
-		case MASHOP(IROP_NTrace, 2):	
+		case MASHOP(IROP_NTrace, 2):
 			ReadOpcode(pVm, pInst, 2, &wordLhs); printf("2byte %d\n", wordLhs.m_u16); break;
-		case MASHOP(IROP_NTrace, 4):	
+		case MASHOP(IROP_NTrace, 4):
 			ReadOpcode(pVm, pInst, 4, &wordLhs); printf("4byte %d\n", wordLhs.m_u32); break;
-		case MASHOP(IROP_NTrace, 8):	
+		case MASHOP(IROP_NTrace, 8):
 			ReadOpcode(pVm, pInst, 8, &wordLhs); printf("8byte %lld\n", wordLhs.m_u64); break;
 
-		case MASHOP(IROP_TraceStore, 0):	
-		case MASHOP(IROP_TraceStore, 1):	
-		case MASHOP(IROP_TraceStore, 2):	
-		case MASHOP(IROP_TraceStore, 4):	
-		case MASHOP(IROP_TraceStore, 8):	
+		case MASHOP(IROP_TraceStore, 0):
+		case MASHOP(IROP_TraceStore, 1):
+		case MASHOP(IROP_TraceStore, 2):
+		case MASHOP(IROP_TraceStore, 4):
+		case MASHOP(IROP_TraceStore, 8):
 		{
 			if (pVm->m_pStrbuf)
 			{
@@ -2617,68 +2707,68 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			}
 		} break;
 
-			// Store value to virtual register (pV, value)
-		case MASHOP(IROP_StoreToReg, 1):	
-			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_wordLhs.m_s32, u8, wordRhs.m_u8); 
+		// Store value to virtual register (pV, value)
+		case MASHOP(IROP_StoreToReg, 1):
+			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
+			STORE(pInst->m_wordLhs.m_s32, u8, wordRhs.m_u8);
 			break;
-		case MASHOP(IROP_StoreToReg, 2):	
+		case MASHOP(IROP_StoreToReg, 2):
 			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
 			STORE(pInst->m_wordLhs.m_s32, u16, wordRhs.m_u16);
 			break;
-		case MASHOP(IROP_StoreToReg, 4):	
-			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs); 
-			STORE(pInst->m_wordLhs.m_s32, u32, wordRhs.m_u32); 
+		case MASHOP(IROP_StoreToReg, 4):
+			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
+			STORE(pInst->m_wordLhs.m_s32, u32, wordRhs.m_u32);
 			break;
-		case MASHOP(IROP_StoreToReg, 8):	
+		case MASHOP(IROP_StoreToReg, 8):
 			EWC_ASSERT(FIsRegister(pInst->m_opkLhs), "expected register for destination");
 			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
-			STORE(pInst->m_wordLhs.m_s32, u64, wordRhs.m_u64); 
+			STORE(pInst->m_wordLhs.m_s32, u64, wordRhs.m_u64);
 			break;
 
 			// Store value to virtual register (pV, value)
-		case MASHOP(IROP_StoreToIdx, 1):	
-			ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); 
-			STORE(wordLhs.m_s32, u8, wordRhs.m_u8); 
+		case MASHOP(IROP_StoreToIdx, 1):
+			ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs);
+			STORE(wordLhs.m_s32, u8, wordRhs.m_u8);
 			break;
-		case MASHOP(IROP_StoreToIdx, 2):	
+		case MASHOP(IROP_StoreToIdx, 2):
 			ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs);
 			STORE(wordLhs.m_s32, u16, wordRhs.m_u16);
 			break;
-		case MASHOP(IROP_StoreToIdx, 4):	
-			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); 
-			STORE(wordLhs.m_s32, u32, wordRhs.m_u32); 
+		case MASHOP(IROP_StoreToIdx, 4):
+			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs);
+			STORE(wordLhs.m_s32, u32, wordRhs.m_u32);
 			break;
-		case MASHOP(IROP_StoreToIdx, 8):	
+		case MASHOP(IROP_StoreToIdx, 8):
 			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
-			STORE(wordLhs.m_s32, u64, wordRhs.m_u64); 
+			STORE(wordLhs.m_s32, u64, wordRhs.m_u64);
 			break;
 
 		case MASHOP(IROP_NCmp, 1):
-			{
-				ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs);
-				bool fEval = FEvaluateNCmp<1>((NPRED)pInst->m_pred, wordLhs, wordRhs);
-				STORE(pInst->m_iBStackOut, u8, fEval);
-			} break;
+		{
+			ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs);
+			bool fEval = FEvaluateNCmp<1>((NPRED)pInst->m_pred, wordLhs, wordRhs);
+			STORE(pInst->m_iBStackOut, u8, fEval);
+		} break;
 		case MASHOP(IROP_NCmp, 2):
-			ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); 
+			ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs);
 			STORE(pInst->m_iBStackOut, u16, FEvaluateNCmp<2>((NPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 		case MASHOP(IROP_NCmp, 4):
-			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); 
+			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs);
 			STORE(pInst->m_iBStackOut, u32, FEvaluateNCmp<4>((NPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 		case MASHOP(IROP_NCmp, 8):
-			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); 
+			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
 			STORE(pInst->m_iBStackOut, u64, FEvaluateNCmp<8>((NPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 
 		case MASHOP(IROP_GCmp, 4):
-			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); 
+			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs);
 			STORE(pInst->m_iBStackOut, u32, FEvaluateGCmp<4>((GPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 		case MASHOP(IROP_GCmp, 8):
-			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); 
+			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
 			STORE(pInst->m_iBStackOut, u64, FEvaluateGCmp<8>((GPRED)pInst->m_pred, wordLhs, wordRhs));
 			break;
 
@@ -2737,7 +2827,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			EWC_ASSERT(uintptr_t(pVm->m_pBStack) >= uintptr_t(pVm->m_pBStackMin), "stack overflow");
 
 			//printf("IROP_Call) pBStack = %p, ppInst = %p, cBStack = %lld, cBArg = %lld\n", pVm->m_pBStack, ppInstRet, pProc->m_cBStack, pProc->m_cBArg);
-			
+
 			*ppInstRet = pInst;
 
 			pInstMin = pProc->m_aryInst.A();
@@ -2819,7 +2909,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			pVm->m_pProcCurDebug = pProcPrev;
 			pInstMin = pProcPrev->m_aryInst.A();
 			pInst = pInstCall;
-			
+
 		} break;
 
 		case MASHOP(IROP_CondBranch, 0):
@@ -2835,12 +2925,34 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			pInst = &pInstMin[iInst - 1]; // -1 because it is incremented below
 		} break;
 		case MASHOP(IROP_Branch, 0):
-		{	
+		{
 			s32 iInst = pInst->m_wordRhs.m_s32;
 
 			pVm->m_iInstSource = s32(pInst - pInstMin);
 			pInst = &pInstMin[iInst - 1]; // -1 because it is incremented below
 		} break;
+
+#define EXEC_SWITCH(CB, VAR)	\
+			{					\
+				ReadOpcode(pVm, pInst, CB, &wordLhs);			\
+				s32 iInst = pInst->m_wordRhs.m_s32;				\
+																\
+				while ((pInst + 1)->m_irop == IROP_ExArgs)		\
+				{												\
+					++pInst;									\
+					ReadOpcode(pVm, pInst, CB, &wordLhsEx);		\
+					if (wordLhs.m_##VAR == wordLhsEx.m_##VAR)	\
+						iInst = pInst->m_wordRhs.m_s32;			\
+				}												\
+				pVm->m_iInstSource = s32(pInst - pInstMin);							\
+				pInst = &pInstMin[iInst - 1]; /* -1 because it is incremented below */\
+			}
+
+		case MASHOP(IROP_Switch, 1): EXEC_SWITCH(1, u8)		break;
+		case MASHOP(IROP_Switch, 2): EXEC_SWITCH(2, u16)	break;
+		case MASHOP(IROP_Switch, 4): EXEC_SWITCH(4, u32)	break;
+		case MASHOP(IROP_Switch, 8): EXEC_SWITCH(8, u64)	break;
+
 		case MASHOP(IROP_Phi, 1):
 		{
 			auto pInstPhi = pInst;

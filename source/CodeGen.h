@@ -130,6 +130,8 @@ struct OpSignature // tag = opsig
 		OP(				CondBranch)	OPSIZE(1, 8, 0) \
 						/* Branch(0, iInst) */ \
 		OP(				Branch)		OPSIZE(0, 0, 0) \
+						/* Switch(Value, iInstElse) ExArgs(CmpValue, iInstBranch) */ \
+		OP(				Switch)		OPSIZE(CB, 0, 0) \
 						/* Phi(Value, iInstSrc,)->iBStack ExArgs(Value, iInstSrc) */ \
 		OPMX(JumpOp,	Phi)		OPSIZE(CB, 0, 0) \
 		\
@@ -515,6 +517,9 @@ public:
 
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
+	CIRInstruction *	PInstCreateSwitch(CIRValue * pVal, CIRBlock * pBlockElse, u32 cCases);
+	void				AddSwitchCase(CIRInstruction * pInstSwitch, CIRValue * pValOn, CIRBlock * pBlock);
+
 	CIRInstruction *	PInstCreateCall(LValue * pLvalProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, unsigned cArg);
 
 	CIRValue *			PValGenerateCall(

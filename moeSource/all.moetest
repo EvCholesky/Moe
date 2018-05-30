@@ -1221,6 +1221,13 @@ test BreakContinueLabel
 	}
 
 // Switch:
+test SwitchConstant
+	prereq "a : s32 = ?aVal; b:= 0"
+	input "switch ?aVal {case ?first: b = 1; case ?second: b = 2; else: b = 3}"
+	{
+		?aVal(1) + ?first(1) + ?second(10) + ?res(1),
+		?aVal(10) + ?first(1) + ?second(10) + ?res(1),
+	}
 
 test EmptyCase
 	prereq "n: s32"

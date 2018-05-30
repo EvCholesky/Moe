@@ -7911,6 +7911,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							STypeInfo * pTinExpPromoted = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodExp);
+							FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinExpPromoted, pStnodExp);
 
 							// BB - should make pTinExpPromoted const?
 							pTinExpPromoted = PTinStripQualifiers(pTinExpPromoted);

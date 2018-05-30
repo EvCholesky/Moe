@@ -3110,7 +3110,7 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 					TokNext(pLex);
 				}
 
-				FExpect(pParctx, pLex, TOK(':'));
+				FExpect(pParctx, pLex, TOK(':'), "Following 'case' statement");
 				CreateSwitchList(pParctx, pLex, &pStnodList);
 
 				pStnodCase->IAppendChild(pStnodList);
@@ -3121,7 +3121,7 @@ CSTNode * PStnodParseSwitchStatement(CParseContext * pParctx, SLexer * pLex)
 				CSTNode * pStnodDefault = PStnodParseReservedWord(pParctx, pLex, RWORD_Else);
 				pStnodSwitch->IAppendChild(pStnodDefault);
 
-				FExpect(pParctx, pLex, TOK(':'));
+				FExpect(pParctx, pLex, TOK(':'), "Following switch 'else' statement");
 				CreateSwitchList(pParctx, pLex, &pStnodList);
 
 				pStnodDefault->IAppendChild(pStnodList);
