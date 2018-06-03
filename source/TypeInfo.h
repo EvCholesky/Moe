@@ -114,7 +114,7 @@ struct STypeInfo	// tag = tin
 						STypeInfo(const EWC::CString & strName, SCOPID scopid, TINK tink)
 						:m_tink(tink)
 						,m_grftin(FTIN_None)
-						,m_scopid(SCOPID_Nil)
+						,m_scopid(scopid)
 						,m_strName(strName)
 						,m_strDesc()
 						,m_pCgvalDIType(nullptr)

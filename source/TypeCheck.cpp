@@ -7491,8 +7491,17 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
 							if (!pSymMember)
 							{
+								auto pLexlocStruct = &pStnodStruct->m_lexloc;
+								s32 iLine;
+								s32 iCol;
+								CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocStruct, &iLine, &iCol);
+
 								EmitError(pTcwork, pStnod, ERRID_BadMemberLookup, 
-									"%s is not a member of %s", strMemberName.PCoz(), pTinstruct->m_strName.PCoz());
+									"%s is not a member of %s, see  %s(%d, %d)", 
+									strMemberName.PCoz(), 
+									pTinstruct->m_strName.PCoz(),
+									pLexlocStruct->m_strFilename.PCoz(), iLine, iCol);
+
 								return TCRET_StoppingError;
 							}
 

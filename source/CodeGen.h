@@ -122,9 +122,10 @@ struct OpSignature // tag = opsig
 #define OPCODE_LIST \
 		OPMN(Terminal,	Error)		OPSIZE(0, 0, 0) \
 						/* Ret(cBStack+cBArg) -> regRet */ \
-		OPMX(Terminal,	Ret)		OPSIZE(4, 0, CB) \
+		OPMX(Terminal,	Ret)		OPSIZE(4, 4, CB) \
 		\
 						/* Call(pProcNew, pProcOld) -> regRet */ \
+						/*  variadic: ExArgs(cArgVariadic, cBVariadic) */ \
 		OPMN(JumpOp,	Call)		OPSIZE(Ptr, Ptr, CB) \
 						/* CondBranch(fPred, {iInstT,iInstF}) */ \
 		OP(				CondBranch)	OPSIZE(1, 8, 0) \

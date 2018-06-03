@@ -38,7 +38,7 @@
 // [x]  Switch nodes
 // [ ]  FFI 
 // [x]		FFI basics
-// [ ]		FFI variadic functions
+// [x]		FFI variadic functions
 // [ ]		FFI tests
 
 
@@ -48,12 +48,33 @@
 //	3 |___childRet________________| | 
 //	2 |___working_________________| |
 //	1 |___Local var_______________| | 
-//	0 |___Local var_______________|_v_	iBStack(0) for main                                    
-// -1 |___pInst return____________|		address of call instruction from main              |___
+//	0 |___Local var_______________|_v_	iBStack(0) for main                                 ___
 //	  |.................. pad arg.|						                                     ^
-// a2 |___return__________________| |	iBStack for return storage in main stack frame       |   pProc->m_cBArg
-// a1 |___arg 1___________________| |                                                        |
-// a0 |___arg 0___________________|_v_	iBStack(0) arg frame for childProc                  _v_
+// a3 |___return__________________| |	iBStack for return storage in main stack frame       |   pProc->m_cBArg
+// a2 |___arg 1___________________| |                                                        |
+// a1 |___arg 0___________________| | 														 | 
+// a0 |___pInstCall ______________|_v_	Address of call instruction from calling proc       _v_
+//	  |.................. pad ....|                                                          ^
+//	3 |___________________________| +                                                        |   pProc->m_cBStack
+//	2 |___________________________| |                                                        |
+//	1 |___working_________________| |  childProc (a,b) -> childRet                           |
+//	0 |___local var_______________|_v_														_v_
+
+
+
+// Stack layout varargs (grows down)
+//	4 |___null____________________| +
+//	3 |___childRet________________| | 
+//	2 |___working_________________| |
+//	1 |___Local var_______________| | 
+//	0 |___Local var_______________|_v_	iBStack(0) for main                                 ___
+//	  |.................. pad arg.|	|					                                     ^   cBArgVariadic
+// a5 |___SBoxedArg 2 ____________| |                                                        |
+// a5 |___SBoxedArg 1 ____________| |                                                       _v_
+// a3 |___return__________________| |	iBStack for return storage in main stack frame       ^   pProc->m_cBArg
+// a2 |___arg 1___________________| |                                                        |
+// a1 |___arg 0___________________| |                                                        |
+// a0 |___pInstCall_______________|_v_	Address of call instruction from calling proc       _v_
 //	  |.................. pad ....|                                                          ^
 //	3 |___________________________| +                                                        |   pProc->m_cBStack
 //	2 |___________________________| |                                                        |
@@ -61,7 +82,6 @@
 //	0 |___local var_______________|_v_														_v_
 
 using namespace EWC;
-
 
 void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB, u64 * pcBAlign);
 
@@ -188,6 +208,12 @@ void BuildStubDataLayout(SDataLayout * pDlay)
 namespace BCode 
 {
 
+struct SBoxedArg
+{
+	STypeInfo *		m_pTin;
+	SWord			m_word;
+};
+
 struct SValueOutput // tag = valout
 {
 					SValueOutput()
@@ -198,6 +224,8 @@ struct SValueOutput // tag = valout
 	u8				m_cBRegister;
 	STypeInfo *		m_pTin;
 };
+
+
 
 inline void SetOperandFromValue(
 	SDataLayout * pDlay,
@@ -241,6 +269,15 @@ T PValDerivedCast(SValue * pVal)
 {
 	EWC_ASSERT(pVal && pVal->m_valk == EWC::SStripPointer<T>::Type::s_valk, "illegal derived cast");
 	return (T)pVal;
+}
+
+SProcedureSignature::SProcedureSignature()
+:m_sIBStackVariadic(-1)
+,m_cBArgNamed(0)
+,m_aParamArg(nullptr)
+,m_aParamRet(nullptr)
+{
+
 }
 
 SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
@@ -427,7 +464,6 @@ void CBuilder::SetupParamBlock(
 				SetSymbolValue(pStnodParam->m_pSym, pInstAlloca);
 
 				(void) PInstCreateStore(pInstAlloca, PRegArg(pProcsig->m_aParamArg[iParam].m_iBStack, pTinArg));
-
 			}
 		}
 		++iParam;
@@ -745,7 +781,7 @@ void CBuilder::PrintDump()
 			pProc->m_pTinproc->m_strName.PCoz(),
 			pProc->m_cBStack,
 			m_dataseg.CB(),
-			pProcsig->m_cBArg);
+			pProcsig->m_cBArgNamed);
 		auto pInstMac = pProc->m_aryInst.PMac();
 
 		auto aInst = pProc->m_aryInst.A();
@@ -775,6 +811,12 @@ void CBuilder::PrintDump()
 					{
 						auto pProc = (SProcedure *)pInst->m_wordLhs.m_pV;
 						FormatCoz(&strbuf, "%s()->[%d]", pProc->m_pTinproc->m_strName.PCoz(), pInst->m_iBStackOut);
+
+						if ((pInst + 1)->m_irop == IROP_ExArgs)
+						{
+							++pInst;
+							FormatCoz(&strbuf, "     %d variadic args, cBArgVariadic(%d)", pInst->m_wordLhs.m_s32, pInst->m_wordRhs.m_s32);
+						}
 					}
 				} break;
 			case IROP_Branch:
@@ -1372,13 +1414,34 @@ CBuilder::ProcArg *	CBuilder::PProcArg(SValue * pVal)
 	return pVal;
 }
 
+inline STypeInfo * PTinFromVal(SValue * pVal)
+{
+	switch (pVal->m_valk)
+	{
+	case VALK_Constant:
+	case VALK_BCodeRegister:
+		{
+			auto pConst = (SConstant *)pVal;
+			return pConst->m_pTin;
+		}
+	case VALK_Instruction:
+		{
+			auto pInstval = (SInstructionValue *)pVal;
+			return pInstval->m_pTinOperand;
+		} break;
+	case VALK_Procedure:
+		{
+			auto pProc = (SProcedure *)pVal;
+			return pProc->m_pTinproc;
+		}
+	}
+
+	return nullptr;
+}
+
 SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, int cpLvalArg)
 {
 	if (!EWC_FVERIFY(m_pProcCur, "Cannot add a procedure call outside of a procedure"))
-		return PInstCreateError();
-
-
-	if (!EWC_FVERIFY(pTinproc->m_arypTinParams.C() == cpLvalArg, "variadic args not yet supported"))
 		return PInstCreateError();
 
 	// BB - should be PProcsigTryLookup() ??
@@ -1387,7 +1450,20 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 		return PInstCreateError();
 
 	s32 iBStackReturnStore = 0;
-	auto cBArg = pProcsig->m_cBArg;
+	auto cBArg = pProcsig->m_cBArgNamed;
+
+	s64 cArgVariadic = 0;
+	s64 cBArgVariadic = 0;
+	int cParamNamed = (int)pTinproc->m_arypTinParams.C();
+	if (pTinproc->m_grftinproc.FIsSet(FTINPROC_HasVarArgs))
+	{
+		cArgVariadic = cpLvalArg - cParamNamed;
+		s32 iBStackArg = pProcsig->m_sIBStackVariadic + s32(cArgVariadic * sizeof(SBoxedArg));
+		iBStackArg = s32(CBAlign(iBStackArg, m_pDlay->m_cBStackAlign));
+
+		cBArgVariadic = iBStackArg - pProcsig->m_sIBStackVariadic;
+		cBArg += cBArgVariadic;
+	}
 
 	u32 iBStackOut = 0;
 	int cpTinReturn = (int)pTinproc->m_arypTinReturns.C();
@@ -1409,12 +1485,34 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStackOut, 32));
 	}
 
-	for (int iRec = 0; iRec < cpLvalArg; ++iRec)
+	for (int iRec = 0; iRec < cParamNamed; ++iRec)
 	{
 		// NOTE: Lhs is relative to called function stack frame, Rhs is relative to calling stack frame
 
 		auto pParam = &pProcsig->m_aParamArg[iRec];
 		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), apLvalArgs[iRec]);
+	}
+
+	if (cArgVariadic)
+	{
+		// store CVarArg
+		cArgVariadic = cpLvalArg - cParamNamed;
+
+		s32 iBStackArg = pProcsig->m_sIBStackVariadic;
+		for (int iArgVar = 0; iArgVar < cArgVariadic; ++iArgVar)
+		{
+			auto pValArg = apLvalArgs[cParamNamed + iArgVar];
+			auto pTinArg = PTinFromVal(pValArg);
+			EWC_ASSERT(pTinArg, "unable to determine var arg type");
+
+			// subtract cBArg here because we're still in the caller's stack frame
+			(void) PInstCreate(IROP_StoreToReg, PReg(iBStackArg + EWC_OFFSET_OF(SBoxedArg, m_pTin) - cBArg), PConstPointer(pTinArg));
+			(void) PInstCreate(IROP_StoreToReg, PReg(iBStackArg + EWC_OFFSET_OF(SBoxedArg, m_word) - cBArg), pValArg);
+			iBStackArg += sizeof(SBoxedArg);
+		}
+
+		iBStackArg = s32(CBAlign(iBStackArg, m_pDlay->m_cBStackAlign));
+		EWC_ASSERT(cBArgVariadic == iBStackArg - pProcsig->m_sIBStackVariadic, "bad cBArgVariadic calculation");
 	}
 
 	u8 cBReturnOp = 0;
@@ -1425,6 +1523,17 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 
 	auto pInstvalCall = PInstCreateRaw(IROP_Call, cBReturnOp, pValProc, PConstPointer(m_pProcCur));
 	pInstvalCall->m_pInst->m_iBStackOut = iBStackOut;
+
+	if (cArgVariadic)
+	{
+		auto pInstvalEx = PInstAlloc();
+		auto pInstEx = pInstvalEx->m_pInst;
+		pInstEx->m_irop =  IROP_ExArgs;	
+		pInstEx->m_opkLhs = OPK_Literal;
+		pInstEx->m_opkRhs = OPK_Literal;
+		pInstEx->m_wordLhs.m_s64 = cArgVariadic;
+		pInstEx->m_wordRhs.m_s64 = cBArgVariadic;
+	}
 
 	return pInstvalCall;
 }
@@ -1445,7 +1554,7 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 		// add the returnIdx(callee relative) stored as an argument to (cBArg + cBStack)
 
 		// add the calling stack relative return index to (cBArg + cBStack)
-		auto pInstOffset = PInstCreateRaw(IROP_NAdd, PRegArg(pProcsig->m_aParamRet[0].m_iBStack, 32), PConstArg(pProcsig->m_cBArg, 32));
+		auto pInstOffset = PInstCreateRaw(IROP_NAdd, PRegArg(pProcsig->m_aParamRet[0].m_iBStack, 32), PConstArg(pProcsig->m_cBArgNamed, 32));
 
 		(void) PInstCreate(IROP_StoreToIdx, pInstOffset, apVal[iReturn]);
 	}
@@ -1457,7 +1566,7 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 		cBReturnOp = pProcsig->m_aParamRet[0].m_cB;
 	}
 
-	PInstCreateRaw(IROP_Ret, cBReturnOp, PConstArg(pProcsig->m_cBArg, 32), nullptr);
+	PInstCreateRaw(IROP_Ret, cBReturnOp, PConstArg(pProcsig->m_cBArgNamed, 32), PConstArg(0, 32));
 }
 
 SInstructionValue * CBuilder::PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName)
@@ -1583,6 +1692,8 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 			pProcsig->m_aParamRet = aParamArg + cArg;
 		}
 
+		pProcsig->m_cBArgNamed += sizeof(SInstruction *);
+
 		u64 cB; 
 		u64 cBAlign;
 		for (size_t iArg = 0; iArg < cArg; ++iArg)
@@ -1592,7 +1703,7 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 
 			auto pParam = &pProcsig->m_aParamArg[iArg];
 			pParam->m_cB = S32Coerce(cB);
-			pParam->m_iBStack = S32Coerce(IBArgAlloc(&pProcsig->m_cBArg, cB, cBAlign));
+			pParam->m_iBStack = S32Coerce(IBArgAlloc(&pProcsig->m_cBArgNamed, cB, cBAlign));
 		}
 
 		for (size_t iRet = 0; iRet < cRet; ++iRet)
@@ -1602,11 +1713,18 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 
 			auto pParam = &pProcsig->m_aParamRet[iRet];
 			pParam->m_cB = S32Coerce(cB);
-			pParam->m_iBStack = S32Coerce(IBArgAlloc(&pProcsig->m_cBArg, cB, cBAlign));
+			pParam->m_iBStack = S32Coerce(IBArgAlloc(&pProcsig->m_cBArgNamed, cB, cBAlign));
 		}
 
-		pProcsig->m_cBArg += sizeof(SInstruction *);
-		pProcsig->m_cBArg = CBAlign(pProcsig->m_cBArg, m_pDlay->m_cBStackAlign);
+		if (pTinproc->m_grftinproc.FIsSet(FTINPROC_HasVarArgs))
+		{
+			pProcsig->m_cBArgNamed = CBAlign(pProcsig->m_cBArgNamed, EWC_ALIGN_OF(SBoxedArg)); 
+			pProcsig->m_sIBStackVariadic = s32(pProcsig->m_cBArgNamed);
+		}
+		else
+		{
+			pProcsig->m_cBArgNamed = CBAlign(pProcsig->m_cBArgNamed, m_pDlay->m_cBStackAlign);
+		}
 	}
 
 	return *ppProcsig;
@@ -1631,7 +1749,6 @@ static inline bool FDefinesCB(OPSZ opsz)
 {
 	return (opsz == OPSZ_CB) || (opsz == OPSZ_PCB);
 }
-
 
 
 inline void SetOperandFromValue(
@@ -1900,6 +2017,7 @@ SInstructionValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValSrc, SType
 		return pInstval;
 
 	SInstruction * pInst = pInstval->m_pInst;
+	pInstval->m_pTinOperand = pTinDst;
 	pInst->m_wordLhs = wordLhs;
 	pInst->m_opkLhs = opkLhs;
 
@@ -2253,7 +2371,7 @@ SInstruction * PInstFindPhiIncoming(SInstruction ** ppInstPhi, s32 iInstSource)
 	return pInstIncoming;
 }
 
-DCstruct * PDcstructFromTinstruct(STypeInfoStruct * pTinstruct, SDataLayout * pDlay)
+inline DCstruct * PDcstructFromTinstruct(STypeInfoStruct * pTinstruct, SDataLayout * pDlay)
 {
 	auto pDcstruct = dcNewStruct(DCint(pTinstruct->m_aryTypemembField.C()), DCint(pTinstruct->m_cBAlign));
 
@@ -2298,9 +2416,50 @@ DCstruct * PDcstructFromTinstruct(STypeInfoStruct * pTinstruct, SDataLayout * pD
 	return pDcstruct;
 }
 
-void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack)
+inline void SetupForeignProcParam(DCCallVM * pDcvm, SDataLayout * pDlay, STypeInfo * pTinParam, void * pVArg)
 {
-	u8 * pBArg = pBStack - pProc->m_pProcsig->m_cBArg;
+	switch (pTinParam->m_tink)
+	{
+	case TINK_Bool:		dcArgBool(pDcvm, *(bool*)pVArg);		break;
+	case TINK_Pointer:	dcArgPointer(pDcvm, *(void**)pVArg);	break;
+	case TINK_Integer:	
+		{
+			auto pTinintParam = (STypeInfoInteger*)pTinParam;
+			switch (pTinintParam->m_cBit)
+			{
+			case 8:		dcArgChar(pDcvm, *(u8*)pVArg);			break;
+			case 16:	dcArgShort(pDcvm, *(u16*)pVArg);		break;
+			case 32:	dcArgInt(pDcvm, *(u32*)pVArg);			break;
+			case 64:	dcArgLongLong(pDcvm, *(u64*)pVArg);		break;
+			default: EWC_ASSERT(false, "unhandled size dyncall int");
+			}
+		} break;
+	case TINK_Float:	
+		{
+			auto pTinfloatParam = (STypeInfoFloat*)pTinParam;
+			switch (pTinfloatParam->m_cBit)
+			{
+			case 32:	dcArgFloat(pDcvm, *(f32*)pVArg);		break;
+			case 64:	dcArgDouble(pDcvm, *(f64*)pVArg);		break;
+			default: EWC_ASSERT(false, "unhandled size dyncall float");
+			}
+		} break;
+	case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTinParam;
+			auto pDcstruct = PDcstructFromTinstruct(pTinstruct, pDlay);
+
+			dcArgStruct(pDcvm, pDcstruct, pVArg);
+			dcFreeStruct(pDcstruct);
+		} break;
+	default:
+		EWC_ASSERT(false, "unhandled type kind in foreign function args");
+	}
+}
+
+void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack, s32 cArgVariadic, s32 cBArgVariadic)
+{
+	u8 * pBArg = pBStack - (pProc->m_pProcsig->m_cBArgNamed + cBArgVariadic);
 
 	if (!EWC_FVERIFY(pVm->m_pDcvm, "null DynCall VM"))
 		return;
@@ -2313,11 +2472,16 @@ void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack
 	EWC_CASSERT(sizeof(DCfloat) == sizeof(f32), "size mismatch");
 	EWC_CASSERT(sizeof(DCdouble) == sizeof(f64), "size mismatch");
 
+	if (cArgVariadic)
+	{
+		dcMode(pVm->m_pDcvm, DC_CALL_C_ELLIPSIS );
+	}
+
 	auto pDcvm = pVm->m_pDcvm;
 	auto pProcsig = pProc->m_pProcsig;
 	auto pTinproc = pProc->m_pTinproc;
-	size_t cParam = pTinproc->m_arypTinParams.C();
-	for (size_t iParam = 0; iParam < cParam; ++iParam)
+	size_t cParamNamed = pTinproc->m_arypTinParams.C();
+	for (size_t iParam = 0; iParam < cParamNamed; ++iParam)
 	{
 		auto pTinParam = pTinproc->m_arypTinParams[iParam];
 		auto pParam = &pProcsig->m_aParamArg[iParam];
@@ -2327,42 +2491,25 @@ void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack
 			pTinParam = pTinqual->m_pTin;
 		}
 
-		switch (pTinParam->m_tink)
-		{
-		case TINK_Bool:		dcArgBool(pDcvm, *(bool*)&pBArg[pParam->m_iBStack]);		break;
-		case TINK_Pointer:	dcArgPointer(pDcvm, *(void**)&pBArg[pParam->m_iBStack]);	break;
-		case TINK_Integer:	
-			{
-				auto pTinintParam = (STypeInfoInteger*)pTinParam;
-				switch (pTinintParam->m_cBit)
-				{
-				case 8:		dcArgChar(pDcvm, *(u8*)&pBArg[pParam->m_iBStack]);			break;
-				case 16:	dcArgShort(pDcvm, *(u16*)&pBArg[pParam->m_iBStack]);		break;
-				case 32:	dcArgInt(pDcvm, *(u32*)&pBArg[pParam->m_iBStack]);			break;
-				case 64:	dcArgLongLong(pDcvm, *(u64*)&pBArg[pParam->m_iBStack]);		break;
-				default: EWC_ASSERT(false, "unhandled size dyncall int");
-				}
-			} break;
-		case TINK_Float:	
-			{
-				auto pTinfloatParam = (STypeInfoFloat*)pTinParam;
-				switch (pTinfloatParam->m_cBit)
-				{
-				case 32:	dcArgFloat(pDcvm, *(f32*)&pBArg[pParam->m_iBStack]);		break;
-				case 64:	dcArgDouble(pDcvm, *(f64*)&pBArg[pParam->m_iBStack]);		break;
-				default: EWC_ASSERT(false, "unhandled size dyncall float");
-				}
-			} break;
-		case TINK_Struct:
-			{
-				auto pTinstruct = (STypeInfoStruct *)pTinParam;
-				auto pDcstruct = PDcstructFromTinstruct(pTinstruct, pVm->m_pDlay);
+		SetupForeignProcParam(pDcvm, pVm->m_pDlay, pTinParam, &pBArg[pParam->m_iBStack]);
+	}
 
-				dcArgStruct(pDcvm, pDcstruct, &pBArg[pParam->m_iBStack]);
-				dcFreeStruct(pDcstruct);
-			} break;
-		default:
-			EWC_ASSERT(false, "unhandled type kind in foreign function args");
+	if (cArgVariadic && EWC_FVERIFY(pProcsig->m_sIBStackVariadic >= 0, "variadic proc missing stack offset"))
+	{
+		if (cArgVariadic)
+		{
+			dcMode(pVm->m_pDcvm, DC_CALL_C_ELLIPSIS_VARARGS);
+		}
+
+		auto pBoxarg = (SBoxedArg*)&pBArg[pProcsig->m_sIBStackVariadic];
+		for (size_t iParam = 0; iParam < cArgVariadic; ++iParam, ++pBoxarg)
+		{
+			SetupForeignProcParam(pDcvm, pVm->m_pDlay, pBoxarg->m_pTin, &pBoxarg->m_word);
+		}
+
+		if (cArgVariadic)
+		{
+			dcMode(pVm->m_pDcvm, DC_CALL_C_DEFAULT);
 		}
 	}
 
@@ -2418,8 +2565,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	auto pDebcall = pVm->m_aryDebCall.AppendNew();
 	pDebcall->m_ppInstCall = nullptr;
 	pDebcall->m_pBStackSrc = pVm->m_pBStack;
-	pDebcall->m_pBStackArg = pVm->m_pBStack - pProcEntry->m_pProcsig->m_cBArg;
-	pDebcall->m_pBStackDst = pVm->m_pBStack - (pProcEntry->m_pProcsig->m_cBArg + pProcEntry->m_cBStack);
+	pDebcall->m_pBStackArg = pVm->m_pBStack - pProcEntry->m_pProcsig->m_cBArgNamed;
+	pDebcall->m_pBStackDst = pVm->m_pBStack - (pProcEntry->m_pProcsig->m_cBArgNamed + pProcEntry->m_cBStack);
 	pDebcall->m_pBReturnStorage = nullptr;
 #endif
 
@@ -2451,12 +2598,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	}
 	pBStack -= cBReturn;
 
-	pBStack -= sizeof(SInstruction *);
-	*(SInstruction **)(pBStack) = nullptr;
-	if (EWC_FVERIFY(pProcsigEntry->m_cBArg >= sizeof(SInstruction*), "bad argument stack size"))
-	{
-		pBStack -= pProcsigEntry->m_cBArg - sizeof(SInstruction *);
-	}
+	pBStack -= pProcsigEntry->m_cBArgNamed;
+	*(SInstruction **)(pBStack) = nullptr;	 // fill in the null pInstCall 
 
 	// fill out our return locations
 	for (int ipTin = 0; ipTin < pTinprocEntry->m_arypTinReturns.C(); ++ipTin)
@@ -2783,23 +2926,35 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			auto pProc = (SProcedure *)wordLhs.m_pV;
 			auto pProcsig = pProc->m_pProcsig;
 
-			SInstruction ** ppInstRet = (SInstruction **)(pVm->m_pBStack - sizeof(SInstruction *));
+			s32 cArgVariadic = 0;
+			s32 cBArgVariadic = 0;
+			auto pInstEx = (pInst + 1);
+			if (pInstEx->m_irop == IROP_ExArgs)
+			{
+				cArgVariadic = pInstEx->m_wordLhs.m_s32;
+				cBArgVariadic = pInstEx->m_wordRhs.m_s32;
+			}
 
 			if (pProc->m_pFnForeign)
 			{
-				CallForeignFunction(pVm, pProc, pVm->m_pBStack);
+				CallForeignFunction(pVm, pProc, pVm->m_pBStack, cArgVariadic, cBArgVariadic);
+
+				if (cArgVariadic)
+					++pInst;
 				break;
 			}
+
+			SInstruction ** ppInstRet = (SInstruction **)(pVm->m_pBStack - (pProcsig->m_cBArgNamed + cBArgVariadic));
 
 #if DEBUG_PROC_CALL
 			auto pDebcall = pVm->m_aryDebCall.AppendNew();
 			pDebcall->m_ppInstCall = ppInstRet;
 			pDebcall->m_pBStackSrc = pVm->m_pBStack;
-			pDebcall->m_pBStackArg = pVm->m_pBStack - pProcsig->m_cBArg;
-			pDebcall->m_pBStackDst = pVm->m_pBStack - (pProcsig->m_cBArg + pProc->m_cBStack);
+			pDebcall->m_pBStackArg = pVm->m_pBStack - (cBArgVariadic + pProcsig->m_cBArgNamed);
+			pDebcall->m_pBStackDst = pVm->m_pBStack - (cBArgVariadic + pProcsig->m_cBArgNamed + pProc->m_cBStack);
 			pDebcall->m_pBReturnStorage = &pVm->m_pBStack[pInst->m_iBStackOut];
 #endif 
-			pVm->m_pBStack -= pProcsig->m_cBArg;
+			pVm->m_pBStack -= (pProcsig->m_cBArgNamed + cBArgVariadic);
 			if (pVm->m_pStrbuf)
 			{
 				FormatCoz(pVm->m_pStrbuf, "%s(", pProc->m_pTinproc->m_strName.PCoz());
@@ -2852,8 +3007,26 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			}
 
 			u8 * pBStackCalled = pVm->m_pBStack;
-			pVm->m_pBStack += pInst->m_wordLhs.m_s32; // cBArg + cBStack
-			SInstruction ** ppInstRet = ((SInstruction **)pVm->m_pBStack) - 1;
+
+			s32 cBStack = pInst->m_wordRhs.m_s32;
+			SInstruction ** ppInstRet = (SInstruction **)(pVm->m_pBStack + cBStack);
+
+			auto pBStack = pVm->m_pBStack;
+			pVm->m_pBStack += pInst->m_wordLhs.m_s32; // cBArgNamed + cBStack
+
+			auto pProcsigCur = pVm->m_pProcCurDebug->m_pProcsig;
+			if (pProcsigCur->m_sIBStackVariadic >= 0)
+			{
+				if (EWC_FVERIFY(*ppInstRet, "variadic entry proc not suppported"))
+				{
+					auto pInstEx = *ppInstRet + 1;
+					if(EWC_FVERIFY(pInstEx->m_irop == IROP_ExArgs, "variadic proc call with no exArgs"))
+					{
+						pVm->m_pBStack += pInstEx->m_wordRhs.m_s32;
+					}
+				}
+			}
+
 			auto pProcCalled = pVm->m_pProcCurDebug;
 			auto pProcsigCalled = pProcCalled->m_pProcsig;
 #if DEBUG_PROC_CALL
@@ -2905,10 +3078,15 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			auto pInstCall = *ppInstRet;
 			EWC_ASSERT(pInstCall->m_irop == IROP_Call, "procedure return did not return to call instruction");
 
+			// skip exArgs (for variadic Procs)
+			if ((pInstCall + 1)->m_irop == IROP_ExArgs)
+				++pInstCall;
+
 			auto pProcPrev = (SProcedure *)pInstCall->m_wordRhs.m_pV;
 			pVm->m_pProcCurDebug = pProcPrev;
 			pInstMin = pProcPrev->m_aryInst.A();
 			pInst = pInstCall;
+
 
 		} break;
 

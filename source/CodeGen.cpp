@@ -928,6 +928,7 @@ typename BUILD::Proc * PProcTryEnsure(CWorkspace * pWork, BUILD * pBuild, SSymbo
 	(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
 	PopDIScope(pDif, pLvalParentScope);
 
+	pVal = pBuild->PValFromSymbol(pSym);
 	if (pVal && EWC_FVERIFY(pVal->m_valk == VALK_Procedure, "symbol is not procedure definition"))
 	{
 		return (BUILD::Proc *)pVal;

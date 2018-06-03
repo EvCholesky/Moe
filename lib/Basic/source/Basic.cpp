@@ -192,37 +192,22 @@ void EnsureTerminatedCopy(char * pCozBegin, char * pCozAppend, size_t cBMax, cha
 	}
 }
 
-/*
-MOE_EXPORT ptrdiff_t printf_MOE(char * aCh, size_t cBMax, const char * pCozFormat, ...)
+MOE_EXPORT int32_t printf_MOE(const char * pCozFormat, ...)
 {
 	// BB - could just use EWC::FormatCoz if there was a vararg version 
 	// BB - Actually, trying to use EWC functions here causes a mess of duplicate symbols, so I guess I'll just copy this for now.
 
-	char * pCozAppend = nullptr;
-	if (cBMax > 1)
-	{
-		va_list ap;
-		va_start(ap, pCozFormat);
+	va_list ap;
+	va_start(ap, pCozFormat);
 #ifdef WIN32
-		ptrdiff_t cCh = vsnprintf_s(aCh, cBMax, _TRUNCATE, pCozFormat, ap);
+	int32_t cCh = vprintf_s(pCozFormat, ap);
 #else
-		ptrdiff_t cCh = vsnprintf(aCh, cBMax, pCozFormat, ap);
-		aCh[cBMax-1] = 0;
+	int32_t cCh = vprintf(pCozFormat, ap);
 #endif
+	va_end(ap);
 
-		va_end(ap);
-
-		if (cCh == -1)
-		{
-			cCh = cBMax-1;
-		}
-		pCozAppend = aCh + cCh;
-	}
-
-	// handle truncation within utf8 multibyte char
-	EnsureTerminatedCopy(aCh, pCozAppend, cBMax, '\0');
-	return pCozAppend - aCh;
-}*/
+	return cCh;
+}
 
 MOE_EXPORT ptrdiff_t snprintf_MOE(char * aCh, size_t cBMax, const char * pCozFormat, ...)
 {

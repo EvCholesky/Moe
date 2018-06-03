@@ -190,7 +190,10 @@ namespace BCode
 	// layout data that derived from pTinproc
 	struct SProcedureSignature // tag = procsig
 	{
-		s64							m_cBArg;		// stack space reserved for arguments (includes pInst return)
+								SProcedureSignature();
+
+		s32							m_sIBStackVariadic;		// stack location for variadic arguments, -1 if normal proc
+		s64							m_cBArgNamed;			// stack space reserved for arguments (does not include variadic args)
 
 		SParameter *				m_aParamArg;
 		SParameter *				m_aParamRet;
@@ -459,6 +462,7 @@ namespace BCode
 	{
 		int m_pad;
 	};
+
 
 
 	class CVirtualMachine	// tag = vm

@@ -1,4 +1,3 @@
-/*
 test BytecodeInferAlloc
 	input "n := ?val"
 	bytecode "{?val;}"
@@ -196,7 +195,7 @@ test BytecodeBitwiseOps
 		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(7) + ?op("&") + ?out(3),
 		?type(s64|s32|s16|s8) + ?aval(3) + ?bval(6) + ?op("^") + ?out(5),
 	}
-*/
+
 test BytecodeSwitch
 	prereq "a : ?aType = ?aVal; b:= 0"
 	input "switch ?aVal {case ?first: b = 1; case ?second: b = 2; else: b = 3}"
