@@ -2966,7 +2966,7 @@ typename BUILD::Value * PValCreateCast(
 
 			// copy the literal into memory
 
-			pBuild->PInstCreateMemcpy(pWork, pTinDst, pValAllocaLit, pValSrc);
+			pBuild->PInstCreateMemcpy(pTinDst, pValAllocaLit, pValSrc);
 
 			auto pLtypeDst = pBuild->PLtypeFromPTin(pTinDst);
 			auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, 1, "aryDst");
@@ -3109,7 +3109,6 @@ typename BUILD::Value * PValCreateCast(
 }
 
 CIRInstruction * CBuilderIR::PInstCreateMemcpy(
-	CWorkspace * pWork,
 	STypeInfo * pTin,
 	CIRValue * pValLhs,
 	CIRValue * pValRhsRef)
@@ -3147,7 +3146,7 @@ CIRInstruction * CBuilderIR::PInstCreateMemcpy(
 	return pInstMemcpy;
 }
 
-CIRInstruction * CBuilderIR::PInstCreateMemset( CWorkspace * pWork, CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill)
+CIRInstruction * CBuilderIR::PInstCreateMemset(CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill)
 {
 	auto pLtypePInt8 = LLVMPointerType(LLVMInt8Type(), 0);
 	if (!m_mpIntfunkPLval[INTFUNK_Memset])
@@ -3422,11 +3421,6 @@ CGINITK CginitkCompute(STypeInfo * pTin, CSTNode * pStnodInit)
 	return CGINITK_MemsetZero;
 }
 
-static inline bool FIsRegisterSize(int cB)
-{
-	return (cB == 1) | (cB == 2) | (cB == 4) | (cB == 8);
-}
-
 template <typename BUILD>
 static inline typename BUILD::Value * PValInitialize(
 	CWorkspace * pWork,
@@ -3458,7 +3452,7 @@ static inline typename BUILD::Value * PValInitialize(
 			}
 			else
 			{
-				return pBuild->PInstCreateMemset(pWork, pValPT, cB, int((cBitAlign + 7) / 8), 0);
+				return pBuild->PInstCreateMemset(pValPT, cB, int((cBitAlign + 7) / 8), 0);
 			}
 
 		} break;
@@ -3493,7 +3487,7 @@ static inline typename BUILD::Value * PValInitialize(
 					pValInit = PValGenerate(pWork, pBuild, pStnodInit, VALGENK_Reference);
 				}
 
-				return pBuild->PInstCreateMemcpy(pWork, pTin, pValPT, pValInit);
+				return pBuild->PInstCreateMemcpy(pTin, pValPT, pValInit);
 			}
 
 			// if no initializer 
@@ -3517,7 +3511,7 @@ static inline typename BUILD::Value * PValInitialize(
 					pCgstruct->m_pGlobInit = pGlobInit;
 				}
 
-				return pBuild->PInstCreateMemcpy(pWork, pTin, pValPT, (BUILD::Global*)pCgstruct->m_pGlobInit);
+				return pBuild->PInstCreateMemcpy(pTin, pValPT, (BUILD::Global*)pCgstruct->m_pGlobInit);
 			}
 		} break;
 	case CGINITK_LoopingInit:
@@ -3692,7 +3686,7 @@ static inline typename BUILD::Value * PValGenerateCast(
 
 					// copy the literal into memory
 
-					pBuild->PInstCreateMemcpy(pWork, pTinlitRhs, pValAllocaLit, pValRhsRef);
+					pBuild->PInstCreateMemcpy(pTinlitRhs, pValAllocaLit, pValRhsRef);
 
 					auto pLtypeDst = pBuild->PLtypeFromPTin(pTinOut);
 					auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, 1, "aryDst");
@@ -3866,7 +3860,7 @@ CIRInstruction * PInstGenerateAssignmentFromRef(
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTinLhs;
 
-			return pBuild->PInstCreateMemcpy(pWork, pTinstruct, pValLhs, pValRhsRef);
+			return pBuild->PInstCreateMemcpy(pTinstruct, pValLhs, pValRhsRef);
 		} break;
 		default:
 		{
@@ -4009,7 +4003,7 @@ BCode::SInstructionValue * PInstGenerateAssignmentFromRef(
 		{
 			auto pTinstruct = (STypeInfoStruct *)pTinLhs;
 
-			return pBuild->PInstCreateMemcpy(pWork, pTinstruct, pValLhs, pValRhsRef);
+			return pBuild->PInstCreateMemcpy(pTinstruct, pValLhs, pValRhsRef);
 		} break;
 		default:
 		{
@@ -4052,12 +4046,12 @@ typename BUILD::Instruction * PInstGenerateAssignment(
 					auto pValAlloca = pBuild->PValCreateAlloca(pLtype, cElement, "aryLit");
 
 					// copy the literal into memory
-					pBuild->PInstCreateMemcpy(pWork, pStnodRhs->m_pTin, pValAlloca, pValRhsRef);
+					pBuild->PInstCreateMemcpy(pStnodRhs->m_pTin, pValAlloca, pValRhsRef);
 
 					return PInstGenerateAssignmentFromRef(pWork, pBuild, pTinLhs, pStnodRhs->m_pTin, pValLhs, pValAlloca);
 				}
 
-				return pBuild->PInstCreateMemcpy(pWork, pStnodRhs->m_pTin, pValLhs, pValRhsRef);
+				return pBuild->PInstCreateMemcpy(pStnodRhs->m_pTin, pValLhs, pValRhsRef);
 			}
 
 			auto pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
@@ -4079,7 +4073,7 @@ typename BUILD::Instruction * PInstGenerateAssignment(
 			}
 
 			auto pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
-			return pBuild->PInstCreateMemcpy(pWork, pTinstruct, pValLhs, pValRhsRef);
+			return pBuild->PInstCreateMemcpy(pTinstruct, pValLhs, pValRhsRef);
 		} break;
 	case TINK_Flag:
 		{

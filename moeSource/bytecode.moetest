@@ -43,10 +43,12 @@ test BytecodeWhile
 test BytecodeWhile
 	input "for n:= 0; n < 3; n = n + 1; { }"
 	bytecode "{0;1;2;3;}"
+
 test BytecodeProcCall
 	prereq "sum proc(a: int, b: int, pN: & int)->int {return a+b}"
 	input "sum(5, 8, null)"
 	bytecode "{sum(5, 8, null){}->13; }"
+
 test BytecodeProcCallRecurse
 	prereq "recurse proc(a: int) { if a>0 {recurse(a-1)} }"
 	input "recurse(3)"
@@ -203,6 +205,24 @@ test BytecodeSwitch
 	{
 		?aType(u8|s8|u64|s64) + ?aVal(1) + ?first(1) + ?second(10) + ?res(1),
 		?aType(u8|s8|u64|s64) + ?aVal(10) + ?first(1) + ?second(10) + ?res(2),
+	}
+
+test BytecodePassLargeArg
+	prereq "SBig struct { m_nA : int; m_nB := -222} PassBig proc (big: SBig) {nA := big.m_nA; nB := big.m_nB }"
+	input "big: SBig; big.m_nA = ?aVal; PassBig(big) "
+	bytecode "{?aVal;PassBig({`m_nA ?aRes, `m_nB ?bRes}){?aRes;?bRes;}; }"
+	{
+		?aVal("111") + ?aRes("111") + ?bRes("-222"),
+		?aVal("333") + ?aRes("333") + ?bRes("-222") 
+	}
+
+test BytecodeReturnLargeVal
+	prereq "SBig struct { m_nA : int; m_nB := -222} ReturnBig proc ()->SBig { big: SBig; big.m_nA = ?aVal; return big }"
+	input "big := ReturnBig()"
+	bytecode "{ReturnBig(){?aVal;}->{`m_nA ?aVal, `m_nB -222}; }"
+	{
+		?aVal("111") + ?aRes("111") + ?bRes("-222"),
+		?aVal("333") + ?aRes("333") + ?bRes("-222") 
 	}
 
 	// To Test:

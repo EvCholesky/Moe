@@ -1,3 +1,4 @@
+
 /* Copyright (C) 2018 Evan Christensen
 |
 | Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated 
@@ -38,7 +39,7 @@ namespace BCode
 		OPK_Register,		// stack indexed "register" value (relative to local stack frame)
 		OPK_RegisterArg,	// stack indexed "register" value (relative to argument stack frame)
 
-		OPK_Global			// global index, lives in the data segment
+		OPK_Global,			// global index, lives in the data segment
 	};
 
 	inline bool FIsLiteral(OPK opk)
@@ -70,7 +71,7 @@ namespace BCode
 		};
 	};
 
-
+	
 
 	// Build time values - baked into the instructions/globals by runtime.
 	struct SValue	// tag = val
@@ -114,7 +115,7 @@ namespace BCode
 						:m_irop(IROP_Error)
 						,m_opkLhs(OPK_Literal)
 						,m_opkRhs(OPK_Literal)
-						,m_cBOperand(0)
+						,m_cBRegister(0)
 						,m_pred(0)
 						,m_iBStackOut(0)
 							{ ; }
@@ -123,10 +124,10 @@ namespace BCode
 		OPK				m_opkLhs;
 		OPK				m_opkRhs;
 
-		u8				m_cBOperand:4;		// operand byte count
+		u8				m_cBRegister:4;		// operand byte count
 		u8				m_pred:4;
 
-		u32				m_iBStackOut;
+		s32				m_iBStackOut;
 		SWord			m_wordLhs;
 		SWord			m_wordRhs;
 
@@ -184,6 +185,7 @@ namespace BCode
 	struct SParameter // tag = param
 	{
 		s32		m_cB;
+		s32		m_cBAlign;
 		s32 	m_iBStack;
 	};
 
@@ -356,10 +358,14 @@ namespace BCode
 		Instruction *		PInstCreateCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
 		Instruction *		PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
 		Instruction *		PInstCreateStore(SValue * pValPT, SValue * pValT);
+		Instruction *		PInstCreateStoreToIdx(SValue * pValPT, SValue * pValT, const char * pChzName = "");
+		SInstructionValue * PInstCreateStoreToReg(s32 dstIdx, SValue * pValSrc, const char * pChzName = "");
 
 		SValue *			PValCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName = "");
-		Instruction *		PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
-		Instruction *		PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef);
+		Instruction *		PInstCreateMemset(SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
+		Instruction *		PInstCreateMemcpy(u64 cB, SValue * pValLhs, SValue * pValRhsRef);
+		Instruction *		PInstCreateMemcpy(STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef);
+
 
 		Instruction *		PInstCreateGEP(SValue * pValLhs, GepIndex ** apLvalIndices, u32 cpIndices, const char * pChzName);
 		GepIndex *			PGepIndex(u64 idx);
@@ -390,7 +396,7 @@ namespace BCode
 		SRegister *			PRegArg(s64 n, STypeInfo * pTin);
 
 		SConstant *			PConstPointer(void * pV, STypeInfo * pTin = nullptr);
-		SConstant *			PConstRegAddr(s32 iBStack, int cBitRegister);
+		//SConstant *			PConstRegAddr(s32 iBStack, int cBitRegister);
 		SConstant *			PConstInt(u64 nUnsigned, int cBit = 64, bool fIsSigned = true);
 		SConstant *			PConstFloat(f64 g, int cBit = 64);
 

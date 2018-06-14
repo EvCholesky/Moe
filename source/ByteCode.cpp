@@ -26,12 +26,6 @@
 #include "dyncall\dyncall\dyncall_signature.h"
 
 // Remaining bytecode tasks
-// [x]  Casting
-// [x]		Casting tests
-// [x]	Bit shifting
-// [x]		Bit shifting tests
-// [x]	Bitwise ops
-// [x]		Bitwise ops tests
 // [ ] Clean up remaining TBDs
 // [x]  Phi nodes
 // [ ]  Reflection
@@ -40,6 +34,8 @@
 // [x]		FFI basics
 // [x]		FFI variadic functions
 // [ ]		FFI tests
+// [x] Passing large arguments (hidden reference args)
+// [x] Returning large arguments (hidden reference args)
 
 
 
@@ -53,6 +49,7 @@
 // a3 |___return__________________| |	iBStack for return storage in main stack frame       |   pProc->m_cBArg
 // a2 |___arg 1___________________| |                                                        |
 // a1 |___arg 0___________________| | 														 | 
+// a0 |___pProcCall ______________|_v_	Address of SProcedure of the calling proc			 |
 // a0 |___pInstCall ______________|_v_	Address of call instruction from calling proc       _v_
 //	  |.................. pad ....|                                                          ^
 //	3 |___________________________| +                                                        |   pProc->m_cBStack
@@ -74,12 +71,15 @@
 // a3 |___return__________________| |	iBStack for return storage in main stack frame       ^   pProc->m_cBArg
 // a2 |___arg 1___________________| |                                                        |
 // a1 |___arg 0___________________| |                                                        |
+// a0 |___pProcCall ______________|_v_	Address of SProcedure of the calling proc			 |
 // a0 |___pInstCall_______________|_v_	Address of call instruction from calling proc       _v_
 //	  |.................. pad ....|                                                          ^
 //	3 |___________________________| +                                                        |   pProc->m_cBStack
 //	2 |___________________________| |                                                        |
 //	1 |___working_________________| |  childProc (a,b) -> childRet                           |
 //	0 |___local var_______________|_v_														_v_
+
+
 
 using namespace EWC;
 
@@ -207,6 +207,32 @@ void BuildStubDataLayout(SDataLayout * pDlay)
 
 namespace BCode 
 {
+inline bool FUseLargeOperand(IROP irop)
+{
+	// some instructions use register sized args (1,2,4,8 bytes)
+	// but these instructions use m_wordRhs.m_s32 to handle large structures
+
+	switch (irop)
+	{
+	case IROP_Call:
+	case IROP_Store:
+	case IROP_Load:
+	case IROP_StoreToIdx:
+	case IROP_StoreToReg:
+		return true;
+	default:
+		return false;
+	}
+}
+
+s32 CBOperand(const SInstruction * pInst)
+{
+	if (FUseLargeOperand(pInst->m_irop))
+	{
+		return pInst->m_wordRhs.m_s32;
+	}
+	return pInst->m_cBRegister;
+}
 
 struct SBoxedArg
 {
@@ -221,7 +247,7 @@ struct SValueOutput // tag = valout
 					,m_pTin(nullptr)
 						{ ; }
 
-	u8				m_cBRegister;
+	s32				m_cBRegister;
 	STypeInfo *		m_pTin;
 };
 
@@ -459,11 +485,20 @@ void CBuilder::SetupParamBlock(
 		{
 			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 			{
-				auto pTinArg = pTinproc->m_arypTinParams[iParam];
-				auto pInstAlloca = PValCreateAlloca(pTinArg, 1, strArgName.PCoz());
-				SetSymbolValue(pStnodParam->m_pSym, pInstAlloca);
-
-				(void) PInstCreateStore(pInstAlloca, PRegArg(pProcsig->m_aParamArg[iParam].m_iBStack, pTinArg));
+				auto pParam = &pProcsig->m_aParamArg[iParam];
+				auto cB = pParam->m_cB;
+				if (!FIsRegisterSize(cB))
+				{
+					auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, PRegArg(pParam->m_iBStack, 32), nullptr);
+					pInstvalAddr->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTinproc->m_arypTinParams[iParam]);
+					SetSymbolValue(pStnodParam->m_pSym, pInstvalAddr);
+				}
+				else
+				{
+					auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, PRegArg(pParam->m_iBStack, cB), nullptr);
+					pInstvalAddr->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTinproc->m_arypTinParams[iParam]);
+					SetSymbolValue(pStnodParam->m_pSym, pInstvalAddr);
+				}
 			}
 		}
 		++iParam;
@@ -711,10 +746,10 @@ static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWo
 			{
 				switch (cBOperand)
 				{
-					case 1: FormatCoz(pStrbuf, "%u", word.m_u8);	break;
-					case 2: FormatCoz(pStrbuf, "%u", word.m_u16);	break;
-					case 4: FormatCoz(pStrbuf, "%u", word.m_u32);	break;
-					case 8: FormatCoz(pStrbuf, "%llu", word.m_u64);	break;
+					case 1: FormatCoz(pStrbuf, "%d", word.m_s8);	break;
+					case 2: FormatCoz(pStrbuf, "%d", word.m_s16);	break;
+					case 4: FormatCoz(pStrbuf, "%d", word.m_s32);	break;
+					case 8: FormatCoz(pStrbuf, "%lld", word.m_s64);	break;
 					default: EWC_ASSERT(false, "unexpected operand size");
 				}
 			}
@@ -722,10 +757,10 @@ static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWo
 			{
 				switch (cBOperand)
 				{
-					case 1: FormatCoz(pStrbuf, "%d", word.m_s8);	break;
-					case 2: FormatCoz(pStrbuf, "%d", word.m_s16);	break;
-					case 4: FormatCoz(pStrbuf, "%d", word.m_s32);	break;
-					case 8: FormatCoz(pStrbuf, "%lld", word.m_s64);	break;
+					case 1: FormatCoz(pStrbuf, "%u", word.m_u8);	break;
+					case 2: FormatCoz(pStrbuf, "%u", word.m_u16);	break;
+					case 4: FormatCoz(pStrbuf, "%u", word.m_u32);	break;
+					case 8: FormatCoz(pStrbuf, "%llu", word.m_u64);	break;
 					default: EWC_ASSERT(false, "unexpected operand size");
 				}
 			}
@@ -795,19 +830,20 @@ void CBuilder::PrintDump()
 			AppendToCch(&strbuf, ' ', 6);
 
 			FormatCoz(&strbuf, "%s", PChzFromIrop(pInst->m_irop));
-			if (pInst->m_cBOperand != 0)
+			auto cBOperand = CBOperand(pInst);
+			if (cBOperand != 0)
 			{
-				FormatCoz(&strbuf, "_%d", pInst->m_cBOperand);
+				FormatCoz(&strbuf, "_%d", cBOperand);
 			}
 			AppendCoz(&strbuf, " ");
 
-			auto cBLhs = CBOperandFromOpsz(pOpsig->m_opszLhs, pInst->m_cBOperand, m_pDlay);
-			auto cBRhs = CBOperandFromOpsz(pOpsig->m_opszRhs, pInst->m_cBOperand, m_pDlay);
+			auto cBLhs = CBOperandFromOpsz(pOpsig->m_opszLhs, cBOperand, m_pDlay);
+			auto cBRhs = CBOperandFromOpsz(pOpsig->m_opszRhs, cBOperand, m_pDlay);
 			switch (pInst->m_irop)
 			{
 			case IROP_Call:
 				{
-					if (FIsRegister(pInst->m_opkLhs) == 0)
+					if (FIsRegister(pInst->m_opkLhs) == 0) // if not call by reference
 					{
 						auto pProc = (SProcedure *)pInst->m_wordLhs.m_pV;
 						FormatCoz(&strbuf, "%s()->[%d]", pProc->m_pTinproc->m_strName.PCoz(), pInst->m_iBStackOut);
@@ -840,7 +876,7 @@ void CBuilder::PrintDump()
 					AppendToCch(&strbuf, ' ', s_operandPos);
 					auto cBLhs = pInst->m_wordRhs.m_s32;
 					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
-					FormatCoz(&strbuf, " %d bytes ->[%d] %d bytes", cBLhs, pInst->m_iBStackOut, pInst->m_cBOperand);
+					FormatCoz(&strbuf, " %d bytes ->[%d] %d bytes", cBLhs, pInst->m_iBStackOut, cBOperand);
 				} break;
 			case IROP_CondBranch:
 				{
@@ -897,10 +933,10 @@ void CBuilder::PrintDump()
 			case IROP_TraceStore:
 				{
 					AppendToCch(&strbuf, ' ', s_operandPos);
-					auto pTin = (STypeInfo*)pInst->m_wordRhs.m_pV;
 
 					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
 
+					auto pTin = (STypeInfo*)pInst->m_wordRhs.m_pV;
 					auto strTin = StrFromTypeInfo(pTin);
 					FormatCoz(&strbuf, " : %s", strTin.PCoz());
 				} break;
@@ -978,25 +1014,46 @@ void CBuilder::PrintDump()
 					
 					FormatCoz(&strbuf, " ->[%d]", pInstGep->m_iBStackOut);
 				} break;
-			default:
-			{
-				AppendToCch(&strbuf, ' ', s_operandPos);
-				if (cBLhs)
+			case IROP_Store:
 				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
 					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
-				}
 
-				if (cBRhs)
+					FormatCoz(&strbuf, " ->*[%d]", pInst->m_iBStackOut);
+				} break;
+			case IROP_StoreToReg:
 				{
-					AppendCoz(&strbuf, ", ");
-					PrintIntOperand(&strbuf, cBRhs, pInst->m_opkRhs, pInst->m_wordRhs, true);
-				}
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
 
-				if (pOpsig->m_opszRet != OPSZ_0)
-				{
 					FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
-				}
-			} break;
+				} break;
+			case IROP_StoreToIdx:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+
+					FormatCoz(&strbuf, " ->[[%d]]", pInst->m_iBStackOut);
+				} break;
+			default:
+				{
+					AppendToCch(&strbuf, ' ', s_operandPos);
+					if (cBLhs)
+					{
+						PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
+					}
+
+					if (cBRhs)
+					{
+						AppendCoz(&strbuf, ", ");
+						PrintIntOperand(&strbuf, cBRhs, pInst->m_opkRhs, pInst->m_wordRhs, true);
+					}
+
+					if (pOpsig->m_opszRet != OPSZ_0 || FUseLargeOperand(pInst->m_irop))
+					{
+						FormatCoz(&strbuf, " ->[%d]", pInst->m_iBStackOut);
+					}
+				} break;
 			}
 			AppendCoz(&strbuf, "\n");
 			printf(aCh);
@@ -1222,7 +1279,7 @@ SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char *
 	return pInstval;
 }
 
-CBuilder::Instruction * CBuilder::PInstCreateMemset(CWorkspace * pWork, SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill)
+CBuilder::Instruction * CBuilder::PInstCreateMemset(SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill)
 {
 	auto pConstFill = PConstInt(bFill, 8);  
 	auto pInstval = PInstCreateRaw(IROP_Memset, pValLhs, pConstFill);
@@ -1235,13 +1292,9 @@ CBuilder::Instruction * CBuilder::PInstCreateMemset(CWorkspace * pWork, SValue *
 	return pInstval;
 }
 
-CBuilder::Instruction * CBuilder::PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef)
+CBuilder::Instruction * CBuilder::PInstCreateMemcpy(u64 cB, SValue * pValLhs, SValue * pValRhsRef)
 {
 	auto pInstval = PInstCreateRaw(IROP_Memcpy, pValLhs, pValRhsRef);
-
-	u64 cB;
-	u64 cBAlign;
-	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
 
 	auto pInstvalEx = PInstAlloc();
 	auto pInstEx = pInstvalEx->m_pInst;
@@ -1249,6 +1302,14 @@ CBuilder::Instruction * CBuilder::PInstCreateMemcpy(CWorkspace * pWork, STypeInf
 	pInstEx->m_opkLhs = OPK_Literal;
 	pInstEx->m_wordLhs.m_s64 = cB;
 	return pInstval;
+}
+
+CBuilder::Instruction * CBuilder::PInstCreateMemcpy(STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef)
+{
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+	return PInstCreateMemcpy(cB, pValLhs, pValRhsRef);
 }
 
 CBuilder::GepIndex * CBuilder::PGepIndex(u64 idx)
@@ -1269,7 +1330,7 @@ CBuilder::Instruction * CBuilder::PInstCreatePhi(LType * pLtype, const char * pC
 
 	auto pInstPhi = pInstvalPhi->m_pInst;
 	pInstPhi->m_irop = IROP_Phi;
-	pInstPhi->m_cBOperand = 0; // this will be filled in by add phi incoming
+	pInstPhi->m_cBRegister = 0; // this will be filled in by add phi incoming
 
 	return pInstvalPhi;
 }
@@ -1278,7 +1339,7 @@ void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 {
 	SInstructionValue * pInstvalInc = m_pBlockCur->m_aryInstval.PLast();
 	auto pInstInc = pInstvalInc->m_pInst;
-	bool fIsPhiNode = pInstInc->m_irop == IROP_Phi && pInstInc->m_cBOperand == 0;
+	bool fIsPhiNode = pInstInc->m_irop == IROP_Phi && pInstInc->m_cBRegister == 0;
 	if (!fIsPhiNode)
 	{
 		pInstvalInc = PInstAlloc();
@@ -1288,7 +1349,7 @@ void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 
 	SValueOutput valout;
 	SetOperandFromValue(m_pDlay, pVal, &pInstInc->m_opkLhs, &pInstInc->m_wordLhs, OPSZ_CB, &valout);
-	pInstInc->m_cBOperand = valout.m_cBRegister;
+	pInstInc->m_cBRegister = valout.m_cBRegister;
 	pInstInc->m_wordRhs.m_pV = pBlock;
 
 	if (fIsPhiNode)
@@ -1339,7 +1400,7 @@ void CBuilder::AddSwitchCase(SInstructionValue * pInstvalSwitch, SValue * pValCm
 		SBlock * pBlockSwitch = (SBlock*)pInstEx->m_wordLhs.m_pV;
 
 		SetOperandFromValue(m_pDlay, pValCmp, &pInstEx->m_opkLhs, &pInstEx->m_wordLhs, OPSZ_CB, &valout);
-		EWC_ASSERT(valout.m_cBRegister == pInstvalSwitch->m_pInst->m_cBOperand, "switch operand size mismatch");
+		EWC_ASSERT(valout.m_cBRegister == pInstvalSwitch->m_pInst->m_cBRegister, "switch operand size mismatch");
 		
 		s32 * pIInst = &pInstEx->m_wordRhs.m_s32;
 		auto pBranch = pBlockSwitch->m_aryBranch.AppendNew();
@@ -1358,7 +1419,7 @@ CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName
 	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
 
 	auto pConst = m_blistConst.AppendNew();
-	pConst->m_pTin = pTin;
+	pConst->m_pTin = m_pSymtab->PTinptrAllocate(pTin);
 	pConst->m_opk = OPK_Global;
 
 	u8 * pBGlobal;
@@ -1381,17 +1442,20 @@ void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit
 	
 	u64 cBGlob;
 	u64 cBGlobAlign;
-	CalculateByteSizeAndAlign(m_pDlay, pConstGlob->m_pTin, &cBGlob, &cBGlobAlign);
-
 	auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
 	if (pConstInit->m_opk == OPK_Global)
 	{
-		if (EWC_FVERIFY(FTypesAreSame(pConstGlob->m_pTin, pConstInit->m_pTin), "initializer type mismatch"))
+		auto pTinptr = PTinRtiCast<STypeInfoPointer *>(pConstGlob->m_pTin);
+
+		if (EWC_FVERIFY(pTinptr && FTypesAreSame(pTinptr->m_pTinPointedTo, pConstInit->m_pTin), "initializer type mismatch"))
 		{
+			CalculateByteSizeAndAlign(m_pDlay, pTinptr->m_pTinPointedTo, &cBGlob, &cBGlobAlign);
 			memcpy(pBGlob, m_dataseg.PBFromIndex(pConstInit->m_word.m_s32), cBGlob);
 			return;
 		}
 	}
+
+	CalculateByteSizeAndAlign(m_pDlay, pConstGlob->m_pTin, &cBGlob, &cBGlobAlign);
 
 	if (EWC_FVERIFY(FIsLiteral(pConstInit->m_opk), "expected literal"))
 	{
@@ -1465,32 +1529,36 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 		cBArg += cBArgVariadic;
 	}
 
+	u64 cBReturn = 0;
+	u64 cBAlignReturn = 1;
 	u32 iBStackOut = 0;
 	int cpTinReturn = (int)pTinproc->m_arypTinReturns.C();
 	for (int ipTinReturn = 0; ipTinReturn < cpTinReturn; ++ipTinReturn)
 	{
 		auto pTinRet = pTinproc->m_arypTinReturns[ipTinReturn];
+		if (pTinRet->m_tink == TINK_Void)
+			break;
 
-		u64 cB = 0;
-		u64 cBAlign = 1;
-		CalculateByteSizeAndAlign(m_pDlay, pTinRet, &cB, &cBAlign);
-		if (cB)
+		CalculateByteSizeAndAlign(m_pDlay, pTinRet, &cBReturn, &cBAlignReturn);
+		if (cBReturn)
 		{
-			iBStackOut = S32Coerce(IBStackAlloc(cB, cBAlign));
+			iBStackOut = S32Coerce(IBStackAlloc(cBReturn, cBAlignReturn));
 		}
 
 		auto pParam = &pProcsig->m_aParamRet[ipTinReturn];
 
 		// subtract cBArg here because we're still in the caller's stack frame
-		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), PConstInt(iBStackOut, 32));
+		(void) PInstCreateStoreToReg(S32Coerce(pParam->m_iBStack - cBArg), PConstInt(iBStackOut, 32));
 	}
 
-	for (int iRec = 0; iRec < cParamNamed; ++iRec)
+	for (int iParam = 0; iParam < cParamNamed; ++iParam)
 	{
+		auto pParam = &pProcsig->m_aParamArg[iParam];
+
 		// NOTE: Lhs is relative to called function stack frame, Rhs is relative to calling stack frame
 
-		auto pParam = &pProcsig->m_aParamArg[iRec];
-		(void) PInstCreate(IROP_StoreToReg, PReg(pParam->m_iBStack - cBArg), apLvalArgs[iRec]);
+		(void) PInstCreateStoreToReg(S32Coerce(pParam->m_iBStack - cBArg), apLvalArgs[iParam]);
+
 	}
 
 	if (cArgVariadic)
@@ -1506,8 +1574,8 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 			EWC_ASSERT(pTinArg, "unable to determine var arg type");
 
 			// subtract cBArg here because we're still in the caller's stack frame
-			(void) PInstCreate(IROP_StoreToReg, PReg(iBStackArg + EWC_OFFSET_OF(SBoxedArg, m_pTin) - cBArg), PConstPointer(pTinArg));
-			(void) PInstCreate(IROP_StoreToReg, PReg(iBStackArg + EWC_OFFSET_OF(SBoxedArg, m_word) - cBArg), pValArg);
+			(void) PInstCreateStoreToReg(S32Coerce(iBStackArg + EWC_OFFSET_OF(SBoxedArg, m_pTin) - cBArg), PConstPointer(pTinArg));
+			(void) PInstCreateStoreToReg(S32Coerce(iBStackArg + EWC_OFFSET_OF(SBoxedArg, m_word) - cBArg), pValArg);
 			iBStackArg += sizeof(SBoxedArg);
 		}
 
@@ -1515,13 +1583,7 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 		EWC_ASSERT(cBArgVariadic == iBStackArg - pProcsig->m_sIBStackVariadic, "bad cBArgVariadic calculation");
 	}
 
-	u8 cBReturnOp = 0;
-	if (cpTinReturn)
-	{
-		cBReturnOp = pProcsig->m_aParamRet[0].m_cB;
-	}
-
-	auto pInstvalCall = PInstCreateRaw(IROP_Call, cBReturnOp, pValProc, PConstPointer(m_pProcCur));
+	auto pInstvalCall = PInstCreateRaw(IROP_Call, cBReturn, pValProc, nullptr);
 	pInstvalCall->m_pInst->m_iBStackOut = iBStackOut;
 
 	if (cArgVariadic)
@@ -1548,25 +1610,27 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 		cpVal = 0;
 	}
 
+	auto pTinproc = m_pProcCur->m_pTinproc;
 	auto pProcsig = m_pProcCur->m_pProcsig;
 	for (int iReturn = 0; iReturn < cpVal; ++iReturn)
 	{
 		// add the returnIdx(callee relative) stored as an argument to (cBArg + cBStack)
 
 		// add the calling stack relative return index to (cBArg + cBStack)
+		// BB - doesn't take variadic args into account
 		auto pInstOffset = PInstCreateRaw(IROP_NAdd, PRegArg(pProcsig->m_aParamRet[0].m_iBStack, 32), PConstArg(pProcsig->m_cBArgNamed, 32));
 
-		(void) PInstCreate(IROP_StoreToIdx, pInstOffset, apVal[iReturn]);
+		auto pInstval = (SInstructionValue *)apVal[iReturn];
+		(void) PInstCreateStoreToIdx(pInstOffset, apVal[iReturn]);
 	}
 
-	auto pTinproc = m_pProcCur->m_pTinproc;
 	s32 cBReturnOp = 0;
 	if (!pTinproc->m_arypTinReturns.FIsEmpty())
 	{
 		cBReturnOp = pProcsig->m_aParamRet[0].m_cB;
 	}
 
-	PInstCreateRaw(IROP_Ret, cBReturnOp, PConstArg(pProcsig->m_cBArgNamed, 32), PConstArg(0, 32));
+	PInstCreateRaw(IROP_Ret, 0, PConstArg(pProcsig->m_cBArgNamed, 32), PConstArg(0, 32));
 }
 
 SInstructionValue * CBuilder::PInstCreatePtrToInt(SValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName)
@@ -1639,9 +1703,7 @@ SValue * CBuilder::PValFromSymbol(SSymbol * pSym)
 
 	if (pVal && pVal->m_valk == VALK_Instruction)
 	{
-		auto pInstval = (SInstructionValue *)pVal;
-		if (!EWC_FVERIFY(pInstval->m_pInst->m_irop = IROP_Alloca, "expected alloca for symbol"))
-			return nullptr;
+		IROP irop = ((SInstructionValue *)pVal)->m_pInst->m_irop;
 	}
 
 	return pVal;
@@ -1693,6 +1755,7 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 		}
 
 		pProcsig->m_cBArgNamed += sizeof(SInstruction *);
+		pProcsig->m_cBArgNamed += sizeof(SProcedure *);
 
 		u64 cB; 
 		u64 cBAlign;
@@ -1703,16 +1766,22 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 
 			auto pParam = &pProcsig->m_aParamArg[iArg];
 			pParam->m_cB = S32Coerce(cB);
+			pParam->m_cBAlign = S32Coerce(cBAlign);
+
 			pParam->m_iBStack = S32Coerce(IBArgAlloc(&pProcsig->m_cBArgNamed, cB, cBAlign));
 		}
 
 		for (size_t iRet = 0; iRet < cRet; ++iRet)
 		{
 			auto pTinParam = pTinproc->m_arypTinReturns[iRet];
-			CalculateByteSizeAndAlign(m_pDlay, pTinParam, &cB, &cBAlign);
+
+			// allocate space for index of return storage
+			cB = (pTinParam->m_tink == TINK_Void) ? 0 : sizeof(s32);
+			cBAlign = EWC_ALIGN_OF(s32);
 
 			auto pParam = &pProcsig->m_aParamRet[iRet];
 			pParam->m_cB = S32Coerce(cB);
+			pParam->m_cBAlign = S32Coerce(cBAlign);
 			pParam->m_iBStack = S32Coerce(IBArgAlloc(&pProcsig->m_cBArgNamed, cB, cBAlign));
 		}
 
@@ -1732,12 +1801,50 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 
 SInstructionValue * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, const char * pChzName)
 {
-	return PInstCreateRaw(irop, pValLhs, nullptr, pChzName);
+	switch (irop)
+	{
+	case IROP_Load:
+	case IROP_Ret:
+	case IROP_NNeg:
+	case IROP_GNeg:
+	case IROP_Not:
+		return PInstCreateRaw(irop, pValLhs, nullptr, pChzName);
+	default: 
+		EWC_ASSERT(false, "%s is not a unary opcode supported by PInstCreate", PChzFromIrop(irop)); break;
+	}
+	return PInstCreateError();
 }
 
 SInstructionValue* CBuilder::PInstCreate(IROP irop, SValue * pValLhs, SValue * pValRhs, const char * pChzName)
 {
-	return PInstCreateRaw(irop, pValLhs, pValRhs, pChzName);
+	// switch through cases to make sure we use custom functions where needed
+	switch (irop)
+	{
+	case IROP_NAdd:
+	case IROP_GAdd:
+	case IROP_NSub:
+	case IROP_GSub:
+	case IROP_NMul:
+	case IROP_GMul:
+	case IROP_SDiv:
+	case IROP_UDiv:
+	case IROP_GDiv:
+	case IROP_SRem:
+	case IROP_URem:
+	case IROP_GRem:
+	case IROP_Shl:
+	case IROP_AShr:
+	case IROP_LShr:
+	case IROP_And:
+	case IROP_Or:
+	case IROP_Xor:
+		return PInstCreateRaw(irop, pValLhs, pValRhs, pChzName);
+	default: 
+		EWC_ASSERT(false, "%s is not a binary opcode supported by PInstCreate", PChzFromIrop(irop)); 
+		break;
+	}
+
+	return PInstCreateError();
 }
 
 static inline bool FIsValidCBRegister(int cBRegister)
@@ -1776,14 +1883,25 @@ inline void SetOperandFromValue(
 		pWordOut->m_u64 = pConst->m_word.m_u64;
 		pValout->m_pTin = pConst->m_pTin;
 
-		if (pConst->m_opk != OPK_Global)
+		switch (pConst->m_opk)
 		{
-			pValout->m_cBRegister = (pConst->m_litty.m_cBit + 7) / 8;
-			EWC_ASSERT(FIsValidCBRegister(pValout->m_cBRegister), "unexpected operand size.");
-		}
-		else
-		{
-			pValout->m_cBRegister = pDlay->m_cBPointer;
+		case OPK_Literal:
+		case OPK_LiteralArg:
+			{
+				pValout->m_cBRegister = (pConst->m_litty.m_cBit + 7) / 8;
+				EWC_ASSERT(FIsValidCBRegister(pValout->m_cBRegister), "unexpected operand size.");
+			} break;
+		case OPK_Global:
+			{
+				pValout->m_cBRegister = pDlay->m_cBPointer;
+			} break;
+		default:
+			{
+				u64 cB; 
+				u64 cBAlign;
+				CalculateByteSizeAndAlign(pDlay, pValout->m_pTin, &cB, &cBAlign);
+				pValout->m_cBRegister = U8Coerce(cB);
+			} break;
 		}
 	} break;
 	case VALK_Instruction:
@@ -1792,10 +1910,10 @@ inline void SetOperandFromValue(
 		auto pInst = pInstval->m_pInst;
 
 		*pOpkOut = OPK_Register; // BB - is this ever an arg register?
+		pValout->m_cBRegister = CBOperand(pInst);
 		pWordOut->m_s32 = pInst->m_iBStackOut;
 
 		pValout->m_pTin = pInstval->m_pTinOperand;
-		pValout->m_cBRegister = pInst->m_cBOperand;
 
 		//EWC_ASSERT(FIsValidCBRegister(pValout->m_cBRegister), "unexpected operand size from instruction.");
 	} break;
@@ -1984,10 +2102,19 @@ SInstructionValue * CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SValue
 			break;
 	}
 	
-	EWC_ASSERT(FIsValidCBRegister(valout.m_cBRegister) || (valout.m_cBRegister == 0 && pOpsig->m_cbsrc == CBSRC_Nil), "unexpected operand size.");
-	pInst->m_cBOperand = valout.m_cBRegister;
-	pInstval->m_pTinOperand = valout.m_pTin;
+	if (FUseLargeOperand(irop))
+	{
+		EWC_ASSERT(!pValRhs, "trying to set rhs for large operand instruction %s", PChzFromIrop(irop));
+		pInst->m_wordRhs.m_s32 = valout.m_cBRegister;
 
+	}
+	else
+	{
+		EWC_ASSERT(FIsValidCBRegister(valout.m_cBRegister) || (valout.m_cBRegister == 0 && pOpsig->m_cbsrc == CBSRC_Nil), "unexpected operand size.");
+		pInst->m_cBRegister = valout.m_cBRegister;
+	}
+
+	pInstval->m_pTinOperand = valout.m_pTin;
 	return pInstval;
 }
 
@@ -1997,7 +2124,7 @@ SInstructionValue * CBuilder::PInstCreateError()
 	auto pInst = pInstval->m_pInst;
 
 	pInst->m_irop = IROP_Error;
-	pInst->m_cBOperand = 0;
+	pInst->m_cBRegister = 0;
 	return pInstval;
 }
 
@@ -2026,8 +2153,64 @@ SInstructionValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValSrc, SType
 
 SInstructionValue * CBuilder::PInstCreateStore(SValue * pValPDst, SValue * pValSrc)
 {
+	OPK opkDst;
+	SWord wordDst;
+	SValueOutput valoutDst;
+	SetOperandFromValue(m_pDlay, pValPDst, &opkDst, &wordDst, OPSZ_PCB, &valoutDst);
+
+	if (opkDst == OPK_Global)
+	{
+		auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, pValPDst, nullptr);
+		auto pInstvalStore = PInstCreate(IROP_Store, pValSrc);
+		pInstvalStore->m_pInst->m_iBStackOut = pInstvalAddr->m_pInst->m_iBStackOut;
+		return pInstvalStore;
+	}
+
 	// store pValSrc into the address pointed to by pValPDst
-	return PInstCreate(IROP_Store, pValPDst, pValSrc);
+
+	auto pInstval = PInstCreateRaw(IROP_Store, pValSrc, nullptr, "");
+	auto pInst = pInstval->m_pInst;
+
+
+	EWC_ASSERT(pInst->m_cBRegister == 0 && pInst->m_iBStackOut == 0, "expected no return pos");
+
+	if (EWC_FVERIFY(opkDst == OPK_Register, "expected register value for store destination"))
+	{
+		pInst->m_iBStackOut = wordDst.m_s32;
+	}
+
+	return pInstval;
+}
+
+SInstructionValue * CBuilder::PInstCreateStoreToReg(s32 dstIdx, SValue * pValSrc, const char * pChzName)
+{
+	// store pValSrc into the address pointed to by pValPDst
+	auto pInstval = PInstCreateRaw(IROP_StoreToReg, pValSrc, nullptr, pChzName);
+	auto pInst = pInstval->m_pInst;
+
+
+	EWC_ASSERT(pInst->m_cBRegister == 0 && pInst->m_iBStackOut == 0, "expected no return pos");
+
+	pInst->m_iBStackOut = dstIdx;
+	return pInstval;
+}
+
+SInstructionValue * CBuilder::PInstCreateStoreToIdx(SValue * pValPDst, SValue * pValSrc, const char * pChzName)
+{
+	// store pValSrc into the address pointed to by pValPDst
+	auto pInstval = PInstCreateRaw(IROP_StoreToIdx, pValSrc, nullptr, pChzName);
+	auto pInst = pInstval->m_pInst;
+
+
+	EWC_ASSERT(pInst->m_cBRegister == 0 && pInst->m_iBStackOut == 0, "expected no return pos");
+
+	OPK opkDst;
+	SWord wordDst;
+	SValueOutput valoutDst;
+	SetOperandFromValue(m_pDlay, pValPDst, &opkDst, &wordDst, OPSZ_CB, &valoutDst);
+
+	pInst->m_iBStackOut = wordDst.m_s32;
+	return pInstval;
 }
 
 void CBuilder::AddManagedVal(SValue * pVal)
@@ -2040,7 +2223,7 @@ void CBuilder::AddManagedVal(SValue * pVal)
 	m_arypValManaged.Append(pVal);
 }
 
-static inline void LoadWord(u8 * aB, SWord * pWord, u32 iB, int cB)
+static inline void LoadWord(u8 * aB, SWord * pWord, s32 iB, int cB)
 {
 	u8 * pB = &aB[iB];
 	switch (cB)
@@ -2063,7 +2246,6 @@ static inline void ReadOpcode(CVirtualMachine * pVm, SInstruction * pInst, int c
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
 	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
-		break;
 	}
 }
 
@@ -2076,7 +2258,6 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
 	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
-		break;
 	}
 
 	switch (pInst->m_opkRhs)
@@ -2086,7 +2267,6 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
 	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
-		break;
 	}
 }
 
@@ -2101,38 +2281,36 @@ static inline void ReadCastOpcodes(CVirtualMachine * pVm, SInstruction * pInst, 
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, 8);		break;
 	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
-		break;
 	}
 
 	switch (pInst->m_opkLhs)
 	{
 	case OPK_Literal:
-	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
+	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;															break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, int(pWordRhs->m_u64));		break;
-	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
-		break;
+	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];								break;
 	}
 }
 
-static inline void ReadOpcodesStoreToReg(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordLhs, SWord * pWordRhs)
+static inline void * PVReadAddressLhs(CVirtualMachine * pVm, SInstruction * pInst, SWord * pWordTemp)
 {
-	u8 cB = pInst->m_cBOperand;
-	EWC_ASSERT (FIsRegister(pInst->m_opkLhs), "expected register lhs");
-	*pWordLhs = pInst->m_wordLhs;
-
-	switch (pInst->m_opkRhs)
+	switch (pInst->m_opkLhs)
 	{
 	case OPK_Literal:
-	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
+	case OPK_LiteralArg:	
+		return &pInst->m_wordLhs;
 	case OPK_Register:
-	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
-	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
-		break;
+	case OPK_RegisterArg:	
+		return &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
+	case OPK_Global:		
+		pWordTemp->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];
+		return &pWordTemp->m_pV;
+	default: 
+		EWC_ASSERT(false, "unhandled OPK");
+		return nullptr;
 	}
 }
-
-
 
 /*
 template <typename T> struct SWordElement		{ T Lookup(SWord & word) { return word.m_u64; } };
@@ -2281,6 +2459,11 @@ void PrintInstance(CVirtualMachine * pVm, STypeInfo * pTin, u8 * pData)
 		AppendCoz(pVm->m_pStrbuf, "{");
 		for (int iTypememb = 0; iTypememb < pTinstruct->m_aryTypemembField.C(); ++iTypememb)
 		{
+			if (iTypememb > 0)
+			{
+				AppendCoz(pVm->m_pStrbuf, ", ");
+			}
+
 			auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 			FormatCoz(pVm->m_pStrbuf, "`%s ", pTypememb->m_strName.PCoz());
 
@@ -2578,8 +2761,6 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	pVm->m_pProcCurDebug = pProcEntry;
 
 	// build the stack frame for our top level procedure
-	u8 * pBStack = pVm->m_pBStack;
-
 	// allocate space for the return type
 	auto pProcsigEntry = pProcEntry->m_pProcsig;
 	int cBReturn = 0;
@@ -2596,26 +2777,29 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		aiBReturn[ipTin] = S32Coerce(cBReturn);
 		cBReturn += CBAlign(cBReturn, cBAlignReturn);
 	}
-	pBStack -= cBReturn;
 
-	pBStack -= pProcsigEntry->m_cBArgNamed;
-	*(SInstruction **)(pBStack) = nullptr;	 // fill in the null pInstCall 
-
-	// fill out our return locations
-	for (int ipTin = 0; ipTin < pTinprocEntry->m_arypTinReturns.C(); ++ipTin)
 	{
-		SParameter * pParam = &pProcsigEntry->m_aParamRet[ipTin];
-		*((s32*)&pBStack[pParam->m_iBStack]) = aiBReturn[ipTin];
+		auto pBStack = pVm->m_pBStack - cBReturn;
+
+		pBStack -= pProcsigEntry->m_cBArgNamed;
+		*(SInstruction **)(pBStack) = nullptr;	 // fill in the null pInstCall 
+
+		// fill out our return locations
+		for (int ipTin = 0; ipTin < pTinprocEntry->m_arypTinReturns.C(); ++ipTin)
+		{
+			SParameter * pParam = &pProcsigEntry->m_aParamRet[ipTin];
+			*((s32*)&pBStack[pParam->m_iBStack]) = aiBReturn[ipTin];
+		}
+
+		pBStack -= pProcEntry->m_cBStack;
+
+		if (pVm->m_pStrbuf)
+		{
+			AppendCoz(pVm->m_pStrbuf, "{");
+		}
+
+		pVm->m_pBStack = pBStack;
 	}
-
-	pBStack -= pProcEntry->m_cBStack;
-
-	if (pVm->m_pStrbuf)
-	{
-		AppendCoz(pVm->m_pStrbuf, "{");
-	}
-
-	pVm->m_pBStack = pBStack;
 
 	#define MASHOP(OP, CB)						(u32)(OP | (CB << 16))
 	#define FETCH(IB, TYPE)						*(TYPE *)&pVm->m_pBStack[IB]
@@ -2627,36 +2811,22 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	SInstruction * pInst = pInstMin;
 	while (1)
 	{
-		switch (MASHOP(pInst->m_irop, pInst->m_cBOperand))
+		switch (MASHOP(pInst->m_irop, pInst->m_cBRegister))
 		{
 		case MASHOP(IROP_Alloca, 4):
 		case MASHOP(IROP_Alloca, 8):
 		{
-			u8 * ptr = &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
-			*(u8 **)&pVm->m_pBStack[pInst->m_iBStackOut] = ptr;
+			u8 * pB = &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
+			*(u8 **)&pVm->m_pBStack[pInst->m_iBStackOut] = pB;
 		} break;
 
-		case MASHOP(IROP_Store, 1):
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs);
-			*((u8*)wordLhs.m_pV) = wordRhs.m_u8;
+		case MASHOP(IROP_Load, 0):
+		{
+			u8 * pBDst = &pVm->m_pBStack[pInst->m_iBStackOut];
+			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); 
+			memcpy(pBDst, wordLhs.m_pV, pInst->m_wordRhs.m_s32);
 			break;
-		case MASHOP(IROP_Store, 2):
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u16*)wordLhs.m_pV) = wordRhs.m_u16;	break;
-		case MASHOP(IROP_Store, 4):
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u32*)wordLhs.m_pV) = wordRhs.m_u32;	break;
-		case MASHOP(IROP_Store, 8):
-			ReadOpcodes(pVm, pInst, sizeof(u8*), &wordLhs, &wordRhs); *((u64*)wordLhs.m_pV) = wordRhs.m_u64;	break;
-
-		case MASHOP(IROP_Load, 1):
-			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs);
-			STORE(pInst->m_iBStackOut, u8, *(u8*)wordLhs.m_pV);
-			break;
-		case MASHOP(IROP_Load, 2):
-			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u16, *(u16*)wordLhs.m_pV); break;
-		case MASHOP(IROP_Load, 4):
-			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u32, *(u32*)wordLhs.m_pV); break;
-		case MASHOP(IROP_Load, 8):
-			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); STORE(pInst->m_iBStackOut, u64, *(u64*)wordLhs.m_pV); break;
+		}
 
 		case MASHOP(IROP_NAdd, 1): ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u8, wordLhs.m_u8 + wordRhs.m_u8);		break;
 		case MASHOP(IROP_NAdd, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, u16, wordLhs.m_u16 + wordRhs.m_u16);	break;
@@ -2843,49 +3013,56 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		{
 			if (pVm->m_pStrbuf)
 			{
-				ReadOpcode(pVm, pInst, pInst->m_cBOperand, &wordLhs);
-				auto pTin = (STypeInfo *)pInst->m_wordRhs.m_pV;
-				PrintInstance(pVm, pTin, (u8*)&wordLhs);
-				AppendCoz(pVm->m_pStrbuf, ";");
+				{
+					auto pTin = (STypeInfo *)pInst->m_wordRhs.m_pV;
+					u64 cB;
+					u64 cBAlign;
+					CalculateByteSizeAndAlign(pVm->m_pDlay, pTin, &cB, &cBAlign);
+
+					ReadOpcode(pVm, pInst, int(cB), &wordLhs);
+					PrintInstance(pVm, pTin, (u8*)&wordLhs);
+					AppendCoz(pVm->m_pStrbuf, ";");
+				}
 			}
 		} break;
 
-		// Store value to virtual register (pV, value)
-		case MASHOP(IROP_StoreToReg, 1):
-			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
-			STORE(pInst->m_wordLhs.m_s32, u8, wordRhs.m_u8);
-			break;
-		case MASHOP(IROP_StoreToReg, 2):
-			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
-			STORE(pInst->m_wordLhs.m_s32, u16, wordRhs.m_u16);
-			break;
-		case MASHOP(IROP_StoreToReg, 4):
-			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
-			STORE(pInst->m_wordLhs.m_s32, u32, wordRhs.m_u32);
-			break;
-		case MASHOP(IROP_StoreToReg, 8):
-			EWC_ASSERT(FIsRegister(pInst->m_opkLhs), "expected register for destination");
-			ReadOpcodesStoreToReg(pVm, pInst, &wordLhs, &wordRhs);
-			STORE(pInst->m_wordLhs.m_s32, u64, wordRhs.m_u64);
-			break;
+		//Store: Copy cBytes from src to the address at idxDst;			*pBStack[idxDst] = val
+		case MASHOP(IROP_Store, 0):
+		{
+			u8 * pBDst = *(u8**)&pVm->m_pBStack[pInst->m_iBStackOut];
+			auto pVLhs = PVReadAddressLhs(pVm, pInst, &wordLhs);
+			memcpy(pBDst, pVLhs, pInst->m_wordRhs.m_s32);
 
-			// Store value to virtual register (pV, value)
-		case MASHOP(IROP_StoreToIdx, 1):
-			ReadOpcodes(pVm, pInst, 1, &wordLhs, &wordRhs);
-			STORE(wordLhs.m_s32, u8, wordRhs.m_u8);
-			break;
-		case MASHOP(IROP_StoreToIdx, 2):
-			ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs);
-			STORE(wordLhs.m_s32, u16, wordRhs.m_u16);
-			break;
-		case MASHOP(IROP_StoreToIdx, 4):
-			ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs);
-			STORE(wordLhs.m_s32, u32, wordRhs.m_u32);
-			break;
-		case MASHOP(IROP_StoreToIdx, 8):
-			ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs);
-			STORE(wordLhs.m_s32, u64, wordRhs.m_u64);
-			break;
+		} break;
+		// StoreToReg: Copy cBytes from src to index dest;				pBStack[idxDst] = val
+		case MASHOP(IROP_StoreToReg, 0):
+			{
+				auto pVSrc = PVReadAddressLhs(pVm, pInst, &wordLhs);
+				auto pBDst = (u8*)&pVm->m_pBStack[pInst->m_iBStackOut];
+				memcpy(pBDst, pVSrc, pInst->m_wordRhs.m_s32);
+			} break;
+
+		//StoreToIdx: Copy cBytes to index specified at index dest;		pBStack[pBStack[idxDst]] = val
+		case MASHOP(IROP_StoreToIdx, 0):
+		{
+			auto pVSrc = PVReadAddressLhs(pVm, pInst, &wordLhs);
+			auto idx = *(s32*)&pVm->m_pBStack[pInst->m_iBStackOut];
+			memcpy(&pVm->m_pBStack[idx], pVSrc, pInst->m_wordRhs.m_s32);
+		} break;
+
+		// Store value to virtual register (pV, value)
+		case MASHOP(IROP_StoreAddress, 4):
+			{
+				EWC_ASSERT(pVm->m_pDlay->m_cBPointer == 4, "storing wrong pointer size");
+				void * pV = PVReadAddressLhs(pVm, pInst, &wordLhs);
+				*(u32*)&pVm->m_pBStack[pInst->m_iBStackOut] = (u32)uintptr_t(pV);
+			} break;
+		case MASHOP(IROP_StoreAddress, 8):
+			{
+				EWC_ASSERT(pVm->m_pDlay->m_cBPointer == 8, "storing wrong pointer size");
+				void * pV = PVReadAddressLhs(pVm, pInst, &wordLhs);
+				*(u64*)&pVm->m_pBStack[pInst->m_iBStackOut] = (u64)uintptr_t(pV);
+			} break;
 
 		case MASHOP(IROP_NCmp, 1):
 		{
@@ -2984,6 +3161,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			//printf("IROP_Call) pBStack = %p, ppInst = %p, cBStack = %lld, cBArg = %lld\n", pVm->m_pBStack, ppInstRet, pProc->m_cBStack, pProc->m_cBArg);
 
 			*ppInstRet = pInst;
+			*((SProcedure **)(ppInstRet + 1)) = pVm->m_pProcCurDebug;
 
 			pInstMin = pProc->m_aryInst.A();
 			pInst = pInstMin - 1; // this will be incremented below
@@ -2992,20 +3170,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		} break;
 
 		case MASHOP(IROP_Ret, 0):
-		case MASHOP(IROP_Ret, 1):
-		case MASHOP(IROP_Ret, 2):
-		case MASHOP(IROP_Ret, 4):
-		case MASHOP(IROP_Ret, 8):
 		{
-			if (pInst->m_cBOperand == 0)
-			{
-				wordLhs.m_u64 = 0;
-			}
-			else
-			{
-				ReadOpcode(pVm, pInst, pInst->m_cBOperand, &wordLhs);
-			}
-
 			u8 * pBStackCalled = pVm->m_pBStack;
 
 			s32 cBStack = pInst->m_wordRhs.m_s32;
@@ -3034,7 +3199,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			EWC_ASSERT(debcall.m_pBStackSrc == pVm->m_pBStack, "source proc stack frame mismatch");
 			EWC_ASSERT(*ppInstRet == nullptr || debcall.m_ppInstCall == ppInstRet, "bad return instruction");
 			EWC_ASSERT(debcall.m_pBStackDst == pBStackCalled, "called proc stack frame mismatch");
-			EWC_ASSERT(debcall.m_pBStackArg == pBStackCalled + pProcCalled->m_cBStack, "called proc stack frame mismatch");
+			EWC_ASSERT(debcall.m_pBStackArg == pBStackCalled + pProcCalled->m_cBStack, "called proc argument stack frame mismatch");
 #endif
 
 			if (pVm->m_pStrbuf && EWC_FVERIFY(pProcCalled, "missing called proc"))
@@ -3078,15 +3243,15 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			auto pInstCall = *ppInstRet;
 			EWC_ASSERT(pInstCall->m_irop == IROP_Call, "procedure return did not return to call instruction");
 
-			// skip exArgs (for variadic Procs)
+			// skip exArgs (if this proc is variadic)
 			if ((pInstCall + 1)->m_irop == IROP_ExArgs)
 				++pInstCall;
 
-			auto pProcPrev = (SProcedure *)pInstCall->m_wordRhs.m_pV;
+			auto pProcPrev = *((SProcedure **)(ppInstRet + 1));
+			//auto pProcPrev = (SProcedure *)pInstCall->m_wordRhs.m_pV;
 			pVm->m_pProcCurDebug = pProcPrev;
 			pInstMin = pProcPrev->m_aryInst.A();
 			pInst = pInstCall;
-
 
 		} break;
 
@@ -3226,7 +3391,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		} break;
 		default:
 
-			EWC_ASSERT(false, "unhandled opcode IROP_%s\n", PChzFromIrop(pInst->m_irop));
+			EWC_ASSERT(false, "unhandled opcode IROP_%s %d\n", PChzFromIrop(pInst->m_irop), pInst->m_cBRegister);
 		}
 		++pInst;
 	}
@@ -3604,6 +3769,8 @@ SRegister * CBuilder::PReg(s64 n, int cBit, bool fIsSigned)
 	pReg->m_pTin = (cBit == 1) ? 
 		m_pSymtab->PTinlitFromLitk(LITK_Bool) :
 		m_pSymtab->PTinlitFromLitk(LITK_Integer, cBit, fIsSigned);
+	EWC_ASSERT(pReg->m_pTin, "couldn't find register type");
+
 	pReg->m_opk = OPK_Register;
 	pReg->m_word.m_s64 = n;
 
@@ -3620,6 +3787,8 @@ SRegister * CBuilder::PRegArg(s64 n, int cBit, bool fIsSigned)
 	pReg->m_pTin = (cBit == 1) ? 
 		m_pSymtab->PTinlitFromLitk(LITK_Bool) :
 		m_pSymtab->PTinlitFromLitk(LITK_Integer, cBit, fIsSigned);
+	EWC_ASSERT(pReg->m_pTin, "couldn't find register type");
+
 	pReg->m_opk = OPK_RegisterArg;
 	pReg->m_word.m_s64 = n;
 
@@ -3667,155 +3836,6 @@ void TestDataSegment(CAlloc * pAlloc)
 	
 }
 
-void BuildTestByteCode(CWorkspace * pWork, EWC::CAlloc * pAlloc)
-{
-	TestDataSegment(pAlloc);
-	SDataLayout dlay;
-	BuildStubDataLayout(&dlay);
-
-	CBuilder buildBc(pWork, &dlay, nullptr);
-
-	EWC::CHash<HV, STypeInfo *>	hashHvPTin(pAlloc, BK_ByteCodeTest);
-	CUniqueTypeRegistry untyper(pAlloc);
-	SUniqueNameSet unsetTin(pAlloc, BK_ByteCodeTest);
-
-	auto pSymtab = PSymtabNew(pAlloc, nullptr, "global", &untyper, &unsetTin);
-	pSymtab->AddBuiltInSymbols(pWork);
-	buildBc.m_pSymtab = pSymtab;
-
-	auto pTinprocMain = PTinprocAlloc(pSymtab, 0, 0, "main");
-	pTinprocMain->m_strMangled = pTinprocMain->m_strName;
-
-	auto pTinprocPrint = PTinprocAlloc(pSymtab, 2, 0, "print");
-	pTinprocPrint->m_strMangled = pTinprocPrint->m_strName;
-	auto pTinS8 = pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
-	auto pTinS16 = pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
-	auto pTinS32 = pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
-	pTinprocPrint->m_arypTinParams.Append(pTinS16);
-	pTinprocPrint->m_arypTinParams.Append(pTinS32);
-
-	auto pTinprocSum = PTinprocAlloc(pSymtab, 2, 1, "sum");
-	pTinprocSum->m_strMangled = pTinprocSum->m_strName;
-	pTinprocSum->m_arypTinParams.Append(pTinS32);
-	pTinprocSum->m_arypTinParams.Append(pTinS32);
-	pTinprocSum->m_arypTinReturns.Append(pTinS32);
-
-	auto pProcPrint = buildBc.PProcCreateImplicit(pWork, pTinprocPrint, nullptr);
-	auto pBlockPrint = buildBc.PBlockCreate(pProcPrint);
-	buildBc.ActivateProc(pProcPrint, pBlockPrint);
-	{
-		//auto pRegVal = buildBc.PValCreateAlloca(pTinS8, 1);
-
-		auto pProcsigPrint = pProcPrint->m_pProcsig;
-		(void)buildBc.PInstCreate(IROP_NTrace, buildBc.PRegArg(pProcsigPrint->m_aParamArg[0].m_iBStack, 16));
-		(void)buildBc.PInstCreate(IROP_NTrace, buildBc.PRegArg(pProcsigPrint->m_aParamArg[1].m_iBStack, 32));
-
-		buildBc.PInstCreateTraceStore(buildBc.PReg(pProcsigPrint->m_aParamArg[0].m_iBStack, 16), pTinS16);
-		buildBc.PInstCreateTraceStore(buildBc.PReg(pProcsigPrint->m_aParamArg[1].m_iBStack, 32), pTinS32);
-		//(void) buildBc.PInstCreate(IROP_Ret, nullptr);
-		buildBc.CreateReturn(nullptr, 0);
-	}
-
-	buildBc.ActivateProc(nullptr, nullptr);
-	buildBc.FinalizeProc(pProcPrint);
-
-
-	auto pProcSum = buildBc.PProcCreateImplicit(pWork, pTinprocSum, nullptr);
-	auto pBlockSum = buildBc.PBlockCreate(pProcSum);
-	buildBc.ActivateProc(pProcSum, pBlockSum);
-	
-	{
-		auto pProcsigSum = pProcSum->m_pProcsig;
-		auto pInstRhs = buildBc.PInstCreate(
-									IROP_NAdd,
-									buildBc.PRegArg(pProcsigSum->m_aParamArg[0].m_iBStack, pProcsigSum->m_aParamArg[0].m_cB * 8),
-									buildBc.PRegArg(pProcsigSum->m_aParamArg[1].m_iBStack, pProcsigSum->m_aParamArg[1].m_cB * 8));
-
-		buildBc.CreateReturn((SValue**)&pInstRhs, 1);
-		//void) buildBc.RecAddInst(IROP_Store, 4, RecSigned(pProcSum->m_aParamRet[0].m_iBStack), recRhs);
-	}
-
-	buildBc.ActivateProc(nullptr, nullptr);
-	buildBc.FinalizeProc(pProcSum);
-
-
-	auto pProc = buildBc.PProcCreateImplicit(pWork, pTinprocMain, nullptr);
-	auto pBlockPre = buildBc.PBlockCreate(pProc);
-	buildBc.ActivateProc(pProc, pBlockPre);
-	
-	auto pRegPtr = buildBc.PValCreateAlloca(pTinS8, 1);
-	(void) buildBc.PInstCreate(IROP_Store, pRegPtr, buildBc.PConstInt(55, 8));
-	auto pRegVal = buildBc.PInstCreate(IROP_Load, pRegPtr);
-	(void) buildBc.PInstCreateTraceStore(pRegVal, pTinS8);
-	//auto pConstVarVal = buildBc.PReg(pInstVarAddr->m_iBStackOut, 8);
-
-	//auto recVarAddr = buildBc.AllocLocalVar(1, 1);
-	//auto recVarVal = buildBc.RecAddInst(IROP_Store, 1, recVarAddr, RecSigned(55));
-
-	auto pInstRhs = buildBc.PInstCreate(IROP_NAdd, buildBc.PConstInt(5, 8), buildBc.PConstInt(3, 8));
-	auto pInstOut = buildBc.PInstCreate(IROP_NAdd, pInstRhs, pRegVal);
-
-	auto pInstCmp = buildBc.PInstCreateNCmp(NPRED_SGT, pInstOut, buildBc.PConstInt(100, 8));
-	auto pBlockTrue = buildBc.PBlockCreate(pProc);
-	auto pBlockFalse = buildBc.PBlockCreate(pProc);
-	auto pBlockPost = buildBc.PBlockCreate(pProc);
-	(void) buildBc.PInstCreateCondBranch(pInstCmp, pBlockTrue, pBlockFalse);
-
-	buildBc.ActivateBlock(pBlockTrue);
-	(void) buildBc.PInstCreate(IROP_StoreToReg, pRegVal, buildBc.PConstInt(11, 8));
-	buildBc.CreateBranch(pBlockPost);
-
-	buildBc.ActivateBlock(pBlockFalse);
-	(void) buildBc.PInstCreate(IROP_StoreToReg, pRegVal, buildBc.PConstInt(22, 8));
-	buildBc.CreateBranch(pBlockPost);
-
-	buildBc.ActivateBlock(pBlockPost);
-	//pInstVarVal = buildBc.PInstCreate(IROP_Load, pRegVal);
-	(void) buildBc.PInstCreate(IROP_NTrace, pRegVal);
-
-	SValue * apVal[2];
-	apVal[0] = buildBc.PConstInt(111, 16);
-	apVal[1] = buildBc.PConstInt(222, 32);
-	buildBc.PInstCreateCall(buildBc.PConstPointer(pProcPrint), pTinprocPrint, apVal, 2);
-
-	auto pRegPInt = buildBc.PValCreateAlloca(pTinS32, 1);
-	(void) buildBc.PInstCreate(IROP_Store, pRegPInt, buildBc.PConstInt(444, 32));
-	auto pRegIntVal = buildBc.PInstCreate(IROP_Load, pRegPInt);
-
-	apVal[0] = buildBc.PConstInt(333, 32);
-	apVal[1] = pRegIntVal;
-	buildBc.PInstCreateCall(buildBc.PConstPointer(pProcPrint), pTinprocPrint, apVal, 2);
-
-	apVal[0] = buildBc.PConstInt(123, 32);
-	apVal[1] = buildBc.PConstInt(111, 32);
-	auto pInstRet = buildBc.PInstCreateCall(buildBc.PConstPointer(pProcSum), pTinprocSum, apVal, 2);
-	(void) buildBc.PInstCreate(IROP_NTrace, pInstRet);
-
-	buildBc.CreateReturn(nullptr, 0);
-
-	buildBc.ActivateProc(nullptr, nullptr);
-	buildBc.FinalizeProc(pProc);
-
-	buildBc.PrintDump();
-
-	static const u32 s_cBStackMax = 2048;
-	u8 * pBStack = (u8 *)pAlloc->EWC_ALLOC(s_cBStackMax, 16);
-
-	char aCh[2048];
-	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-
-	CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
-	vm.m_pStrbuf = &strbuf;
-
-#if DEBUG_PROC_CALL
-	vm.m_aryDebCall.SetAlloc(pAlloc, BK_ByteCode, 32);
-#endif
-
-	ExecuteBytecode(&vm, pProc);
-
-	EWC::EnsureTerminated(&strbuf, '\0');
-	printf("%s\n", aCh);
-}
 } // namespace BCode 
 
 // [x] generate instructions into basic blocks

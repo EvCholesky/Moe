@@ -122,9 +122,9 @@ struct OpSignature // tag = opsig
 #define OPCODE_LIST \
 		OPMN(Terminal,	Error)		OPSIZE(0, 0, 0) \
 						/* Ret(cBStack+cBArg) -> regRet */ \
-		OPMX(Terminal,	Ret)		OPSIZE(4, 4, CB) \
+		OPMX(Terminal,	Ret)		OPSIZE(4, 4, 0) \
 		\
-						/* Call(pProcNew, pProcOld) -> regRet */ \
+						/* Call(pProcNew, cBReturn) -> regRet */ \
 						/*  variadic: ExArgs(cArgVariadic, cBVariadic) */ \
 		OPMN(JumpOp,	Call)		OPSIZE(Ptr, Ptr, CB) \
 						/* CondBranch(fPred, {iInstT,iInstF}) */ \
@@ -167,14 +167,14 @@ struct OpSignature // tag = opsig
 		OPMN(MemoryOp,	Alloca)		OPSIZE(RegIdx, Ptr, PCB) \
 						/* Load(Reg(Pointer)) -> RegIdx */ \
 		OP(				Load)		OPSIZE(PCB, 0, CB) \
-						/* Store(Reg(Pointer), Value) */ \
-		OP(				Store)		OPSIZE(PCB, CB, 0) \
+						/* Store(Src, cBOperand)->iBStackDest */ \
+		OP(				Store)		OPSIZE(CB, 4, 0) \
 						/* GEP(Reg(Pointer), dBOffset)->iBStack  ExArgs(val, cBStride) ...*/ \
 		OP(				GEP)		OPSIZE(Ptr, 8, Ptr) \
 		OP(				PtrDiff)	OPSIZE(0, 0, 0) \
-						/* Memset(pDst, pDst, valByte);  ExArgs(cB)*/ \
+						/* Memset(pDst, valByte);  ExArgs(cB)*/ \
 		OP(				Memset)		OPSIZE(RegIdx, 1, 0) \
-						/* Memcpy(pDst, pDst, pSrc);  ExArgs(cB)*/ \
+						/* Memcpy(pDst, pSrc);  ExArgs(cB)*/ \
 		OPMX(MemoryOp,	Memcpy)		OPSIZE(RegIdx, RegIdx, 0) \
 		\
 						/* CastOp(reg, cBOperandRhs); */ \
@@ -189,14 +189,17 @@ struct OpSignature // tag = opsig
 		OP(				GExtend)	OPSIZE(0, 8, CB) \
 		OP(				PtrToInt)	OPSIZE(0, 0, 0) \
 		OP(				IntToPtr)	OPSIZE(0, 0, 0) \
-		OPMX(CastOp,	Bitcast)	OPSIZE(0, 0, 0) \
+		OPMX(CastOp,	Bitcast)	OPSIZE(0, 8, CB) \
 		/* ---- bytecode only opcodes ----*/ \
 		OPMN(BCodeOp,	NTrace)		OPSIZE(CB, 0, 0) \
-						/* TraceStore(Reg, pTin) */ \
+						/* TraceStore(Reg) */ \
 		OP(				TraceStore)	OPSIZE(CB, Ptr, 0) \
-						/* RegStore(RegDst, ValueSrc) */ \
-		OP(				StoreToReg)	OPSIZE(RegIdx, CB, 0) \
-		OP(				StoreToIdx)	OPSIZE(RegIdx, CB, 0) \
+						/* StoreToReg(Reg)->iBStackDest */ \
+		OP(				StoreToReg)	OPSIZE(CB, 4, 0) \
+						/* StoreToIdx(Reg)->iBStackDest */ \
+		OP(				StoreToIdx)	OPSIZE(CB, 4, 0) \
+						/* StoreAddress(RegIdx) ->iBStack */ \
+		OP(				StoreAddress)	OPSIZE(RegIdx, 0, Ptr) \
 						/* extra arguments for preceeding opcode */ \
 		OPMX(BCodeOp,	ExArgs)	OPSIZE(0, 0, 0) \
 
@@ -535,19 +538,21 @@ public:
 	static ProcArg *	PProcArg(CIRValue * pVal);
 
 	CIRInstruction *	PInstCreateRaw(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
-	CIRInstruction *	PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, const char * pChzName);
 	CIRInstruction *	PInstCreate(IROP irop, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+
 	CIRInstruction *	PInstCreateCast(IROP irop, CIRValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
+	CIRInstruction *	PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
+	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
 
 	CIRValue *			PValFromSymbol(SSymbol * pSym);
 	void				SetSymbolValue(SSymbol * pSym, CIRValue * pVal);
 	SCodeGenStruct *	PCgstructEnsure(STypeInfoStruct * pTinstruct);
 
-	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
+
 	CIRValue *			PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
-	CIRInstruction *	PInstCreateMemset(CWorkspace * pWork, CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
-	CIRInstruction *	PInstCreateMemcpy(CWorkspace * pWork, STypeInfo * pTin, CIRValue * pValLhs, CIRValue * pValRhsRef);
+	CIRInstruction *	PInstCreateMemset(CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
+	CIRInstruction *	PInstCreateMemcpy(STypeInfo * pTin, CIRValue * pValLhs, CIRValue * pValRhsRef);
 
 	CIRInstruction *	PInstCreateTraceStore(CIRValue * pVal, STypeInfo * pTin)
 							{ return nullptr; }
@@ -600,6 +605,10 @@ public:
 
 
 
+inline bool FIsRegisterSize(u64 cB)
+{
+	return (cB == 1) | (cB == 2) | (cB == 4) | (cB == 8);
+}
 
 void InitLLVM(EWC::CAry<const char*> * paryPCozArgs);
 void ShutdownLLVM();
