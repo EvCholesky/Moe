@@ -6970,8 +6970,9 @@ void CodeGenEntryPoints(
 			{
 				EWC_ASSERT(
 					pStnod->m_pSym->m_symdep == SYMDEP_Unused,
-					"unexpected symbol dependency type (%d)",
-					pStnod->m_pSym->m_symdep);
+					"unexpected symbol dependency type (%d) for symbol '%s'",
+					pStnod->m_pSym->m_symdep,
+					pStnod->m_pSym->m_strName.PCoz());
 
 				//printf("Skipping dead code %s\n", pStnod->m_pSym->m_strName.PCoz());
 				continue;

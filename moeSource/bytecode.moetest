@@ -1,3 +1,14 @@
+test BytecodeUnaryOp
+	prereq "n : ?type = ?val"
+	input "n2 := ?op n"
+	bytecode "{?val;?res;}"
+	{
+		?val(123) + ?type(s8|s16|s32|s64) +?op("-") + ?res("-123"),
+		?val(5.500000) + ?type(f32|f64) + ?op("-") + ?res("-5.500000"),
+		?val(123) + ?type(s8|s16|s32|s64) +?op("!") + ?res("false"),
+		?val(0) + ?type(s8|s16|s32|s64) +?op("!") + ?res("true"),
+	}
+
 test BytecodeInferAlloc
 	input "n := ?val"
 	bytecode "{?val;}"
@@ -17,6 +28,15 @@ test BytecodePointer
 	bytecode "{&0;?val;?val;}"
 	{
 		?val(24|5|"-66")
+	}
+	
+test BytecodePointerArithmetic
+	prereq 	"aN := {:int: 2, 3, 4}"
+	input 	"pN := &aN[1]; pN = pN ?op 1"
+	bytecode "{&3;?val}"
+	{
+		?op("+") + ?val("&4;"),
+		?op("-") + ?val("&2;")
 	}
 
 test BytecodeCompare

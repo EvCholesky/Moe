@@ -495,7 +495,7 @@ void CBuilder::SetupParamBlock(
 				}
 				else
 				{
-					auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, PRegArg(pParam->m_iBStack, cB), nullptr);
+					auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, PRegArg(pParam->m_iBStack, cB*8), nullptr);
 					pInstvalAddr->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTinproc->m_arypTinParams[iParam]);
 					SetSymbolValue(pStnodParam->m_pSym, pInstvalAddr);
 				}
@@ -509,13 +509,11 @@ void CBuilder::ActivateProc(SProcedure * pProc, SBlock * pBlock)
 {
 	if (m_pBlockCur)
 	{
-		EWC_ASSERT(!pBlock || m_pBlockCur == pBlock, "mismatch ending block");
 		m_pBlockCur = nullptr;
 	}
 
 	if (m_pProcCur)
 	{
-		EWC_ASSERT(!pProc || m_pProcCur == pProc, "mismatch ending procedure");
 		m_pProcCur = nullptr;
 	}
 
@@ -1235,6 +1233,7 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 				pInst->m_wordRhs.m_u64 = cBStride;
 
 				SetOperandFromValue(m_pDlay, pValIndex, &pInst->m_opkLhs, &pInst->m_wordLhs, OPSZ_8, &valout);
+				pInst->m_cBRegister = valout.m_cBRegister;
 			} break;
 		default:
 			EWC_ASSERT(false, "unexpected value kind in GEP instruction");
@@ -1244,6 +1243,7 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 	pInstvalGep->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTin);
 	pInstGep->m_opkRhs = OPK_Literal;
 	pInstGep->m_wordRhs.m_u64 = dBOffset;
+	pInstGep->m_cBRegister = sizeof(u8 *);
 
 	AllocateStackOut(this, pInstGep, sizeof(u8 *), EWC_ALIGN_OF(u8 *));
 	return pInstvalGep;
@@ -2032,7 +2032,7 @@ SInstructionValue * CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SValue
 	SValueOutput valoutLhs, valoutRhs;
 	if (pValLhs)
 	{
-		EWC_ASSERT(pOpsig->m_opszLhs != OPSZ_0, "unexpected LHS operand");
+		EWC_ASSERT(pOpsig->m_opszLhs != OPSZ_0, "unexpected LHS operand to IROP_%s", PChzFromIrop(irop));
 		SetOperandFromValue(m_pDlay, pValLhs, &pInst->m_opkLhs, &pInst->m_wordLhs, pOpsig->m_opszLhs, &valoutLhs);
 
 		// BB - ugly exception for void returns 
@@ -2045,7 +2045,7 @@ SInstructionValue * CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SValue
 
 	if (pValRhs)
 	{
-		EWC_ASSERT(pOpsig->m_opszRhs != OPSZ_0, "unexpected RHS operand");
+		EWC_ASSERT(pOpsig->m_opszRhs != OPSZ_0, "unexpected RHS operand to IROP_%s", PChzFromIrop(irop));
 		SetOperandFromValue(m_pDlay, pValRhs, &pInst->m_opkRhs, &pInst->m_wordRhs, pOpsig->m_opszRhs, &valoutRhs);
 
 		//EWC_ASSERT(valoutRhs.m_cBRegister != 0, "expected RHS operand, but has zero size");
@@ -2110,7 +2110,8 @@ SInstructionValue * CBuilder::PInstCreateRaw(IROP irop, s64 cBOperandArg, SValue
 	}
 	else
 	{
-		EWC_ASSERT(FIsValidCBRegister(valout.m_cBRegister) || (valout.m_cBRegister == 0 && pOpsig->m_cbsrc == CBSRC_Nil), "unexpected operand size.");
+		EWC_ASSERT(FIsValidCBRegister(valout.m_cBRegister) || (valout.m_cBRegister == 0 && pOpsig->m_cbsrc == CBSRC_Nil), 
+			"unexpected operand size. (%d bytes) for IROP_%s", valout.m_cBRegister, PChzFromIrop(irop));
 		pInst->m_cBRegister = valout.m_cBRegister;
 	}
 
@@ -2907,6 +2908,19 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_Xor, 2): ReadOpcodes(pVm, pInst, 2, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s16, wordLhs.m_s16 ^ wordRhs.m_s16);	break;
 		case MASHOP(IROP_Xor, 4): ReadOpcodes(pVm, pInst, 4, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s32, wordLhs.m_s32 ^ wordRhs.m_s32);	break;
 		case MASHOP(IROP_Xor, 8): ReadOpcodes(pVm, pInst, 8, &wordLhs, &wordRhs); STORE(pInst->m_iBStackOut, s64, wordLhs.m_s64 ^ wordRhs.m_s64);	break;
+
+		case MASHOP(IROP_NNeg, 1): ReadOpcode(pVm, pInst, 1, &wordLhs); STORE(pInst->m_iBStackOut, s8, -wordLhs.m_s8);		break;
+		case MASHOP(IROP_NNeg, 2): ReadOpcode(pVm, pInst, 2, &wordLhs); STORE(pInst->m_iBStackOut, s16, -wordLhs.m_s16);	break;
+		case MASHOP(IROP_NNeg, 4): ReadOpcode(pVm, pInst, 4, &wordLhs); STORE(pInst->m_iBStackOut, s32, -wordLhs.m_s32);	break;
+		case MASHOP(IROP_NNeg, 8): ReadOpcode(pVm, pInst, 8, &wordLhs); STORE(pInst->m_iBStackOut, s64, -wordLhs.m_s64);	break;
+
+		case MASHOP(IROP_GNeg, 4): ReadOpcode(pVm, pInst, 4, &wordLhs); STORE(pInst->m_iBStackOut, f32, -wordLhs.m_f32);	break;
+		case MASHOP(IROP_GNeg, 8): ReadOpcode(pVm, pInst, 8, &wordLhs); STORE(pInst->m_iBStackOut, f64, -wordLhs.m_f64);	break;
+
+		case MASHOP(IROP_Not, 1): ReadOpcode(pVm, pInst, 1, &wordLhs); STORE(pInst->m_iBStackOut, u8, !wordLhs.m_s8);	break;
+		case MASHOP(IROP_Not, 2): ReadOpcode(pVm, pInst, 2, &wordLhs); STORE(pInst->m_iBStackOut, u16, !wordLhs.m_s16);	break;
+		case MASHOP(IROP_Not, 4): ReadOpcode(pVm, pInst, 4, &wordLhs); STORE(pInst->m_iBStackOut, u32, !wordLhs.m_s32);	break;
+		case MASHOP(IROP_Not, 8): ReadOpcode(pVm, pInst, 8, &wordLhs); STORE(pInst->m_iBStackOut, u64, !wordLhs.m_s64);	break;
 #define STORE_CAST(TYPE, SIGN) \
 			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
 			switch(wordRhs.m_s32) \
@@ -3374,7 +3388,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			ReadOpcode(pVm, pInst, 8, &wordLhsEx);
 			memcpy(wordLhs.m_pV, wordRhs.m_pV, wordLhsEx.m_u64);
 		} break;
-		case MASHOP(IROP_GEP, 0):
+		case MASHOP(IROP_GEP, 4):
+		case MASHOP(IROP_GEP, 8):
 		{
 			auto pInstGep = pInst;
 			ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhs); 
@@ -3383,8 +3398,14 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			while ((pInst + 1)->m_irop == IROP_ExArgs)
 			{
 				++pInst;
-				ReadOpcode(pVm, pInst, sizeof(u8*), &wordLhsEx); 
-				dB += wordLhsEx.m_u64 * pInst->m_wordRhs.m_u64;
+				ReadOpcode(pVm, pInst, pInst->m_cBRegister, &wordLhsEx); 
+				switch(pInst->m_cBRegister)
+				{
+				case 1: dB += wordLhsEx.m_s8 * pInst->m_wordRhs.m_s64;		break;
+				case 2: dB += wordLhsEx.m_s16 * pInst->m_wordRhs.m_s64;		break;
+				case 4: dB += wordLhsEx.m_s32 * pInst->m_wordRhs.m_s64;		break;
+				case 8: dB += wordLhsEx.m_s64 * pInst->m_wordRhs.m_s64;		break;
+				}
 			}
 
 			*(u8 **)&pVm->m_pBStack[pInstGep->m_iBStackOut] = (u8*)wordLhs.m_pV + dB;
@@ -3656,21 +3677,26 @@ CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue 
 	for (u32 ipLval = 0; ipLval < cpLval; ++ipLval)
 	{
 		auto pConst = (SConstant *)apLval[ipLval];
-		if (!EWC_FVERIFY(pConst->m_valk == VALK_Constant && FIsLiteral(pConst->m_opk), "must initialize constant array with constant literals"))
-			continue;
+		if (!EWC_FVERIFY(pConst->m_valk == VALK_Constant, "must initialize constant array with constant literals"))
+			continue; 
 
-		EWC_ASSERT(pConst->m_litty.m_cBit == cBElement * 8, "element size mismatch");	
-
-		switch (cBElement)
+		void * pVSrc;
+		switch (pConst->m_opk)
 		{
-		case 1: *(u8*)pBGlobal = pConst->m_word.m_u8;		break;
-		case 2: *(u16*)pBGlobal = pConst->m_word.m_u16;		break;
-		case 4: *(u32*)pBGlobal = pConst->m_word.m_u32;		break;
-		case 8: *(u64*)pBGlobal = pConst->m_word.m_u64;		break;
-		default:
-			EWC_ASSERT(false, "unexpected element sizei in pLvalConstantArray")
+		case OPK_Literal:
+		//case OPK_LiteralArg: // this doesn't make sense, the arg will be adjusted after it's copied here 
+			EWC_ASSERT(pConst->m_litty.m_cBit == cBElement * 8, "element size mismatch");	
+			pVSrc = &pConst->m_word.m_u64;	
 			break;
+		case OPK_Global:
+			pVSrc = m_dataseg.PBFromIndex(pConst->m_word.m_s32);
+			break;
+		default:
+			EWC_ASSERT(false, "unexpected operand kind when initializing a constant array");
+			continue;
 		}
+
+		memcpy(pBGlobal, pVSrc, cBElement);
 		pBGlobal += cBElement;
 	}
 
