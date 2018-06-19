@@ -245,6 +245,25 @@ test BytecodeReturnLargeVal
 		?aVal("333") + ?aRes("333") + ?bRes("-222") 
 	}
 
+test BytecodeArrayRef
+	input "aN : [] int= {:int: 111, 222, 333}; n:= aN?elem"
+	bytecode "{?res;}"
+	{
+		?elem("[0]") + ?res(111),
+		?elem("[1]") + ?res(222),
+		?elem("[2]") + ?res(333),
+		?elem(".count") + ?res(3),
+	}
+
+test BytecodeArrayFixed
+	input "aN :[3] int = {:int: 111, 222, 333}; n:= aN?elem"
+	bytecode "{?res;}"
+	{
+		?elem("[0]") + ?res(111),
+		?elem("[1]") + ?res(222),
+		?elem("[2]") + ?res(333),
+		?elem(".count") + ?res(3),
+	}
 	// To Test:
 	// To Test:
 	// [ ] fdir.m_top should be a boolean value as an rvalue or a lvalue

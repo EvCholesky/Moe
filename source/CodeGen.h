@@ -41,6 +41,7 @@ struct SErrorManager;
 struct STypeInfo;
 struct STypeInfoEnum;
 struct STypeInfoInteger;
+struct STypeInfoLiteral;
 struct STypeInfoProcedure;
 struct STypeInfoStruct;
 struct SWorkspaceEntry;
@@ -191,9 +192,8 @@ struct OpSignature // tag = opsig
 		OP(				IntToPtr)	OPSIZE(0, 0, 0) \
 		OPMX(CastOp,	Bitcast)	OPSIZE(0, 8, CB) \
 		/* ---- bytecode only opcodes ----*/ \
-		OPMN(BCodeOp,	NTrace)		OPSIZE(CB, 0, 0) \
 						/* TraceStore(Reg) */ \
-		OP(				TraceStore)	OPSIZE(CB, Ptr, 0) \
+		OP(				TraceStore)	OPSIZE(8, Ptr, 0) \
 						/* StoreToReg(Reg)->iBStackDest */ \
 		OP(				StoreToReg)	OPSIZE(CB, 4, 0) \
 						/* StoreToIdx(Reg)->iBStackDest */ \
@@ -574,6 +574,7 @@ public:
 
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				SetInitializer(CIRGlobal * pGlob, LValue * pLconst);
+	void				SetGlobalIsConstant(CIRGlobal * pGlob, bool fIsConstant);
 	void				AddManagedVal(CIRValue * pVal);
 
 
@@ -599,8 +600,8 @@ public:
 	EWC::CDynAry<CIRValue *> *			m_parypValManaged;
 	EWC::CDynAry<SJumpTargets>			m_aryJumptStack;
 	EWC::CHash<SSymbol *, CIRValue *>	m_hashPSymPVal;
-	EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>	
-										m_hashPTinstructPCgstruct;
+	EWC::CHash<STypeInfoLiteral *, CIRGlobal *>			m_hashPTinlitPGlob;
+	EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>		m_hashPTinstructPCgstruct;
 };
 
 

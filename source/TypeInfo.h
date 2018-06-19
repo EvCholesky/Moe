@@ -351,7 +351,6 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 						,m_fIsFinalized(false)
 						,m_litty()
 						,m_pStnodDefinition(nullptr)
-						,m_pGlob(nullptr)
 							{ ; }
 	
 	s64					m_c;
@@ -359,7 +358,6 @@ struct STypeInfoLiteral : public STypeInfo // tag = tinlit
 	bool				m_fIsFinalized;		// literals are finalized once they are assigned to a concrete (or default) type
 	SLiteralType		m_litty;
 	CSTNode *			m_pStnodDefinition;	// (needed for array literal values)
-	CIRGlobal *			m_pGlob;			// value for this literal's global instance, created iff needed to array index literals
 };
 
 struct STypeStructMember	// tag = typememb

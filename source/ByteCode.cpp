@@ -163,7 +163,9 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
 	case TINK_Literal:
 	{
 		auto pTinlit = (STypeInfoLiteral *)pTin;
-		EWC_ASSERT(pTinlit->m_fIsFinalized, "cannot calculate size of unfinalized literal");
+
+		bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Array;
+		EWC_ASSERT(pTinlit->m_fIsFinalized || fIsContainerLiteral, "cannot calculate size of unfinalized literal");
 
 		if (pTinlit->m_litty.m_litk == LITK_Array)
 		{
@@ -332,6 +334,7 @@ CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay, EWC::CHash<HV, void*
 ,m_arypProcManaged(pWork->m_pAlloc, BK_ByteCodeCreator, 128)
 ,m_dataseg(pWork->m_pAlloc)
 ,m_hashPSymPVal(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
+,m_hashPTinlitPGlob(pWork->m_pAlloc, BK_ByteCodeCreator, 256)
 ,m_hashPTinstructPCgstruct(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
 ,m_hashPTinprocPProcsig(pWork->m_pAlloc, BK_ByteCodeCreator, 32)
 ,m_phashHvPFnForeign(pHashHvPFnForeign)
@@ -678,6 +681,7 @@ void CDataSegment::AllocateDataBlock(size_t cBMin)
 
 void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB)
 {
+	size_t cBAlignUsed = 0;
 	size_t cBStride = ewcMax(cB, cBAlign);
 	if (m_pDatabCur == nullptr)
 	{
@@ -686,20 +690,26 @@ void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB)
 	}
 	else
 	{
-		auto pVEnd = PVAlign(m_pDatabCur->m_pB + m_pDatabCur->m_cB + cB, cBAlign);
+		cBAlignUsed = (u8*)PVAlign(m_pDatabCur->m_pB + m_pDatabCur->m_cB, cBAlign) - (m_pDatabCur->m_pB + m_pDatabCur->m_cB);
+		auto pVEnd = m_pDatabCur->m_pB + m_pDatabCur->m_cB + cBAlignUsed;
 		auto uEnd = uintptr_t(pVEnd);
 		auto uCmp = uintptr_t(m_pDatabCur->m_pB + m_pDatabCur->m_cBMax);
 		if (uintptr_t(pVEnd) > uintptr_t(m_pDatabCur->m_pB + m_pDatabCur->m_cBMax))
 		{
 			AllocateDataBlock(cBStride);
 		}
+		else
+		{
+			m_pDatabCur->m_cB += cBAlignUsed;
+		}
 	}
 
 	*piB = m_pDatabCur->m_iBStart + m_pDatabCur->m_cB;
 	auto pBStart = &m_pDatabCur->m_pB[m_pDatabCur->m_cB];
+	EWC_ASSERT((uintptr_t(pBStart) & (cBAlign - 1)) == 0, "bad alignment calculations");
 	*ppB = pBStart;
 
-	auto pVEnd = (u8*)PVAlign(pBStart + cB, cBAlign);
+	auto pVEnd = pBStart + cB;
 	m_pDatabCur->m_cB += pVEnd - pBStart;
 	EWC_ASSERT(m_pDatabCur->m_cB <= m_pDatabCur->m_cBMax, "data block overflow")
 }
@@ -1159,6 +1169,7 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 	for (u32 ipValIndices = 0; ipValIndices < cpValIndices; ++ipValIndices)
 	{
 		STypeInfoStruct * pTinstruct = nullptr;
+		STypeInfoArray * pTinaryRef = nullptr;
 		u32 cBStride = 1;
 		auto pValIndex = apLvalIndices[ipValIndices]; 	
 		switch (pTin->m_tink)
@@ -1179,12 +1190,37 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 			{
 				auto pTinary = (STypeInfoArray*)pTin;
 
-				CalculateByteSizeAndAlign(m_pDlay, pTinary->m_pTin, &cB, &cBAlign);
-				cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
-				pTin = pTinary->m_pTin;
+				switch (pTinary->m_aryk)
+				{
+				case ARYK_Fixed:
+					{
+						pTin = pTinary->m_pTin;
+						CalculateByteSizeAndAlign(m_pDlay, pTinary->m_pTin, &cB, &cBAlign);
+						cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
+					} break;
+				case ARYK_Reference:
+					{
+						pTinaryRef = pTinary;
+					} break;
+				default:
+					EWC_ASSERT(false, "unhandled ARYK in BCode::PInstCreateGEP");
+					break;
+				}
+
+			} break;
+		case TINK_Literal:
+			{
+				auto pTinlit = (STypeInfoLiteral *)pTin;
+
+				if (EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "non-array literal types should be finalized away by here"))
+				{
+					CalculateByteSizeAndAlign(m_pDlay, pTinlit->m_pTinSource, &cB, &cBAlign);
+					cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
+					pTin = pTinlit->m_pTinSource;
+				}
 			} break;
 		default:
-			EWC_ASSERT(false, "unexpected type info kind %s", PChzFromTink(pTin->m_tink));
+			EWC_ASSERT(false, "unexpected type info kind TINK_%s", PChzFromTink(pTin->m_tink));
 		}
 
 		switch (pValIndex->m_valk)
@@ -1197,12 +1233,34 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 			
 				if (pTinstruct)
 				{
-					EWC_ASSERT(pConst->m_litty.m_cBit == 64 && pConst->m_litty.m_fIsSigned == false, "unexpected int type");
+					EWC_ASSERT(pConst->m_litty.m_cBit == 32 && pConst->m_litty.m_fIsSigned == false, "unexpected int type");
 					if (EWC_FVERIFY(pConst->m_word.m_u64 < pTinstruct->m_aryTypemembField.C()))
 					{
 						auto pTypememb = &pTinstruct->m_aryTypemembField[pConst->m_word.m_u64];
 						dBOffset += pTypememb->m_dBOffset;
 						pTin = pTypememb->m_pTin;
+					}
+				}
+				else if (pTinaryRef)
+				{
+					EWC_ASSERT(pConst->m_litty.m_cBit == 32 && pConst->m_litty.m_fIsSigned == false, "unexpected int type");
+					if (EWC_FVERIFY(pConst->m_word.m_u64 < ARYMEMB_Max))
+					{
+						switch (ARYMEMB(pConst->m_word.m_u64))
+						{
+						case ARYMEMB_Count:
+							{
+								//dBOffset += 0;
+								pTin = m_pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
+							} break;
+						case ARYMEMB_Data:
+							{
+								dBOffset += sizeof(s64);
+
+								// NOTE: ptr to pTin, not pTin... need one more GEP index for array element
+								pTin = m_pSymtab->PTinptrAllocate(pTinaryRef->m_pTin);
+							} break;
+						}
 					}
 				}
 				else
@@ -1257,24 +1315,16 @@ SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char *
 	EWC_ASSERT(m_pProcCur, "no active procedure");
 
 	auto pInstval = PInstCreateRaw(IROP_Alloca, m_pDlay->m_cBPointer, nullptr, PConstPointer(pTin), pChzName);
-	pInstval->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTin);
 	if (pInstval->FIsError())
 		return pInstval;
 
-	if (cElement > 1)
-	{
-		EWC_ASSERT(false, "bytecode tbd");
-		return nullptr;
-	}
-	else
-	{
-		u64 cB; 
-		u64 cBAlign;
-		CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+	u64 cB; 
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+	auto pInst = pInstval->m_pInst;
 
-		auto pInst = pInstval->m_pInst;
-		pInst->m_wordLhs.m_s32 = S32Coerce(IBStackAlloc(cB, cBAlign));
-	}
+	pInstval->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTin);
+	pInst->m_wordLhs.m_s32 = S32Coerce(IBStackAlloc(cB, cBAlign));
 
 	return pInstval;
 }
@@ -1314,7 +1364,7 @@ CBuilder::Instruction * CBuilder::PInstCreateMemcpy(STypeInfo * pTin, SValue * p
 
 CBuilder::GepIndex * CBuilder::PGepIndex(u64 idx)
 {
-	auto pConst = PConstInt(idx, 64, false);
+	auto pConst = PConstInt(idx, 32, false);
 	return pConst;
 }
 
@@ -1447,10 +1497,12 @@ void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit
 	{
 		auto pTinptr = PTinRtiCast<STypeInfoPointer *>(pConstGlob->m_pTin);
 
-		if (EWC_FVERIFY(pTinptr && FTypesAreSame(pTinptr->m_pTinPointedTo, pConstInit->m_pTin), "initializer type mismatch"))
+		// BB - need a fix that handles LITK_Ary & pTinAry checks
+		//if (EWC_FVERIFY(pTinptr && FTypesAreSame(pTinptr->m_pTinPointedTo, pConstInit->m_pTin), "initializer type mismatch"))
 		{
 			CalculateByteSizeAndAlign(m_pDlay, pTinptr->m_pTinPointedTo, &cBGlob, &cBGlobAlign);
-			memcpy(pBGlob, m_dataseg.PBFromIndex(pConstInit->m_word.m_s32), cBGlob);
+			auto pBSrc = m_dataseg.PBFromIndex(pConstInit->m_word.m_s32);
+			memcpy(pBGlob, pBSrc, cBGlob);
 			return;
 		}
 	}
@@ -2636,6 +2688,45 @@ inline void SetupForeignProcParam(DCCallVM * pDcvm, SDataLayout * pDlay, STypeIn
 			dcArgStruct(pDcvm, pDcstruct, pVArg);
 			dcFreeStruct(pDcstruct);
 		} break;
+	case TINK_Literal:
+		{
+			auto pTinlit = (STypeInfoLiteral *)pTinParam;
+			switch (pTinlit->m_litty.m_litk)
+			{
+				case LITK_Integer:
+					{
+						switch (pTinlit->m_litty.m_cBit)
+						{
+						case 8:		dcArgChar(pDcvm, *(u8*)pVArg);			break;
+						case 16:	dcArgShort(pDcvm, *(u16*)pVArg);		break;
+						case 32:	dcArgInt(pDcvm, *(u32*)pVArg);			break;
+						case 64:	dcArgLongLong(pDcvm, *(u64*)pVArg);		break;
+						default: EWC_ASSERT(false, "unhandled size dyncall int literal");
+						}
+					} break;
+				case LITK_Float:
+					{
+						switch (pTinlit->m_litty.m_cBit)
+						{
+						case 32:	dcArgFloat(pDcvm, *(f32*)pVArg);		break;
+						case 64:	dcArgDouble(pDcvm, *(f64*)pVArg);		break;
+						default: EWC_ASSERT(false, "unhandled size dyncall float literal");
+						}
+					} break;
+				case LITK_Char:		dcArgChar(pDcvm, *(u8*)pVArg);			break;
+				case LITK_String:	dcArgPointer(pDcvm, *(void**)pVArg);	break;
+				case LITK_Bool:		dcArgBool(pDcvm, *(bool*)pVArg);		break;
+				case LITK_Enum:
+					EWC_ASSERT(false, "unhandled type kind in foreign function args");
+					break;
+				case LITK_Array:
+					EWC_ASSERT(false, "unhandled type kind in foreign function args");
+					break;
+				case LITK_Null:		dcArgPointer(pDcvm, *(void**)pVArg);	break;
+				case LITK_Pointer:	dcArgPointer(pDcvm, *(void**)pVArg);	break;
+			}
+
+		} break;
 	default:
 		EWC_ASSERT(false, "unhandled type kind in foreign function args");
 	}
@@ -3009,15 +3100,6 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_PtrToInt, 2): STORE_PTRTOINT(u16)	break;
 		case MASHOP(IROP_PtrToInt, 4): STORE_PTRTOINT(u32)	break;
 		case MASHOP(IROP_PtrToInt, 8): STORE_PTRTOINT(u64)	break;
-
-		case MASHOP(IROP_NTrace, 1):
-			ReadOpcode(pVm, pInst, 1, &wordLhs); printf("1byte %d\n", wordLhs.m_u8); break;
-		case MASHOP(IROP_NTrace, 2):
-			ReadOpcode(pVm, pInst, 2, &wordLhs); printf("2byte %d\n", wordLhs.m_u16); break;
-		case MASHOP(IROP_NTrace, 4):
-			ReadOpcode(pVm, pInst, 4, &wordLhs); printf("4byte %d\n", wordLhs.m_u32); break;
-		case MASHOP(IROP_NTrace, 8):
-			ReadOpcode(pVm, pInst, 8, &wordLhs); printf("8byte %lld\n", wordLhs.m_u64); break;
 
 		case MASHOP(IROP_TraceStore, 0):
 		case MASHOP(IROP_TraceStore, 1):
@@ -3676,20 +3758,20 @@ CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue 
 
 	for (u32 ipLval = 0; ipLval < cpLval; ++ipLval)
 	{
-		auto pConst = (SConstant *)apLval[ipLval];
-		if (!EWC_FVERIFY(pConst->m_valk == VALK_Constant, "must initialize constant array with constant literals"))
+		auto pConstElem = (SConstant *)apLval[ipLval];
+		if (!EWC_FVERIFY(pConstElem->m_valk == VALK_Constant, "must initialize constant array with constant literals"))
 			continue; 
 
 		void * pVSrc;
-		switch (pConst->m_opk)
+		switch (pConstElem->m_opk)
 		{
 		case OPK_Literal:
 		//case OPK_LiteralArg: // this doesn't make sense, the arg will be adjusted after it's copied here 
-			EWC_ASSERT(pConst->m_litty.m_cBit == cBElement * 8, "element size mismatch");	
-			pVSrc = &pConst->m_word.m_u64;	
+			EWC_ASSERT(pConstElem->m_litty.m_cBit == cBElement * 8, "element size mismatch");	
+			pVSrc = &pConstElem->m_word.m_u64;	
 			break;
 		case OPK_Global:
-			pVSrc = m_dataseg.PBFromIndex(pConst->m_word.m_s32);
+			pVSrc = m_dataseg.PBFromIndex(pConstElem->m_word.m_s32);
 			break;
 		default:
 			EWC_ASSERT(false, "unexpected operand kind when initializing a constant array");

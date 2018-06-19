@@ -373,6 +373,8 @@ namespace BCode
 
 		Global *			PGlobCreate(STypeInfo * pTin, const char * pChzName);
 		void				SetInitializer(SValue * pValGlob, SValue * pValInit);
+		void				SetGlobalIsConstant(Global * pGlob, bool fIsConstant)
+								{ ; }
 
 		SValue *			PValGenerateCall(
 								CWorkspace * pWork,
@@ -433,10 +435,9 @@ namespace BCode
 		EWC::CDynAry<SProcedure *>			m_arypProcManaged;
 		CDataSegment						m_dataseg;
 		EWC::CHash<SSymbol *, SValue *>		m_hashPSymPVal;
-		EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>	
-											m_hashPTinstructPCgstruct;
-		EWC::CHash<STypeInfoProcedure *, SProcedureSignature *>	
-											m_hashPTinprocPProcsig;
+		EWC::CHash<STypeInfoLiteral *, SConstant *>					m_hashPTinlitPGlob;
+		EWC::CHash<STypeInfoStruct *, SCodeGenStruct *>				m_hashPTinstructPCgstruct;
+		EWC::CHash<STypeInfoProcedure *, SProcedureSignature *>		m_hashPTinprocPProcsig;
 		EWC::CHash<HV, void *> *			m_phashHvPFnForeign;
 
 		EWC::CBlockList<SConstant, 255>		m_blistConst; // constants / registers used during code generation
