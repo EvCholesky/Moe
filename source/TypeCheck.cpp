@@ -3993,6 +3993,7 @@ void AddSymbolReference(SSymbol * pSymContext, SSymbol * pSymTarget)
 	if (EWC_FVERIFY(pSymContext, "missing symbol context for %s", pSymTarget->m_strName.PCoz()))
 	{
 		pSymTarget->m_aryPSymReferencedBy.Append(pSymContext);
+		pSymContext->m_aryPSymHasRefTo.Append(pSymTarget);
 	}
 }
 
@@ -8692,53 +8693,27 @@ void MarkAllSymbolsUsed(CSymbolTable * pSymtab)
 	}
 }
 
-inline void ComputeSymbolUsage(SSymbol * pSym, CDynAry<SSymbol *> * parypSym)
+void MarkSymbolsUsed(SSymbol * pSymEntry, CAlloc * pAlloc)
 {
-	if (pSym->m_symdep != SYMDEP_Nil && pSym->m_symdep != SYMDEP_PublicLinkage)
-		return;
+	CDynAry<SSymbol *> aryPSymStack(pAlloc, BK_Dependency, 128);;
+	aryPSymStack.Append(pSymEntry);
 
-	parypSym->Append(pSym);
-	while (parypSym->C())
+	while (!aryPSymStack.FIsEmpty())
 	{
-		SSymbol * pSym = parypSym->Last();
-		size_t ipSym = parypSym->C() - 1;
+		auto pSym = aryPSymStack.Last();
+		aryPSymStack.PopLast();
+		if (pSym->m_symdep == SYMDEP_Used)
+			continue;
 
-		int cSymdepNil = 0;
-		int cSymdepUsed = (pSym->m_symdep == SYMDEP_PublicLinkage);
+		pSym->m_symdep = SYMDEP_Used;
 
-		if (pSym->m_symdep == SYMDEP_Nil || pSym->m_symdep == SYMDEP_PublicLinkage)
+		auto ppSymMac = pSym->m_aryPSymHasRefTo.PMac();	
+		for (auto ppSym = pSym->m_aryPSymHasRefTo.A(); ppSym != ppSymMac; ++ppSym)
 		{
-			SSymbol ** ppSymMac = pSym->m_aryPSymReferencedBy.PMac();
-			for (SSymbol ** ppSymIt = pSym->m_aryPSymReferencedBy.A(); ppSymIt != ppSymMac; ++ppSymIt)
-			{
-				SSymbol * pSymRef = *ppSymIt;
-
-				switch (pSymRef->m_symdep)
-				{
-					case SYMDEP_Nil:	
-					{
-						parypSym->Append(pSymRef);
-						++cSymdepNil;
-						
-					} break;
-					case SYMDEP_Used:
-					case SYMDEP_PublicLinkage:
-					{
-						++cSymdepUsed;
-					} break;
-					default:
-						break;
-				}
-			}
-
-			if (cSymdepUsed == 0 && cSymdepNil != 0)
-				break;
-
-			pSym->m_symdep = (cSymdepUsed > 0) ? SYMDEP_Used: SYMDEP_Unused;
+			aryPSymStack.Append(*ppSym);
 		}
-
-		parypSym->RemoveFastByI(ipSym);
 	}
+
 }
 
 void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbolTable * pSymtabRoot)
@@ -8746,14 +8721,14 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 	CDynAry<SSymbol *> arypSym(pAlloc, BK_Dependency, 1024);
 
 	SLexerLocation lexloc;
-	auto pSym = pSymtabRoot->PSymLookup("main", lexloc);
-	if (!pSym)
+	auto pSymMain = pSymtabRoot->PSymLookup("main", lexloc);
+	if (!pSymMain)
 	{
 		EmitError(pErrman, &lexloc, ERRID_CantFindMain, "Failed to find global 'main' procedure");
 		return;
 	}
 
-	pSym->m_symdep = SYMDEP_Used;
+	MarkSymbolsUsed(pSymMain, pAlloc);
 
 	CSymbolTable * pSymtabIt = pSymtabRoot;
 	while (pSymtabIt)
@@ -8765,8 +8740,16 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 			SSymbol * pSymIt = *ppSym;
 			while (pSymIt)
 			{
-				ComputeSymbolUsage(pSymIt, &arypSym);
+				if (pSymIt->m_symdep == SYMDEP_PublicLinkage)
+				{
+					MarkSymbolsUsed(pSymIt, pAlloc);
+				}
+				else if (pSymIt->m_symdep == SYMDEP_Nil)
+				{
+					pSymIt->m_symdep = SYMDEP_Unused;
+				}
 				pSymIt = pSymIt->m_pSymPrev;
+
 			}
 		}
 
@@ -8777,7 +8760,14 @@ void ComputeSymbolDependencies(CAlloc * pAlloc, SErrorManager * pErrman, CSymbol
 			SSymbol * pSymIt = *ppSym;
 			while (pSymIt)
 			{
-				ComputeSymbolUsage(*ppSym, &arypSym);
+				if (pSymIt->m_symdep == SYMDEP_PublicLinkage)
+				{
+					MarkSymbolsUsed(pSymIt, pAlloc);
+				}
+				else if (pSymIt->m_symdep == SYMDEP_Nil)
+				{
+					pSymIt->m_symdep = SYMDEP_Unused;
+				}
 				pSymIt = pSymIt->m_pSymPrev;
 			}
 		}

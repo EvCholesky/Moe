@@ -586,6 +586,7 @@ struct SSymbol	// tag = sym
 	SSymbol *				m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
 
 	EWC::CDynAry<SSymbol *>	m_aryPSymReferencedBy;
+	EWC::CDynAry<SSymbol *>	m_aryPSymHasRefTo;			// this symbol has a reference to all of these symbols
 };
 
 SLexerLocation LexlocFromSym(SSymbol * pSym);

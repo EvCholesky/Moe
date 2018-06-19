@@ -3994,6 +3994,7 @@ SSymbol * CSymbolTable::PSymGenericInstantiate(SSymbol * pSymGeneric, STypeInfo 
 	pSymNew->m_pTin = pTinInstance;
 
 	pSymNew->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
+	pSymNew->m_aryPSymHasRefTo.SetAlloc(m_pAlloc, BK_Dependency, 4);
 	return pSymNew;
 }
 
@@ -4056,6 +4057,7 @@ SSymbol * CSymbolTable::PSymNewUnmanaged(const CString & strName, CSTNode * pStn
 	pSym->m_symdep = SYMDEP_Nil;
 
 	pSym->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
+	pSym->m_aryPSymHasRefTo.SetAlloc(m_pAlloc, BK_Dependency, 4);
 
 	pSym->m_strName = strName;
 	pSym->m_pStnodDefinition = pStnodDefinition;
