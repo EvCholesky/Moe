@@ -184,6 +184,7 @@ TestInitializers proc ()
 	aNInit := {:int: 1, 2, 3, 4, 5}
 
 	assert(aNZero[0] == 0 && aNZero[1] == 0 && aNZero[2] == 0 && aNZero[3] == 0 && aNZero[4] == 0, "bad init", #file, #line)
+	//printf("aNInit = {%d, %d, %d, %d, %d}\n",aNInit[0], aNInit[1], aNInit[2], aNInit[3], aNInit[4])
 	assert(aNInit[0] == 1 && aNInit[1] == 2 && aNInit[2] == 3 && aNInit[3] == 4 && aNInit[4] == 5, "bad init", #file, #line)
 
 	aNCopy := aNInit
@@ -195,7 +196,6 @@ TestInitializers proc ()
 
 	aNRef2: [] int = {2,4,6,8,10}
 	assert(aNRef2[0] == 2 && aNRef2[1] == 4 && aNRef2[2] == 6 && aNRef2[3] == 8 && aNRef2[4] == 10, "bad init", #file, #line)
-
 
 	// local struct instance 
 	SNested struct
@@ -256,6 +256,7 @@ TestInitializers proc ()
 				aBarzero[iBarzero].m_aN[4] == 0, "bad init", #file, #line)
 
 		pBarinit := &aBarinit[iBarzero]
+		//printf("aBarinit[%d] = {%d, %d, %d, %d, %d}\n", iBarzero, pBarinit.m_aN[0], pBarinit.m_aN[1], pBarinit.m_aN[2], pBarinit.m_aN[3], pBarinit.m_aN[4])
 		assert(pBarinit.m_aN[0] == 1 && pBarinit.m_aN[1] == 2 && pBarinit.m_aN[2] == 3 && pBarinit.m_aN[3] == 4 && pBarinit.m_aN[4] == 5, "bad init", #file, #line)
 
 		assert(pBarinit.m_aN[0] == 1 && pBarinit.m_aN[1] == 2 && pBarinit.m_aN[2] == 3 && pBarinit.m_aN[3] == 4 && pBarinit.m_aN[4] == 5, "bad init", #file, #line)
@@ -967,7 +968,8 @@ TestSwitch proc ()
 
 	pChz := "HelloThere"
 	aCh: [32] u8
-	for iCh := 0; iCh < strlen(pChz); ++iCh
+	//for iCh := 0; iCh < strlen(pChz); ++iCh
+	for iCh := 0; iCh < 10; ++iCh 
 	{
 		switch pChz[iCh]
 		{
@@ -1012,7 +1014,7 @@ TestSwitch proc ()
 main proc () -> int 
 {
 
-	TestOperators()
+/*	TestOperators()
 	TestPointers()
 	TestIfElse()
 	TestNestedMethod()
@@ -1020,7 +1022,9 @@ main proc () -> int
 	TestStructures()
 	TestRecursion()
 	TestTypedefs()
+*/
 	TestEnums()
+/*
 	TestArrays()
 	TestCasting()
 	TestOverloading()
@@ -1028,9 +1032,10 @@ main proc () -> int
 	TestGlobals()
 	TestProcedureRef()
 	TestHereStrings()
-	TestLoops()
+//	TestLoops()
 	TestBreakContinue()
 	TestSwitch()
+	*/
 
 	return 1
 }
