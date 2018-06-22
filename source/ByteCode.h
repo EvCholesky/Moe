@@ -249,6 +249,7 @@ namespace BCode
 	public:
 						CDataSegment(EWC::CAlloc * pAlloc)
 						:m_pAlloc(pAlloc)
+						,m_aryIBPointer(pAlloc, EWC::BK_ByteCode, 128)
 						,m_pDatabFirst(nullptr)
 						,m_pDatabCur(nullptr)
 						,m_cBBlockMin(64 * 1024)
@@ -262,14 +263,19 @@ namespace BCode
 		void			Clear();
 		size_t			CB();
 		u8 *			PBFromIndex(s32 iB);
-		u8 *			PBBakeCopy(EWC::CAlloc * pAlloc);
+		u8 *			PBBakeCopy(EWC::CAlloc * pAlloc, SDataLayout * pDlay);
 		void			AllocateDataBlock(size_t cBMin);
 		void			AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB);
 
-		EWC::CAlloc *	m_pAlloc;
-		SDataBlock *	m_pDatabFirst;
-		SDataBlock *	m_pDatabCur;
-		size_t			m_cBBlockMin;
+		void			AddRelocatedPointer(SDataLayout * pDlay, s32 iBPointer, s32 iBTarget);
+		void			DeepCopy(SDataLayout * pDlay, STypeInfo * pTin, s32 iBDst, s32 iBSrc);
+		void			AddDeepCopyPointers(SDataLayout * pDlay, STypeInfo * pTin, s32 iBDst, s32 iBSrc);
+
+		EWC::CAlloc *		m_pAlloc;
+		EWC::CDynAry<s64>	m_aryIBPointer;		// location of indices that need to be turned into pointers during PBBakeCopy
+		SDataBlock *		m_pDatabFirst;
+		SDataBlock *		m_pDatabCur;
+		size_t				m_cBBlockMin;
 
 	};
 

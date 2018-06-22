@@ -745,7 +745,7 @@ TestGlobals proc ()
 	assert(g_glob.m_n == 2 && g_glob.m_nUninit == 0 && g_glob.m_n2 == 456, "global init failed", #file, #line)
 	for iGlob := 0; iGlob < g_aGlob.count; ++iGlob
 	{
-		assert(g_aGlob[iGlob].m_n == 2 && g_aGlob[iGlob].m_nUninit == 0 && g_aGlob[iGlob].m_n2 == 456, "global init failed", #file, #line)
+		assert(g_aGlob[iGlob].m_n == 2 && g_aGlob[iGlob].m_n2 == 456, "global array init failed", #file, #line)
 	}
 }
 
@@ -1014,7 +1014,7 @@ TestSwitch proc ()
 main proc () -> int 
 {
 
-/*	TestOperators()
+	TestOperators()
 	TestPointers()
 	TestIfElse()
 	TestNestedMethod()
@@ -1022,9 +1022,7 @@ main proc () -> int
 	TestStructures()
 	TestRecursion()
 	TestTypedefs()
-*/
 	TestEnums()
-/*
 	TestArrays()
 	TestCasting()
 	TestOverloading()
@@ -1032,10 +1030,9 @@ main proc () -> int
 	TestGlobals()
 	TestProcedureRef()
 	TestHereStrings()
-//	TestLoops()
+	TestLoops()
 	TestBreakContinue()
 	TestSwitch()
-	*/
 
 	return 1
 }

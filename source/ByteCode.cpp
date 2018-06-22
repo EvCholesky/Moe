@@ -167,14 +167,18 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
 		bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Array;
 		EWC_ASSERT(pTinlit->m_fIsFinalized || fIsContainerLiteral, "cannot calculate size of unfinalized literal");
 
-		if (pTinlit->m_litty.m_litk == LITK_Array)
+		switch (pTinlit->m_litty.m_litk)
 		{
-			CalculateByteSizeAndAlign(pDlay, pTinlit->m_pTinSource, pcB, pcBAlign);
-			*pcB = pTinlit->m_c * *pcB;
-			return;
+		case LITK_Array:
+			{
+				CalculateByteSizeAndAlign(pDlay, pTinlit->m_pTinSource, pcB, pcBAlign);
+				*pcB = pTinlit->m_c * *pcB;
+				return;
+			}
+		case LITK_String:	cB = pDlay->m_cBPointer;				break;
+		default:			cB = pTinlit->m_litty.m_cBit >> 0x3;	break;
 		}
 
-		cB = pTinlit->m_litty.m_cBit >> 0x3;
 	} break;
 
 	case TINK_Generic:
@@ -614,6 +618,8 @@ void CDataSegment::Clear()
 		
 	m_pDatabFirst = nullptr;
 	m_pDatabCur = nullptr;
+
+	m_aryIBPointer.Clear();
 }
 
 u8 * CDataSegment::PBFromIndex(s32 iB)
@@ -637,7 +643,7 @@ size_t CDataSegment::CB()
 	return m_pDatabCur->m_iBStart + m_pDatabCur->m_cB;
 }
 
-u8 * CDataSegment::PBBakeCopy(EWC::CAlloc * pAlloc)
+u8 * CDataSegment::PBBakeCopy(EWC::CAlloc * pAlloc, SDataLayout * pDlay)
 {
 	if (!m_pDatabFirst)
 		return nullptr;
@@ -649,6 +655,18 @@ u8 * CDataSegment::PBBakeCopy(EWC::CAlloc * pAlloc)
 	{
 		EWC_ASSERT(pDatabIt->m_iBStart + pDatabIt->m_cB <= cB, "bad size calculation");
 		memcpy(&pB[pDatabIt->m_iBStart], pDatabIt->m_pB, pDatabIt->m_cB);
+	}
+
+	EWC_ASSERT(pDlay->m_cBPointer == sizeof(u8*), "not handling cBPointer not matching sizeof(u8*) properly here");
+
+	auto piBMax = m_aryIBPointer.PMac();
+	for (auto piB = m_aryIBPointer.A(); piB != piBMax; ++piB)
+	{
+		s32 iB = *(s32*)piB;
+		u8 * pBSrc = &pB[iB];
+		s32 iBTarget = *(s32*)pBSrc;
+
+		*(void**)pBSrc = &pB[iBTarget];
 	}
 
 	return pB;
@@ -712,6 +730,137 @@ void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB)
 	auto pVEnd = pBStart + cB;
 	m_pDatabCur->m_cB += pVEnd - pBStart;
 	EWC_ASSERT(m_pDatabCur->m_cB <= m_pDatabCur->m_cBMax, "data block overflow")
+}
+
+void CDataSegment::AddRelocatedPointer(SDataLayout * pDlay, s32 iBPointer, s32 iBTarget)
+{
+	u8 * pBPointer = PBFromIndex(iBPointer);
+	if (*(s32*)pBPointer == 0)
+		return;
+
+	switch (pDlay->m_cBPointer)
+	{
+	case 4: *(s32*)pBPointer = iBTarget;  break;
+	case 8: *(s64*)pBPointer = iBTarget;  break;
+	default:
+		EWC_ASSERT(false, "unexpected pointer size");
+	}
+
+	m_aryIBPointer.Append(iBPointer);
+}
+
+void CDataSegment::AddDeepCopyPointers(SDataLayout * pDlay, STypeInfo * pTin, s32 iBDst, s32 iBSrc)
+{
+	while (pTin)
+	{
+		switch (pTin->m_tink)
+		{
+		case TINK_Pointer:
+			{
+				auto pBSrc = PBFromIndex(iBSrc);
+				AddRelocatedPointer(pDlay, iBDst, *(s32*)pBSrc);
+				pTin = ((STypeInfoPointer *)pTin)->m_pTinPointedTo;
+			} break;
+		case TINK_Qualifier:
+			{
+				pTin = ((STypeInfoQualifier *)pTin)->m_pTin;
+			} break;
+		case TINK_Array:
+			{
+				auto pTinary = (STypeInfoArray *)pTin;
+				s64 cElement = 0;
+				switch (pTinary->m_aryk)
+				{
+				case ARYK_Reference:
+					{
+						//pTin = m_pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
+						cElement = *(s64*)PBFromIndex(iBSrc);
+						iBSrc += sizeof(s64);
+						iBDst += sizeof(s64);
+
+						auto pBSrc = PBFromIndex(iBSrc);
+						AddRelocatedPointer(pDlay, iBDst, *(s32*)pBSrc);
+
+					} break;
+				case ARYK_Fixed:
+					cElement = pTinary->m_c;
+					break;
+				default:
+					EWC_ASSERT(false, "unhandled array kind");
+				}
+
+				u64 cB;
+				u64 cBAlign;
+				CalculateByteSizeAndAlign(pDlay, pTinary->m_pTin, &cB, &cBAlign);
+				s32 cBStride = S32Coerce(EWC::CBAlign(cB, cBAlign));
+
+				for (int iElement = 0; iElement < cElement; ++iElement)
+				{
+					AddDeepCopyPointers(pDlay, pTinary->m_pTin, iBDst, iBSrc);
+					iBSrc += cBStride;
+					iBDst += cBStride;
+				}
+				pTin = nullptr;
+			} break;
+		case TINK_Struct:
+			{
+				auto pTinstruct = (STypeInfoStruct *)pTin;
+				auto pTypemembMac = pTinstruct->m_aryTypemembField.PMac();
+				for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMac; ++pTypememb)
+				{
+					AddDeepCopyPointers(pDlay, pTypememb->m_pTin, iBDst + pTypememb->m_dBOffset, iBSrc + pTypememb->m_dBOffset);
+				}
+
+				pTin = nullptr;
+			} break;
+		case TINK_Literal:
+			{
+				auto pTinlit = (STypeInfoLiteral*)pTin;
+				switch (pTinlit->m_litty.m_litk)
+				{
+				case LITK_String:
+					{
+						auto pBSrc = PBFromIndex(iBSrc);
+						AddRelocatedPointer(pDlay, iBDst, *(s32*)pBSrc);
+					} break;
+				case LITK_Array:
+					{
+						u64 cB;
+						u64 cBAlign;
+						CalculateByteSizeAndAlign(pDlay, pTinlit->m_pTinSource, &cB, &cBAlign);
+						s32 cBStride = S32Coerce(EWC::CBAlign(cB, cBAlign));
+
+						for (int iElement = 0; iElement < pTinlit->m_c; ++iElement)
+						{
+							AddDeepCopyPointers(pDlay, pTinlit->m_pTinSource, iBDst, iBSrc);
+							iBSrc += cBStride;
+							iBDst += cBStride;
+						}
+
+					} break;
+				}
+				
+				pTin = nullptr;
+			} break;
+		default:
+			pTin = nullptr;
+			break;
+		}
+	}
+}
+
+void CDataSegment::DeepCopy(SDataLayout * pDlay, STypeInfo * pTin, s32 iBDst, s32 iBSrc)
+{
+	// Add relocated pointer entries
+	AddDeepCopyPointers(pDlay, pTin, iBDst, iBSrc);
+
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(pDlay, pTin, &cB, &cBAlign);
+
+	auto pBSrc = PBFromIndex(iBSrc);
+	auto pBDst = PBFromIndex(iBDst);
+	memcpy(pBDst, pBSrc, cB);
 }
 
 static void PrintFloatOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWord word)
@@ -1495,14 +1644,29 @@ void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit
 	auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
 	if (pConstInit->m_opk == OPK_Global)
 	{
-		auto pTinptr = PTinRtiCast<STypeInfoPointer *>(pConstGlob->m_pTin);
+		auto pTinptrGlob = PTinRtiCast<STypeInfoPointer *>(pConstGlob->m_pTin);
+		auto pTinDst = pTinptrGlob->m_pTinPointedTo;
 
+		if (pTinDst->m_tink == TINK_Array && ((STypeInfoArray*)pTinDst)->m_aryk == ARYK_Reference)
+		{
+			auto pTinaryInit = PTinRtiCast<STypeInfoArray *>(pConstInit->m_pTin);
+			if (EWC_FVERIFY(pTinaryInit, "expected array") && pTinaryInit->m_aryk == ARYK_Fixed)
+			{
+				auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
+								
+				*(s64*)pBGlob = pTinaryInit->m_c;
+				m_dataseg.AddRelocatedPointer(m_pDlay, pConstGlob->m_word.m_s32 + sizeof(s64), pConstInit->m_word.m_s32);
+								
+			}
+			return;
+		}
+		
 		// BB - need a fix that handles LITK_Ary & pTinAry checks
 		//if (EWC_FVERIFY(pTinptr && FTypesAreSame(pTinptr->m_pTinPointedTo, pConstInit->m_pTin), "initializer type mismatch"))
 		{
-			CalculateByteSizeAndAlign(m_pDlay, pTinptr->m_pTinPointedTo, &cBGlob, &cBGlobAlign);
-			auto pBSrc = m_dataseg.PBFromIndex(pConstInit->m_word.m_s32);
-			memcpy(pBGlob, pBSrc, cBGlob);
+			CalculateByteSizeAndAlign(m_pDlay, pTinptrGlob->m_pTinPointedTo, &cBGlob, &cBGlobAlign);
+
+			m_dataseg.DeepCopy(m_pDlay, pTinptrGlob->m_pTinPointedTo, pConstGlob->m_word.m_s32, pConstInit->m_word.m_s32);
 			return;
 		}
 	}
@@ -2357,8 +2521,7 @@ static inline void * PVReadAddressLhs(CVirtualMachine * pVm, SInstruction * pIns
 	case OPK_RegisterArg:	
 		return &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
 	case OPK_Global:		
-		pWordTemp->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];
-		return &pWordTemp->m_pV;
+		return &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];
 	default: 
 		EWC_ASSERT(false, "unhandled OPK");
 		return nullptr;
@@ -3627,7 +3790,7 @@ CVirtualMachine::CVirtualMachine(u8 * pBStackMin, u8 * pBStackMax, CBuilder * pB
 ,m_aryDebCall()
 #endif
 {
-	m_pBGlobal = pBuild->m_dataseg.PBBakeCopy(m_pAlloc);
+	m_pBGlobal = pBuild->m_dataseg.PBBakeCopy(m_pAlloc, m_pDlay);
 }
 
 void CVirtualMachine::Clear()
@@ -3722,7 +3885,14 @@ CBuilder::LValue * CBuilder::PLvalConstantGlobalStringPtr(const char * pChzStrin
 	u8 * pBGlobal;
 	s64 iBGlobal;
 	m_dataseg.AllocateData(cBString, 1, &pBGlobal, &iBGlobal);
+
 	pConst->m_word.m_s64 = iBGlobal;
+
+	u8 * pBPointer;
+	s64 iBPointer;
+	m_dataseg.AllocateData(m_pDlay->m_cBPointer, m_pDlay->m_cBPointer, &pBPointer, &iBPointer);
+	m_dataseg.AddRelocatedPointer(m_pDlay, S32Coerce(iBPointer), S32Coerce(iBGlobal));
+	pConst->m_word.m_s64 = iBPointer;
 
 	CBCopyCoz(pChzString, (char*)pBGlobal, cBString);
 	return pConst;
@@ -3766,20 +3936,26 @@ CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue 
 		switch (pConstElem->m_opk)
 		{
 		case OPK_Literal:
-		//case OPK_LiteralArg: // this doesn't make sense, the arg will be adjusted after it's copied here 
+		//case OPK_LiteralArg: // LiteralArg doesn't make sense, the arg will be adjusted after it's copied here 
 			EWC_ASSERT(pConstElem->m_litty.m_cBit == cBElement * 8, "element size mismatch");	
 			pVSrc = &pConstElem->m_word.m_u64;	
+			memcpy(pBGlobal, pVSrc, cBElement);
 			break;
 		case OPK_Global:
-			pVSrc = m_dataseg.PBFromIndex(pConstElem->m_word.m_s32);
-			break;
+		{
+			auto pTinElem = pConstElem->m_pTin;
+			bool fIsPointer = pTinElem->m_tink == TINK_Pointer;
+			bool fIsString = pTinElem->m_tink == TINK_Literal && ((STypeInfoLiteral*)pTinElem)->m_litty.m_litk == LITK_String;
+			
+			m_dataseg.DeepCopy(m_pDlay, pConstElem->m_pTin, S32Coerce(iBGlobal), pConstElem->m_word.m_s32);
+		}	break;
 		default:
 			EWC_ASSERT(false, "unexpected operand kind when initializing a constant array");
 			continue;
 		}
 
-		memcpy(pBGlobal, pVSrc, cBElement);
 		pBGlobal += cBElement;
+		iBGlobal += cBElement;
 	}
 
 	return pConst;
@@ -3823,6 +3999,7 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 		if (pConst->m_opk == OPK_Global)
 		{
 			auto pBSource = m_dataseg.PBFromIndex(pConst->m_word.m_s32);
+			// BB - needs deep copy
 			memcpy(pBGlobal, pBSource, cBField);
 		}
 		else
@@ -3922,7 +4099,7 @@ SRegister * CBuilder::PRegArg(s64 iBStack, STypeInfo * pTin)
 
 
 
-void TestDataSegment(CAlloc * pAlloc)
+void TestDataSegment(CAlloc * pAlloc, SDataLayout * pDlay)
 {
 	CDataSegment dataseg(pAlloc);
 	dataseg.m_cBBlockMin = 20;
@@ -3935,7 +4112,7 @@ void TestDataSegment(CAlloc * pAlloc)
 		*pN = i;
 	}
 
-	u8 * pBCopy = dataseg.PBBakeCopy(pAlloc);
+	u8 * pBCopy = dataseg.PBBakeCopy(pAlloc, pDlay);
 	for (int i = 0; i < EWC_DIM(aiB); ++i)
 	{
 		s64 * pN = (s64 *)&pBCopy[aiB[i]];

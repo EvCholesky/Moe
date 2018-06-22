@@ -104,12 +104,13 @@ test BytecodeArrayLoop
 		?type(s16),
 	}
 
+	/* need a better way to deal with this garbage
 test BytecodeString
 	input "pChz := \"teststring\""
 	bytecode "{&116;}"
 	{
 		?type(int),
-	}
+	}*/
 
 test BytecodeStruct
 	prereq "SFoo struct { m_a: u8; m_b: int}"
@@ -263,6 +264,16 @@ test BytecodeArrayFixed
 		?elem("[1]") + ?res(222),
 		?elem("[2]") + ?res(333),
 		?elem(".count") + ?res(3),
+	}
+
+test EnumStaticArrays
+	prereq "FOO enum { One, Two, Three }"
+	input "x := FOO.?rhs"
+	bytecode "{?res;}"
+	{
+			?rhs("values[0]") + ?res(0),
+			?rhs("values[1]") + ?res(1),
+			?rhs("values[2]") + ?res(2)
 	}
 	// To Test:
 	// To Test:
