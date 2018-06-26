@@ -783,23 +783,25 @@ void CDataSegment::AddDeepCopyPointers(SDataLayout * pDlay, STypeInfo * pTin, s3
 
 					} break;
 				case ARYK_Fixed:
-					cElement = pTinary->m_c;
-					break;
+					{
+						cElement = pTinary->m_c;
+
+						u64 cB;
+						u64 cBAlign;
+						CalculateByteSizeAndAlign(pDlay, pTinary->m_pTin, &cB, &cBAlign);
+						s32 cBStride = S32Coerce(EWC::CBAlign(cB, cBAlign));
+
+						for (int iElement = 0; iElement < cElement; ++iElement)
+						{
+							AddDeepCopyPointers(pDlay, pTinary->m_pTin, iBDst, iBSrc);
+							iBSrc += cBStride;
+							iBDst += cBStride;
+						}
+					} break;
 				default:
 					EWC_ASSERT(false, "unhandled array kind");
 				}
 
-				u64 cB;
-				u64 cBAlign;
-				CalculateByteSizeAndAlign(pDlay, pTinary->m_pTin, &cB, &cBAlign);
-				s32 cBStride = S32Coerce(EWC::CBAlign(cB, cBAlign));
-
-				for (int iElement = 0; iElement < cElement; ++iElement)
-				{
-					AddDeepCopyPointers(pDlay, pTinary->m_pTin, iBDst, iBSrc);
-					iBSrc += cBStride;
-					iBDst += cBStride;
-				}
 				pTin = nullptr;
 			} break;
 		case TINK_Struct:
@@ -1646,20 +1648,6 @@ void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit
 	{
 		auto pTinptrGlob = PTinRtiCast<STypeInfoPointer *>(pConstGlob->m_pTin);
 		auto pTinDst = pTinptrGlob->m_pTinPointedTo;
-
-		if (pTinDst->m_tink == TINK_Array && ((STypeInfoArray*)pTinDst)->m_aryk == ARYK_Reference)
-		{
-			auto pTinaryInit = PTinRtiCast<STypeInfoArray *>(pConstInit->m_pTin);
-			if (EWC_FVERIFY(pTinaryInit, "expected array") && pTinaryInit->m_aryk == ARYK_Fixed)
-			{
-				auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
-								
-				*(s64*)pBGlob = pTinaryInit->m_c;
-				m_dataseg.AddRelocatedPointer(m_pDlay, pConstGlob->m_word.m_s32 + sizeof(s64), pConstInit->m_word.m_s32);
-								
-			}
-			return;
-		}
 		
 		// BB - need a fix that handles LITK_Ary & pTinAry checks
 		//if (EWC_FVERIFY(pTinptr && FTypesAreSame(pTinptr->m_pTinPointedTo, pConstInit->m_pTin), "initializer type mismatch"))

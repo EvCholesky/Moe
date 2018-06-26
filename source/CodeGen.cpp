@@ -4490,6 +4490,86 @@ static inline bool FIsOverloadedOp(CSTNode * pStnod)
 	return pStnod->m_pOptype && pStnod->m_pOptype->m_pTinprocOverload;
 }
 
+void CBuilderIR::SetGlobalInitializer(CWorkspace * pWork, CIRGlobal * pGlob, STypeInfo * pTinGlob, STypeInfoLiteral * pTinlit, CSTNode * pStnodLiteral)
+{
+	LLVMOpaqueValue * pLvalInit;
+	auto pTinaryGlob = PTinRtiCast<STypeInfoArray *>(pTinGlob);
+	if (pTinaryGlob && pTinaryGlob->m_aryk == ARYK_Reference)
+	{
+		auto pLtypeElement = PLtypeFromPTin(pTinlit->m_pTinSource);
+
+		auto apLvalElem = (LLVMOpaqueValue **)m_pAlloc->EWC_ALLOC_TYPE_ARRAY(LLVMOpaqueValue *, (size_t)pTinlit->m_c);
+
+		CSTNode * pStnodList = nullptr;
+		CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLiteral->m_pStmap);
+		if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "array literal with no values"))
+		{
+			pStnodList = pStnodLiteral->PStnodChild(pStdecl->m_iStnodInit);
+		}
+
+		if (!pStnodList || !EWC_FVERIFY(pStnodList->CStnodChild() == pTinlit->m_c, "missing values for array literal"))
+			return;
+
+		for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
+		{
+			auto pStnodChild = pStnodList->PStnodChild(iStnod);
+			STypeInfoLiteral * pTinlitElem = (STypeInfoLiteral *)pStnodChild->m_pTin;
+			EWC_ASSERT(pTinlit->m_tink == TINK_Literal, "Bad array literal element");
+
+			apLvalElem[iStnod] = PLvalFromLiteral(this, pTinlitElem, pStnodChild);
+		}
+
+		pLvalInit = PLvalBuildConstantGlobalArrayRef(pWork, this, pLtypeElement, apLvalElem, U32Coerce(pTinlit->m_c));
+
+		m_pAlloc->EWC_FREE(apLvalElem);
+	}
+	else
+	{
+		pLvalInit = PLvalFromLiteral(this, pTinlit, pStnodLiteral);
+	}
+
+	SetInitializer(pGlob, pLvalInit);
+}
+
+void BCode::CBuilder::SetGlobalInitializer(CWorkspace * pWork, BCode::SConstant * pGlob, STypeInfo * pTinGlob, STypeInfoLiteral * pTinlit, CSTNode * pStnodInit)
+{
+	auto pLvalInit = PLvalFromLiteral(this, pTinlit, pStnodInit);
+
+	if (!EWC_FVERIFY(pLvalInit->m_valk == VALK_Constant, "initializer must be constant"))
+		return;
+
+	auto pConstInit = (BCode::SConstant *)pLvalInit;
+
+	auto pTinaryGlob = PTinRtiCast<STypeInfoArray *>(pTinGlob);
+	if (pTinaryGlob && pTinaryGlob->m_aryk == ARYK_Reference)
+	{
+		// allocate space for an array reference
+		auto pConstGlob = m_blistConst.AppendNew();
+		pConstGlob->m_pTin = m_pSymtab->PTinptrAllocate(pTinaryGlob);
+		pConstGlob->m_opk = OPK_Global;
+
+		size_t cBArrayRef = sizeof(s64) + m_pDlay->m_cBPointer;
+		u8 * pBGlobal;
+		s64 iBGlobal;
+		m_dataseg.AllocateData(cBArrayRef, EWC_ALIGN_OF(s64), &pBGlobal, &iBGlobal);
+		pConstGlob->m_word.m_s64 = iBGlobal;
+
+		auto pTinaryInit = PTinRtiCast<STypeInfoArray *>(pConstInit->m_pTin);
+		if (EWC_FVERIFY(pTinaryInit, "expected array") && pTinaryInit->m_aryk == ARYK_Fixed)
+		{
+			auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
+							
+			*(s64*)pBGlob = pTinaryInit->m_c;
+			m_dataseg.AddRelocatedPointer(m_pDlay, pConstGlob->m_word.m_s32 + sizeof(s64), pConstInit->m_word.m_s32);
+		}
+
+		SetInitializer(pGlob, pConstGlob);
+		return;
+	}
+
+	SetInitializer(pGlob, pLvalInit);
+}
+
 template <typename BUILD>
 typename BUILD::Value * PValGenerateDecl(
 	CWorkspace * pWork,
@@ -4539,10 +4619,12 @@ typename BUILD::Value * PValGenerateDecl(
 			auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnodInit->m_pTin);
 			if (pTinlit && pStnodInit->m_park != PARK_Uninitializer)
 			{
-				pLvalInit = PLvalFromLiteral(pBuild, pTinlit, pStnodInit);
+				pBuild->SetGlobalInitializer(pWork, pGlob, pStnod->m_pTin, pTinlit, pStnodInit);
+				return pGlob;
+
 			}
 
-			// Not supporting globals that require some runtime init
+			EWC_ASSERT(false, "Not yet supporting globals that require some runtime init");
 			//return PValInitialize(pWork, pBuild, pStnod->m_pTin, pGlob, pStnodInit);
 
 			// Also - not handling globals that need to call an overloaded := operator
@@ -4553,13 +4635,11 @@ typename BUILD::Value * PValGenerateDecl(
 		if (FAreCozEqual(strName.PCoz(),STypeInfo::s_pChzGlobalTinTable))
 		{
 			pLvalInit = PLvalGenerateReflectTypeTable(pWork, pBuild);
+			pBuild->SetInitializer(pGlob, pLvalInit);
+			return pGlob;
 		}
 
-		if (!pLvalInit)
-		{
-			pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pStnod->m_pTin, pStnodInit);
-		}
-
+		pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pStnod->m_pTin, pStnodInit);
 		pBuild->SetInitializer(pGlob, pLvalInit);
 
 		return pGlob;

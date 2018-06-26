@@ -379,6 +379,7 @@ namespace BCode
 
 		Global *			PGlobCreate(STypeInfo * pTin, const char * pChzName);
 		void				SetInitializer(SValue * pValGlob, SValue * pValInit);
+		void				SetGlobalInitializer(CWorkspace * pWork, SConstant * pGlob, STypeInfo * pTinGlob, STypeInfoLiteral * pTinlit, CSTNode * pStnodInit);
 		void				SetGlobalIsConstant(Global * pGlob, bool fIsConstant)
 								{ ; }
 

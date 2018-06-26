@@ -573,6 +573,7 @@ public:
 	CIRConstant *		PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval);
 
 	CIRGlobal *			PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzName);
+	void				SetGlobalInitializer(CWorkspace * pWork, CIRGlobal * pGlob, STypeInfo * pTinGlob, STypeInfoLiteral * pTinlit, CSTNode * pStnodInit);
 	void				SetInitializer(CIRGlobal * pGlob, LValue * pLconst);
 	void				SetGlobalIsConstant(CIRGlobal * pGlob, bool fIsConstant);
 	void				AddManagedVal(CIRValue * pVal);
