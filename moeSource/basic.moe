@@ -1,3 +1,4 @@
+#dynamic_library "ucrtbase"
 #foreign_library "Basic"
 
 PrintFloat proc (g : float) #foreign

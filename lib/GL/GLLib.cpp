@@ -445,6 +445,11 @@ MOE_EXPORT u8 * PChzJoystickName(s32 nDeviceId)
 	return (u8 *)glfwGetJoystickName(nDeviceId);
 }
 
+MOE_EXPORT void Sleep_MOE(u32 ms)
+{
+	Sleep(ms);
+}
+
 static void SetJoycons(SJoystick * pJoy, JOYCONS joycons)
 {
 	if (pJoy->m_joycons == joycons)
@@ -679,3 +684,70 @@ MOE_EXPORT uint32_t NTimeSeed()
 					((uint32_t)systime.wHour * 3600000);
 	return nRet;
 }
+
+#if 0
+MOE_EXPORT void glBegin_MOE(s32 mode)
+	{ glBegin(mode); }
+MOE_EXPORT void glEnd_MOE()
+	{ glEnd(); }
+MOE_EXPORT void glColor3f_MOE(GLfloat r, GLfloat g, GLfloat b)
+	{ glColor3f(r, g, b); }
+MOE_EXPORT void glColor4f_MOE(GLfloat r, GLfloat g, GLfloat b, GLfloat a)
+	{ glColor4f(r, g, b, a); }
+MOE_EXPORT void glVertex2f_MOE(GLfloat x, GLfloat y)
+	{ glVertex2f(x, y); }
+MOE_EXPORT void glVertex3f_MOE(GLfloat x, GLfloat y, GLfloat z)
+	{ glVertex3f(x, y, z); }
+MOE_EXPORT void glTexCoord2f_MOE(GLfloat s, GLfloat t)
+	{ glTexCoord2f(s, t); }
+MOE_EXPORT void glTexCoord3f_MOE(GLfloat s, GLfloat t, GLfloat r)
+	{ glTexCoord3f(s, t, r); }
+MOE_EXPORT void glTexCoord4f_MOE(GLfloat s, GLfloat t, GLfloat r, GLfloat q)
+	{ glTexCoord4f(s, t, r, q); }
+MOE_EXPORT void glLoadIdentity_MOE()
+	{ glLoadIdentity(); }
+MOE_EXPORT void glOrtho_MOE(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar)
+	{ glOrtho(left, right, bottom, top, zNear, zFar); }
+MOE_EXPORT void glGenTextures_MOE(GLsizei n, GLuint *textures)
+	{ glGenTextures(n, textures); }
+MOE_EXPORT void glBindTexture_MOE(GLenum target, GLuint texture)
+	{ glBindTexture(target, texture); }
+MOE_EXPORT void glTexParameteri_MOE(GLenum target, GLenum pname, GLint param)
+{ glTexParameteri(target, pname, param); }
+MOE_EXPORT void glTexImage2D_MOE(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
+{ glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels); }
+MOE_EXPORT void glBlendFunc_MOE(GLenum sfactor, GLenum dfactor)
+{ glBlendFunc(sfactor, dfactor); }
+MOE_EXPORT void glEnable_MOE(GLenum cap)
+	{ glEnable(cap); }
+MOE_EXPORT void glEnableClientState_MOE(GLenum array)
+	{ glEnableClientState(array); }
+MOE_EXPORT void glDisable_MOE(GLenum cap)
+	{ glDisable(cap); }
+MOE_EXPORT void glDisableClientState_MOE(GLenum array)
+	{ glDisableClientState(array); }
+MOE_EXPORT void glMatrixMode_MOE(GLenum mode)
+	{ glMatrixMode(mode); }
+MOE_EXPORT void glPopAttrib_MOE()
+	{ glPopAttrib(); }
+MOE_EXPORT void glPopClientAttrib_MOE()
+	{ glPopClientAttrib(); }
+MOE_EXPORT void glPopMatrix_MOE()
+	{ glPopMatrix(); }
+MOE_EXPORT void glPushAttrib_MOE(GLbitfield mask)
+	{ glPushAttrib(mask); }
+MOE_EXPORT void glPushClientAttrib_MOE(GLbitfield mask)
+	{ glPushClientAttrib(mask); }
+MOE_EXPORT void glPushMatrix_MOE()
+	{ glPushMatrix(); }
+MOE_EXPORT void glVertexPointer_MOE(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
+	{ glVertexPointer(size, type, stride, pointer); }
+MOE_EXPORT void glColorPointer_MOE(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
+	{ glColorPointer(size, type, stride, pointer); }
+MOE_EXPORT void glTexCoordPointer_MOE(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
+	{ glTexCoordPointer(size, type, stride, pointer); }
+MOE_EXPORT void glDrawArrays_MOE(GLenum mode, GLint first, GLsizei count)
+{
+	glDrawArrays(mode, first, count);
+}
+#endif

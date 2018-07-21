@@ -522,7 +522,7 @@ public:
 	CIRInstruction *	PInstCreatePhi(LLVMOpaqueType * pLtype, const char * pChzName);
 	void				AddPhiIncoming(CIRInstruction * pInstPhi, CIRValue * pVal, CIRBlock * pBlock);
 	CIRInstruction *	PInstCreateSwitch(CIRValue * pVal, CIRBlock * pBlockElse, u32 cCases);
-	void				AddSwitchCase(CIRInstruction * pInstSwitch, CIRValue * pValOn, CIRBlock * pBlock);
+	void				AddSwitchCase(CIRInstruction * pInstSwitch, CIRValue * pValOn, CIRBlock * pBlock, int iInstCase);
 
 	CIRInstruction *	PInstCreateCall(LValue * pLvalProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, unsigned cArg);
 
@@ -550,7 +550,7 @@ public:
 	SCodeGenStruct *	PCgstructEnsure(STypeInfoStruct * pTinstruct);
 
 
-	CIRValue *			PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName);
+	CIRValue *			PValCreateAlloca(LLVMOpaqueType * pLtype, const char * pChzName);
 	CIRInstruction *	PInstCreateMemset(CIRValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
 	CIRInstruction *	PInstCreateMemcpy(STypeInfo * pTin, CIRValue * pValLhs, CIRValue * pValRhsRef);
 

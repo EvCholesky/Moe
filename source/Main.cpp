@@ -136,6 +136,118 @@ void PrintCommandLineOptions()
 	printf("    -llvm cmd : run an llvm command line\n");
 }
 
+CFileSearch::CFileSearch(EWC::CAlloc * pAlloc)
+:m_pAlloc(pAlloc)
+,m_aryPFile(pAlloc, BK_FileSearch, 32)
+,m_hashHvIFile(pAlloc, BK_FileSearch, 32)
+{
+}
+
+CFileSearch::~CFileSearch()
+{
+	auto ppFileMac = m_aryPFile.PMac();
+	for (auto ppFile = m_aryPFile.A(); ppFile != ppFileMac; ++ppFile)
+	{
+		SFile * pFile = *ppFile;
+		while (pFile)
+		{
+			auto pFileDelete = pFile;
+			pFile = pFile->m_pFileNext;
+			m_pAlloc->EWC_DELETE(pFileDelete);
+		}
+	}
+
+	m_aryPFile.Clear();
+}
+
+void CFileSearch::AddFile(const char * pChzFilenameFull, const char * pChzDir)
+{
+	size_t iBFile;
+	size_t iBExtension;
+	size_t iBEnd;
+	SplitFilename(pChzFilenameFull, &iBFile, &iBExtension, &iBEnd);
+	EWC::CString strFileAndExt(&pChzFilenameFull[iBFile], iBEnd - iBFile);
+
+	// BB - should we convert the entire string to lower?
+	SFile * pFile = EWC_NEW(m_pAlloc, SFile) SFile();
+	pFile->m_pChzDirectory = pChzDir;
+	pFile->m_pFileNext = nullptr;
+
+	int * piFile = nullptr;
+	auto hvLower = HvFromPCozLowercase(strFileAndExt.PCoz());
+	EWC::FINS fins = m_hashHvIFile.FinsEnsureKey(hvLower, &piFile);
+	if (fins == FINS_Inserted)
+	{
+		*piFile = S32Coerce(m_aryPFile.C());
+		m_aryPFile.Append(pFile);
+	}
+	else if (EWC_FVERIFY(fins == FINS_AlreadyExisted, "error adding file '%s' to file search hash", strFileAndExt.PCoz()) )
+	{
+		auto pFileIt = m_aryPFile[*piFile];
+		while (pFileIt->m_pFileNext)
+		{
+			pFileIt = pFileIt->m_pFileNext;
+		}
+
+		pFileIt->m_pFileNext = pFile;
+	}
+}
+
+void CFileSearch::AddDirectory(const char * pChzDir)
+{
+	char aCozWorking[2048];
+	EWC::SStringBuffer strbufLib(aCozWorking, EWC_PMAC(aCozWorking) - aCozWorking);
+	FormatCoz(&strbufLib, "%s\\*", pChzDir);
+	EnsureTerminated(&strbufLib, '\0');
+
+#ifdef _WINDOWS
+	WIN32_FIND_DATAA finddata;
+	HANDLE hFind;
+
+	hFind = FindFirstFileA(aCozWorking, &finddata);
+	bool fFoundFile = (hFind != INVALID_HANDLE_VALUE);
+	while (fFoundFile)
+	{
+		if (finddata.cFileName[0] != '.')
+		{
+			AddFile(finddata.cFileName, pChzDir);
+		}
+
+		fFoundFile = (FindNextFileA(hFind, &finddata) != 0);
+	}
+#else
+	/*  example code from stack overflow
+	len = strlen(name);
+	dirp = opendir(".");
+	while ((dp = readdir(dirp)) != NULL)
+	{
+		if (dp->d_namlen == len && !strcmp(dp->d_name, name)) 
+		{
+			(void)closedir(dirp);
+			return FOUND;
+		}
+	}
+	(void)closedir(dirp);
+	return NOT_FOUND;
+	   */
+
+		EWC_ASSERT(false, "TBD: need to write CFileSearch on non-windows platforms");
+#endif
+}
+
+CFileSearch::SFile * CFileSearch::PFileFind(const char * pChzFileAndExt)
+{
+	auto hvLower = HvFromPCozLowercase(pChzFileAndExt);
+	int * piFile = m_hashHvIFile.Lookup(hvLower);
+	if (piFile)
+	{
+		auto pFile = m_aryPFile[*piFile];
+		return pFile;
+	}
+
+	return nullptr;
+}
+
 int main(int cpChzArg, const char * apChzArg[])
 {
 #ifdef MOE_DEBUG
@@ -417,7 +529,7 @@ int main(int cpChzArg, const char * apChzArg[])
 			for (CWorkspace::SFile ** ppFile = work.m_arypFile.A(); ppFile != ppFileMac; ++ppFile)
 			{
 				const CWorkspace::SFile & file = **ppFile;
-				if (file.m_filek != CWorkspace::FILEK_Library)
+				if (file.m_filek != CWorkspace::FILEK_Library && file.m_filek != CWorkspace::FILEK_StaticLibrary)
 					continue;
 
 				EWC::SStringBuffer strbufLib(pCozWorking, pCozWorkingMac - pCozWorking);

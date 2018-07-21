@@ -103,6 +103,8 @@ enum TOK
 		RW(StringDirective) STR(#string), \
 		RW(LabelDirective) STR(#label), \
 		RW(ForeignLibraryDirective) STR(#foreign_library), \
+		RW(StaticLibraryDirective) STR(#static_library), \
+		RW(DynamicLibraryDirective) STR(#dynamic_library), \
 		RW(Cast) STR(cast), \
 		RW(AutoCast) STR(acast), \
 		RW(Sizeof) STR(sizeof), \

@@ -497,29 +497,6 @@ static inline bool FCanReturnByValue(CIRBuilder * pBuild, LLVMOpaqueType * pLtyp
 }*/
 
 
-template <typename BUILD>
-typename BUILD::LType * PLtypeFromPTin(BUILD * pBuild, STypeInfo * pTin, u64 * pCElement)
-{
-	if (pCElement)
-	{
-		switch (pTin->m_tink)
-		{
-		case TINK_Array:	
-			*pCElement = ((STypeInfoArray *)pTin)->m_c;
-			break;
-		case TINK_Literal:
-		{
-			auto pTinlit = (STypeInfoLiteral *)pTin;
-			*pCElement = (pTinlit->m_litty.m_litk == LITK_Array) ? pTinlit->m_c : 0;
-		} break;
-		default: 
-			*pCElement = 0;
-		}
-	}
-
-	return pBuild->PLtypeFromPTin(pTin);
-}
-
 STypeInfoStruct * PTinstructEnsureImplicit(CSymbolTable * pSymtab, STypeInfoArray * pTinary)
 {
 	EWC_ASSERT(pTinary->m_grftin.FIsSet(FTIN_IsUnique), "expected unique array");
@@ -1801,22 +1778,13 @@ CIRGlobal * CBuilderIR::PGlobCreate(LLVMOpaqueType * pLtype, const char * pChzNa
 	return pGlob;
 }
 
-CIRValue * CBuilderIR::PValCreateAlloca(LLVMOpaqueType * pLtype, u64 cElement, const char * pChzName)
+CIRValue * CBuilderIR::PValCreateAlloca(LLVMOpaqueType * pLtype, const char * pChzName)
 {
 	CIRInstruction * pInst = PInstCreateRaw(IROP_Alloca, nullptr, nullptr, pChzName);
 	if (FIsError(pInst))
 		return pInst;
 
-	if (cElement)
-	{
-		auto pLvalCElement = LLVMConstInt(LLVMInt64Type(), cElement, false);
-		pInst->m_pLval = LLVMBuildArrayAlloca(m_pLbuild, pLtype, pLvalCElement, OPNAME(pChzName));
-	}
-	else
-	{
-		pInst->m_pLval = LLVMBuildAlloca(m_pLbuild, pLtype, OPNAME(pChzName));
-	}
-
+	pInst->m_pLval = LLVMBuildAlloca(m_pLbuild, pLtype, OPNAME(pChzName));
 	return pInst;
 }
 
@@ -2948,19 +2916,18 @@ typename BUILD::Value * PValCreateCast(
 			// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
 			//  array that happens to be static and isn't read-only.
 				
-			u64 cElement;
-			auto pLtype = PLtypeFromPTin<BUILD>(pBuild, pTinlitSrc, &cElement);
+			auto pLtype = pBuild->PLtypeFromPTin(pTinlitSrc);
 			if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 				return nullptr;
 
-			auto pValAllocaLit = pBuild->PValCreateAlloca(pLtype, cElement, "aryLit");
+			auto pValAllocaLit = pBuild->PValCreateAlloca(pLtype, "aryLit");
 
 			// copy the literal into memory
 
 			pBuild->PInstCreateMemcpy(pTinDst, pValAllocaLit, pValSrc);
 
 			auto pLtypeDst = pBuild->PLtypeFromPTin(pTinDst);
-			auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, 0, "aryDst");
+			auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, "aryDst");
 
 			// copy the fixed array into the array reference
 			STypeInfoArray tinaryFixed;
@@ -3180,7 +3147,7 @@ typename BUILD::Instruction * PInstCreateLoopingInit(CWorkspace * pWork, BUILD *
 	
 	auto pTinS64 = pWork->m_pSymtab->PTinBuiltin(CSymbolTable::s_strUsize);
 	auto pLtypeIndex = pBuild->PLtypeFromPTin(pTinS64);
-	auto pValAlloca = pBuild->PValCreateAlloca(pLtypeIndex, 0, "iInit");
+	auto pValAlloca = pBuild->PValCreateAlloca(pLtypeIndex, "iInit");
 
 	pBuild->PInstCreateStore(pValAlloca, pLvalZero);
 
@@ -3639,12 +3606,11 @@ static inline typename BUILD::Value * PValGenerateCast(
 				{
 					EWC_ASSERT(pTinaryRhs->m_aryk == ARYK_Fixed, "expected ARYK_Fixed");
 
-					u64 cElement;
-					auto pLtype = PLtypeFromPTin(pBuild, pTinaryLhs, &cElement);
+					auto pLtype = pBuild->PLtypeFromPTin(pTinaryLhs);
 					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for cast"))
 						return nullptr;
 
-					auto * pValAlloca = pBuild->PValCreateAlloca(pLtype, cElement, "aryCast");
+					auto * pValAlloca = pBuild->PValCreateAlloca(pLtype, "aryCast");
 					(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryLhs, pTinRhs, pValAlloca, pValRhsRef);
 
 					if (valgenk == VALGENK_Reference)
@@ -3668,19 +3634,18 @@ static inline typename BUILD::Value * PValGenerateCast(
 					// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
 					//  array that happens to be static and isn't read-only.
 						
-					u64 cElement;
-					auto pLtype = PLtypeFromPTin(pBuild, pTinlitRhs, &cElement);
+					auto pLtype = pBuild->PLtypeFromPTin(pTinlitRhs);
 					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 						return nullptr;
 
-					auto pValAllocaLit = pBuild->PValCreateAlloca(pLtype, cElement, "aryLit");
+					auto pValAllocaLit = pBuild->PValCreateAlloca(pLtype, "aryLit");
 
 					// copy the literal into memory
 
 					pBuild->PInstCreateMemcpy(pTinlitRhs, pValAllocaLit, pValRhsRef);
 
 					auto pLtypeDst = pBuild->PLtypeFromPTin(pTinOut);
-					auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, 0, "aryDst");
+					auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, "aryDst");
 
 					// copy the fixed array into the array reference
 					STypeInfoArray tinaryFixed;
@@ -3776,7 +3741,7 @@ typename BUILD::Instruction * PInstGenerateAssignmentFromRef(
 					auto pTinlit = pWork->m_pSymtab->PTinlitFromLitk(LITK_Integer, 64, false); 
 					auto pLtypeS64 = pBuild->PLtypeFromPTin(pTinlit);
 
-					auto pValAlloca = pBuild->PValCreateAlloca(pLtypeS64, 0, "iInit");
+					auto pValAlloca = pBuild->PValCreateAlloca(pLtypeS64, "iInit");
 					(void) pBuild->PInstCreateStore(pValAlloca, pValZero);
 
 					BUILD::Block * pBlockPred = pBuild->PBlockCreate(pProc, "copyPred");
@@ -3890,12 +3855,11 @@ typename BUILD::Instruction * PInstGenerateAssignment(
 					// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
 					//  array that happens to be static and isn't read-only.
 						
-					u64 cElement;
-					auto pLtype = PLtypeFromPTin(pBuild, pTinlitRhs, &cElement);
+					auto pLtype = pBuild->PLtypeFromPTin(pTinlitRhs);
 					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 						return nullptr;
 
-					auto pValAlloca = pBuild->PValCreateAlloca(pLtype, cElement, "aryLit");
+					auto pValAlloca = pBuild->PValCreateAlloca(pLtype, "aryLit");
 
 					// copy the literal into memory
 					pBuild->PInstCreateMemcpy(pStnodRhs->m_pTin, pValAlloca, pValRhsRef);
@@ -3915,8 +3879,7 @@ typename BUILD::Instruction * PInstGenerateAssignment(
 			auto ivalkRhs = IvalkCompute(pStnodRhs);
 			if (ivalkRhs < IVALK_LValue)
 			{
-				u64 cElement;
-				auto pLtypeLhs = PLtypeFromPTin(pBuild, pTinLhs, &cElement);
+				auto pLtypeLhs = pBuild->PLtypeFromPTin(pTinLhs);
 				if (!EWC_FVERIFY(pLtypeLhs, "couldn't find llvm type for declaration"))
 					return nullptr;
 
@@ -4549,15 +4512,17 @@ void BCode::CBuilder::SetGlobalInitializer(CWorkspace * pWork, BCode::SConstant 
 		pConstGlob->m_opk = OPK_Global;
 
 		size_t cBArrayRef = sizeof(s64) + m_pDlay->m_cBPointer;
-		u8 * pBGlobal;
+
+		u8 * pBPointer;
+		s64 iBPointer;
 		s64 iBGlobal;
-		m_dataseg.AllocateData(cBArrayRef, EWC_ALIGN_OF(s64), &pBGlobal, &iBGlobal);
-		pConstGlob->m_word.m_s64 = iBGlobal;
+		(void) PBAllocateGlobalWithPointer(cBArrayRef, EWC_ALIGN_OF(s64), &pBPointer, &iBPointer, &iBGlobal, "aryref");
+		pConstGlob->m_word.m_s64 = iBPointer;
 
 		auto pTinaryInit = PTinRtiCast<STypeInfoArray *>(pConstInit->m_pTin);
 		if (EWC_FVERIFY(pTinaryInit, "expected array") && pTinaryInit->m_aryk == ARYK_Fixed)
 		{
-			auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
+			auto pBGlob = m_dataseg.PBFromGlobal(pConstGlob);
 							
 			*(s64*)pBGlob = pTinaryInit->m_c;
 			m_dataseg.AddRelocatedPointer(m_pDlay, pConstGlob->m_word.m_s32 + sizeof(s64), pConstInit->m_word.m_s32);
@@ -4582,8 +4547,7 @@ typename BUILD::Value * PValGenerateDecl(
 	if (!pStdecl || !EWC_FVERIFY(pStnod->m_pSym, "declaration without symbol"))
 		return nullptr;
 
-	u64 cElement;
-	auto pLtype = PLtypeFromPTin(pBuild, pStnod->m_pTin, &cElement);
+	auto pLtype = pBuild->PLtypeFromPTin(pStnod->m_pTin);
 	if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 		return nullptr;
 
@@ -4650,7 +4614,7 @@ typename BUILD::Value * PValGenerateDecl(
 
 		auto pBlockCur = pBuild->m_pBlockCur;
 		pBuild->ActivateBlock(pBuild->m_pProcCur->m_pBlockLocals);
-		auto pValAlloca = pBuild->PValCreateAlloca(pLtype, cElement, strPunyName.PCoz());
+		auto pValAlloca = pBuild->PValCreateAlloca(pLtype, strPunyName.PCoz());
 		pBuild->ActivateBlock(pBlockCur);
 
 
@@ -4719,7 +4683,7 @@ typename BUILD::Value * PValGenerateArrayLiteralReference(CWorkspace * pWork, BU
 
 		auto pLtypeArray = pBuild->PLtypeFromPTin(pTinlit);
 
-		pGlob = pBuild->PGlobCreate(pLtypeArray, "");
+		pGlob = pBuild->PGlobCreate(pLtypeArray, "aryLitRef");
 
 		pBuild->SetGlobalIsConstant(pGlob, true);
 		pBuild->SetInitializer(pGlob, pLvalConstInit);
@@ -5092,7 +5056,7 @@ void GenerateSwitch(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod, typena
 
 	for (int ipLval = 0; ipLval < arypVal.C(); ++ipLval)
 	{
-		pBuild->AddSwitchCase(pInstSw, arypVal[ipLval], arypBlock[ipLval]);
+		pBuild->AddSwitchCase(pInstSw, arypVal[ipLval], arypBlock[ipLval], ipLval);
 	}
 	
 	pBuild->m_aryJumptStack.PopLast();
@@ -5109,7 +5073,7 @@ CIRInstruction * CBuilderIR::PInstCreateSwitch(CIRValue * pVal, CIRBlock * pBloc
 	return pInst;
 }
 
-void CBuilderIR::AddSwitchCase(CIRInstruction * pInstSwitch, CIRValue * pValOn, CIRBlock * pBlock)
+void CBuilderIR::AddSwitchCase(CIRInstruction * pInstSwitch, CIRValue * pValOn, CIRBlock * pBlock, int iInstCase)
 {
 	LLVMAddCase(pInstSwitch->m_pLval, pValOn->m_pLval, pBlock->m_pLblock); 
 }
@@ -5678,6 +5642,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 	case PARK_Identifier:
 		{
+			// BB - clean this up so we don't call PValFromSymbol twice
 			if (!pStnod->m_pSym || !pBuild->PValFromSymbol(pStnod->m_pSym))
 			{
 				CString strName(StrFromIdentifier(pStnod));
@@ -6380,7 +6345,7 @@ BCode::SProcedure * PProcCodegenInitializer(CWorkspace * pWork, BCode::CBuilder 
 	pBuild->ActivateProc(pProc, pProc->m_pBlockFirst);
 
 	// setup 'this' arg
-	auto pValPThis = pBuild->PValCreateAlloca(pTinproc->m_arypTinParams[0], 0, "this");
+	auto pValPThis = pBuild->PValCreateAlloca(pTinproc->m_arypTinParams[0], "this");
 	(void) pBuild->PInstCreateStore(pValPThis, pBuild->PRegArg(pProcsig->m_aParamArg[0].m_iBStack, pTinproc->m_arypTinParams[0]));
 	auto pValThis = pBuild->PInstCreate(IROP_Load, pValPThis);
 
@@ -6694,7 +6659,7 @@ void CBuilderIR::SetupParamBlock(
 
 			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
 			{
-				auto pInstAlloca = PValCreateAlloca((*parypLtype)[ipLvalParam], 0, strArgName.PCoz());
+				auto pInstAlloca = PValCreateAlloca((*parypLtype)[ipLvalParam], strArgName.PCoz());
 				SetSymbolValue(pStnodParam->m_pSym, pInstAlloca);
 
 				s32 iLine;
@@ -6736,6 +6701,8 @@ void CBuilderIR::SetupParamBlock(
 template <typename BUILD>
 typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod)
 {
+	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
+
 	CSTNode * pStnodParamList = nullptr;
 	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodName = nullptr;
@@ -6791,7 +6758,6 @@ typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 		pLtypeReturn = pBuild->PLtypeVoid();
 	}
 
-	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 	EWC_ASSERT(pTinproc, "Exected procedure type");
 
 	char aCh[256];
@@ -7093,6 +7059,30 @@ bool FTestUniqueNames(CAlloc * pAlloc)
 	EWC_ASSERT(cbFreePrev == cbFreePost, "memory leak testing unique names");
 
 	return true;
+}
+
+void SplitFilename(const char * pChzFilename, size_t * piBFile, size_t * piBExtension, size_t * piBEnd)
+{
+	ptrdiff_t iBFile = 0;
+	ptrdiff_t iBExtension = -1;
+	const char * pChIt = pChzFilename;
+	for ( ; *pChIt != '\0'; pChIt += CBCodepoint(pChIt))
+	{
+		if (*pChIt == '\\')
+		{
+			iBFile = pChIt - pChzFilename;
+			iBExtension = -1;	// only acknowledge the first '.' after the last directory
+		}
+		else if (iBExtension < 0 && *pChIt == '.')
+		{
+			iBExtension = pChIt - pChzFilename;
+		}
+	}
+
+	*piBFile = iBFile;
+	*piBEnd = pChIt - pChzFilename;
+	*piBExtension = (iBExtension < 0) ? *piBEnd : iBExtension;
+
 }
 
 size_t CChConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax)

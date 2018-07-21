@@ -38,6 +38,7 @@
 // [x] Returning large arguments (hidden reference args)
 
 
+//#define EWC_TRACE_GLOBAL
 
 // Stack layout (grows down)
 //	4 |___null____________________| +
@@ -231,13 +232,27 @@ inline bool FUseLargeOperand(IROP irop)
 	}
 }
 
-s32 CBOperand(const SInstruction * pInst)
+// number of bytes used by this instruction's operands
+static inline s32 CBOperand(const SInstruction * pInst)
 {
 	if (FUseLargeOperand(pInst->m_irop))
 	{
 		return pInst->m_wordRhs.m_s32;
 	}
 	return pInst->m_cBRegister;
+}
+
+// number of bytes 'returned' by this instruction
+static inline s32 CBResult(const SInstruction * pInst)
+{
+	switch (pInst->m_irop)
+	{
+	case IROP_NCmp:
+	case IROP_GCmp:
+		return 1;
+	default:
+		return CBOperand(pInst);
+	}
 }
 
 struct SBoxedArg
@@ -345,9 +360,6 @@ CBuilder::CBuilder(CWorkspace * pWork, SDataLayout * pDlay, EWC::CHash<HV, void*
 ,m_blistConst(pWork->m_pAlloc, BK_ByteCodeCreator)
 ,m_pProcCur(nullptr)
 ,m_pBlockCur(nullptr)
-,m_pInstvalSwitch(nullptr)
-,m_iInstCase(0)
-,m_cInstCase(0)
 {
 }
 
@@ -540,8 +552,6 @@ inline void RemoveOpkArg(OPK * pOpk)
 
 void CBuilder::FinalizeProc(SProcedure * pProc)
 {
-	EWC_ASSERT(m_pInstvalSwitch == nullptr, "bytecode builder switch wasn't completed (wrong case count?)");
-
 	s32 cInst = 0;
 	for (auto ppBlock = pProc->m_arypBlock.A(); ppBlock != pProc->m_arypBlock.PMac(); ++ppBlock)
 	{
@@ -623,17 +633,38 @@ void CDataSegment::Clear()
 }
 
 u8 * CDataSegment::PBFromIndex(s32 iB)
-{
-	for (auto pDatab = m_pDatabFirst; pDatab; pDatab = pDatab->m_pDatabNext)
+{	
+	if (iB == 0)	
+		return nullptr;
+	
+	auto pDatab = m_pDatabFirst;
+	while (1)
 	{
 		auto dB = iB - pDatab->m_iBStart;
 		if (dB < pDatab->m_cB)
 		{
 			return &pDatab->m_pB[dB];
-		}
-	}
 
-	return nullptr;
+		}
+		if (!pDatab->m_pDatabNext)
+		{
+			EWC_ASSERT(iB < pDatab->m_iBStart + pDatab->m_cB, "bad index in PBFromIndex()");
+			return nullptr;
+		}
+		pDatab = pDatab->m_pDatabNext;
+	}
+}
+
+u8 * CDataSegment::PBFromGlobal(SConstant * pConstGlob)
+{
+	EWC_ASSERT(pConstGlob->m_opk == OPK_Global, "expected global value");
+
+	// iBPointer is the index that stores a pointer in the data segment (ie. a global value lhs reference)
+	//  if we haven't adjusted pointers yet it's just an index, otherwise it's the address
+
+	auto pBPointer = PBFromIndex(pConstGlob->m_word.m_s32);
+	s32 iBValue = *(s32*)pBPointer;
+	return PBFromIndex(iBValue);
 }
 
 size_t CDataSegment::CB()
@@ -666,6 +697,9 @@ u8 * CDataSegment::PBBakeCopy(EWC::CAlloc * pAlloc, SDataLayout * pDlay)
 		u8 * pBSrc = &pB[iB];
 		s32 iBTarget = *(s32*)pBSrc;
 
+#ifdef EWC_TRACE_GLOBAL
+		printf("g[%d] -> g[%d], 0x%p\n", iB, iBTarget, &pB[iBTarget]);
+#endif
 		*(void**)pBSrc = &pB[iBTarget];
 	}
 
@@ -675,7 +709,7 @@ void CDataSegment::AllocateDataBlock(size_t cBMin)
 {
 	size_t cBDatabStride = CBAlign(sizeof(SDataBlock), s_cBDataBlockAlign);
 	size_t cBBlock = ewcMax(cBMin, m_cBBlockMin);
-	auto pB = (u8*)m_pAlloc->EWC_ALLOC(cBDatabStride + cBBlock, 64);
+	auto pB = (u8*)m_pAlloc->EWC_ALLOC(cBDatabStride + cBBlock, 16);
 
 	SDataBlock * pDatabNew = (SDataBlock *)pB;
 	pDatabNew->m_cB = 0;
@@ -685,22 +719,26 @@ void CDataSegment::AllocateDataBlock(size_t cBMin)
 
 	if (m_pDatabFirst == nullptr)
 	{
+		static const size_t s_iBStart = 16; // skip the first qword to allow us to use ib == 0 as a nullptr
 		m_pDatabFirst = pDatabNew;
-		pDatabNew->m_iBStart = 0;
+		pDatabNew->m_iBStart = s_iBStart;
 	}
 	else
 	{
 		pDatabNew->m_iBStart = m_pDatabCur->m_iBStart + CBAlign(m_pDatabCur->m_cB, s_cBDataBlockAlign);
+		EWC_ASSERT((uintptr_t(pDatabNew->m_iBStart) & (s_cBDataBlockAlign - 1)) == 0, "bad alignment calculations");
 		m_pDatabCur->m_pDatabNext = pDatabNew;
 	}
 
 	m_pDatabCur = pDatabNew;
 }
 
-void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB)
+void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB, const char * pChzLabel)
 {
-	size_t cBAlignUsed = 0;
+	size_t cBAlignment = 0;
 	size_t cBStride = ewcMax(cB, cBAlign);
+	auto cBPrev = (m_pDatabCur) ? m_pDatabCur->m_cB : 0;
+	bool fAdded = false;
 	if (m_pDatabCur == nullptr)
 	{
 		EWC_ASSERT(m_pDatabFirst == nullptr, "bad data block init");
@@ -708,17 +746,18 @@ void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB)
 	}
 	else
 	{
-		cBAlignUsed = (u8*)PVAlign(m_pDatabCur->m_pB + m_pDatabCur->m_cB, cBAlign) - (m_pDatabCur->m_pB + m_pDatabCur->m_cB);
-		auto pVEnd = m_pDatabCur->m_pB + m_pDatabCur->m_cB + cBAlignUsed;
-		auto uEnd = uintptr_t(pVEnd);
-		auto uCmp = uintptr_t(m_pDatabCur->m_pB + m_pDatabCur->m_cBMax);
-		if (uintptr_t(pVEnd) > uintptr_t(m_pDatabCur->m_pB + m_pDatabCur->m_cBMax))
+		auto pBCur = m_pDatabCur->m_pB + m_pDatabCur->m_cB;
+		auto pBAlign = (u8*)PVAlign(pBCur, cBAlign);
+		cBAlignment = (pBAlign - pBCur);
+
+		if (uintptr_t(pBAlign + cB + cBAlignment) > uintptr_t(m_pDatabCur->m_pB + m_pDatabCur->m_cBMax))
 		{
 			AllocateDataBlock(cBStride);
 		}
 		else
 		{
-			m_pDatabCur->m_cB += cBAlignUsed;
+			fAdded = true;
+			m_pDatabCur->m_cB += cBAlignment;
 		}
 	}
 
@@ -730,18 +769,23 @@ void CDataSegment::AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB)
 	auto pVEnd = pBStart + cB;
 	m_pDatabCur->m_cB += pVEnd - pBStart;
 	EWC_ASSERT(m_pDatabCur->m_cB <= m_pDatabCur->m_cBMax, "data block overflow")
+
+#ifdef EWC_TRACE_GLOBAL
+	printf("%s: g[%lld] %zd bytes\n", pChzLabel, *piB, cB);
+#endif
 }
 
-void CDataSegment::AddRelocatedPointer(SDataLayout * pDlay, s32 iBPointer, s32 iBTarget)
+void CDataSegment::AddRelocatedPointer(SDataLayout * pDlay, s32 iBPointer, s32 iBSrc)
 {
-	u8 * pBPointer = PBFromIndex(iBPointer);
-	if (*(s32*)pBPointer == 0)
+	u8 * pBSrc = PBFromIndex(iBSrc);
+	if (*(s32*)pBSrc == 0)
 		return;
 
+	u8 * pBPointer = PBFromIndex(iBPointer);
 	switch (pDlay->m_cBPointer)
 	{
-	case 4: *(s32*)pBPointer = iBTarget;  break;
-	case 8: *(s64*)pBPointer = iBTarget;  break;
+	case 4: *(s32*)pBPointer = iBSrc;  break;
+	case 8: *(s64*)pBPointer = iBSrc;  break;
 	default:
 		EWC_ASSERT(false, "unexpected pointer size");
 	}
@@ -758,8 +802,10 @@ void CDataSegment::AddDeepCopyPointers(SDataLayout * pDlay, STypeInfo * pTin, s3
 		case TINK_Pointer:
 			{
 				auto pBSrc = PBFromIndex(iBSrc);
-				AddRelocatedPointer(pDlay, iBDst, *(s32*)pBSrc);
-				pTin = ((STypeInfoPointer *)pTin)->m_pTinPointedTo;
+				AddRelocatedPointer(pDlay, iBDst, iBSrc);
+
+				s32 iBSrcTarget = *(s32*)pBSrc;
+				pTin = (iBSrcTarget == 0) ? nullptr : ((STypeInfoPointer *)pTin)->m_pTinPointedTo;
 			} break;
 		case TINK_Qualifier:
 			{
@@ -822,8 +868,7 @@ void CDataSegment::AddDeepCopyPointers(SDataLayout * pDlay, STypeInfo * pTin, s3
 				{
 				case LITK_String:
 					{
-						auto pBSrc = PBFromIndex(iBSrc);
-						AddRelocatedPointer(pDlay, iBDst, *(s32*)pBSrc);
+						AddRelocatedPointer(pDlay, iBDst, iBSrc);
 					} break;
 				case LITK_Array:
 					{
@@ -1458,7 +1503,7 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 	return pInstvalGep;
 }
 
-SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, u64 cElement, const char * pChzName)
+SValue * CBuilder::PValCreateAlloca(STypeInfo * pTin, const char * pChzName)
 {
 	// Alloca returns a pointer to stack mem (but the actual address isn't known until runtime)
 	//  allocate both the requested space and room for the pointer
@@ -1561,13 +1606,8 @@ void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 
 SInstructionValue * CBuilder::PInstCreateSwitch(SValue * pVal, SBlock * pBlockElse, u32 cSwitchCase)
 {
-	EWC_ASSERT(m_pInstvalSwitch == nullptr, "previous switch was not finished. (wrong case count?)");
-
 	auto pInstvalSwitch = PInstCreateRaw(IROP_Switch, pVal, nullptr);
 	auto pInstSwitch = pInstvalSwitch->m_pInst;
-	m_pInstvalSwitch = pInstvalSwitch;
-	m_iInstCase = 0;
-	m_cInstCase = cSwitchCase;
 
 	s32 * pIInstElse = &pInstSwitch->m_wordRhs.m_s32;
 	auto pBranchElse = m_pBlockCur->m_aryBranch.AppendNew();
@@ -1585,17 +1625,10 @@ SInstructionValue * CBuilder::PInstCreateSwitch(SValue * pVal, SBlock * pBlockEl
 	return pInstvalSwitch;
 }
 
-void CBuilder::AddSwitchCase(SInstructionValue * pInstvalSwitch, SValue * pValCmp, SBlock * pBlock)
+void CBuilder::AddSwitchCase(SInstructionValue * pInstvalSwitch, SValue * pValCmp, SBlock * pBlock, int iInstCase)
 {
-	EWC_ASSERT(m_pInstvalSwitch == pInstvalSwitch, "bytecode builder switch mismatch (wrong case count?)");
-	++m_iInstCase;
-	if (m_iInstCase == m_cInstCase)
-	{
-		m_pInstvalSwitch = nullptr;
-	}
-
 	SValueOutput valout;
-	SInstruction * pInstEx = (pInstvalSwitch->m_pInst + m_iInstCase);
+	SInstruction * pInstEx = (pInstvalSwitch->m_pInst + (iInstCase+1));
 	if (EWC_FVERIFY(pInstEx->m_irop == IROP_ExArgs, "bad switch case"))
 	{
 		SBlock * pBlockSwitch = (SBlock*)pInstEx->m_wordLhs.m_pV;
@@ -1613,8 +1646,40 @@ void CBuilder::AddSwitchCase(SInstructionValue * pInstvalSwitch, SValue * pValCm
 	}
 }
 
+u8 * CBuilder::PBAllocateGlobalWithPointer(size_t cB, size_t cBAlign, u8 ** ppBPointer, s64 * piBPointer, s64 * piBGlobal, const char * pChzLabel)
+{
+
+	u8 * pBGlobal;
+	s64 iBGlobal;
+	m_dataseg.AllocateData(cB, cBAlign, &pBGlobal, &iBGlobal, pChzLabel);
+
+	const char * pChzLabelPtr = "";
+#ifdef EWC_TRACE_GLOBAL
+	char aCh[256];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+	FormatCoz(&strbuf, "&%s->%d", pChzLabel, iBGlobal);
+	EnsureTerminated(&strbuf, '\0');
+	pChzLabelPtr = aCh;
+#endif 
+
+	u8 * pBPointer;
+	s64 iBPointer;
+	m_dataseg.AllocateData(m_pDlay->m_cBPointer, m_pDlay->m_cBPointer, &pBPointer, &iBPointer, pChzLabelPtr);
+	m_dataseg.AddRelocatedPointer(m_pDlay, S32Coerce(iBPointer), S32Coerce(iBGlobal));
+	*piBGlobal = iBGlobal;
+	*piBPointer = iBPointer;
+	*ppBPointer = pBPointer;
+
+	return pBGlobal;
+}
+
+
 CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName)
 {
+	// Globals need to store both the value and space for an address as LHS values expect an address
+	//   (It's possible we could optimize this out, but trying to special case it has been a mess, if you're trying
+	//   this remember to test pointers to globals, constant string pointers, etc)
+
 	u64 cB;
 	u64 cBAlign;
 	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
@@ -1623,10 +1688,11 @@ CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName
 	pConst->m_pTin = m_pSymtab->PTinptrAllocate(pTin);
 	pConst->m_opk = OPK_Global;
 
-	u8 * pBGlobal;
+	u8 * pBPointer;
+	s64 iBPointer;
 	s64 iBGlobal;
-	m_dataseg.AllocateData(cB, cBAlign, &pBGlobal, &iBGlobal);
-	pConst->m_word.m_s64 = iBGlobal;
+	(void) PBAllocateGlobalWithPointer(cB, cBAlign, &pBPointer, &iBPointer, &iBGlobal, pChzName);
+	pConst->m_word.m_s64 = iBPointer;
 
 	return pConst;
 }
@@ -1641,25 +1707,26 @@ void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit
 	if (!EWC_FVERIFY(pConstInit, "initializer must be constant"))
 		return;
 	
+	EWC_ASSERT(pConstGlob->m_opk == OPK_Global, "expected global");
 	u64 cBGlob;
 	u64 cBGlobAlign;
-	auto pBGlob = m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
 	if (pConstInit->m_opk == OPK_Global)
 	{
 		auto pTinptrGlob = PTinRtiCast<STypeInfoPointer *>(pConstGlob->m_pTin);
 		auto pTinDst = pTinptrGlob->m_pTinPointedTo;
 		
-		// BB - need a fix that handles LITK_Ary & pTinAry checks
-		//if (EWC_FVERIFY(pTinptr && FTypesAreSame(pTinptr->m_pTinPointedTo, pConstInit->m_pTin), "initializer type mismatch"))
 		{
 			CalculateByteSizeAndAlign(m_pDlay, pTinptrGlob->m_pTinPointedTo, &cBGlob, &cBGlobAlign);
 
-			m_dataseg.DeepCopy(m_pDlay, pTinptrGlob->m_pTinPointedTo, pConstGlob->m_word.m_s32, pConstInit->m_word.m_s32);
+			auto pIGlobIndex = (s32*)m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
+			auto pIInitIndex = (s32*)m_dataseg.PBFromIndex(pConstInit->m_word.m_s32);
+			m_dataseg.DeepCopy(m_pDlay, pTinptrGlob->m_pTinPointedTo, *pIGlobIndex, *pIInitIndex);
 			return;
 		}
 	}
 
 	CalculateByteSizeAndAlign(m_pDlay, pConstGlob->m_pTin, &cBGlob, &cBGlobAlign);
+	auto pBGlob = m_dataseg.PBFromGlobal(pConstGlob);
 
 	if (EWC_FVERIFY(FIsLiteral(pConstInit->m_opk), "expected literal"))
 	{
@@ -2114,7 +2181,7 @@ inline void SetOperandFromValue(
 		auto pInst = pInstval->m_pInst;
 
 		*pOpkOut = OPK_Register; // BB - is this ever an arg register?
-		pValout->m_cBRegister = CBOperand(pInst);
+		pValout->m_cBRegister = CBResult(pInst);
 		pWordOut->m_s32 = pInst->m_iBStackOut;
 
 		pValout->m_pTin = pInstval->m_pTinOperand;
@@ -2365,8 +2432,17 @@ SInstructionValue * CBuilder::PInstCreateStore(SValue * pValPDst, SValue * pValS
 
 	if (opkDst == OPK_Global)
 	{
+		// IROP_Store instruction can't directly address indices into the global block so we create an 
+		//  instruction to get the address and store there.
+
 		auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, pValPDst, nullptr);
-		auto pInstvalStore = PInstCreate(IROP_Store, pValSrc);
+		
+		// The global index refers to a pre-relocate pointer to the global data we're storing into - 
+		//   we need to 'dereference' it here:
+		s32 * pIBDest = (s32*)m_dataseg.PBFromIndex(wordDst.m_s32);
+		pInstvalAddr->m_pInst->m_wordLhs.m_s32 = *pIBDest;
+
+		auto pInstvalStore = PInstCreateRaw(IROP_Store, pValSrc, nullptr, "");
 		pInstvalStore->m_pInst->m_iBStackOut = pInstvalAddr->m_pInst->m_iBStackOut;
 		return pInstvalStore;
 	}
@@ -2450,7 +2526,7 @@ static inline void ReadOpcode(CVirtualMachine * pVm, SInstruction * pInst, int c
 	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
-	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
+	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordLhs, pInst->m_wordLhs.m_s32, cB);	break;
 	}
 }
 
@@ -2462,7 +2538,7 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
-	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];			break;
+	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordLhs, pInst->m_wordLhs.m_s32, cB);	break;
 	}
 
 	switch (pInst->m_opkRhs)
@@ -2471,7 +2547,7 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
-	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
+	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordRhs, pInst->m_wordRhs.m_s32, cB);	break;
 	}
 }
 
@@ -2485,7 +2561,7 @@ static inline void ReadCastOpcodes(CVirtualMachine * pVm, SInstruction * pInst, 
 	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, 8);		break;
-	case OPK_Global:		pWordRhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordRhs.m_s32];			break;
+	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordRhs, pInst->m_wordRhs.m_s32, 8);		break;
 	}
 
 	switch (pInst->m_opkLhs)
@@ -2494,7 +2570,7 @@ static inline void ReadCastOpcodes(CVirtualMachine * pVm, SInstruction * pInst, 
 	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;															break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, int(pWordRhs->m_u64));		break;
-	case OPK_Global:		pWordLhs->m_pV = &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];								break;
+	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordLhs, pInst->m_wordLhs.m_s32, int(pWordRhs->m_u64));		break;
 	}
 }
 
@@ -2677,7 +2753,53 @@ void PrintInstance(CVirtualMachine * pVm, STypeInfo * pTin, u8 * pData)
 	} break;
 	case TINK_Enum:
 	{
-		EWC_ASSERT(false, "TBD"); // not writing this until I can test it
+		auto pTinenum = (STypeInfoEnum *)pTin;
+		auto pTinintLoose = PTinRtiCast<STypeInfoInteger *>(pTinenum->m_pTinLoose);
+		if (!EWC_FVERIFY(pTinintLoose, "expected enum loose type to be an integer"))
+			break;
+
+		const char * pCozEnumName = pTinenum->m_strName.PCoz();
+
+		// could add code here to print by names, it's not clear that's worth it.
+		switch(pTinenum->m_enumk)
+		{
+		case ENUMK_Basic:
+			{
+				if (pTinintLoose->m_fIsSigned)
+				{
+					switch (pTinintLoose->m_cBit)
+					{
+					case 8: FormatCoz(pVm->m_pStrbuf, "%s(%d)", pCozEnumName, *(s8*)pData);	break;
+					case 16: FormatCoz(pVm->m_pStrbuf, "%s(%d)", pCozEnumName, *(s16*)pData); break;
+					case 32: FormatCoz(pVm->m_pStrbuf, "%s(%d)", pCozEnumName, *(s32*)pData); break;
+					case 64: FormatCoz(pVm->m_pStrbuf, "%s(%lld)", pCozEnumName, *(s64*)pData); break;
+					default: EWC_ASSERT(false, "unexpected float size");
+					}
+				}
+				else
+				{
+					switch (pTinintLoose->m_cBit)
+					{
+					case 8: FormatCoz(pVm->m_pStrbuf, "%s(%u)", pCozEnumName, *(u8*)pData);	break;
+					case 16: FormatCoz(pVm->m_pStrbuf, "%s(%u)", pCozEnumName, *(u16*)pData); break;
+					case 32: FormatCoz(pVm->m_pStrbuf, "%s(%u)", pCozEnumName, *(u32*)pData); break;
+					case 64: FormatCoz(pVm->m_pStrbuf, "%s(%llu)", pCozEnumName, *(u64*)pData); break;
+					default: EWC_ASSERT(false, "unexpected float size");
+					}
+				}
+			} break;
+		case ENUMK_FlagEnum:
+			{
+				switch (pTinintLoose->m_cBit)
+				{
+				case 8: FormatCoz(pVm->m_pStrbuf, "%s(0x%x)", pCozEnumName, *(u8*)pData);	break;
+				case 16: FormatCoz(pVm->m_pStrbuf, "%s(0x%x)", pCozEnumName, *(u16*)pData); break;
+				case 32: FormatCoz(pVm->m_pStrbuf, "%s(0x%x)", pCozEnumName, *(u32*)pData); break;
+				case 64: FormatCoz(pVm->m_pStrbuf, "%s(0x%llx)", pCozEnumName, *(u64*)pData); break;
+				default: EWC_ASSERT(false, "unexpected float size");
+				}
+			} break;
+		}
 	} break;
     case TINK_Array:
 	{
@@ -2976,6 +3098,10 @@ void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack
 		case 64:	*(f64 *)pBReturn = dcCallDouble(pDcvm, pProc->m_pFnForeign);	break;
 		default: EWC_ASSERT(false, "unhandled size dyncall return float");
 		}
+	} break;
+	case TINK_Procedure:
+	{
+		*(void **)pBReturn = dcCallPointer(pDcvm, pProc->m_pFnForeign);
 	} break;
 	case TINK_Struct:
 	default:
@@ -3692,19 +3818,41 @@ bool LoadForeignLibraries(CWorkspace * pWork, CHash<HV, void*> * pHashHvPFn, CDy
 {
 	char aCozWorking[2048];
 	bool fLoadError = false;  
+	static const char * s_pChzLibraryDirDebug = "..\\x64\\DebugDLL";
+	static const char * s_pChzLibraryDirRelease = "..\\x64\\ReleaseDLL";
+#if EWC_X64
+	static const char * s_pChzCrtLibraryDir = "C:\\Program Files (x86)\\Windows Kits\\10\\Redist\\ucrt\\DLLs\\x64";
+#else
+	static const char * s_pChzCrtLibraryDir = "C:\\Program Files (x86)\\Windows Kits\\10\\Redist\\ucrt\\DLLs\\x64";
+#endif
+
+	CFileSearch filser(pWork->m_pAlloc);
+	filser.AddDirectory((pWork->m_optlevel == OPTLEVEL_Release) ? s_pChzLibraryDirRelease  : s_pChzLibraryDirDebug);
+	filser.AddDirectory(s_pChzCrtLibraryDir);
+	filser.AddDirectory("C:\\Windows\\System32");
 
 	CWorkspace::SFile ** ppFileMac = pWork->m_arypFile.PMac();
 	for (CWorkspace::SFile ** ppFile = pWork->m_arypFile.A(); ppFile != ppFileMac; ++ppFile)
 	{
 		const CWorkspace::SFile & file = **ppFile;
-		if (file.m_filek != CWorkspace::FILEK_Library)
+		if (file.m_filek != CWorkspace::FILEK_Library && file.m_filek != CWorkspace::FILEK_DynamicLibrary)
 			continue;
-		EWC::SStringBuffer strbufLib(aCozWorking, EWC_PMAC(aCozWorking) - aCozWorking);
 
-		static const char * s_pChzLibraryDirDebug = "..\\x64\\DebugDLL";
-		static const char * s_pChzLibraryDirRelease = "..\\x64\\ReleaseDLL";
-		const char * pChzLibraryDir = (pWork->m_optlevel == OPTLEVEL_Release) ? s_pChzLibraryDirRelease  : s_pChzLibraryDirDebug;
-		FormatCoz(&strbufLib, "%s%\\%s.DLL", pChzLibraryDir, file.m_strFilename.PCoz());
+		{
+			EWC::SStringBuffer strbufLib(aCozWorking, EWC_PMAC(aCozWorking) - aCozWorking);
+			FormatCoz(&strbufLib, "%s.DLL", file.m_strFilename.PCoz());
+			EnsureTerminated(&strbufLib, '\0');
+		}
+		auto pFile = filser.PFileFind(aCozWorking);
+		if (!pFile)
+		{
+			printf("unable to locate library '%s'\n", aCozWorking);
+			fLoadError = true;
+			continue;
+		}
+
+		EWC::SStringBuffer strbufLib(aCozWorking, EWC_PMAC(aCozWorking) - aCozWorking);
+		FormatCoz(&strbufLib, "%s%\\%s.dll", pFile->m_pChzDirectory, file.m_strFilename.PCoz());
 		EnsureTerminated(&strbufLib, '\0');
 	
 		auto pDll = dlLoadLibrary(aCozWorking);
@@ -3870,17 +4018,43 @@ CBuilder::LValue * CBuilder::PLvalConstantGlobalStringPtr(const char * pChzStrin
 	pConst->m_opk = OPK_Global;
 
 	auto cBString = CBCoz(pChzString);
-	u8 * pBGlobal;
-	s64 iBGlobal;
-	m_dataseg.AllocateData(cBString, 1, &pBGlobal, &iBGlobal);
 
-	pConst->m_word.m_s64 = iBGlobal;
+	const char * pChzNameAdj = pChzName;
+#ifdef EWC_TRACE_GLOBAL
+	char aCh[256];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+	FormatCoz(&strbuf, "%s('%s')", pChzName, pChzString);
+	EnsureTerminated(&strbuf, '\0');
+	pChzNameAdj = aCh;
+#endif 
 
 	u8 * pBPointer;
 	s64 iBPointer;
-	m_dataseg.AllocateData(m_pDlay->m_cBPointer, m_pDlay->m_cBPointer, &pBPointer, &iBPointer);
-	m_dataseg.AddRelocatedPointer(m_pDlay, S32Coerce(iBPointer), S32Coerce(iBGlobal));
+	s64 iBGlobal;
+	u8 * pBGlobal = PBAllocateGlobalWithPointer(cBString, 1, &pBPointer, &iBPointer, &iBGlobal, pChzNameAdj);
+
+#if 1 
+	// NOTE: This returns a pointer to a block of characters - NOT a global lhs char * reference (not a ppChz)
 	pConst->m_word.m_s64 = iBPointer;
+
+#else
+	const char * pChzNamePtr = pChzName;
+#ifdef EWC_TRACE_GLOBAL
+	char aCh[256];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+	FormatCoz(&strbuf, "&&%s->%d", pChzName, iBPointer);
+	EnsureTerminated(&strbuf, '\0');
+	pChzNamePtr = aCh;
+#endif 
+
+	// globals are refered to by pointer, so a pChz should return a ppChz
+	u8 * pBPP;
+	s64 iBPP;
+	m_dataseg.AllocateData(m_pDlay->m_cBPointer, m_pDlay->m_cBPointer, &pBPP, &iBPP, pChzNamePtr);
+	m_dataseg.AddRelocatedPointer(m_pDlay, S32Coerce(iBPP), S32Coerce(iBPointer));
+
+	pConst->m_word.m_s64 = iBPP;
+#endif
 
 	CBCopyCoz(pChzString, (char*)pBGlobal, cBString);
 	return pConst;
@@ -3908,11 +4082,12 @@ CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue 
 	u64 cBAlignElement;
 	CalculateByteSizeAndAlign(m_pDlay, pTinElement, &cBElement, &cBAlignElement);
 
-	u8 * pBGlobal;
+	u8 * pBPointer;
+	s64 iBPointer;
 	s64 iBGlobal;
 	u64 cBStride = CBAlign(cBElement, cBAlignElement);
-	m_dataseg.AllocateData(cBStride * cpLval, cBAlignElement, &pBGlobal, &iBGlobal);
-	pConst->m_word.m_s64 = iBGlobal;
+	u8 * pBGlobal = PBAllocateGlobalWithPointer(cBStride * cpLval, cBAlignElement, &pBPointer, &iBPointer, &iBGlobal, "constAry");
+	pConst->m_word.m_s64 = iBPointer;
 
 	for (u32 ipLval = 0; ipLval < cpLval; ++ipLval)
 	{
@@ -3935,7 +4110,41 @@ CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue 
 			bool fIsPointer = pTinElem->m_tink == TINK_Pointer;
 			bool fIsString = pTinElem->m_tink == TINK_Literal && ((STypeInfoLiteral*)pTinElem)->m_litty.m_litk == LITK_String;
 			
-			m_dataseg.DeepCopy(m_pDlay, pConstElem->m_pTin, S32Coerce(iBGlobal), pConstElem->m_word.m_s32);
+			// not dereferencing both sides here
+			s32 iBElem;
+			switch (pTinElem->m_tink)
+			{
+			case TINK_Literal:
+				{
+					auto pTinlit = (STypeInfoLiteral *)pTinElem;
+
+					switch (pTinlit->m_litty.m_litk)
+					{
+					case LITK_Array:
+						iBElem = *(s32*)m_dataseg.PBFromIndex(pConstElem->m_word.m_s32);
+						break;
+					case LITK_String:
+						iBElem =  pConstElem->m_word.m_s32;
+						break;
+					default:
+						EWC_ASSERT(false, "unexpected literal kind");
+					}
+
+				} break;
+			case TINK_Pointer:
+				{
+					iBElem = *(s32*)m_dataseg.PBFromIndex(pConstElem->m_word.m_s32);
+				} break;
+			case TINK_Struct:
+				{
+					iBElem = *(s32*)m_dataseg.PBFromIndex(pConstElem->m_word.m_s32);
+					//iBElem =  pConstElem->m_word.m_s32;
+				} break;
+			default:
+				EWC_ASSERT(false, "unexpected global type (%s)", PChzFromTink(pTinElem->m_tink));
+			}
+
+			m_dataseg.DeepCopy(m_pDlay, pConstElem->m_pTin, S32Coerce(iBGlobal), iBElem);
 		}	break;
 		default:
 			EWC_ASSERT(false, "unexpected operand kind when initializing a constant array");
@@ -3963,11 +4172,12 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 	u64 cBAlign;
 	CalculateByteSizeAndAlign(m_pDlay, pTinstruct, &cB, &cBAlign);
 
-	u8 * pBGlobal;
+	u8 * pBPointer;
+	s64 iBPointer;
 	s64 iBGlobal;
-	m_dataseg.AllocateData(cB, cBAlign, &pBGlobal, &iBGlobal);
+	u8 * pBGlobal = PBAllocateGlobalWithPointer(cB, cBAlign, &pBPointer, &iBPointer, &iBGlobal, pTin->m_strName.PCoz());
 	auto pBGlobalStart = pBGlobal;
-	pConst->m_word.m_s64 = iBGlobal;
+	pConst->m_word.m_s64 = iBPointer;
 
 	for (u32 ipLval = 0; ipLval < cpLval; ++ipLval)
 	{
@@ -3986,13 +4196,13 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 
 		if (pConst->m_opk == OPK_Global)
 		{
-			auto pBSource = m_dataseg.PBFromIndex(pConst->m_word.m_s32);
+			auto pBSource = m_dataseg.PBFromGlobal(pConst);
 			// BB - needs deep copy
 			memcpy(pBGlobal, pBSource, cBField);
 		}
 		else
 		{
-			EWC_ASSERT(pConst->m_litty.m_cBit == cBField * 8, "element size mismatch");	
+			EWC_ASSERT((pConst->m_litty.m_cBit == cBField * 8) || (pConst->m_litty.m_cBit == 1 && cBField == 1), "element size mismatch");	
 			if (!EWC_FVERIFY(FIsLiteral(pConst->m_opk) , "expected constant literals"))
 				continue;
 
@@ -4016,8 +4226,11 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 
 CBuilder::Constant * CBuilder::PConstEnumLiteral(STypeInfoEnum * pTinenum, CSTValue * pStval)
 {
-	EWC_ASSERT(false, "codegen TBD");
-	return nullptr;
+	auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTinenum->m_pTinLoose);
+	if (!EWC_FVERIFY(pTinint, "expected integer type for enum constant"))
+		return nullptr;
+
+	return PConstInt(pStval->m_nUnsigned, pTinint->m_cBit, pTinint->m_fIsSigned);
 }
 
 SConstant * CBuilder::PConstArg(s64 n, int cBit, bool fIsSigned)
@@ -4096,7 +4309,7 @@ void TestDataSegment(CAlloc * pAlloc, SDataLayout * pDlay)
 	for (int i = 0; i < EWC_DIM(aiB); ++i)
 	{
 		s64 * pN;
-		dataseg.AllocateData(sizeof(s64), EWC_ALIGN_OF(s64), (u8**)&pN, &aiB[i]); 
+		dataseg.AllocateData(sizeof(s64), EWC_ALIGN_OF(s64), (u8**)&pN, &aiB[i], "test"); 
 		*pN = i;
 	}
 

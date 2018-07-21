@@ -968,9 +968,8 @@ TestSwitch proc ()
 
 	pChz := "HelloThere"
 	aCh: [32] u8
-	//for iCh := 0; iCh < strlen(pChz); ++iCh
-	for iCh := 0; iCh < 10; ++iCh 
-	{
+	for iCh := 0; iCh < strlen(pChz); ++iCh
+		{
 		switch pChz[iCh]
 		{
 			case 'e': aCh[iCh] = '3'

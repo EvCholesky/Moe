@@ -1,11 +1,11 @@
 #foreign_library "GL"
 #foreign_library "opengl32"
-#foreign_library "legacy_stdio_definitions"
-#foreign_library "glfw3"
-#foreign_library "user32"
-#foreign_library "gdi32"
-#foreign_library "shell32"
-#foreign_library "winmm"
+#static_library "legacy_stdio_definitions"
+#static_library "glfw3"
+#static_library "user32"
+#static_library "gdi32"
+#static_library "shell32"
+#static_library "winmm"
 #import "Basic"
 
 SRect struct 
@@ -24,7 +24,7 @@ GetMonitorRefresh proc (pVHwnd: & void) -> s32 #foreign
 CTickPerSecond proc () -> s64 #foreign
 CTickWallClock proc () -> s64 #foreign
 FTrySetTimerResolution proc (msResolution: u32) -> bool #foreign
-Sleep proc (msResolution: u32) #foreign
+Sleep proc (msResolution: u32) #foreign Sleep_MOE 
 
 FGetNextEvent proc (pEvent: & SEvent) -> bool #foreign
 
@@ -182,6 +182,43 @@ glColorPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void
 glTexCoordPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign #stdcall
 
 glDrawArrays proc (mode: glenum, first: glint, count: glsizei) #foreign #stdcall
+/*
+glBegin proc (mode: s32) #foreign glBegin_MOE
+glEnd proc () #foreign glEnd_MOE
+glColor3f proc  (r: glfloat, g: glfloat, b: glfloat) -> void #foreign glColor3f_MOE
+glColor4f proc  (r: glfloat, g: glfloat, b: glfloat, a: glfloat) -> void #foreign glColor4f_MOE
+glVertex2f proc (x: glfloat, y: glfloat) #foreign glVertex2f_MOE
+glVertex3f proc (x: glfloat, y: glfloat, z: glfloat) #foreign glVertex3f_MOE
+glTexCoord2f proc (s: glfloat, t: glfloat) #foreign glTexCoord2f_MOE
+glTexCoord3f proc (s: glfloat, t: glfloat, r: glfloat) #foreign glTexCoord3f_MOE
+glTexCoord4f proc (s: glfloat, t: glfloat, r: glfloat, q: glfloat) #foreign glTexCoord4f_MOE
+
+glLoadIdentity proc () -> void #foreign glLoadIdentity_MOE
+glOrtho proc (xLeft: f64, xRight: f64, yBottom: f64, yTop: f64, zNear: f64, zFar: f64) -> void #foreign glOrtho_MOE
+glGenTextures proc (n: glsizei, textures: & gluint) #foreign glGenTextures_MOE
+glBindTexture proc (target: glenum, texture: gluint) #foreign glBindTexture_MOE
+glTexParameteri proc (target: glenum, pname: glenum, param: glint) #foreign glTexParameteri_MOE
+glTexImage2D proc (target: glenum, level: glint, internalformat: glint, width: glsizei, height: glsizei, border: glint, format: glenum, type: glenum, pixels: &void) #foreign glTexImage2D_MOE
+glBlendFunc proc (sfactor: glenum, dfactor: glenum) #foreign glBlendFunc_MOE
+
+glEnable proc (cap: glenum) #foreign glEnable_MOE
+glEnableClientState proc (array: glenum) #foreign glEnableClientState_MOE
+glDisable proc (cap: glenum) #foreign glDisable_MOE
+glDisableClientState proc (array: glenum) #foreign glDisableClientState_MOE
+glMatrixMode proc (mode: glenum) #foreign glMatrixMode_MOE
+
+glPopAttrib proc () #foreign glPopAttrib_MOE
+glPopClientAttrib proc () #foreign glPopClientAttrib_MOE
+glPopMatrix proc () #foreign glPushMatrix_MOE
+glPushAttrib proc (mask: glbitfield) #foreign glPushAttrib_MOE
+glPushClientAttrib proc (mask: glbitfield) #foreign glPushClientAttrib_MOE
+glPushMatrix proc () #foreign glPushMatrix_MOE
+glVertexPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign glVertexPointer_MOE
+glColorPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign glColorPointer_MOE
+glTexCoordPointer proc (size: glint, type: glenum, stride: glsizei, pointer: & void) #foreign glTexCoordPointer_MOE
+
+glDrawArrays proc (mode: glenum, first: glint, count: glsizei) #foreign glDrawArrays_MOE
+*/
 
 // GL extension function pointers
 glCreateProgram: () -> gluint #stdcall

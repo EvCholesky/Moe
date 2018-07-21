@@ -225,6 +225,8 @@ public:
 		FILEK_Source,
 		FILEK_UnitTest,
 		FILEK_Library,
+		FILEK_StaticLibrary,
+		FILEK_DynamicLibrary,
 
 		FILEK_Max,
 		FILEK_Min = 0,
@@ -306,6 +308,30 @@ public:
 	GLOBMOD							m_globmod;
 };
 
+
+class CFileSearch // tag = filser
+{
+public:
+	struct SFile
+	{
+		const char *	m_pChzDirectory;
+		SFile *			m_pFileNext;
+	};
+					CFileSearch(EWC::CAlloc * pAlloc);
+					~CFileSearch();
+
+	void			AddDirectory(const char * pChzDir);
+
+	SFile *			PFileFind(const char * pChzFileAndExt);	// filename with extension
+	void			AddFile(const char * pChzFilenameFull, const char * pChzDir);
+
+
+	EWC::CAlloc *			m_pAlloc;
+	EWC::CDynAry<SFile *>	m_aryPFile;
+	EWC::CHash<HV, int>		m_hashHvIFile;
+
+};
+
 void BeginWorkspace(CWorkspace * pWork);
 void BeginParse(CWorkspace * pWork, SLexer * pLex, const char * pCozIn, const char * pCozFilename = nullptr);
 void EndParse(CWorkspace * pWork, SLexer * pLex);
@@ -317,6 +343,7 @@ const char * PCozSkipUnicodeBOM(const char * pCozFile);
 
 void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s32 * piLine, s32 * piCodepoint);
 size_t CChConstructFilename(const char * pChzFilenameIn, const char * pChzExtension, char * pChzFilenameOut, size_t cChOutMax);
+void SplitFilename(const char * pChzFilename, size_t * piBFile, size_t * piBExtension, size_t * piBEnd);
 
 void PerformTypeCheck(
 	EWC::CAlloc * pAlloc,

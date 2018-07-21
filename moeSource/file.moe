@@ -1,4 +1,5 @@
-#foreign_library "kernel32"
+#static_library "kernel32"
+#dynamic_library "kernel32"
 #import "Basic"
 
 kCBFilePathMax :: 1024

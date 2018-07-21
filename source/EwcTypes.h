@@ -555,6 +555,7 @@ enum BK // block kind
 	BK_ReflectTable,
 	BK_UnitTest,
 	BK_Linker,
+	BK_FileSearch,
 	BK_ByteCode,
 	BK_ByteCodeCreator,
 	BK_ByteCodeTest,
@@ -581,6 +582,8 @@ extern void STBM_CALLBACK EwcSystemFree(void * pUserContext, void *p);
 #else
 	inline size_t CBAllocationPrefix() { return 0; }
 #endif
+
+//#define EWC_USE_SYS_HEAP
 
 class CAllocTracker;
 class CAlloc // tag=alloc
@@ -646,6 +649,12 @@ public:
 							{
 								size_t cBPrefix = CBAllocationPrefix();
 								size_t alignOffset = ((cBAlign > cBPrefix) & (cBPrefix > 0)) ? cBAlign - cBPrefix : 0;
+
+#ifdef EWC_USE_SYS_HEAP
+								size_t cBActual = cB + cBPrefix;
+								void *pV = malloc(cBActual);							
+
+#else
 								EWC_ASSERT(m_pStbheap, "Trying to allocate from a NULL heap");
 								void * pV = stbm_alloc_align_fileline(
 											nullptr, 
@@ -658,6 +667,7 @@ public:
 											cLine);
 
 								size_t cBActual = stbm_get_allocation_size(pV);
+#endif
 								
 								// BB - We're letting the compiler overflow into system malloc, this is ok - we just
 								//  need to change the CAlloc interface from CBFree to CBAllocated.
@@ -667,13 +677,15 @@ public:
 								m_cBFree -= cBActual;
 
 								void * pVAdjust = ((char *)pV) + cBPrefix;
-								HV * pHv = (HV *)pV;
-								*pHv = 0;
 
 								uintptr_t nAlignMask = cBAlign - 1;
 								EWC_ASSERT(((uintptr_t)pVAdjust & nAlignMask) == 0, "bad alignment calculation");
 
 #ifdef EWC_TRACK_ALLOCATION
+								EWC_ASSERT(cBActual > sizeof(HV), "overflowing allocation");
+								HV * pHv = (HV *)pV;
+								*pHv = 0;
+
 								if (m_pAltrac)
 									TrackAlloc(cBActual, pChzFile, cLine, bk, pHv);
 #endif
@@ -687,17 +699,21 @@ public:
 								EWC_ASSERT(m_pStbheap, "Trying to free to a NULL heap");
 
 								pV = ((char *)pV) - CBAllocationPrefix();
+								
+#ifdef EWC_USE_SYS_HEAP
+								free(pV);
+#else
 								size_t cB = stbm_get_allocation_size(pV);
+								stbm_free(nullptr, m_pStbheap, pV);
 
 #ifdef EWC_TRACK_ALLOCATION
 								HV * pHv = (HV *)pV;
 								if (m_pAltrac)
 									TrackFree(cB, pHv);
 #endif
-								
-								stbm_free(nullptr, m_pStbheap, pV);
 
 								m_cBFree += cB;
+#endif
 							}
 
 	template <typename T> 

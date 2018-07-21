@@ -1,3 +1,4 @@
+
 test BytecodeUnaryOp
 	prereq "n : ?type = ?val"
 	input "n2 := ?op n"
@@ -275,6 +276,25 @@ test EnumStaticArrays
 			?rhs("values[1]") + ?res(1),
 			?rhs("values[2]") + ?res(2)
 	}
+
+test EnumFlagRValue
+	prereq "FBIT flag_enum { A, B, C}; fbit: FBIT = ?init; pFbit := &fbit; f: bool"
+	input "f = ?lhs.?rhs"
+	bytecode "{FBIT(0x5);&FBIT(0x5);?res;}"
+	{
+		?init("cast(FBIT) 5") + ?lhs(fbit) + ?rhs(A|C) + ?res(true),
+		?init("cast(FBIT) 5") + ?lhs(fbit) + ?rhs(B) + ?res(false),
+		?init("cast(FBIT) 5") + ?lhs(pFbit) + ?rhs(A|C) + ?res(true),
+		?init("cast(FBIT) 5") + ?lhs(pFbit) + ?rhs(B) + ?res(false)
+	}
+
+test BoolCmpAsRValue
+	prereq "n:= 99; f: bool"
+	input "f = n > 100"
+	bytecode "{99;false;}"
+	{
+	}
+
 	// To Test:
 	// To Test:
 	// [ ] fdir.m_top should be a boolean value as an rvalue or a lvalue

@@ -3549,21 +3549,33 @@ bool FParseImportDirectives(CWorkspace * pWork, SLexer * pLex)
 	{
 		RWORD rword = RwordLookup(pLex);
 
-		if ((rword == RWORD_ImportDirective) | (rword == RWORD_ForeignLibraryDirective))
+		if ((rword == RWORD_ImportDirective) | (rword == RWORD_ForeignLibraryDirective) |
+			(rword == RWORD_StaticLibraryDirective) | (rword == RWORD_DynamicLibraryDirective))
 		{
 			TokNext(pLex);
 			if (pLex->m_tok == TOK_Literal && pLex->m_litk == LITK_String)
 			{
-				if (rword == RWORD_ImportDirective)
+				switch(rword)
 				{
-					char aChFilename[CWorkspace::s_cBFilenameMax];
-					(void)CChConstructFilename(pLex->m_str.PCoz(), CWorkspace::s_pCozSourceExtension, aChFilename, EWC_DIM(aChFilename));
-					(void)pWork->PFileEnsure(aChFilename, CWorkspace::FILEK_Source);
-				}
-				else if (EWC_FVERIFY(rword == RWORD_ForeignLibraryDirective, "unknown directive"))
-				{
+				case RWORD_ImportDirective:
+					{
+						char aChFilename[CWorkspace::s_cBFilenameMax];
+						(void)CChConstructFilename(pLex->m_str.PCoz(), CWorkspace::s_pCozSourceExtension, aChFilename, EWC_DIM(aChFilename));
+						(void)pWork->PFileEnsure(aChFilename, CWorkspace::FILEK_Source);
+					} break;
+				case RWORD_ForeignLibraryDirective:
 					(void) pWork->PFileEnsure(pLex->m_str.PCoz(), CWorkspace::FILEK_Library);
+					break;
+				case RWORD_StaticLibraryDirective:
+					(void) pWork->PFileEnsure(pLex->m_str.PCoz(), CWorkspace::FILEK_StaticLibrary);
+					break;
+				case RWORD_DynamicLibraryDirective:
+					(void) pWork->PFileEnsure(pLex->m_str.PCoz(), CWorkspace::FILEK_DynamicLibrary);
+					break;
+				default:
+					EWC_ASSERT(false, "unknown import directive");		
 				}
+
 				TokNext(pLex);
 				return true;
 			}

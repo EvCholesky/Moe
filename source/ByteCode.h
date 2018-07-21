@@ -263,9 +263,11 @@ namespace BCode
 		void			Clear();
 		size_t			CB();
 		u8 *			PBFromIndex(s32 iB);
+		u8 *			PBFromGlobal(SConstant * pConstGlob);
+
 		u8 *			PBBakeCopy(EWC::CAlloc * pAlloc, SDataLayout * pDlay);
 		void			AllocateDataBlock(size_t cBMin);
-		void			AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB);
+		void			AllocateData(size_t cB, size_t cBAlign, u8 ** ppB, s64 * piB, const char * pChzLabel);
 
 		void			AddRelocatedPointer(SDataLayout * pDlay, s32 iBPointer, s32 iBTarget);
 		void			DeepCopy(SDataLayout * pDlay, STypeInfo * pTin, s32 iBDst, s32 iBSrc);
@@ -367,7 +369,7 @@ namespace BCode
 		Instruction *		PInstCreateStoreToIdx(SValue * pValPT, SValue * pValT, const char * pChzName = "");
 		SInstructionValue * PInstCreateStoreToReg(s32 dstIdx, SValue * pValSrc, const char * pChzName = "");
 
-		SValue *			PValCreateAlloca(LType * pLtype, u64 cElement, const char * pChzName = "");
+		SValue *			PValCreateAlloca(LType * pLtype, const char * pChzName = "");
 		Instruction *		PInstCreateMemset(SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);
 		Instruction *		PInstCreateMemcpy(u64 cB, SValue * pValLhs, SValue * pValRhsRef);
 		Instruction *		PInstCreateMemcpy(STypeInfo * pTin, SValue * pValLhs, SValue * pValRhsRef);
@@ -378,6 +380,7 @@ namespace BCode
 	 	GepIndex *			PGepIndexFromValue(SValue * pVal);
 
 		Global *			PGlobCreate(STypeInfo * pTin, const char * pChzName);
+		u8 *				PBAllocateGlobalWithPointer(size_t cB, size_t cBAlign, u8 ** ppBPointer, s64 * piBPointer, s64 * piBGlobal, const char * pChzLabel);
 		void				SetInitializer(SValue * pValGlob, SValue * pValInit);
 		void				SetGlobalInitializer(CWorkspace * pWork, SConstant * pGlob, STypeInfo * pTinGlob, STypeInfoLiteral * pTinlit, CSTNode * pStnodInit);
 		void				SetGlobalIsConstant(Global * pGlob, bool fIsConstant)
@@ -397,7 +400,7 @@ namespace BCode
 		Instruction *		PInstCreatePhi(LType * pLtype, const char * pChzName);
 		void				AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock);
 		Instruction *		PInstCreateSwitch(SValue * pVal, SBlock * pBlockElse, u32 cSwitchCase);
-		void				AddSwitchCase(Instruction * pInstSwitch, SValue * pValOn, SBlock * pBlock);
+		void				AddSwitchCase(Instruction * pInstSwitch, SValue * pValOn, SBlock * pBlock, int iInstCase);
 
 		SConstant *			PConstArg(s64 n, int cBit = 64, bool fIsSigned = true);
 		SRegister *			PReg(s64 n, int cBit = 64, bool fIsSigned = true);
@@ -452,10 +455,6 @@ namespace BCode
 
 		SProcedure *						m_pProcCur;
 		SBlock *							m_pBlockCur;
-
-		SInstructionValue *					m_pInstvalSwitch;	// latest switch instruction (for creating cases)
-		int									m_iInstCase;
-		int									m_cInstCase;
 	};
 
 

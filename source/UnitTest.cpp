@@ -463,7 +463,10 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 		EWC_ASSERT(pCozErridMax, "expected min and max together");
 		cBPostfix = (pCozMax - pCozErridMax);
 	}
-	EWC_ASSERT(cBPrefix + cBPostfix > 0, "no option string");
+	if (cBPrefix + cBPostfix <= 0)
+	{
+		ParseError(pTesctx, pLex, "expected option string");
+	}
 	char * pCozOption = (char*)pTesctx->m_pAlloc->EWC_ALLOC(cBPrefix + cBPostfix+1, EWC_ALIGN_OF(char));
 
 	if (cBPrefix)
