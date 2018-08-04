@@ -125,7 +125,7 @@ struct OpSignature // tag = opsig
 						/* Ret(cBStack+cBArg) -> regRet */ \
 		OPMX(Terminal,	Ret)		OPSIZE(4, 4, 0) \
 		\
-						/* Call(pProcNew, cBReturn) -> regRet */ \
+						/* Call(pProcNew|pFnForeign, pProcsig) -> regRet */ \
 						/*  variadic: ExArgs(cArgVariadic, cBVariadic) */ \
 		OPMN(JumpOp,	Call)		OPSIZE(Ptr, Ptr, CB) \
 						/* CondBranch(fPred, {iInstT,iInstF}) */ \
@@ -488,7 +488,7 @@ public:
 	void				ComputeDataLayout(SDataLayout * pDlay);
 
 	CIRProcedure *		PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod); 
-	CIRProcedure *		PProcCreate(
+	CIRValue *			PValCreateProc(
 							CWorkspace * pWork,
 							STypeInfoProcedure * pTinproc,
 							const EWC::CString & strMangled,

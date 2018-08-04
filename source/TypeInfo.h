@@ -274,9 +274,11 @@ enum FTINPROC
 	FTINPROC_HasBakedValueArgs	= 0x4,
 	FTINPROC_IsCommutative		= 0x8,
 	FTINPROC_Initializer		= 0x10,
+	FTINPROC_IsForeign			= 0x20,		// foreign procedures are part of a function signature, so bytecode functions 
+											//  can return a pointer to a native routine.
 
 	FTINPROC_None				= 0x0,
-	FTINPROC_All				= 0x1F,
+	FTINPROC_All				= 0x3F,
 	FTINPROC_HasGenericArgs		= FTINPROC_HasBakedTypeArgs | FTINPROC_HasBakedValueArgs,
 };
 EWC_DEFINE_GRF(GRFTINPROC, FTINPROC, u8);
@@ -299,6 +301,8 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 
 	bool				FHasVarArgs() const
 							{ return m_grftinproc.FIsSet(FTINPROC_HasVarArgs); }
+	bool				FIsForeign() const
+							{ return m_grftinproc.FIsSet(FTINPROC_IsForeign); }
 	bool				FHasGenericArgs() const
 							{ return m_grftinproc.FIsAnySet(FTINPROC_HasGenericArgs); }
 

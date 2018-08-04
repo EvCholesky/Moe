@@ -85,7 +85,7 @@ template <typename BUILD>
 typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod, VALGENK valgenk);
 
 template <typename BUILD>
-typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod);
+typename BUILD::Value * PValCodegenPrototype(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod);
 
 struct SReflectGlobalTable;
 extern bool FIsDirectCall(CSTNode * pStnodCall);
@@ -400,7 +400,7 @@ static unsigned CParamFromProc(CIRProcedure * pProc)
 
 static unsigned CParamFromProc(BCode::SProcedure * pProc)
 {
-	return (unsigned)pProc->m_pTinproc->m_arypTinParams.C();
+	return (unsigned)pProc->m_pProcsig->m_pTinproc->m_arypTinParams.C();
 }
 
 static inline bool FIsError(CIRInstruction * pInst)
@@ -466,6 +466,34 @@ CIRProcedure::~CIRProcedure()
 		m_pAlloc->EWC_DELETE(m_arypBlockManaged[ipBlock]);
 	}
 	m_arypBlockManaged.Clear();
+}
+
+static inline bool FIsProcedure(CIRValue * pVal) 
+{
+	return pVal->m_valk == VALK_Procedure;
+}
+
+static inline bool FIsProcedure(BCode::SValue * pVal) 
+{
+	switch (pVal->m_valk)
+	{
+	case VALK_Procedure:
+			return true;
+		case VALK_Constant:
+		{
+			auto pConst = (BCode::SConstant *)pVal;
+			if (EWC_FVERIFY(pConst->m_pTin, "expected value to have type") && pConst->m_pTin->m_tink == TINK_Procedure)
+			{
+				auto pTinproc = (STypeInfoProcedure *)pConst->m_pTin;
+				EWC_ASSERT(pTinproc->FIsForeign(), "non-foreign proc stored as pointer(?)")
+				return true;
+			}
+		} break; 
+		default:
+			break;
+	}
+
+	return false;
 }
 
 
@@ -878,13 +906,11 @@ void CalculateSizeAndAlign(BCode::CBuilder * pBuild, BCode::CBuilder::LType * pT
 }
 
 template <typename BUILD>
-typename BUILD::Proc * PProcTryEnsure(CWorkspace * pWork, BUILD * pBuild, SSymbol * pSym)
+typename BUILD::Value * PValTryEnsureProc(CWorkspace * pWork, BUILD * pBuild, SSymbol * pSym)
 {
 	auto pVal = pBuild->PValFromSymbol(pSym);
-	if (pVal && EWC_FVERIFY(pVal->m_valk == VALK_Procedure, "symbol is not procedure definition"))
-	{
-		return (BUILD::Proc *)pVal;
-	}
+	if (pVal)
+		return pVal;
 
 	// this happens when calling a method that is defined later
 	CSTNode * pStnodProc = pSym->m_pStnodDefinition;
@@ -892,15 +918,11 @@ typename BUILD::Proc * PProcTryEnsure(CWorkspace * pWork, BUILD * pBuild, SSymbo
 	auto pLvalParentScope = PLvalParentScopeForProcedure(pWork, pBuild, pStnodProc, pDif);
 
 	PushDIScope(pDif, pLvalParentScope);
-	(void) PProcCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
+	(void) PValCodegenPrototype(pWork, pBuild, pSym->m_pStnodDefinition);
 	PopDIScope(pDif, pLvalParentScope);
 
 	pVal = pBuild->PValFromSymbol(pSym);
-	if (pVal && EWC_FVERIFY(pVal->m_valk == VALK_Procedure, "symbol is not procedure definition"))
-	{
-		return (BUILD::Proc *)pVal;
-	}
-	return nullptr;
+	return pVal;
 }
 
 LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CBuilderIR * pBuild, CSTNode * pStnodProc, SDIFile * pDif)
@@ -912,7 +934,7 @@ LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CBuilderIR * 
 		auto pSymParentScope = pStproc->m_pStnodParentScope->m_pSym;
 		if (EWC_FVERIFY(pSymParentScope, "expected symbol to be set during type check"))
 		{
-			pProc = (CIRProcedure *)PProcTryEnsure<CBuilderIR>(pWork, pBuild, pSymParentScope);
+			pProc = (CIRProcedure *)PValTryEnsureProc<CBuilderIR>(pWork, pBuild, pSymParentScope);
 
 			if (!EWC_FVERIFY(pProc && pProc->m_valk == VALK_Procedure, "expected IR procedure"))
 				pProc = nullptr;
@@ -4816,7 +4838,7 @@ CIRValue * CBuilderIR::PValGenerateCall(
 
 		EWC_ASSERT(pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused '%s'", pTinproc->m_strName.PCoz());
 
-		PProcTryEnsure(pWork, this, pSym);
+		(void)PValTryEnsureProc(pWork, this, pSym);
 
 		pValSym = PValFromSymbol(pSym);
 		if (!pValSym)
@@ -4897,19 +4919,13 @@ BCode::SValue * BCode::CBuilder::PValGenerateCall(
 
 		EWC_ASSERT(pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused %p %s", pSym, pSym->m_strName.PCoz());
 
-		PProcTryEnsure(pWork, this, pSym);
+		pValProc = PValTryEnsureProc(pWork, this, pSym);
 
 		if (pTinproc->m_arypTinParams.C() != parypValArgs->C())
 		{
 			if (!EWC_FVERIFY(pTinproc->FHasVarArgs(), "unexpected number of arguments"))
 				return nullptr;
 		}
-
-		auto pProc = (BCode::SProcedure *)PValFromSymbol(pSym);
-		if (!EWC_FVERIFY(pProc, "missing proc codegen"))
-			return nullptr;
-
-		pValProc = PConstPointer(pProc);
 	}
 	else
 	{
@@ -5118,38 +5134,30 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			if (!EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check, (implicit function?)"))
 				return nullptr;
 
-			/*
-			if (EWC_FVERIFY(pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Procedure, "expected tinproc"))
+			auto pValProc = pBuild->PValFromSymbol(pStnod->m_pSym);
+			if (!pValProc)
 			{
-				auto pTinproc = (STypeInfoProcedure *)pStnod->m_pTin;
-				if (pTinproc->m_fHasGenericArgs)
-					return nullptr;
-			}*/
-
-			BUILD::Proc * pProc = nullptr;
-			auto pValSym = pBuild->PValFromSymbol(pStnod->m_pSym);
-			if (!pValSym)
-			{
-				pProc = PProcCodegenPrototype<BUILD>(pWork, pBuild, pStnod);
-			}
-			else
-			{
-				pProc = (BUILD::Proc *)pValSym;
-				if (!EWC_FVERIFY(pProc->m_valk == VALK_Procedure, "expected IR procedure"))
-					return nullptr;
+				pValProc = PValCodegenPrototype<BUILD>(pWork, pBuild, pStnod);
 			}
 
+			
 			CSTNode * pStnodBody = nullptr;
 			auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
-			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign) && 
-				EWC_FVERIFY(pStproc && pProc->m_pBlockFirst, "Encountered procedure without CSTProcedure"))
-			{
-				pStnodBody = pStnod->PStnodChildSafe(pStproc->m_iStnodBody);
-			}
+			auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 
-			if (pProc && pStnodBody)
+			if (pValProc && pValProc->m_valk == VALK_Procedure && !pTinproc->FIsForeign())
 			{
-				GenerateMethodBody(pWork, pBuild, pProc, &pStnodBody, 1, false);
+				auto pProc = (BUILD::Proc *)pValProc;
+				if (EWC_FVERIFY(pTinproc, "procedure missing tinproc") &&
+					EWC_FVERIFY(pStproc && pProc->m_pBlockFirst, "Encountered procedure without CSTProcedure"))
+				{
+					pStnodBody = pStnod->PStnodChildSafe(pStproc->m_iStnodBody);
+				}
+
+				if (pStnodBody)
+				{
+					GenerateMethodBody(pWork, pBuild, pProc, &pStnodBody, 1, false);
+				}
 			}
 		} break;
 	case PARK_List:
@@ -5653,10 +5661,11 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			if (!EWC_FVERIFY(pVal, "unknown identifier in codegen"))
 				return nullptr;
 
-			auto valgenkSym = (pVal->m_valk == VALK_Procedure) ? VALGENK_Instance : VALGENK_Reference;
+			bool fIsProcedureRef = FIsProcedure(pVal);
+			auto valgenkSym = fIsProcedureRef ? VALGENK_Instance : VALGENK_Reference;
 			if (valgenk == VALGENK_Instance)
 			{
-				if (pVal->m_valk != VALK_Procedure)
+				if (!fIsProcedureRef)
 				{
 					auto strPunyName = StrPunyEncode(pStnod->m_pSym->m_strName.PCoz());
 					return pBuild->PInstCreate(IROP_Load, pVal, strPunyName.PCoz());
@@ -6526,7 +6535,7 @@ CIRProcedure * CBuilderIR::PProcCreateImplicit(CWorkspace * pWork, STypeInfoProc
 	return pProc;
 }
 
-CIRProcedure * CBuilderIR::PProcCreate(
+CIRValue * CBuilderIR::PValCreateProc(
 	CWorkspace * pWork,
 	STypeInfoProcedure * pTinproc,
 	const CString & strMangled,
@@ -6547,7 +6556,8 @@ CIRProcedure * CBuilderIR::PProcCreate(
 	if (!EWC_FVERIFY(pStproc, "expected stproc"))
 		return nullptr;
 
-	if (!pStproc->m_grfstproc.FIsAnySet(FSTPROC_IsForeign | FSTPROC_UseUnmangledName | FSTPROC_PublicLinkage))
+	if (!pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign) &&
+		!pStproc->m_grfstproc.FIsAnySet(FSTPROC_UseUnmangledName | FSTPROC_PublicLinkage))
 	{
 		LLVMSetLinkage(pProc->m_pLval, LLVMPrivateLinkage);
 	}
@@ -6578,7 +6588,7 @@ CIRProcedure * CBuilderIR::PProcCreate(
 		//LLVMAddFunctionAttr(pProc->m_pLval, LLVMNoInlineAttribute);	
 	}
 
-	if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+	if (!pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 	{
 		pProc->m_pBlockLocals = PBlockCreate(pProc, strMangled.PCoz());
 		pProc->m_pBlockFirst = PBlockCreate(pProc, strMangled.PCoz());
@@ -6654,10 +6664,11 @@ void CBuilderIR::SetupParamBlock(
 			LLVMSetValueName(pLvalParam, strArgName.PCoz());
 
 			CIRArgument * pArg = EWC_NEW(pAlloc, CIRArgument) CIRArgument();
-			pArg->m_pLval = pLvalParam;
 			AddManagedVal(pArg);
+			pArg->m_pLval = pLvalParam;
 
-			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+			auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
+			if (EWC_FVERIFY(pTinproc, "expected procedure type") && !pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 			{
 				auto pInstAlloca = PValCreateAlloca((*parypLtype)[ipLvalParam], strArgName.PCoz());
 				SetSymbolValue(pStnodParam->m_pSym, pInstAlloca);
@@ -6699,7 +6710,7 @@ void CBuilderIR::SetupParamBlock(
 }
 
 template <typename BUILD>
-typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod)
+typename BUILD::Value * PValCodegenPrototype(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod)
 {
 	auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 
@@ -6765,7 +6776,7 @@ typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 	EWC_ASSERT(pTinproc->m_strMangled.PCoz(), "missing procedure mangled name in tinproc '%s', pStnod = %p", pTinproc->m_strName.PCoz(), pStnod);
 	CString strMangled = pTinproc->m_strMangled;
 
-	if (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+	if (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 	{
 		if (pStnodAlias)
 		{
@@ -6780,18 +6791,22 @@ typename BUILD::Proc * PProcCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 	}
 
 	VerifyAscii(strMangled);
-	auto pProc = pBuild->PProcCreate(pWork, pTinproc, strMangled, pStnod, pStnodBody, &arypLtype, pLtypeReturn);
+	auto pValProc = pBuild->PValCreateProc(pWork, pTinproc, strMangled, pStnod, pStnodBody, &arypLtype, pLtypeReturn);
 	auto pBlockPrev = pBuild->m_pBlockCur;
 	auto pProcPrev = pBuild->m_pProcCur;
 
-	pBuild->ActivateProc(pProc, (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign)) ? pBlockPrev : pProc->m_pBlockLocals);
-	if (pStnodParamList)
+	if (pValProc->m_valk == VALK_Procedure && !pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 	{
-		pBuild->SetupParamBlock(pWork, pProc, pStnod, pStnodParamList, &arypLtype);
+		auto pProc = (BUILD::Proc *)pValProc;
+		pBuild->ActivateProc(pProc, (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign)) ? pBlockPrev : pProc->m_pBlockLocals);
+		if (pStnodParamList)
+		{
+			pBuild->SetupParamBlock(pWork, pProc, pStnod, pStnodParamList, &arypLtype);
+		}
+		pBuild->ActivateProc(pProcPrev, pBlockPrev);
 	}
-	pBuild->ActivateProc(pProcPrev, pBlockPrev);
 
-	return pProc;
+	return pValProc;
 }
 
 enum CGEPK // Code Generation Entry Point Kind
@@ -6876,7 +6891,8 @@ void CodeGenEntryPoints(
 			if (pStnod->m_park == PARK_ProcedureDefinition)
 			{
 				auto pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
-				if (!EWC_FVERIFY(pVal && pVal->m_valk, "Expected procedure"))
+				auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
+				if (!EWC_FVERIFY(pVal && (pTinproc->FIsForeign() || pVal->m_valk == VALK_Procedure), "Expected procedure"))
 					return;
 
 				//pEntry->m_pProc = pProc;

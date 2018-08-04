@@ -47,8 +47,6 @@ SStartupInfo struct
     m_hStdError : HANDLE
 }
 
-// (JBlow) For some reason in Windows sinf and cosf don't have linkage, probably because
-// they always get turned into intrinsics? So I made my own..
 cos  proc (theta: float) -> float #foreign cosf_MOE 
 sin  proc (theta: float) -> float #foreign sinf_MOE
 sqrt proc (theta: float) -> float #foreign sqrtf_MOE
@@ -71,6 +69,10 @@ PVMalloc proc (cB : uSize) -> & void #foreign
 FreeMalloc proc (pV: &void) #foreign
 PVVirtualMalloc proc(pV: & void, cB: sSize, nAllocationType: u32, nProtect: u32) -> & void #foreign
 VirtualFreeMalloc proc (pV: & void, cB: sSize, nFreeType: u32) #foreign
+
+PFnBasicProc typedef () -> int #foreign
+PFnReturnProc proc () -> PFnBasicProc #foreign
+SimpleReturn proc () -> s32 #foreign
 
 ProcAlloc typedef (allock: ALLOCK, cB: uSize, cBPrev: uSize, pVPrev: & void, pVAllocator: & void, options: s64) -> & void
 

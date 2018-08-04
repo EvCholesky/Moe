@@ -374,6 +374,11 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 				AppendCoz(&m_strbuf, "VA");
 			}
 
+			if (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
+			{
+				AppendCoz(&m_strbuf, "FF");
+			}
+
 			size_t ipTinMax = pTinproc->m_arypTinParams.C();
 			for (size_t ipTin = 0; ipTin < ipTinMax; ++ipTin)
 			{
@@ -690,6 +695,7 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 			return nullptr;
 
 		bool fHasVarArgs = FMatchString("VA", ppCoz);
+		bool fIsForeign = FMatchString("FF", ppCoz);
 		EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc, EWC::BK_Stack);
 		EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc, EWC::BK_Stack);
 
@@ -709,6 +715,7 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 
 		auto pTinproc = PTinprocAlloc(pSymtab, arypTinParams.C(), arypTinReturns.C(), "");
 		pTinproc->m_grftinproc.AssignFlags(FTINPROC_HasVarArgs, fHasVarArgs);
+		pTinproc->m_grftinproc.AssignFlags(FTINPROC_IsForeign, fIsForeign);
 
 		size_t cpTin = arypTinParams.C();
 		for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
@@ -783,6 +790,7 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 		return nullptr;
 
 	bool fHasVarArgs = FMatchString("VA", &pCoz);
+	bool fIsForeign = FMatchString("FF", &pCoz);
 	EWC::CDynAry<STypeInfo *> arypTinParams(pSymtab->m_pAlloc, EWC::BK_Stack);
 	EWC::CDynAry<STypeInfo *> arypTinReturns(pSymtab->m_pAlloc, EWC::BK_Stack);
 
@@ -802,6 +810,7 @@ STypeInfoProcedure * CNameMangler::PTinprocDemangle(const CString & strName, CSy
 
 	auto pTinproc = PTinprocAlloc(pSymtab, arypTinParams.C(), arypTinReturns.C(), strProcName.PCoz());
 	pTinproc->m_grftinproc.AssignFlags(FTINPROC_HasVarArgs, fHasVarArgs);
+	pTinproc->m_grftinproc.AssignFlags(FTINPROC_IsForeign, fIsForeign);
 
 	size_t cpTin = arypTinParams.C();
 	for (size_t ipTin = 0; ipTin < cpTin; ++ipTin)
@@ -4997,7 +5006,8 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	if (!EWC_FVERIFY(pStprocSrc, "expected procedure def"))
 		return nullptr;
 
-	if (pStprocSrc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+	auto pTinprocSrc = PTinDerivedCast<STypeInfoProcedure *>(pStnodGeneric->m_pTin);
+	if (pTinprocSrc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 	{
 		EmitError(pTcwork, pStnodGeneric, "generic procedures cannot be marked foreign '%s'", pStnodGeneric->m_pTin->m_strName.PCoz());
 		return nullptr;
@@ -5096,8 +5106,6 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	}
 
 	// build pTinproc for the instantiated procedure
-
-	auto pTinprocSrc = PTinDerivedCast<STypeInfoProcedure *>(pStnodGeneric->m_pTin);
 
 	auto pTinNew = 	PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, pTinprocSrc, pGenmap, ERREP_ReportErrors);
 	auto pTinprocNew = PTinDerivedCast<STypeInfoProcedure *>(pTinNew);

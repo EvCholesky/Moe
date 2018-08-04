@@ -1488,7 +1488,8 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 				{
 				case RWORD_ForeignDirective:
 					{
-						pStproc->m_grfstproc.AddFlags(FSTPROC_IsForeign | FSTPROC_UseUnmangledName);
+						pStproc->m_grfstproc.AddFlags(FSTPROC_UseUnmangledName);
+						pTinproc->m_grftinproc.AddFlags(FTINPROC_IsForeign);
 
 						if (!FIsEndOfStatement(pLex) && pLex->m_tok == TOK_Identifier)
 						{
@@ -2494,7 +2495,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				INLINEK inlinek = INLINEK_Nil;
 				CALLCONV callconv = CALLCONV_Nil;
-				bool fIsCommutative = false;
+				GRFTINPROC grftinproc;
 				pStproc->m_iStnodBody = -1;
 				if (pLex->m_tok == TOK_ReservedWord)
 				{
@@ -2506,7 +2507,8 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 						{
 						case RWORD_ForeignDirective:
 							{
-								pStproc->m_grfstproc.AddFlags(FSTPROC_IsForeign | FSTPROC_UseUnmangledName);
+								pStproc->m_grfstproc.AddFlags(FSTPROC_UseUnmangledName);
+								grftinproc.AddFlags(FTINPROC_IsForeign);
 
 								if (!FIsEndOfStatement(pLex) && pLex->m_tok == TOK_Identifier)
 								{
@@ -2526,7 +2528,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 							{
 								if (rword == RWORD_Operator)
 								{
-									fIsCommutative = true;	
+									grftinproc.AddFlags(FTINPROC_IsCommutative);
 								}
 								else
 								{
@@ -2560,7 +2562,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					pStproc->m_iStnodBody = pStnodProc->IAppendChild(pStnodBody);
 				}
 
-				if (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+				if (grftinproc.FIsSet(FTINPROC_IsForeign))
 				{
 					if (pStproc->m_iStnodBody != -1)
 					{
@@ -2590,16 +2592,17 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					pTinproc->m_mpIptinGrfparmq[0].AddFlags(FPARMQ_ImplicitRef);
 				}
 
-				if (fIsCommutative)
+
+				if (grftinproc.FIsSet(FTINPROC_IsCommutative))
 				{
 					if (cStnodParams != 2)
 					{
 						ParseError(pParctx, pLex, "Only operators with two arguments can be commutative ('%s' has %d)", strName.PCoz(), cStnodParams);
-						fIsCommutative = false;
+						grftinproc.Clear(FTINPROC_IsCommutative);
 					}
-					pTinproc->m_grftinproc.AssignFlags(FTINPROC_IsCommutative, fIsCommutative);
 				}
 
+				pTinproc->m_grftinproc = grftinproc;
 				pTinproc->m_pStnodDefinition = pStnodProc;
 				pTinproc->m_callconv = callconv;
 				pTinproc->m_inlinek = inlinek;
@@ -4310,6 +4313,11 @@ void AppendTypeDescriptor(STypeInfo * pTin, SStringEditBuffer * pSeb)
 			}
 			pSeb->AppendCoz(")");
 
+			if (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
+			{
+				pSeb->AppendCoz("#foreign");
+			}
+
 			if (pTinproc->m_inlinek != INLINEK_Nil)
 			{
 				pSeb->AppendCoz(PChzFromInlinek(pTinproc->m_inlinek));
@@ -4776,6 +4784,12 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			{
 				PrintTypeInfo(pStrbuf, pTinproc->m_arypTinReturns[ipTin], PARK_Nil, grfdbgstr);
 			}
+
+			if (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
+			{
+				AppendCoz(pStrbuf, " #foreign");
+			}
+
 			return;
 		}
     case TINK_Struct:

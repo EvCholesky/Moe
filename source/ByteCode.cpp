@@ -38,7 +38,9 @@
 // [x] Returning large arguments (hidden reference args)
 
 
+//#define EWC_TRACE_FOREIGN_SYMBOLS 
 //#define EWC_TRACE_GLOBAL
+//3660gg#define EWC_TRACE_RETURN_STACK
 
 // Stack layout (grows down)
 //	4 |___null____________________| +
@@ -47,10 +49,10 @@
 //	1 |___Local var_______________| | 
 //	0 |___Local var_______________|_v_	iBStack(0) for main                                 ___
 //	  |.................. pad arg.|						                                     ^
-// a3 |___return__________________| |	iBStack for return storage in main stack frame       |   pProc->m_cBArg
-// a2 |___arg 1___________________| |                                                        |
-// a1 |___arg 0___________________| | 														 | 
-// a0 |___pProcCall ______________|_v_	Address of SProcedure of the calling proc			 |
+// a4 |___return__________________| |	iBStack for return storage in main stack frame       |   pProc->m_cBArg
+// a3 |___arg 1___________________| |                                                        |
+// a2 |___arg 0___________________| | 														 | 
+// a1 |___pProcCall ______________|_v_	Address of SProcedure of the calling proc			 |
 // a0 |___pInstCall ______________|_v_	Address of call instruction from calling proc       _v_
 //	  |.................. pad ....|                                                          ^
 //	3 |___________________________| +                                                        |   pProc->m_cBStack
@@ -67,12 +69,12 @@
 //	1 |___Local var_______________| | 
 //	0 |___Local var_______________|_v_	iBStack(0) for main                                 ___
 //	  |.................. pad arg.|	|					                                     ^   cBArgVariadic
-// a5 |___SBoxedArg 2 ____________| |                                                        |
+// a6 |___SBoxedArg 2 ____________| |                                                        |
 // a5 |___SBoxedArg 1 ____________| |                                                       _v_
-// a3 |___return__________________| |	iBStack for return storage in main stack frame       ^   pProc->m_cBArg
-// a2 |___arg 1___________________| |                                                        |
-// a1 |___arg 0___________________| |                                                        |
-// a0 |___pProcCall ______________|_v_	Address of SProcedure of the calling proc			 |
+// a4 |___return__________________| |	iBStack for return storage in main stack frame       ^   pProc->m_cBArg
+// a3 |___arg 1___________________| |                                                        |
+// a2 |___arg 0___________________| |                                                        |
+// a1 |___pProcCall ______________|_v_	Address of SProcedure of the calling proc			 |
 // a0 |___pInstCall_______________|_v_	Address of call instruction from calling proc       _v_
 //	  |.................. pad ....|                                                          ^
 //	3 |___________________________| +                                                        |   pProc->m_cBStack
@@ -221,7 +223,6 @@ inline bool FUseLargeOperand(IROP irop)
 
 	switch (irop)
 	{
-	case IROP_Call:
 	case IROP_Store:
 	case IROP_Load:
 	case IROP_StoreToIdx:
@@ -238,6 +239,11 @@ static inline s32 CBOperand(const SInstruction * pInst)
 	if (FUseLargeOperand(pInst->m_irop))
 	{
 		return pInst->m_wordRhs.m_s32;
+	}
+	if (pInst->m_irop == IROP_Call)
+	{
+		auto pProcsig = (SProcedureSignature*)pInst->m_wordRhs.m_pV;
+		return pProcsig->m_cBArgReturn;
 	}
 	return pInst->m_cBRegister;
 }
@@ -318,20 +324,20 @@ T PValDerivedCast(SValue * pVal)
 	return (T)pVal;
 }
 
-SProcedureSignature::SProcedureSignature()
+SProcedureSignature::SProcedureSignature(STypeInfoProcedure * pTinproc)
 :m_sIBStackVariadic(-1)
+,m_cBArgReturn(0)
 ,m_cBArgNamed(0)
+,m_pTinproc(pTinproc)
 ,m_aParamArg(nullptr)
 ,m_aParamRet(nullptr)
 {
 
 }
 
-SProcedure::SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure * pTinproc)
+SProcedure::SProcedure(EWC::CAlloc * pAlloc)
 :SValue(VALK_Procedure)
-,m_pTinproc(pTinproc)
 ,m_pProcsig(nullptr)
-,m_pFnForeign(nullptr)
 ,m_cBStack(0)
 ,m_pBlockLocals(nullptr)
 ,m_pBlockFirst(nullptr)
@@ -422,7 +428,7 @@ static inline s64 IBArgAlloc(s64 * pcBArg, s64 cB, s64 cBAlign)
 
 SProcedure * CBuilder::PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod)
 {
-	auto pProc = EWC_NEW(m_pAlloc, SProcedure) SProcedure(m_pAlloc, pTinproc);
+	auto pProc = EWC_NEW(m_pAlloc, SProcedure) SProcedure(m_pAlloc);
 	pProc->m_pProcsig = PProcsigEnsure(pTinproc);
 	AddManagedVal(pProc);
 
@@ -436,7 +442,7 @@ SProcedure * CBuilder::PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedur
 	return pProc;
 }
 
-SProcedure * CBuilder::PProcCreate(
+SValue * CBuilder::PValCreateProc(
 	CWorkspace * pWork,
 	STypeInfoProcedure * pTinproc,
 	const EWC::CString & strMangled,
@@ -445,14 +451,8 @@ SProcedure * CBuilder::PProcCreate(
 	EWC::CDynAry<LType *> * parypLtype,
 	LType * pLtypeReturn)
 {
-	bool fHasVarArgs = pTinproc->m_grftinproc.FIsSet(FTINPROC_HasVarArgs);
-	auto pProc = PProcCreateImplicit(pWork, pTinproc, pStnod);
-
-	auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
-	if (!EWC_FVERIFY(pStproc, "expected stproc"))
-		return nullptr;
-
-	if (pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+	SValue * pValReturn = nullptr;
+	if (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 	{
 		void ** ppFn = m_phashHvPFnForeign->Lookup(strMangled.Hv());
 		if (!ppFn)
@@ -461,16 +461,24 @@ SProcedure * CBuilder::PProcCreate(
 		}
 		else
 		{
-			pProc->m_pFnForeign = *ppFn;
+			pValReturn = PConstPointer(*ppFn, pTinproc);
 		}
 	}
+	else
+	{
+		pValReturn = PProcCreateImplicit(pWork, pTinproc, pStnod);
+	}
+
+	auto pStproc = PStmapDerivedCast<CSTProcedure *>(pStnod->m_pStmap);
+	if (!EWC_FVERIFY(pStproc, "expected stproc"))
+		return nullptr;
 
 	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
 	{
-		SetSymbolValue(pStnod->m_pSym, pProc);
+		SetSymbolValue(pStnod->m_pSym, pValReturn);
 	}
 
-	return pProc;
+	return pValReturn;
 }
 
 void CBuilder::SetupParamBlock(
@@ -485,7 +493,7 @@ void CBuilder::SetupParamBlock(
 	auto pProcsig = pProc->m_pProcsig;
 	int cpStnodParam = pStnodParamList->CStnodChild();
 
-	auto pTinproc = pProc->m_pTinproc;
+	auto pTinproc = pProcsig->m_pTinproc;
 	int iParam = 0;
 	for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
 	{
@@ -502,7 +510,7 @@ void CBuilder::SetupParamBlock(
 
 		if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
 		{
-			if (!pStproc->m_grfstproc.FIsSet(FSTPROC_IsForeign))
+			if (!pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 			{
 				auto pParam = &pProcsig->m_aParamArg[iParam];
 				auto cB = pParam->m_cB;
@@ -1017,7 +1025,7 @@ void CBuilder::PrintDump()
 		auto pProc = *ppProc;
 		auto pProcsig = pProc->m_pProcsig;
 		printf("%s()\t\t\t\t\tcBStack=%lld, cBGlobal=%lld, cBArg=%lld\n",
-			pProc->m_pTinproc->m_strName.PCoz(),
+			pProcsig->m_pTinproc->m_strName.PCoz(),
 			pProc->m_cBStack,
 			m_dataseg.CB(),
 			pProcsig->m_cBArgNamed);
@@ -1049,8 +1057,8 @@ void CBuilder::PrintDump()
 				{
 					if (FIsRegister(pInst->m_opkLhs) == 0) // if not call by reference
 					{
-						auto pProc = (SProcedure *)pInst->m_wordLhs.m_pV;
-						FormatCoz(&strbuf, "%s()->[%d]", pProc->m_pTinproc->m_strName.PCoz(), pInst->m_iBStackOut);
+						auto pProcsig = (SProcedureSignature *)pInst->m_wordRhs.m_pV;
+						FormatCoz(&strbuf, "%s()->[%d]", pProcsig->m_pTinproc->m_strName.PCoz(), pInst->m_iBStackOut);
 
 						if ((pInst + 1)->m_irop == IROP_ExArgs)
 						{
@@ -1147,6 +1155,7 @@ void CBuilder::PrintDump()
 			case IROP_Alloca:
 				{
 					AppendToCch(&strbuf, ' ', s_operandPos);
+					AppendCoz(&strbuf, "outIdx = ");
 					PrintIntOperand(&strbuf, cBLhs, pInst->m_opkLhs, pInst->m_wordLhs, true);
 
 					auto pTin = (STypeInfo*)pInst->m_wordRhs.m_pV;
@@ -1766,8 +1775,10 @@ inline STypeInfo * PTinFromVal(SValue * pVal)
 		} break;
 	case VALK_Procedure:
 		{
+			// note - pFn's valk is only VALK_Procedure if fIsForeign == false
 			auto pProc = (SProcedure *)pVal;
-			return pProc->m_pTinproc;
+			auto pProcsig = pProc->m_pProcsig;
+			return pProcsig->m_pTinproc;
 		}
 	}
 
@@ -1814,6 +1825,9 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 		if (cBReturn)
 		{
 			iBStackOut = S32Coerce(IBStackAlloc(cBReturn, cBAlignReturn));
+#ifdef EWC_TRACE_RETURN_STACK
+			printf("%s() -> ibStackOut = %d, %llu bytes\n", pTinproc->m_strName.PCoz(), iBStackOut, cBReturn);
+#endif
 		}
 
 		auto pParam = &pProcsig->m_aParamRet[ipTinReturn];
@@ -1854,7 +1868,8 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 		EWC_ASSERT(cBArgVariadic == iBStackArg - pProcsig->m_sIBStackVariadic, "bad cBArgVariadic calculation");
 	}
 
-	auto pInstvalCall = PInstCreateRaw(IROP_Call, cBReturn, pValProc, nullptr);
+	auto pValProcsig = PConstPointer(pProcsig);
+	auto pInstvalCall = PInstCreateRaw(IROP_Call, 0, pValProc, pValProcsig);
 	pInstvalCall->m_pInst->m_iBStackOut = iBStackOut;
 
 	if (cArgVariadic)
@@ -1881,8 +1896,8 @@ void CBuilder::CreateReturn(SValue ** apVal, int cpVal, const char * pChzName)
 		cpVal = 0;
 	}
 
-	auto pTinproc = m_pProcCur->m_pTinproc;
 	auto pProcsig = m_pProcCur->m_pProcsig;
+	auto pTinproc = pProcsig->m_pTinproc;
 	for (int iReturn = 0; iReturn < cpVal; ++iReturn)
 	{
 		// add the returnIdx(callee relative) stored as an argument to (cBArg + cBStack)
@@ -2011,7 +2026,7 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 
 		u8 * pBAlloc = (u8 *)m_pAlloc->EWC_ALLOC(cBAlloc, EWC_ALIGN_OF(SProcedureSignature));
 
-		auto pProcsig = new(pBAlloc) SProcedureSignature();
+		auto pProcsig = new(pBAlloc) SProcedureSignature(pTinproc);
 		*ppProcsig = pProcsig;
 
 		SParameter * aParamArg = (SParameter *)PVAlign(pBAlloc + sizeof(SProcedureSignature), EWC_ALIGN_OF(SParameter));
@@ -2030,6 +2045,8 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 
 		u64 cB; 
 		u64 cBAlign;
+		u64 cBReturn;
+		u64 cBReturnSum = 0;
 		for (size_t iArg = 0; iArg < cArg; ++iArg)
 		{
 			auto pTinParam = pTinproc->m_arypTinParams[iArg];
@@ -2050,11 +2067,15 @@ SProcedureSignature * CBuilder::PProcsigEnsure(STypeInfoProcedure * pTinproc)
 			cB = (pTinParam->m_tink == TINK_Void) ? 0 : sizeof(s32);
 			cBAlign = EWC_ALIGN_OF(s32);
 
+			CalculateByteSizeAndAlign(m_pDlay, pTinParam, &cBReturn, &cBAlign);
+			cBReturnSum += cBReturn;
+
 			auto pParam = &pProcsig->m_aParamRet[iRet];
 			pParam->m_cB = S32Coerce(cB);
 			pParam->m_cBAlign = S32Coerce(cBAlign);
 			pParam->m_iBStack = S32Coerce(IBArgAlloc(&pProcsig->m_cBArgNamed, cB, cBAlign));
 		}
+		pProcsig->m_cBArgReturn = S32Coerce(cBReturnSum);
 
 		if (pTinproc->m_grftinproc.FIsSet(FTINPROC_HasVarArgs))
 		{
@@ -2191,11 +2212,14 @@ inline void SetOperandFromValue(
 	case VALK_Procedure:
 	{
 		auto pProc = (SProcedure *)pValSrc;
+		auto pProcsig = pProc->m_pProcsig;
+		EWC_ASSERT(pProcsig, "Expected procedure signature.")
+
 		*pOpkOut = OPK_Literal; // BB - is this ever an arg register?
 		pWordOut->m_pV = pValSrc;
 
 		pValout->m_cBRegister = sizeof(pProc);
-		pValout->m_pTin = pProc->m_pTinproc;
+		pValout->m_pTin = pProcsig->m_pTinproc;
 	} break;
 	default: 
 		EWC_ASSERT(false, "unhandled VALK");
@@ -2929,8 +2953,9 @@ inline void SetupForeignProcParam(DCCallVM * pDcvm, SDataLayout * pDlay, STypeIn
 {
 	switch (pTinParam->m_tink)
 	{
-	case TINK_Bool:		dcArgBool(pDcvm, *(bool*)pVArg);		break;
-	case TINK_Pointer:	dcArgPointer(pDcvm, *(void**)pVArg);	break;
+	case TINK_Bool:			dcArgBool(pDcvm, *(bool*)pVArg);		break;
+	case TINK_Pointer:		dcArgPointer(pDcvm, *(void**)pVArg);	break;
+	case TINK_Procedure:	dcArgPointer(pDcvm, *(void**)pVArg);	break;
 	case TINK_Integer:	
 		{
 			auto pTinintParam = (STypeInfoInteger*)pTinParam;
@@ -3005,9 +3030,9 @@ inline void SetupForeignProcParam(DCCallVM * pDcvm, SDataLayout * pDlay, STypeIn
 	}
 }
 
-void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack, s32 cArgVariadic, s32 cBArgVariadic)
+void CallForeignFunction(CVirtualMachine * pVm, void * pFnForeign, SProcedureSignature * pProcsig, u8 * pBStack, s32 cArgVariadic, s32 cBArgVariadic)
 {
-	u8 * pBArg = pBStack - (pProc->m_pProcsig->m_cBArgNamed + cBArgVariadic);
+	u8 * pBArg = pBStack - (pProcsig->m_cBArgNamed + cBArgVariadic);
 
 	if (!EWC_FVERIFY(pVm->m_pDcvm, "null DynCall VM"))
 		return;
@@ -3026,8 +3051,7 @@ void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack
 	}
 
 	auto pDcvm = pVm->m_pDcvm;
-	auto pProcsig = pProc->m_pProcsig;
-	auto pTinproc = pProc->m_pTinproc;
+	auto pTinproc = pProcsig->m_pTinproc;
 	size_t cParamNamed = pTinproc->m_arypTinParams.C();
 	for (size_t iParam = 0; iParam < cParamNamed; ++iParam)
 	{
@@ -3074,18 +3098,18 @@ void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack
 
 	switch(tinkReturn)
 	{
-	case TINK_Void:		dcCallVoid(pDcvm, pProc->m_pFnForeign);								break;
-	case TINK_Bool:		*(bool *)pBReturn = dcCallBool(pDcvm, pProc->m_pFnForeign) != 0;	break;
-	case TINK_Pointer:	*(void **)pBReturn = dcCallPointer(pDcvm, pProc->m_pFnForeign);		break;
+	case TINK_Void:		dcCallVoid(pDcvm, pFnForeign);							break;
+	case TINK_Bool:		*(bool *)pBReturn = dcCallBool(pDcvm, pFnForeign) != 0;	break;
+	case TINK_Pointer:	*(void **)pBReturn = dcCallPointer(pDcvm, pFnForeign);	break;
 	case TINK_Integer:
 	{
 		auto pTinint = (STypeInfoInteger*)pTinproc->m_arypTinReturns[0];
 		switch (pTinint->m_cBit)
 		{
-		case 8:		*(u8 *)pBReturn = dcCallChar(pDcvm, pProc->m_pFnForeign);			break;
-		case 16:	*(u16 *)pBReturn = dcCallShort(pDcvm, pProc->m_pFnForeign);			break;
-		case 32:	*(u32 *)pBReturn = dcCallInt(pDcvm, pProc->m_pFnForeign);			break;
-		case 64:	*(u64 *)pBReturn = dcCallLongLong(pDcvm, pProc->m_pFnForeign);		break;
+		case 8:		*(u8 *)pBReturn = dcCallChar(pDcvm, pFnForeign);			break;
+		case 16:	*(u16 *)pBReturn = dcCallShort(pDcvm, pFnForeign);			break;
+		case 32:	*(u32 *)pBReturn = dcCallInt(pDcvm, pFnForeign);			break;
+		case 64:	*(u64 *)pBReturn = dcCallLongLong(pDcvm, pFnForeign);		break;
 		default: EWC_ASSERT(false, "unhandled size dyncall return int");
 		}
 	} break;
@@ -3094,14 +3118,14 @@ void CallForeignFunction(CVirtualMachine * pVm, SProcedure * pProc, u8 * pBStack
 		auto pTinfloat = (STypeInfoFloat*)pTinproc->m_arypTinReturns[0];
 		switch (pTinfloat->m_cBit)
 		{
-		case 32:	*(f32 *)pBReturn = dcCallFloat(pDcvm, pProc->m_pFnForeign);		break;
-		case 64:	*(f64 *)pBReturn = dcCallDouble(pDcvm, pProc->m_pFnForeign);	break;
+		case 32:	*(f32 *)pBReturn = dcCallFloat(pDcvm, pFnForeign);			break;
+		case 64:	*(f64 *)pBReturn = dcCallDouble(pDcvm, pFnForeign);			break;
 		default: EWC_ASSERT(false, "unhandled size dyncall return float");
 		}
 	} break;
 	case TINK_Procedure:
 	{
-		*(void **)pBReturn = dcCallPointer(pDcvm, pProc->m_pFnForeign);
+		*(void **)pBReturn = dcCallPointer(pDcvm, pFnForeign);
 	} break;
 	case TINK_Struct:
 	default:
@@ -3133,7 +3157,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 	// allocate space for the return type
 	auto pProcsigEntry = pProcEntry->m_pProcsig;
 	int cBReturn = 0;
-	auto pTinprocEntry = pProcEntry->m_pTinproc;
+	auto pTinprocEntry = pProcEntry->m_pProcsig->m_pTinproc;
 	int * aiBReturn = (int *)alloca(sizeof(int) * pTinprocEntry->m_arypTinReturns.C());
 	for (int ipTin = 0; ipTin < pTinprocEntry->m_arypTinReturns.C(); ++ipTin)
 	{
@@ -3187,6 +3211,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		{
 			u8 * pB = &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
 			*(u8 **)&pVm->m_pBStack[pInst->m_iBStackOut] = pB;
+
 		} break;
 
 		case MASHOP(IROP_Load, 0):
@@ -3404,6 +3429,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		{
 			u8 * pBDst = *(u8**)&pVm->m_pBStack[pInst->m_iBStackOut];
 			auto pVLhs = PVReadAddressLhs(pVm, pInst, &wordLhs);
+
+			EWC_ASSERT(pInst->m_wordRhs.m_s32 > 0, "trying to copy %d bytes.", pInst->m_wordRhs.m_s32);
 			memcpy(pBDst, pVLhs, pInst->m_wordRhs.m_s32);
 
 		} break;
@@ -3412,6 +3439,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			{
 				auto pVSrc = PVReadAddressLhs(pVm, pInst, &wordLhs);
 				auto pBDst = (u8*)&pVm->m_pBStack[pInst->m_iBStackOut];
+
+				EWC_ASSERT(pInst->m_wordRhs.m_s32 > 0, "trying to copy %d bytes.", pInst->m_wordRhs.m_s32);
 				memcpy(pBDst, pVSrc, pInst->m_wordRhs.m_s32);
 			} break;
 
@@ -3420,6 +3449,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		{
 			auto pVSrc = PVReadAddressLhs(pVm, pInst, &wordLhs);
 			auto idx = *(s32*)&pVm->m_pBStack[pInst->m_iBStackOut];
+
+			EWC_ASSERT(pInst->m_wordRhs.m_s32 > 0, "trying to copy %d bytes.", pInst->m_wordRhs.m_s32);
 			memcpy(&pVm->m_pBStack[idx], pVSrc, pInst->m_wordRhs.m_s32);
 		} break;
 
@@ -3471,10 +3502,9 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_Call, 4):
 		case MASHOP(IROP_Call, 8):
 		{
-			ReadOpcode(pVm, pInst, sizeof(SProcedure *), &wordLhs);
+			ReadOpcodes(pVm, pInst, sizeof(SProcedure *), &wordLhs, &wordRhs);
 
-			auto pProc = (SProcedure *)wordLhs.m_pV;
-			auto pProcsig = pProc->m_pProcsig;
+			auto pProcsig = (SProcedureSignature*)wordRhs.m_pV;
 
 			s32 cArgVariadic = 0;
 			s32 cBArgVariadic = 0;
@@ -3485,15 +3515,17 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 				cBArgVariadic = pInstEx->m_wordRhs.m_s32;
 			}
 
-			if (pProc->m_pFnForeign)
+			auto pTinproc = pProcsig->m_pTinproc;
+			if (pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 			{
-				CallForeignFunction(pVm, pProc, pVm->m_pBStack, cArgVariadic, cBArgVariadic);
+				CallForeignFunction(pVm, wordLhs.m_pV, pProcsig, pVm->m_pBStack, cArgVariadic, cBArgVariadic);
 
 				if (cArgVariadic)
 					++pInst;
 				break;
 			}
 
+			auto pProc = (SProcedure *)wordLhs.m_pV;
 			SInstruction ** ppInstRet = (SInstruction **)(pVm->m_pBStack - (pProcsig->m_cBArgNamed + cBArgVariadic));
 
 #if DEBUG_PROC_CALL
@@ -3507,8 +3539,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			pVm->m_pBStack -= (pProcsig->m_cBArgNamed + cBArgVariadic);
 			if (pVm->m_pStrbuf)
 			{
-				FormatCoz(pVm->m_pStrbuf, "%s(", pProc->m_pTinproc->m_strName.PCoz());
-				STypeInfoProcedure * pTinproc = pProc->m_pTinproc;
+				STypeInfoProcedure * pTinproc = pProcsig->m_pTinproc;
+				FormatCoz(pVm->m_pStrbuf, "%s(", pTinproc->m_strName.PCoz());
 
 				// don't print the parameters to initializer procs, it's uninitialized memory.
 				if (pTinproc->m_grftinproc.FIsSet(FTINPROC_Initializer) == false)
@@ -3578,7 +3610,7 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 			if (pVm->m_pStrbuf && EWC_FVERIFY(pProcCalled, "missing called proc"))
 			{
 				u8 * pBStackArg = pBStackCalled + pProcCalled->m_cBStack;
-				auto pTinproc = pProcCalled->m_pTinproc;
+				auto pTinproc = pProcsigCalled->m_pTinproc;
 
 				AppendCoz(pVm->m_pStrbuf, "}");
 				if (pTinproc->m_arypTinReturns.C())
@@ -3621,7 +3653,8 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 				++pInstCall;
 
 			auto pProcPrev = *((SProcedure **)(ppInstRet + 1));
-			//auto pProcPrev = (SProcedure *)pInstCall->m_wordRhs.m_pV;
+
+			// NOTE: This is the calling procedure, NOT the procedure being called (ie pInstCall->mm_wordLhs.m_pV)
 			pVm->m_pProcCurDebug = pProcPrev;
 			pInstMin = pProcPrev->m_aryInst.A();
 			pInst = pInstCall;
@@ -3865,7 +3898,6 @@ bool LoadForeignLibraries(CWorkspace * pWork, CHash<HV, void*> * pHashHvPFn, CDy
 		{
 			parypDll->Append(pDll);
 
-#define PRINT_DLL_SYMBOLS 0
 			auto pDllsym = dlSymsInit(aCozWorking);
 			int cSym = dlSymsCount(pDllsym);
 			for (int iSym = 0; iSym < cSym; ++iSym)
@@ -3877,13 +3909,13 @@ bool LoadForeignLibraries(CWorkspace * pWork, CHash<HV, void*> * pHashHvPFn, CDy
 				}
 				else
 				{
-#if PRINT_DLL_SYMBOLS
-					printf("sym: %s\n", pChzSymName);
-#endif
 
 					void * pFn = dlFindSymbol(pDll, pChzSymName);
 					EWC_ASSERT(pFn, "failed looking up reported foreign fufnction");
 
+#ifdef EWC_TRACE_FOREIGN_SYMBOLS
+					printf("sym: %s = 0x%p\n", pChzSymName, pFn);
+#endif
 					CString strSymName(pChzSymName);
 					FINS fins = pHashHvPFn->FinsEnsureKeyAndValue(strSymName.Hv(), pFn);
 					if (fins != FINS_Inserted)

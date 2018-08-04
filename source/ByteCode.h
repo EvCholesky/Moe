@@ -192,10 +192,12 @@ namespace BCode
 	// layout data that derived from pTinproc
 	struct SProcedureSignature // tag = procsig
 	{
-								SProcedureSignature();
+								SProcedureSignature(STypeInfoProcedure * pTinproc);
 
 		s32							m_sIBStackVariadic;		// stack location for variadic arguments, -1 if normal proc
+		s32							m_cBArgReturn;
 		s64							m_cBArgNamed;			// stack space reserved for arguments (does not include variadic args)
+		STypeInfoProcedure *		m_pTinproc;
 
 		SParameter *				m_aParamArg;
 		SParameter *				m_aParamRet;
@@ -205,13 +207,11 @@ namespace BCode
 	{
 		static const VALK s_valk = VALK_Procedure;
 
-									SProcedure(EWC::CAlloc * pAlloc, STypeInfoProcedure *pTinproc);
+									SProcedure(EWC::CAlloc * pAlloc);
 
-		STypeInfoProcedure *				m_pTinproc;
 		SProcedureSignature *				m_pProcsig;
-		void *								m_pFnForeign;
 
-		s64									m_cBStack;		// allocated bytes on stack
+		s64									m_cBStack;		// allocated bytes on stack (iff fIsForeign == false)
 
 		SBlock *							m_pBlockLocals;
 		SBlock *							m_pBlockFirst;
@@ -318,7 +318,7 @@ namespace BCode
 		void				FinalizeBuild(CWorkspace * pWork);
 
 		SProcedure *		PProcCreateImplicit(CWorkspace * pWork, STypeInfoProcedure * pTinproc, CSTNode * pStnod);
-		SProcedure *		PProcCreate(
+		SValue *			PValCreateProc(
 								CWorkspace * pWork,
 								STypeInfoProcedure * pTinproc,
 								const EWC::CString & strMangled,

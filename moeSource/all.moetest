@@ -814,12 +814,12 @@ test ProcSelfRef
 test ProcForeign
 	input "ForeignFunc proc () -> int #foreign; ForeignFunc()"
 	parse "(func ForeignFunc int) (procCall ForeignFunc)"
-	typecheck "(ForeignFunc()->int ForeignFunc int) (int ForeignFunc()->int)"
+	typecheck "(ForeignFunc()->int #foreign ForeignFunc int) (int ForeignFunc()->int #foreign)"
 
 test ProcVararg
 	input "VarArgs proc (?args..) ?ret #foreign; VarArgs(22, 1)"
 	parse "(func VarArgs (params ?pargs(..)) void) (procCall VarArgs 22 1)"
-	typecheck "(VarArgs(?argtype..)->void VarArgs (Params ?tcargs(..)) void) (void VarArgs(?argtype..)->void Literal:Int64 Literal:Int64)"
+	typecheck "(VarArgs(?argtype..)->void #foreign VarArgs (Params ?tcargs(..)) void) (void VarArgs(?argtype..)->void #foreign Literal:Int64 Literal:Int64)"
 	{
 		?args("") + ?pargs("") + ?argtype("") + ?tcargs("") + ?ret(""|"-> void"),
 		?args("a: int, ") + ?argtype("int, ") + ?pargs("(decl a int) ") + ?tcargs("(int a int) ") + ?ret(""|"-> void"),

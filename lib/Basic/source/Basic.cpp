@@ -239,3 +239,19 @@ MOE_EXPORT ptrdiff_t snprintf_MOE(char * aCh, size_t cBMax, const char * pCozFor
 	EnsureTerminatedCopy(aCh, pCozAppend, cBMax, '\0');
 	return pCozAppend - aCh;
 }
+
+int ReturnNumber()
+{
+	return 123456;
+}
+
+MOE_EXPORT int SimpleReturn()
+{
+	return 111222333;
+}
+
+typedef int (*PfnBasicProc)(void);
+MOE_EXPORT PfnBasicProc PFnReturnProc()
+{
+ 	return &ReturnNumber;
+}
