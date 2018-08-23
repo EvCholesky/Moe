@@ -188,8 +188,8 @@ struct OpSignature // tag = opsig
 		OP(				UToG)		OPSIZE(0, 8, CB) \
 		OP(				GTrunc)		OPSIZE(0, 8, CB) \
 		OP(				GExtend)	OPSIZE(0, 8, CB) \
-		OP(				PtrToInt)	OPSIZE(0, 0, 0) \
-		OP(				IntToPtr)	OPSIZE(0, 0, 0) \
+		OP(				PtrToInt)	OPSIZE(0, 8, CB) \
+		OP(				IntToPtr)	OPSIZE(0, 8, CB) \
 		OPMX(CastOp,	Bitcast)	OPSIZE(0, 8, CB) \
 		/* ---- bytecode only opcodes ----*/ \
 						/* TraceStore(Reg) */ \

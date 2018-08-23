@@ -536,8 +536,8 @@ InitUnusedEntList proc (aEntAll: [] SEntity, ppEntFirst: && SEntity)
 	for iEnt:= 0; iEnt < aEntAll.count; ++iEnt
 	{
 		pEnt := &aEntAll[iEnt]
-		@ppEntPrev = pEnt
-		ppEntPrev = &pEnt.m_pEntUnusedNext
+		@ppEntPrev = pEnt					// point at the new entry
+		ppEntPrev = &pEnt.m_pEntUnusedNext	// store of the 'next' pointer
 	}
 
 	@ppEntPrev = null

@@ -221,38 +221,38 @@ glDrawArrays proc (mode: glenum, first: glint, count: glsizei) #foreign glDrawAr
 */
 
 // GL extension function pointers
-glCreateProgram: () -> gluint #stdcall
-glDeleteProgram: (program: gluint) #stdcall
-glLinkProgram: (program: gluint) #stdcall
-glCreateShader: (type: glenum) -> gluint #stdcall
-glDeleteShader: (shader: gluint) #stdcall
-glShaderSource: (shader: gluint, count: glsizei, string: && const u8, length: &glint) #stdcall
-glCompileShader: (handle: gluint) #stdcall
-glGetShaderiv: (shader: gluint, pname: glenum, param: &glint) #stdcall
-glGetProgramiv: (shader: gluint, pname: glenum, param: &glint) #stdcall
-glGetShaderInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall
-glGetProgramInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall
-glAttachShader: (program: gluint, shader: gluint) #stdcall
-glUseProgram: (program: gluint) #stdcall
-glGetUniformLocation: (program: gluint, name: & const s8) -> glint #stdcall
+glCreateProgram: () -> gluint #stdcall #foreign
+glDeleteProgram: (program: gluint) #stdcall #foreign
+glLinkProgram: (program: gluint) #stdcall #foreign
+glCreateShader: (type: glenum) -> gluint #stdcall #foreign
+glDeleteShader: (shader: gluint) #stdcall #foreign
+glShaderSource: (shader: gluint, count: glsizei, string: && const u8, length: &glint) #stdcall #foreign
+glCompileShader: (handle: gluint) #stdcall #foreign
+glGetShaderiv: (shader: gluint, pname: glenum, param: &glint) #stdcall #foreign
+glGetProgramiv: (shader: gluint, pname: glenum, param: &glint) #stdcall #foreign
+glGetShaderInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall #foreign
+glGetProgramInfoLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall #foreign
+glAttachShader: (program: gluint, shader: gluint) #stdcall #foreign
+glUseProgram: (program: gluint) #stdcall #foreign
+glGetUniformLocation: (program: gluint, name: & const s8) -> glint #stdcall #foreign
 
 
-glBindAttribLocation: (program: gluint, index: gluint, name: & const u8) #stdcall
-glVertexAttribPointer: (index: gluint, size:glint, type: glenum, normalized: glboolean, stride: glsizei, pointer: & void) #stdcall
-glDisableVertexAttribArray:  (index: gluint) #stdcall
-glEnableVertexAttribArray:  (index: gluint) #stdcall
+glBindAttribLocation: (program: gluint, index: gluint, name: & const u8) #stdcall #foreign
+glVertexAttribPointer: (index: gluint, size:glint, type: glenum, normalized: glboolean, stride: glsizei, pointer: & void) #stdcall #foreign
+glDisableVertexAttribArray:  (index: gluint) #stdcall #foreign
+glEnableVertexAttribArray:  (index: gluint) #stdcall #foreign
 
-glUniform1f: (location: glint, v0: glfloat) #stdcall
-glUniform2f: (location: glint, v0: glfloat, v1: glfloat) #stdcall
-glUniform3f: (location: glint, v0: glfloat, v1: glfloat, v2: glfloat) #stdcall
-glUniform4f: (location: glint, v0: glfloat, v1: glfloat, v2: glfloat, v3: glfloat) #stdcall
-glUniform1i: (location: glint, v0: glint) #stdcall
-glUniform2i: (location: glint, v0: glint, v1: glint) #stdcall
-glUniform3i: (location: glint, v0: glint, v1: glint, v2: glint) #stdcall
-glUniform4i: (location: glint, v0: glint, v1: glint, v2: glint, v3: glint) #stdcall
-glUniformMatrix4fv: (location: glint, count: glsizei, transpose: glboolean, value: & glfloat) #stdcall
-glActiveTexture: (texture: glenum) #stdcall
-glClientActiveTexture: (texture: glenum) #stdcall
+glUniform1f: (location: glint, v0: glfloat) #stdcall #foreign
+glUniform2f: (location: glint, v0: glfloat, v1: glfloat) #stdcall #foreign
+glUniform3f: (location: glint, v0: glfloat, v1: glfloat, v2: glfloat) #stdcall #foreign
+glUniform4f: (location: glint, v0: glfloat, v1: glfloat, v2: glfloat, v3: glfloat) #stdcall #foreign
+glUniform1i: (location: glint, v0: glint) #stdcall #foreign
+glUniform2i: (location: glint, v0: glint, v1: glint) #stdcall #foreign
+glUniform3i: (location: glint, v0: glint, v1: glint, v2: glint) #stdcall #foreign
+glUniform4i: (location: glint, v0: glint, v1: glint, v2: glint, v3: glint) #stdcall #foreign
+glUniformMatrix4fv: (location: glint, count: glsizei, transpose: glboolean, value: & glfloat) #stdcall #foreign
+glActiveTexture: (texture: glenum) #stdcall #foreign
+glClientActiveTexture: (texture: glenum) #stdcall #foreign
 
 
 
@@ -389,7 +389,7 @@ SEvent struct
     m_nTextInput : u32
 }
 
-GlfwProc typedef ()->void
+GlfwProc typedef ()->void #foreign
 PFnGlProcLookup proc (pChzName: & const u8) -> GlfwProc #foreign
 
 FTryInitExtension proc (pChzName: & const u8, pfSuccess: &bool) -> GlfwProc 

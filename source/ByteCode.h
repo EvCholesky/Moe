@@ -462,6 +462,7 @@ namespace BCode
 #if DEBUG_PROC_CALL
 	struct SDebugCall // tag = debcall
 	{
+		STypeInfoProcedure *	m_pTinproc;
 		SInstruction **			m_ppInstCall;
 		u8 *					m_pBReturnStorage;
 		u8 *					m_pBStackSrc; // calling stack frame

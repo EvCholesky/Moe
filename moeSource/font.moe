@@ -478,7 +478,8 @@ ShhandFindUnused proc (pShman: &SShaderManager) -> SHHAND inline
 	return SHHAND.nil
 }
 
-PrintShaderInfoLog proc (object: gluint, pFnGetLog: (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall)
+PFnShaderLog typedef (shader: gluint, bufSize: glsizei, length: &glsizei, infoLog: &glchar) #stdcall #foreign
+PrintShaderInfoLog proc (object: gluint, pFnGetLog: PFnShaderLog)
 {
 	cCh: glint
 	glGetShaderiv(object, GL_INFO_LOG_LENGTH, &cCh)

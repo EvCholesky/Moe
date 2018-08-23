@@ -2893,10 +2893,10 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 			for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
 			{
 				auto pStnodChild = pStnodList->PStnodChild(iStnod);
-				STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodChild->m_pTin;
-				EWC_ASSERT(pTinlit->m_tink == TINK_Literal, "Bad array literal element");
+				STypeInfoLiteral * pTinlitChild = (STypeInfoLiteral *)pStnodChild->m_pTin;
+				EWC_ASSERT(pTinlitChild->m_tink == TINK_Literal, "Bad array literal element");
 
-				apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlit, pStnodChild);
+				apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlitChild, pStnodChild);
 			}
 
 			auto pLtypeElement = pBuild->PLtypeFromPTin(pTinlit->m_pTinSource);
@@ -3423,17 +3423,7 @@ static inline typename BUILD::Value * PValInitialize(
 			CalculateSizeAndAlign(pBuild, pLtype, &cBitSize, &cBitAlign);
 
 			int  cB = int((cBitSize + 7)/ 8);
-
-			// if register-sized type just store
-			if (FIsRegisterSize(cB))
-			{
-				auto pConstZero = PConstZeroInType(pBuild, pTin);
-				return pBuild->PInstCreateStore(pValPT, pConstZero);
-			}
-			else
-			{
-				return pBuild->PInstCreateMemset(pValPT, cB, int((cBitAlign + 7) / 8), 0);
-			}
+			return pBuild->PInstCreateMemset(pValPT, cB, int((cBitAlign + 7) / 8), 0);
 
 		} break;
 	case CGINITK_AssignInitializer:
@@ -7279,7 +7269,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 						buildBc.PrintDump();
 					}
 
-					static const u32 s_cBStackMax = 1024 * 10;
+					static const u32 s_cBStackMax = 1024 * 100;
 					u8 * pBStack = (u8 *)pWork->m_pAlloc->EWC_ALLOC(s_cBStackMax, 16);
 
 					BCode::CVirtualMachine vm(pBStack, &pBStack[s_cBStackMax], &buildBc);
