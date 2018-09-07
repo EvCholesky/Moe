@@ -31,6 +31,7 @@ class CWorkspace;
 struct SErrorManager;
 struct SOpTypes;
 struct SSymbol;
+struct SSymbolBase;
 struct SUniqueNameSet;
 
 namespace EWC
@@ -167,6 +168,87 @@ EWC::CString StrFromTypeInfo(STypeInfo * pTin);
 EWC::CString StrFromSTNode(CSTNode * pTin);
 
 
+
+enum FSYM		// SYMbol flags
+{
+	FSYM_None				= 0x0,
+	FSYM_IsBuiltIn			= 0x1,
+	FSYM_IsType				= 0x2,	// this is a type declaration (if not set this is a named instance)
+	FSYM_VisibleWhenNested	= 0x4,	// types, constants and procedures that are visible in a more deeply nested symbol table
+									// - ie. not an instance. Nested procedure should be able to call peer procedure, but not
+									//   access variable from parent procedure.
+	FSYM_InternalUseOnly	= 0x8,	// type should not be available for user code declarations, just internal compiler use (ie _flag)
+
+
+	FSYM_All				= 0xF,
+};
+EWC_DEFINE_GRF(GRFSYM, FSYM, u32);
+
+enum FSYMLOOK	// SYMbol LOOKup flags
+{
+	FSYMLOOK_None			= 0x0,
+	FSYMLOOK_Local			= 0x1,
+	FSYMLOOK_Ancestors		= 0x2,
+	FSYMLOOK_IgnoreOrder	= 0x4,
+
+	FSYMLOOK_All			= 0x7,
+	FSYMLOOK_Default		= FSYMLOOK_Local | FSYMLOOK_Ancestors,
+};
+
+EWC_DEFINE_GRF(GRFSYMLOOK, FSYMLOOK, u32);
+
+
+enum SYMDEP		// SYMbol DEPendency 
+{
+							// NIL = Haven't determined if used
+	SYMDEP_Unused,			// Symbol is not referenced by any live code - no need to codeGen
+	SYMDEP_Used,			// Referenced by live code 
+	SYMDEP_PublicLinkage,	// public linkage procedures will be considered used during symbol dependency determination
+
+	EWC_MAX_MIN_NIL(SYMDEP)
+};
+
+enum SYMK
+{
+	SYMK_Symbol,
+	SYMK_Path,
+
+	EWC_MAX_MIN_NIL(SYMK)
+};
+
+struct SSymbolBase // tag = symbase
+{
+	SYMK					m_symk;
+};
+
+struct SSymbol : public SSymbolBase	// tag = sym
+{
+
+	GRFSYM					m_grfsym;
+	SYMDEP					m_symdep;
+	EWC::CString			m_strName;
+	CSTNode *				m_pStnodDefinition;
+
+	STypeInfo *				m_pTin;
+	SSymbol *				m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
+
+	EWC::CDynAry<SSymbol *>	m_aryPSymReferencedBy;
+	EWC::CDynAry<SSymbol *>	m_aryPSymHasRefTo;			// this symbol has a reference to all of these symbols
+};
+
+// symbol path for 'using' aliases
+
+struct SSymbolPath : public SSymbolBase // tag = symp
+{
+	EWC::CDynAry<SSymbol *>	m_arypSym;					// implicit references followed by actual symbol  
+														// foo.m_x is implicitly foo.m_mid.m_base.m_x  [m_mid, m_base, m_x]
+};
+
+
+// just checking these in for version control history, will delete
+#define EWC_MODIFY_AST_FOR_USING 0
+
+
 // node type for mutually exlusive syntax tree nodes 
 enum STMAPK // Syntax Tree MAP  Kind
 {
@@ -197,6 +279,7 @@ public:
 					CSTDecl()
 					:SSyntaxTreeMap(s_stmapk)
 					,m_fIsBakedConstant(false)
+					,m_fHasUsingPrefix(false)
 					,m_iStnodIdentifier(-1)
 					,m_iStnodType(-1)
 					,m_iStnodInit(-1)
@@ -206,6 +289,7 @@ public:
 						{ ; }
 
 	bool			m_fIsBakedConstant;
+	bool			m_fHasUsingPrefix;
 	int				m_iStnodIdentifier;
 	int				m_iStnodType;
 	int				m_iStnodInit;
@@ -483,6 +567,33 @@ public:
 								EWC_ASSERT(m_pStmap->m_stmapk == stmapk, "stmapk error");
 								return m_pStmap;
 							}
+	SSymbol *			PSym() const
+							{
+								if (m_pSymbase)
+								{
+									switch (m_pSymbase->m_symk)
+									{
+									case SYMK_Symbol:	return (SSymbol *)m_pSymbase;
+									case SYMK_Path:
+										{
+											auto pSymp = (SSymbolPath *)m_pSymbase;
+											if (pSymp->m_arypSym.FIsEmpty())
+												return nullptr;
+
+											return pSymp->m_arypSym.Last();
+										}
+									}
+								}
+								return nullptr;
+							}
+
+	SSymbolPath *			PSymPath() const
+							{
+								if (m_pSymbase && m_pSymbase->m_symk == SYMK_Path)
+									return (SSymbolPath *)m_pSymbase;
+								return nullptr;
+							}
+
 	template <typename T>
 	T *					PStmapEnsure(EWC::CAlloc * pAlloc)
 							{ return (T *)PStmapEnsure(pAlloc, T::s_stmapk); }
@@ -499,7 +610,7 @@ public:
 	STypeInfo *				m_pTin;	
 	SOpTypes *				m_pOptype;
 	CSymbolTable *			m_pSymtab;
-	SSymbol *				m_pSym;
+	SSymbolBase *			m_pSymbase;
 
 	EWC::CDynAry<CSTNode *>	m_arypStnodChild;
 };
@@ -534,60 +645,6 @@ inline bool FIsIdentifier(CSTNode * pStnod, const char * pChzIdent)
 EWC::CString StrFromIdentifier(CSTNode * pStnod);
 
 
-
-enum FSYM		// SYMbol flags
-{
-	FSYM_None				= 0x0,
-	FSYM_IsBuiltIn			= 0x1,
-	FSYM_IsType				= 0x2,	// this is a type declaration (if not set this is a named instance)
-	FSYM_VisibleWhenNested	= 0x4,	// types, constants and procedures that are visible in a more deeply nested symbol table
-									// - ie. not an instance. Nested procedure should be able to call peer procedure, but not
-									//   access variable from parent procedure.
-	FSYM_InternalUseOnly	= 0x8,	// type should not be available for user code declarations, just internal compiler use (ie _flag)
-
-
-	FSYM_All				= 0xF,
-};
-EWC_DEFINE_GRF(GRFSYM, FSYM, u32);
-
-enum FSYMLOOK	// SYMbol LOOKup flags
-{
-	FSYMLOOK_None			= 0x0,
-	FSYMLOOK_Local			= 0x1,
-	FSYMLOOK_Ancestors		= 0x2,
-	FSYMLOOK_IgnoreOrder	= 0x4,
-
-	FSYMLOOK_All			= 0x7,
-	FSYMLOOK_Default		= FSYMLOOK_Local | FSYMLOOK_Ancestors,
-};
-
-EWC_DEFINE_GRF(GRFSYMLOOK, FSYMLOOK, u32);
-
-
-enum SYMDEP		// SYMbol DEPendency 
-{
-							// NIL = Haven't determined if used
-	SYMDEP_Unused,			// Symbol is not referenced by any live code - no need to codeGen
-	SYMDEP_Used,			// Referenced by live code 
-	SYMDEP_PublicLinkage,	// public linkage procedures will be considered used during symbol dependency determination
-
-	EWC_MAX_MIN_NIL(SYMDEP)
-};
-
-struct SSymbol	// tag = sym
-{
-	EWC::CString			m_strName;
-
-	CSTNode *				m_pStnodDefinition;
-	GRFSYM					m_grfsym;
-	SYMDEP					m_symdep;
-
-	STypeInfo *				m_pTin;
-	SSymbol *				m_pSymPrev;		// list of shadowed symbols in reverse lexical order. 
-
-	EWC::CDynAry<SSymbol *>	m_aryPSymReferencedBy;
-	EWC::CDynAry<SSymbol *>	m_aryPSymHasRefTo;			// this symbol has a reference to all of these symbols
-};
 
 SLexerLocation LexlocFromSym(SSymbol * pSym);
 
@@ -704,6 +761,7 @@ protected:
 							,m_hashHvPTinfwd(pAlloc, EWC::BK_Symbol)
 							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
 							,m_arypSymGenerics(pAlloc, EWC::BK_Symbol)	
+							,m_aryUsing(pAlloc, EWC::BK_Symbol)
 							,m_pUntyper(pUntyper)
 							,m_pUnsetTin(pUnsetTin)
 							,m_pSymtabParent(nullptr)
@@ -759,6 +817,23 @@ public:
 		GRFSYMLOOK			m_grfsymlook;
 	};
 
+	struct SUsing // tag = using
+	{
+										SUsing()
+										:m_pSymtab(nullptr)
+										,m_pStnod(nullptr)
+										,m_hashHvPSymp()
+											{ ; }
+
+										~SUsing();
+
+		CSymbolTable *					m_pSymtab;
+		CSTNode *						m_pStnod;
+
+		EWC::CHash<HV, SSymbolPath *>	m_hashHvPSymp;			// a cache of the symbol paths found from this 
+																// 'using' statement. Added lazily
+	};
+
 							~CSymbolTable();
 
 	void					AddBuiltInSymbols(CWorkspace * pWork);
@@ -769,6 +844,12 @@ public:
 								GRFSYM grfsym = FSYM_None, 
 	 							FSHADOW fshadow = FShadow_ShadowingAllowed);
 
+	void					AddUsingScope(
+								SErrorManager * pErrman,
+								CSymbolTable * pSymtabNew,
+								CSTNode * pStnodSource
+							);
+
 	SSymbol *				PSymNewUnmanaged(const EWC::CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym);
 	SSymbol * 				PSymGenericInstantiate(SSymbol * pSym, STypeInfo * pTinInstance);
 
@@ -777,6 +858,18 @@ public:
 								const SLexerLocation & lexloc, 
 								GRFSYMLOOK grfsymlook = FSYMLOOK_Default,
 								CSymbolTable ** ppSymtabOut = nullptr);
+#if EWC_MODIFY_AST_FOR_USING
+	bool					FTryLookupSymbolPath(
+								const EWC::CString & str,
+								const SLexerLocation & lexloc,
+								GRFSYMLOOK grfsymlook,
+								EWC::CDynAry<SSymbol* > * parypSymPath);
+	
+	SSymbolBase *			PSymbaseLookup(
+								const EWC::CString & str,
+								const SLexerLocation & lexloc,
+								GRFSYMLOOK grfsymlook);
+#endif
 
 	STypeInfo *				PTinBuiltin(const EWC::CString & str);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
@@ -799,28 +892,30 @@ public:
 	static void				StaticStringInit();
 	static void				StaticStringShutdown();
 
-	EWC::CString				m_strNamespace;	// unique name for this symbol table's scope
-	EWC::CAlloc *				m_pAlloc;
-	EWC::CHash<HV, SSymbol *>	m_hashHvPSym;		// All the symbols defined within this scope, a full lookup requires
-													//  walking up the parent list
-	EWC::CHash<HV, STypeInfo *>
-								m_hashHvPTinBuiltIn;	// Builtin Types declared in this scope
+	EWC::CString					m_strNamespace;			// unique name for this symbol table's scope
+	EWC::CAlloc *					m_pAlloc;
+	EWC::CHash<HV, SSymbol *>		m_hashHvPSym;			// All the symbols defined within this scope, a full lookup requires
+															//  walking up the parent list
+	EWC::CHash<HV, STypeInfo *>		m_hashHvPTinBuiltIn;	// Builtin Types declared in this scope
 
 	EWC::CHash<HV, STypeInfoForwardDecl *>
-								m_hashHvPTinfwd;	// all pending forward declarations
-	EWC::CDynAry<STypeInfo *>	m_arypTinManaged;	// all type info structs that need to be deleted.
-	EWC::CDynAry<SSymbol *>		m_arypSymGenerics;	// symbol copies for generics, not mapped to an identifier
-	CUniqueTypeRegistry *		m_pUntyper;			// hashes to find unique type instances
-	SUniqueNameSet *			m_pUnsetTin;		// set of unique names for types (created during parse)
+									m_hashHvPTinfwd;		// all pending forward declarations
+	EWC::CDynAry<STypeInfo *>		m_arypTinManaged;		// all type info structs that need to be deleted.
+	EWC::CDynAry<SSymbol *>			m_arypSymGenerics;		// symbol copies for generics, not mapped to an identifier
+	EWC::CDynAry<SUsing>			m_aryUsing;				// symbol tables with members pushed into this table's scope
+	CUniqueTypeRegistry *			m_pUntyper;				// hashes to find unique type instances
+	SUniqueNameSet *				m_pUnsetTin;			// set of unique names for types (created during parse)
 	EWC::CDynAry<STypeInfoLiteral *>	
-								m_mpLitkArypTinlit[LITK_Max];
+									m_mpLitkArypTinlit[LITK_Max];
 
-	CSymbolTable *				m_pSymtabParent;
+	CSymbolTable *					m_pSymtabParent;
 
-	CSymbolTable *				m_pSymtabNextManaged;	// next table in the global list
-	s32							m_iNestingDepth;					
-	SCOPID						m_scopid;				// unique table id, for unique type strings
+	CSymbolTable *					m_pSymtabNextManaged;	// next table in the global list
+	s32								m_iNestingDepth;					
+	SCOPID							m_scopid;				// unique table id, for unique type strings
 };
+
+SSymbolBase * PSymbaseLookup(CSymbolTable * pSymtab, const EWC::CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook);
 
 
 
@@ -857,6 +952,7 @@ ERRID ErridCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SError
 bool FAllowsCommutative(PARK park);
 
 void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntries = false);
+CSTNode * PStnodAllocateIdentifier(EWC::CAlloc * pAlloc, const SLexerLocation & lexloc, const EWC::CString & strIdent);
 
 
 

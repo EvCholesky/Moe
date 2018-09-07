@@ -931,7 +931,7 @@ LLVMOpaqueValue * PLvalParentScopeForProcedure(CWorkspace * pWork, CBuilderIR * 
 	if (EWC_FVERIFY(pStproc, "function missing procedure") && pStproc->m_pStnodParentScope)
 	{
 		CIRProcedure * pProc = nullptr;
-		auto pSymParentScope = pStproc->m_pStnodParentScope->m_pSym;
+		auto pSymParentScope = pStproc->m_pStnodParentScope->PSym();
 		if (EWC_FVERIFY(pSymParentScope, "expected symbol to be set during type check"))
 		{
 			pProc = (CIRProcedure *)PValTryEnsureProc<CBuilderIR>(pWork, pBuild, pSymParentScope);
@@ -4556,7 +4556,8 @@ typename BUILD::Value * PValGenerateDecl(
 	VALGENK valgenk)
 {
 	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnod->m_pStmap);
-	if (!pStdecl || !EWC_FVERIFY(pStnod->m_pSym, "declaration without symbol"))
+	auto pSym = pStnod->PSym();
+	if (!pStdecl || !EWC_FVERIFY(pSym, "declaration without symbol"))
 		return nullptr;
 
 	auto pLtype = pBuild->PLtypeFromPTin(pStnod->m_pTin);
@@ -4568,7 +4569,7 @@ typename BUILD::Value * PValGenerateDecl(
 	if (cBitSize == 0)
 	{
 		EmitError(pWork, &pStnod->m_lexloc, ERRID_ZeroSizeInstance,
-			"Could not instantiate %s, zero-sized instances are not allowed", pStnod->m_pSym->m_strName.PCoz());
+			"Could not instantiate %s, zero-sized instances are not allowed", pSym->m_strName.PCoz());
 		return nullptr;
 	}
 
@@ -4580,12 +4581,12 @@ typename BUILD::Value * PValGenerateDecl(
 	CreateDebugInfo(pWork, pBuild, pStnod, pStnod->m_pTin);
 
 	bool fIsGlobal = pBuild->m_pProcCur == nullptr;
-	auto strName = pStnod->m_pSym->m_strName;
+	auto strName = pSym->m_strName;
 	auto strPunyName = StrPunyEncode(strName.PCoz());
 	if (fIsGlobal)
 	{
 		auto pGlob = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
-		pBuild->SetSymbolValue(pStnod->m_pSym, pGlob);
+		pBuild->SetSymbolValue(pSym, pGlob);
 
 		DInfoCreateGlobalVariable(pBuild, pStnod->m_pTin, pLvalScope, pDif, strName.PCoz(), strPunyName.PCoz(), iLine, true, pGlob);
 
@@ -4630,7 +4631,7 @@ typename BUILD::Value * PValGenerateDecl(
 		pBuild->ActivateBlock(pBlockCur);
 
 
-		pBuild->SetSymbolValue(pStnod->m_pSym, pValAlloca);
+		pBuild->SetSymbolValue(pSym, pValAlloca);
 	
 		auto pLvalDIVariable = PLvallDInfoCreateAutoVariable(pBuild, pStnod->m_pTin, pLvalScope, pDif, strPunyName.PCoz(), iLine, false, 0);
 
@@ -4647,7 +4648,6 @@ typename BUILD::Value * PValGenerateDecl(
 				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
 
 				//BB - This won't work with generic procedure overloads
-				auto pSym = pTinproc->m_pStnodDefinition->m_pSym;
 
 				auto pTinptr = PTinRtiCast<STypeInfoPointer*>(pTinproc->m_arypTinParams[0]);
 				EWC_ASSERT(pTinptr, "exected pointer type for implicit reference");
@@ -4659,7 +4659,8 @@ typename BUILD::Value * PValGenerateDecl(
 				pValArg = PValGenerateCast(pWork, pBuild, VALGENK_Instance, pStnod->m_arypStnodChild[pStdecl->m_iStnodInit], pTinRhs);
 				arypLvalArgs.Append(PLvalFromPVal(pValArg));
 
-				return pBuild->PValGenerateCall(pWork, pStnod, pSym, &arypLvalArgs, true, pTinproc, valgenk);
+				auto pSymProc = pTinproc->m_pStnodDefinition->PSym();
+				return pBuild->PValGenerateCall(pWork, pStnod, pSymProc, &arypLvalArgs, true, pTinproc, valgenk);
 			}
 		}
 
@@ -5095,6 +5096,78 @@ static inline bool FIsNull(BCode::SValue * pVal)
 }
 
 
+template <typename BUILD>
+typename BUILD::Instruction * PInstGepFromSymbase(
+	BUILD * pBuild,
+	SSymbolBase * pSymbase,
+	typename BUILD::Value * pValLhs,
+	STypeInfo * pTinLhs,
+	VALGENK valgenk)
+{
+	BUILD::Instruction * pInstRet = nullptr;
+
+	SSymbol ** ppSymBegin;
+	SSymbol ** ppSymEnd;
+	switch(pSymbase->m_symk)
+	{
+	case SYMK_Symbol:
+		{
+			ppSymBegin = (SSymbol**)&pSymbase;
+			ppSymEnd = ppSymBegin+1;
+
+		} break;
+	case SYMK_Path:
+		{
+			auto pSymp = (SSymbolPath *)pSymbase;
+			ppSymBegin = pSymp->m_arypSym.A();
+			ppSymEnd = pSymp->m_arypSym.PMac();
+		} break;
+	default:
+		EWC_ASSERT(false, "unhandled symbol kind %d", pSymbase->m_symk);
+		return nullptr;
+	}
+
+	for (auto ppSym = ppSymBegin; ppSym != ppSymEnd; ++ppSym)	
+	{
+		auto pSym = *ppSym;
+		STypeInfoStruct * pTinstruct = nullptr;
+		pTinLhs = PTinStripQualifiers(pTinLhs);
+		if (pTinLhs)
+		{
+			if (pTinLhs->m_tink == TINK_Pointer)
+			{
+				pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+			}
+
+			pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
+		}
+		if (!EWC_FVERIFY(pTinstruct, "missing type structure in symbol path for %s", pSym->m_strName.PCoz()))
+			return nullptr;
+
+		auto pTypememb = PTypemembLookup(pTinstruct, pSym->m_strName);
+		if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s", pSym->m_strName.PCoz()))
+			return nullptr;
+
+
+		BUILD::GepIndex * apLvalIndex[3] = {};
+		int cpLvalIndex = 0;
+		apLvalIndex[cpLvalIndex++] = pBuild->PGepIndex(0);
+		apLvalIndex[cpLvalIndex++] = pBuild->PGepIndex(pTinstruct->m_aryTypemembField.IFromP(pTypememb));
+		auto pInstGep = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, cpLvalIndex, "aryGep");
+
+
+		pInstRet = pInstGep;
+		pValLhs = pInstGep;
+		pTinLhs = pTypememb->m_pTin;
+	}
+
+	if (EWC_FVERIFY(pInstRet, "member dereference failure in codegen") && valgenk != VALGENK_Reference)
+	{
+		pInstRet = pBuild->PInstCreate(IROP_Load, pInstRet, "membLoad");
+	}
+
+	return pInstRet;
+}
 
 template <typename BUILD>
 typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod, VALGENK valgenk)
@@ -5121,10 +5194,11 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 	{
 	case PARK_ProcedureDefinition:
 		{ 
-			if (!EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check, (implicit function?)"))
+			auto pSym = pStnod->PSym();
+			if (!EWC_FVERIFY(pSym, "expected symbol to be set during type check, (implicit function?)"))
 				return nullptr;
 
-			auto pValProc = pBuild->PValFromSymbol(pStnod->m_pSym);
+			auto pValProc = pBuild->PValFromSymbol(pSym);
 			if (!pValProc)
 			{
 				pValProc = PValCodegenPrototype<BUILD>(pWork, pBuild, pStnod);
@@ -5635,19 +5709,20 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			}
 
 			bool fIsDirectCall = FIsDirectCall(pStnod);
-			return pBuild->PValGenerateCall(pWork, pStnod, pStnod->m_pSym, &arypLvalArgs, fIsDirectCall, pTinproc, valgenk);
+			return pBuild->PValGenerateCall(pWork, pStnod, pStnod->PSym(), &arypLvalArgs, fIsDirectCall, pTinproc, valgenk);
 		} 
 
 	case PARK_Identifier:
 		{
 			// BB - clean this up so we don't call PValFromSymbol twice
-			if (!pStnod->m_pSym || !pBuild->PValFromSymbol(pStnod->m_pSym))
+			auto pSym = pStnod->PSym();
+			if (!pSym || !pBuild->PValFromSymbol(pSym))
 			{
 				CString strName(StrFromIdentifier(pStnod));
 				EmitError(pWork, &pStnod->m_lexloc, ERRID_UnknownError, "INTERNAL ERROR: Missing value for symbol %s", strName.PCoz());
 			}
 
-			auto pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
+			auto pVal = pBuild->PValFromSymbol(pSym);
 			if (!EWC_FVERIFY(pVal, "unknown identifier in codegen"))
 				return nullptr;
 
@@ -5657,7 +5732,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			{
 				if (!fIsProcedureRef)
 				{
-					auto strPunyName = StrPunyEncode(pStnod->m_pSym->m_strName.PCoz());
+					auto strPunyName = StrPunyEncode(pSym->m_strName.PCoz());
 					return pBuild->PInstCreate(IROP_Load, pVal, strPunyName.PCoz());
 				}
 			}
@@ -5673,7 +5748,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 			// check the symbol because we need to differentiate between enum namespacing and enum struct member.
 			BUILD::Constant * pConstEnum = nullptr;
-			if (auto pSym = pStnodLhs->m_pSym)
+			if (auto pSym = pStnodLhs->PSym())
 			{
 				auto pTinLhs = PTinStripQualifiers(pSym->m_pTin);
 
@@ -5769,20 +5844,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 				}
 			}
 			
-			auto pTypememb = PTypemembLookup(pTinstruct, strMemberName);
-			if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s", strMemberName.PCoz()))
-				return nullptr;
-
-			BUILD::GepIndex * apLvalIndex[3] = {};
-			int cpLvalIndex = 0;
-			apLvalIndex[cpLvalIndex++] = pBuild->PGepIndex(0);
-			apLvalIndex[cpLvalIndex++] = pBuild->PGepIndex(pTinstruct->m_aryTypemembField.IFromP(pTypememb));
-			auto pInst = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, cpLvalIndex, "aryGep");
-
-			if (EWC_FVERIFY(pInst, "member dereference failure in codegen") && valgenk != VALGENK_Reference)
-			{
-				pInst = pBuild->PInstCreate(IROP_Load, pInst, "membLoad");
-			}
+			auto pInst = PInstGepFromSymbase(pBuild, pStnod->m_pSymbase, pValLhs, pTinLhs, valgenk);
 			return pInst;
 		}
 	case PARK_ArrayElement:
@@ -5885,7 +5947,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
 
 				//BB - This won't work with generic procedure overloads
-				auto pSym = pTinproc->m_pStnodDefinition->m_pSym;
+				auto pSym = pTinproc->m_pStnodDefinition->PSym();
 
 				CDynAry<BUILD::ProcArg *> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 				GenerateArguments(pWork, pBuild, pStnod->m_grfstnod, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
@@ -6032,7 +6094,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
 
 				//BB - This won't work with generic procedure overloads
-				auto pSym = pTinproc->m_pStnodDefinition->m_pSym;
+				auto pSym = pTinproc->m_pStnodDefinition->PSym();
 
 				CDynAry<BUILD::ProcArg *> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 				GenerateArguments(pWork, pBuild, pStnod->m_grfstnod, pTinproc, 2, pStnod->m_arypStnodChild.A(), &arypLvalArgs);
@@ -6063,7 +6125,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 				auto pTinproc = pStnod->m_pOptype->m_pTinprocOverload;
 
 				//BB - This won't work with generic procedure overloads
-				auto pSym = pTinproc->m_pStnodDefinition->m_pSym;
+				auto pSym = pTinproc->m_pStnodDefinition->PSym();
 
 				CDynAry<BUILD::ProcArg *> arypLvalArgs(pBuild->m_pAlloc, EWC::BK_Stack);
 				CDynAry<BUILD::Value *> arypValArgs(pBuild->m_pAlloc, EWC::BK_Stack);
@@ -6234,7 +6296,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 		}
 	case PARK_Typedef:
 		{
-			auto pSym = pStnod->m_pSym;
+			auto pSym = pStnod->PSym();
 			if (!EWC_FVERIFY(pSym, "typedef symbol not resolved before codeGen"))
 				return  nullptr;
 
@@ -6607,9 +6669,10 @@ CIRValue * CBuilderIR::PValCreateProc(
 		}
 	}
 
-	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
+	auto pSym = pStnod->PSym();
+	if (EWC_FVERIFY(pSym, "expected symbol to be set during type check"))
 	{
-		SetSymbolValue(pStnod->m_pSym, pProc);
+		SetSymbolValue(pSym, pProc);
 	}
 
 	return pProc;
@@ -6647,10 +6710,11 @@ void CBuilderIR::SetupParamBlock(
 
 		EWC_ASSERT(ipLvalParam < cpLvalParams, "parameter count mismatch");
 
-		if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
+		auto pSymParam = pStnodParam->PSym();
+		if (EWC_FVERIFY(pSymParam, "missing symbol for argument"))
 		{
 			LLVMValueRef  pLvalParam = appLvalParams[ipLvalParam];
-			auto strArgName = StrPunyEncode(pStnodParam->m_pSym->m_strName.PCoz());
+			auto strArgName = StrPunyEncode(pSymParam->m_strName.PCoz());
 			LLVMSetValueName(pLvalParam, strArgName.PCoz());
 
 			CIRArgument * pArg = EWC_NEW(pAlloc, CIRArgument) CIRArgument();
@@ -6661,7 +6725,7 @@ void CBuilderIR::SetupParamBlock(
 			if (EWC_FVERIFY(pTinproc, "expected procedure type") && !pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 			{
 				auto pInstAlloca = PValCreateAlloca((*parypLtype)[ipLvalParam], strArgName.PCoz());
-				SetSymbolValue(pStnodParam->m_pSym, pInstAlloca);
+				SetSymbolValue(pSymParam, pInstAlloca);
 
 				s32 iLine;
 				s32 iCol;
@@ -6689,7 +6753,7 @@ void CBuilderIR::SetupParamBlock(
 					iCol,
 					m_pBlockCur->m_pLblock);
 
-				auto pValSym = PValFromSymbol(pStnodParam->m_pSym);
+				auto pValSym = PValFromSymbol(pSymParam);
 				(void) PInstCreateStore(pValSym, pArg);
 			}
 		}
@@ -6864,15 +6928,16 @@ void CodeGenEntryPoints(
 
 		if (cgepk == CGEPK_Normal)
 		{
-			if (pStnod->m_park == PARK_ProcedureDefinition && pStnod->m_pSym->m_symdep != SYMDEP_Used)
+			auto pSym = pStnod->PSym();
+			if (pStnod->m_park == PARK_ProcedureDefinition && pSym->m_symdep != SYMDEP_Used)
 			{
 				EWC_ASSERT(
-					pStnod->m_pSym->m_symdep == SYMDEP_Unused,
+					pSym->m_symdep == SYMDEP_Unused,
 					"unexpected symbol dependency type (%d) for symbol '%s'",
-					pStnod->m_pSym->m_symdep,
-					pStnod->m_pSym->m_strName.PCoz());
+					pSym->m_symdep,
+					pSym->m_strName.PCoz());
 
-				//printf("Skipping dead code %s\n", pStnod->m_pSym->m_strName.PCoz());
+				//printf("Skipping dead code %s\n", pSym->m_strName.PCoz());
 				continue;
 			}
 
@@ -6880,7 +6945,7 @@ void CodeGenEntryPoints(
 
 			if (pStnod->m_park == PARK_ProcedureDefinition)
 			{
-				auto pVal = pBuild->PValFromSymbol(pStnod->m_pSym);
+				auto pVal = pBuild->PValFromSymbol(pSym);
 				auto pTinproc = PTinRtiCast<STypeInfoProcedure *>(pStnod->m_pTin);
 				if (!EWC_FVERIFY(pVal && (pTinproc->FIsForeign() || pVal->m_valk == VALK_Procedure), "Expected procedure"))
 					return;

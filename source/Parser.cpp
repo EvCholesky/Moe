@@ -31,6 +31,7 @@ enum FPDECL
 	FPDECL_AllowBakedTypes		= 0x8, 	// allow unspecified generic types (aka $T)
 	FPDECL_AllowBakedValues		= 0x10,	// allow types to be marked as baked constant values
 	FPDECL_AllowConstants		= 0x20, // allow constant declarations
+	FPDECL_AllowUsing			= 0x40,	// allow 'using' declarations
 
 	FPDECL_None			= 0x0,
 	FPDECL_All			= 0x2F,
@@ -488,13 +489,13 @@ void ExpectEndOfStatement(CParseContext * pParctx, SLexer * pLex, const char * p
 	}
 }
 
-CSTNode * PStnodAllocateIdentifier(CParseContext * pParctx, const SLexerLocation & lexloc, const CString & strIdent)
+CSTNode * PStnodAllocateIdentifier(CAlloc * pAlloc, const SLexerLocation & lexloc, const CString & strIdent)
 {
-	CSTNode * pStnod = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+	CSTNode * pStnod = EWC_NEW(pAlloc, CSTNode) CSTNode(pAlloc, lexloc);
 
 	pStnod->m_park = PARK_Identifier;
 
-	auto pStident = EWC_NEW(pParctx->m_pAlloc, CSTIdentifier) CSTIdentifier();
+	auto pStident = EWC_NEW(pAlloc, CSTIdentifier) CSTIdentifier();
 	pStident->m_str = strIdent;
 	pStnod->m_pStident = pStident;
 
@@ -509,7 +510,7 @@ CSTNode * PStnodParseIdentifier(CParseContext * pParctx, SLexer * pLex)
 	SLexerLocation lexloc(pLex);
 
 	CString strIdent = pLex->m_str;
-	auto pStnod = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
+	auto pStnod = PStnodAllocateIdentifier(pParctx->m_pAlloc, lexloc, strIdent);
 	pStnod->m_tok = TOK(pLex->m_tok);
 
 	if (strIdent.FIsEmpty())
@@ -1542,7 +1543,8 @@ CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
 		auto pSymtab = pParctx->m_pSymtab;
 		if (EWC_FVERIFY(pSymtab, "expected symbol table"))
 		{
-			pStnod->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnod, FSYM_IsType | FSYM_VisibleWhenNested);
+			auto pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnod, FSYM_IsType | FSYM_VisibleWhenNested);
+			pStnod->m_pSymbase = pSym;
 
 			CString strIdent = StrFromIdentifier(pStnodIdent).PCoz();
 			STypeInfoGeneric * pTingen = EWC_NEW(pSymtab->m_pAlloc, STypeInfoGeneric) 
@@ -1550,7 +1552,7 @@ CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
 			pSymtab->AddManagedTin(pTingen);
 			pTingen->m_pStnodDefinition = pStnod;
 			pStnod->m_pTin = pTingen;
-			pStnod->m_pSym->m_pTin = pTingen;
+			pSym->m_pTin = pTingen;
 		}
 
 		(void) pStnod->IAppendChild(pStnodIdent);
@@ -1778,6 +1780,8 @@ CSTNode * PStnodParseParameter(
 	bool fAllowCompoundDecl = grfpdecl.FIsSet(FPDECL_AllowCompoundDecl);
 	bool fAllowBakedValues = grfpdecl.FIsSet(FPDECL_AllowBakedValues);
 	bool fAllowConstants = grfpdecl.FIsSet(FPDECL_AllowConstants);
+	bool fAllowUsingPrefix = grfpdecl.FIsSet(FPDECL_AllowUsing);
+	bool fHasUsingPrefix = false;
 
 	SLexer lexPeek = *pLex;
 	int cIdent = 0;
@@ -1786,6 +1790,11 @@ CSTNode * PStnodParseParameter(
 		if (fAllowBakedValues)
 		{
 			(void)FConsumeToken(&lexPeek, TOK_Generic); // ignore baked constant marks
+		}
+
+		if (fAllowUsingPrefix && RwordLookup(&lexPeek) == RWORD_Using)
+		{
+			TokNext(&lexPeek);
 		}
 
 		if (lexPeek.m_tok != TOK_Identifier)
@@ -1817,6 +1826,12 @@ CSTNode * PStnodParseParameter(
 			fIsBakedConstant = true;
 		}
 
+		if (fAllowUsingPrefix && RwordLookup(pLex) == RWORD_Using)
+		{
+			fHasUsingPrefix = true;
+			TokNext(pLex);
+		}
+
 		if (pStnodInit)
 			ParseError(pParctx, pLex, "Initializer must come after all comma separated declarations");
 
@@ -1829,6 +1844,7 @@ CSTNode * PStnodParseParameter(
 
 		auto pStdecl = pStnodDecl->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 		pStdecl->m_fIsBakedConstant = fIsBakedConstant;
+		pStdecl->m_fHasUsingPrefix = fHasUsingPrefix;
 		++cTypeNeeded;
 
 		if (pStnodReturn)
@@ -1855,7 +1871,7 @@ CSTNode * PStnodParseParameter(
 		// NOTE: May not resolve symbols (symtab is null if this is a procedure reference)
 		if (pSymtab)
 		{
-			pStnodIdent->m_pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
+			pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
 		}
 
 		pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
@@ -1950,7 +1966,7 @@ CSTNode * PStnodParseDecl(CParseContext * pParctx, SLexer * pLex)
 {
 	// stand alone declaration statement
 
-	GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl | FPDECL_AllowConstants;
+	GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl | FPDECL_AllowConstants | FPDECL_AllowUsing;
 	auto * pStnod =  PStnodParseParameter(pParctx, pLex, pParctx->m_pSymtab, grfpdecl);
 	if (!pStnod)
 		return nullptr;
@@ -2103,11 +2119,11 @@ CSTNode * PStnodSpoofEnumConstant(CParseContext * pParctx, const SLexerLocation 
 
 	auto pStdecl = pStnodConstant->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
-	auto pStnodIdent = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
+	auto pStnodIdent = PStnodAllocateIdentifier(pParctx->m_pAlloc, lexloc, strIdent);
 	pStnodIdent->m_grfstnod.AddFlags(FSTNOD_ImplicitMember);
 	pStdecl->m_iStnodIdentifier = pStnodConstant->IAppendChild(pStnodIdent);
 
-	pStnodConstant->m_pSym = pParctx->m_pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, strIdent, pStnodConstant, FSYM_VisibleWhenNested);
+	pStnodConstant->m_pSymbase = pParctx->m_pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, strIdent, pStnodConstant, FSYM_VisibleWhenNested);
 	return pStnodConstant;
 }
 
@@ -2141,7 +2157,7 @@ CSTNode * PStnodParseEnumConstant(CParseContext * pParctx, SLexer * pLex)
 	}
 
 	pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConstant, FSYM_VisibleWhenNested);
-	pStnodConstant->m_pSym = pSym;
+	pStnodConstant->m_pSymbase = pSym;
 
 	if (FConsumeToken(pLex, TOK_ColonEqual))
 	{
@@ -2451,7 +2467,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				}
 
 				CString strIdent(pCozOverloadName);
-				pStnodIdent = PStnodAllocateIdentifier(pParctx, lexloc, strIdent);
+				pStnodIdent = PStnodAllocateIdentifier(pParctx->m_pAlloc, lexloc, strIdent);
 				pStnodIdent->m_tok = TOK(pLex->m_tok);
 			}
 			else
@@ -2675,7 +2691,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				auto pErrman = pParctx->m_pWork->m_pErrman;
 				SSymbol * pSymProc = pSymtabParent->PSymEnsure( pErrman, StrFromIdentifier(pStnodIdent), pStnodProc, FSYM_VisibleWhenNested);
 				pSymProc->m_pTin = pTinproc;
-				pStnodProc->m_pSym = pSymProc;
+				pStnodProc->m_pSymbase = pSymProc;
 
 
 				return pStnodProc;
@@ -2760,7 +2776,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				SSymbol * pSymEnum = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodEnum, grfsym, FSHADOW_NoShadowing);
 				pSymEnum->m_pTin = pTinenum;
 
-				pStnodEnum->m_pSym = pSymEnum;
+				pStnodEnum->m_pSymbase = pSymEnum;
 				pStnodEnum->m_pTin = pTinenum;
 
 				return pStnodEnum;
@@ -2887,7 +2903,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				auto pErrman = pParctx->m_pWork->m_pErrman;
 				GRFSYM grfsym(FSYM_IsType | FSYM_VisibleWhenNested);
 				SSymbol * pSymStruct = pSymtabParent->PSymEnsure(pErrman, strIdent, pStnodStruct, grfsym, FSHADOW_NoShadowing);
-				pStnodStruct->m_pSym = pSymStruct;
+				pStnodStruct->m_pSymbase = pSymStruct;
 				pSymStruct->m_pTin = pTinstruct;
 				pStnodStruct->m_pTin = pTinstruct;
 
@@ -2920,7 +2936,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				GRFSYM grfsym(FSYM_IsType | FSYM_VisibleWhenNested);
 				auto pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodTypedef, grfsym, FSHADOW_NoShadowing);
-				pStnodTypedef->m_pSym = pSym;
+				pStnodTypedef->m_pSymbase = pSym;
 
 
 				return pStnodTypedef;
@@ -2951,7 +2967,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				CSymbolTable * pSymtab = pParctx->m_pSymtab;
 				auto pErrman = pParctx->m_pWork->m_pErrman;
-				pStnodIdent->m_pSym = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst, FSYM_VisibleWhenNested);
+				pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst, FSYM_VisibleWhenNested);
 
 				return pStnodConst;
 			}
@@ -3419,7 +3435,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 		{
 			// add iterIsDone AST
 			{
-				CSTNode * pStnodPredIdent = PStnodAllocateIdentifier(pParctx, lexloc, "iterIsDone");
+				CSTNode * pStnodPredIdent = PStnodAllocateIdentifier(pParctx->m_pAlloc, lexloc, "iterIsDone");
 
 				CSTNode * pStnodArg = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodArg->m_tok = TOK_Reference;
@@ -3437,7 +3453,7 @@ CSTNode * PStnodParseIterationStatement(CParseContext * pParctx, SLexer * pLex, 
 
 			// add iterNext 
 			{
-				CSTNode * pStnodIncIdent = PStnodAllocateIdentifier(pParctx, lexloc, "iterNext");
+				CSTNode * pStnodIncIdent = PStnodAllocateIdentifier(pParctx->m_pAlloc, lexloc, "iterNext");
 
 				CSTNode * pStnodArg = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodArg->m_tok = TOK_Reference;
@@ -3783,6 +3799,16 @@ CString CSymbolTable::s_strU64;
 CString CSymbolTable::s_strF32;
 CString CSymbolTable::s_strF64;
 
+CSymbolTable::SUsing::~SUsing()
+{
+	auto pAlloc = m_hashHvPSymp.PAlloc();
+	CHash<HV, SSymbolPath *>::CIterator iterPSymp(&m_hashHvPSymp);
+	while (SSymbolPath ** ppSymp = iterPSymp.Next())
+	{
+		pAlloc->EWC_DELETE(*ppSymp);
+	}
+}
+
 CSymbolTable::~CSymbolTable()
 {
 	CHash<HV, SSymbol *>::CIterator iterPSym(&m_hashHvPSym);
@@ -4066,9 +4092,101 @@ SSymbol * CSymbolTable::PSymEnsure(
 	return pSym;
 }
 
+void FlattenUsingTree(CSymbolTable * pSymtab, CDynAry<CSymbolTable::SUsing *> * parypUsing)
+{
+	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+	{
+		parypUsing->Append(pUsing);
+		FlattenUsingTree(pUsing->m_pSymtab, parypUsing);
+	}
+}
+
+bool FTryCheckUsingCollisions(
+	CAlloc * pAlloc,
+	SErrorManager * pErrman,
+	CSymbolTable * pSymtabNew,
+	CSTNode * pStnodNew,
+	CSymbolTable * pSymtabCheck,
+	CSTNode * pStnodCheck)
+{
+	CDynAry<CSymbolTable::SUsing *> arypUsingNew(pAlloc, BK_Symbol);
+	CSymbolTable::SUsing usingNew;
+	usingNew.m_pSymtab = pSymtabNew;
+	usingNew.m_pStnod = pStnodNew;
+	arypUsingNew.Append(&usingNew);
+	FlattenUsingTree(pSymtabNew, &arypUsingNew);
+
+	CDynAry<CSymbolTable::SUsing *> arypUsingCheck(pAlloc, BK_Symbol);
+	CSymbolTable::SUsing usingRoot;
+	usingRoot.m_pSymtab = pSymtabCheck;
+	usingRoot.m_pStnod = pStnodCheck;
+	arypUsingCheck.Append(&usingRoot);
+	FlattenUsingTree(pSymtabCheck, &arypUsingCheck);
+
+	bool fIsOk = true;
+	for (auto ppUsingNew = arypUsingNew.A(); ppUsingNew != arypUsingNew.PMac(); ++ppUsingNew)
+	{
+		auto pUsingNew = *ppUsingNew;
+		for (auto ppUsingCheck = arypUsingCheck.A(); ppUsingCheck != arypUsingCheck.PMac(); ++ppUsingCheck)
+		{
+			auto pUsingCheck = *ppUsingCheck;
+
+			if (pUsingNew->m_pSymtab == pUsingCheck->m_pSymtab)
+			{
+				SError error(pErrman, ERRID_UsingStatementCycle);
+				PrintErrorLine(&error, "Error:", &pUsingNew->m_pStnod->m_lexloc, "'using' statement '%s' would cause cycle", pUsingNew->m_pSymtab->m_strNamespace.PCoz());
+				PrintErrorLine(&error, "", &pUsingCheck->m_pStnod->m_lexloc, "with '%s' included here", pUsingCheck->m_pSymtab->m_strNamespace.PCoz());
+				fIsOk = false;
+				continue;
+			}
+
+			auto pHashHvPSymCheck = &pUsingCheck->m_pSymtab->m_hashHvPSym;
+			EWC::CHash<HV, SSymbol *>::CIterator iterNew(&pUsingNew->m_pSymtab->m_hashHvPSym);
+			while (SSymbol ** ppSymNew = iterNew.Next())
+			{
+				SSymbol * pSymNew = *ppSymNew;
+				SSymbol ** ppSymCollis = pHashHvPSymCheck->Lookup(pSymNew->m_strName.Hv()); 
+				if (ppSymCollis)
+				{
+					SError error(pErrman, ERRID_UsingStatementCollision);
+					PrintErrorLine(&error, "Error:", &pUsingNew->m_pStnod->m_lexloc, 
+						"'using' statement causes name collision for '%s'", pSymNew->m_strName.PCoz());
+
+					PrintErrorLine(&error, "   ", &(*ppSymCollis)->m_pStnodDefinition->m_lexloc, "found here");
+					fIsOk = false;
+				}
+			}
+		}
+	}
+
+	return fIsOk;
+}
+
+void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtabNew, CSTNode * pStnodUsingDecl)
+{
+	if (pSymtabNew == this)
+	{
+		EmitError(pErrman, &pStnodUsingDecl->m_lexloc, ERRID_UsingStatementCollision, 
+			"Using statement would cause name collision (cyclic using statements)");
+		return;
+	}
+
+	// BB - ASSERT symtab is locked
+
+	if (FTryCheckUsingCollisions(m_pAlloc, pErrman, pSymtabNew, pStnodUsingDecl, this, pStnodUsingDecl))
+	{
+		auto pUsingNew = m_aryUsing.AppendNew();
+		pUsingNew->m_pSymtab = pSymtabNew;
+		pUsingNew->m_pStnod = pStnodUsingDecl;
+		pUsingNew->m_hashHvPSymp.SetAlloc(m_pAlloc, BK_Symbol);
+		EWC_ASSERT(pStnodUsingDecl->PSym(), "expected symbol for using decl");
+	}
+}
+
 SSymbol * CSymbolTable::PSymNewUnmanaged(const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
 {
 	auto pSym = EWC_NEW(m_pAlloc, SSymbol) SSymbol;
+	pSym->m_symk = SYMK_Symbol;
 	pSym->m_symdep = SYMDEP_Nil;
 
 	pSym->m_aryPSymReferencedBy.SetAlloc(m_pAlloc, BK_Dependency, 4);
@@ -4081,6 +4199,177 @@ SSymbol * CSymbolTable::PSymNewUnmanaged(const CString & strName, CSTNode * pStn
 	pSym->m_pSymPrev = nullptr;
 	return pSym;
 }
+
+static SSymbolPath * PSympLookup(
+	CSymbolTable::SUsing * pUsingSource,
+	const CString & str,
+	const SLexerLocation & lexloc,
+	GRFSYMLOOK grfsymlook,
+	int cpSymPath = 0)
+{
+	auto pSymtab = pUsingSource->m_pSymtab;
+	auto pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook);
+	if (pSym)
+	{
+		auto pSymp = EWC_NEW(pSymtab->m_pAlloc, SSymbolPath) SSymbolPath;
+		pSymp->m_symk = SYMK_Path;
+		pSymp->m_arypSym.SetAlloc(pSymtab->m_pAlloc, BK_Symbol);
+		pSymp->m_arypSym.AppendFill(cpSymPath+1, nullptr);
+		pSymp->m_arypSym[cpSymPath] = pSym;
+		pSymp->m_arypSym[cpSymPath-1] = pUsingSource->m_pStnod->PSym();
+
+		return pSymp;
+	}
+
+	for (auto pUsingIt = pSymtab->m_aryUsing.A(); pUsingIt != pSymtab->m_aryUsing.PMac(); ++pUsingIt)
+	{
+		auto pSymp = PSympLookup(pUsingIt, str, lexloc, grfsymlook, cpSymPath + 1);
+		if (pSymp)
+		{
+			pSymp->m_arypSym[cpSymPath-1] = pUsingSource->m_pStnod->PSym();
+			return pSymp;
+		}
+	}
+	return nullptr;
+}
+
+SSymbolBase * PSymbaseLookup(
+	CSymbolTable * pSymtab,
+	const CString & str,
+	const SLexerLocation & lexloc,
+	GRFSYMLOOK grfsymlook)
+{
+	EWC_ASSERT(!grfsymlook.FIsSet(FSYMLOOK_Ancestors), "ancestor lookup not supported with using paths");
+	auto pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook);
+	if (pSym)
+		return pSym;
+
+	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+	{
+		auto ppSymp = pUsing->m_hashHvPSymp.Lookup(str.Hv());
+		if (ppSymp)
+		{
+			return *ppSymp;
+		}
+	}
+
+	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+	{
+		auto pSymp = PSympLookup(pUsing, str, lexloc, grfsymlook, 1);
+		if (pSymp)
+		{
+			pUsing->m_hashHvPSymp.FinsEnsureKeyAndValue(str.Hv(), pSymp);
+			return pSymp;
+		}
+	}
+
+	return nullptr;
+}
+
+#if EWC_MODIFY_AST_FOR_USING
+// look up a local symbol and return the complete using statement symbol path
+static bool FTryLookupSymbolReversePath(
+	CSymbolTable * pSymtab,
+	const CString & str,
+	const SLexerLocation & lexloc,
+	GRFSYMLOOK grfsymlook,
+	EWC::CDynAry<SSymbol* > * parypSymPath)
+{
+	EWC_ASSERT(!grfsymlook.FIsSet(FSYMLOOK_Ancestors), "ancestor lookup not supported with using paths");
+	auto pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook);
+	if (pSym)
+	{
+		parypSymPath->Append(pSym);
+		return true;
+	}
+
+	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+	{
+		if (FTryLookupSymbolReversePath(pUsing->m_pSymtab, str, lexloc, grfsymlook, parypSymPath))
+		{
+			parypSymPath->Append(pUsing->m_pStnod->PSym());
+			return true;
+		}
+	}
+	return false;
+}
+
+bool CSymbolTable::FTryLookupSymbolPath(
+	const CString & str,
+	const SLexerLocation & lexloc,
+	GRFSYMLOOK grfsymlook,
+	EWC::CDynAry<SSymbol* > * parypSymPath)
+{
+	bool fRet = FTryLookupSymbolReversePath(this, str, lexloc, grfsymlook, parypSymPath);
+	parypSymPath->Reverse();
+	return fRet;
+}
+
+SSymbolBase * CSymbolTable::PSymbaseLookup(
+	const EWC::CString & str,
+	const SLexerLocation & lexloc,
+	GRFSYMLOOK grfsymlook)
+{
+	if (grfsymlook.FIsSet(FSYMLOOK_Local))
+	{
+		auto tabvis = TabvisCompute(this, m_iNestingDepth, grfsymlook);
+		auto pSym = PSymLookup(str, lexloc, FSYMLOOK_Local);
+		while (pSym)
+		{
+			SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
+			bool fVisibleWhenNested = pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
+			if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= lexloc)))
+			{
+				return pSym;
+			}
+			pSym = pSym->m_pSymPrev;
+		}
+
+		auto ppSymp = m_hashHvPSymp.Lookup(str.Hv());
+		if (ppSymp)
+		{
+			return *ppSymp;	
+		}
+		//what to do in the complex path cases? no shadowing? no nesting?
+		// could use lexloc, (for the using statement?)
+
+		// search SUsings for symbol path
+		
+	}
+
+	CSymbolTable * pSymtab = (grfsymlook.FIsSet(FSYMLOOK_Ancestors)) ? m_pSymtabParent : nullptr;
+	SLexerLocation lexlocChild = lexloc;
+	while (pSymtab)
+	{
+		auto ppSymp = pSymtab->m_hashHvPSymp.Lookup(str.Hv());
+		if (ppSymp)
+		{
+			return *ppSymp;	
+		}
+
+		SSymbol ** ppSym = pSymtab->m_hashHvPSym.Lookup(str.Hv()); 
+
+		if (ppSym)
+		{
+			auto tabvis = TabvisCompute(pSymtab, m_iNestingDepth, grfsymlook);
+			SSymbol * pSym = *ppSym;
+			while (pSym)
+			{
+				SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
+				bool fVisibleWhenNested = pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
+				if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= lexloc)))
+				{
+					return pSym;
+				}
+				pSym = pSym->m_pSymPrev;
+			}
+		}
+
+		pSymtab = pSymtab->m_pSymtabParent;
+	}
+	return nullptr;
+}
+#endif
 
 SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook, CSymbolTable ** ppSymtabOut)
 {
@@ -4612,7 +4901,7 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_pTin(nullptr)
 ,m_pOptype(nullptr)
 ,m_pSymtab(nullptr)
-,m_pSym(nullptr)
+,m_pSymbase(nullptr)
 ,m_arypStnodChild(pAlloc, EWC::BK_SyntaxTree)
 {
 }

@@ -108,6 +108,20 @@ public:
 						m_c = 0;
 					}
 
+	void		Reverse()
+					{
+						if (FIsEmpty())
+							return;
+
+						size_t iEnd = C() -1;
+						for (size_t i = 0; i < iEnd; ++i, --iEnd)
+						{
+							T t = m_a[i];
+							m_a[i] = m_a[iEnd];
+							m_a[iEnd] = t;
+						}
+					}
+
 	// Note - These allocation routines are here so that we can operate on CFixAry without passing the template argument C_MAX
 	void		Append(const Type t)
 					{

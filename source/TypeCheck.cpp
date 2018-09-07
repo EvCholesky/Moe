@@ -239,11 +239,12 @@ void PrintTypeStack(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 		auto pLexloc = &pTcsent->m_pStnod->m_lexloc;
 		CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexloc, &iLine, &iCol);
 		
+		auto pSym = pTcsent->m_pStnod->PSym();
 		printf("%d) PARK_%s, state = %d, sym = %s,     %s (%d, %d)\n", 
 			iTcsent,
 			PChzFromPark(pTcsent->m_pStnod->m_park),
 			pTcsent->m_nState,
-			(pTcsent->m_pStnod->m_pSym) ? pTcsent->m_pStnod->m_pSym->m_strName.PCoz() : "none",
+			(pSym) ? pSym->m_strName.PCoz() : "none",
 			pLexloc->m_strFilename.PCoz(), iLine, iCol);
 	}
 }
@@ -2580,7 +2581,7 @@ bool FIsType(CSTNode * pStnod)
 	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 		return false;
 
-	auto pSym = pStnod->m_pSym;
+	auto pSym = pStnod->PSym();
 	if (!pSym)
 	{
 		// BB - The only current exception to his is spoofed array members
@@ -2747,7 +2748,7 @@ STypeInfo * PTinSubstituteGenerics(
 		case TINK_Generic:
 			{
 				auto pTingen = (STypeInfoGeneric *)pTinUnsub;
-				SBakeValue * pBakval = pGenmap->m_mpPSymBakval.Lookup(pTingen->m_pStnodDefinition->m_pSym);
+				SBakeValue * pBakval = pGenmap->m_mpPSymBakval.Lookup(pTingen->m_pStnodDefinition->PSym());
 				if (!pBakval)
 				{
 					if (errep == ERREP_ReportErrors)
@@ -2999,11 +3000,11 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 
 	}
 
-	pInsreq->m_pSym = pSymtabNew->PSymGenericInstantiate(pStnodGeneric->m_pSym, pTinstructNew);
+	pInsreq->m_pSym = pSymtabNew->PSymGenericInstantiate(pStnodGeneric->PSym(), pTinstructNew);
 	EWC_ASSERT(pInsreq->m_pSym, "null symbol");
 
 	pStnodStructCopy->m_pTin = pTinstructNew;
-	pStnodStructCopy->m_pSym = pInsreq->m_pSym;
+	pStnodStructCopy->m_pSymbase = pInsreq->m_pSym;
 	pInsreq->m_pSym->m_pStnodDefinition = pStnodStructCopy;
 	pTinstructNew->m_pStnodStruct = pStnodStructCopy;
 
@@ -3184,7 +3185,7 @@ PROCMATCH ProcmatchCheckStructArguments(
 		
 	CDynAry<SMatchTypeInfo> aryMtin(pTcwork->m_pAlloc, BK_TypeCheckProcmatch, pPmparam->m_cpStnodCall);
 
-	SGenericMap genmap(pTcwork->m_pAlloc, pStnodStruct->m_pSym);
+	SGenericMap genmap(pTcwork->m_pAlloc, pStnodStruct->PSym());
 	for (int iArg = 0; iArg < cParam; ++iArg)
 	{
 		CSTNode * pStnodArg = mpIArgPStnod[iArg];
@@ -3222,7 +3223,8 @@ PROCMATCH ProcmatchCheckStructArguments(
 			if (pStnodDecl->m_park != PARK_Decl || pStdecl == nullptr)
 				continue;
 
-			if (pStdecl->m_fIsBakedConstant && EWC_FVERIFY(pStnodDecl->m_pSym, "expected symbol for baked value"))
+			auto pSymDecl = pStnodDecl->PSym();
+			if (pStdecl->m_fIsBakedConstant && EWC_FVERIFY(pSymDecl, "expected symbol for baked value"))
 			{
 				auto pStnodArg = aryMtin[ipStnodParam].m_pStnodArg;
 				if (!FIsCompileTimeConstant(pStnodArg->m_pTin))
@@ -3239,7 +3241,7 @@ PROCMATCH ProcmatchCheckStructArguments(
 
 				mpIArgPStnod[ipStnodParam] = aryMtin[ipStnodParam].m_pStnodLabel;
 				mpIArgGrfarg[ipStnodParam].AddFlags(FARG_BakedValue);
-				genmap.m_mpPSymBakval.Insert(pStnodDecl->m_pSym, SBakeValue(pStnodArg));
+				genmap.m_mpPSymBakval.Insert(pStnodDecl->PSym(), SBakeValue(pStnodArg));
 			}
 			else
 			{
@@ -3440,9 +3442,10 @@ STypeInfo * PTinFromTypeSpecification(
 				EWC_ASSERT(pStnodIt->m_strees == STREES_TypeChecked, "generic inst needs to by type checked first");
 
 				pTinFinal = nullptr;
-				if (pStnodIt->m_pSym && pStnodIt->m_pSym->m_pTin)
+				auto pSym = pStnodIt->PSym();
+				if (pSym && pSym->m_pTin)
 				{
-					pTinFinal = pStnodIt->m_pSym->m_pTin;
+					pTinFinal = pSym->m_pTin;
 				}
 				else
 				{
@@ -3775,7 +3778,7 @@ IVALK IvalkCompute(CSTNode * pStnod)
 	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 		return IVALK_RValue;
 
-	auto pSym = pStnod->m_pSym;
+	auto pSym = pStnod->PSym();
 	if (!pSym)
 	{
 		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
@@ -3925,7 +3928,8 @@ void ResolveSpoofTypedef(
 void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CSTNode * pStnodArray, int cElements, STypeInfo * pTinElement)
 {
 	auto pStdeclArray = PStmapRtiCast<CSTDecl *>(pStnodArray->m_pStmap);
-	if (!EWC_FVERIFY(pStdeclArray && pStnodArray->m_pSym, "bad spoofed literal array"))
+	auto pSym = pStnodArray->PSym();
+	if (!EWC_FVERIFY(pStdeclArray && pSym, "bad spoofed literal array"))
 		return;
 
 	STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
@@ -3935,7 +3939,7 @@ void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CS
 	pTinlit->m_pTinSource = pTinElement;
 	pTinlit->m_pStnodDefinition = pStnodArray;
 	pStnodArray->m_pTin = pTinlit;
-	pStnodArray->m_pSym->m_pTin = pTinlit;
+	pSym->m_pTin = pTinlit;
 
 	CSTNode * pStnodList = EWC_NEW(pSymtab->m_pAlloc, CSTNode) CSTNode(pSymtab->m_pAlloc, pStnodArray->m_lexloc);
 	pStnodList->m_park = PARK_ExpressionList;
@@ -4102,7 +4106,7 @@ ERRID ErridComputeDefinedGenerics(
 				{ 
 					auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodCur->m_pTin);
 
-					auto pSym = pStnodCur->m_pSym;
+					auto pSym = pStnodCur->PSym();
 					if (!EWC_FVERIFY(pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Generic, "expected generic type"))
 						break;
 
@@ -4269,7 +4273,7 @@ PROCMATCH ProcmatchCheckArguments(
 	}
 
 	auto pStnodDefinition = pTinproc->m_pStnodDefinition;
-	SGenericMap genmap(pTcwork->m_pAlloc, pStnodDefinition->m_pSym);
+	SGenericMap genmap(pTcwork->m_pAlloc, pStnodDefinition->PSym());
 
 	CSTNode * pStnodDefParamList = nullptr;
 	CSTProcedure * pStproc = nullptr;
@@ -4378,7 +4382,8 @@ PROCMATCH ProcmatchCheckArguments(
 				if (pStnodDecl->m_park != PARK_Decl || pStdecl == nullptr)
 					continue;
 
-				if (pStdecl->m_fIsBakedConstant && EWC_FVERIFY(pStnodDecl->m_pSym, "expected symbol for baked value"))
+				auto pSymDecl = pStnodDecl->PSym();
+				if (pStdecl->m_fIsBakedConstant && EWC_FVERIFY(pSymDecl, "expected symbol for baked value"))
 				{
 					auto pStnodArg = aryMtin[ipStnodParam].m_pStnodArg;
 					if (!FIsCompileTimeConstant(pStnodArg->m_pTin))
@@ -4399,7 +4404,7 @@ PROCMATCH ProcmatchCheckArguments(
 
 					mpIArgPStnod[ipStnodParam] = aryMtin[ipStnodParam].m_pStnodLabel; 
 					mpIArgGrfarg[ipStnodParam].AddFlags(FARG_BakedValue);
-					genmap.m_mpPSymBakval.Insert(pStnodDecl->m_pSym, SBakeValue(pStnodArg));
+					genmap.m_mpPSymBakval.Insert(pSymDecl, SBakeValue(pStnodArg));
 				}
 
 				auto pStnodType = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodType);
@@ -4853,16 +4858,17 @@ void RemapGenericStnodCopy(
 		auto pStnodGen	= arypStnodStackGen.TPopLast();
 		auto pStnodNew	= arypStnodStackNew.TPopLast();
 
-		if (pStnodNew->m_pSym)
+		auto pSymPrev = pStnodNew->PSym();
+		if (pSymPrev)
 		{
-			bool fHasSymbolTin = pStnodNew->m_pTin == pStnodNew->m_pSym->m_pTin;
-			auto pSymNew = PSymRemapGeneric(pTcwork, &pStnodNew->m_lexloc, pStnodNew->m_pSym, pmpPSymGenericPSymRemapped);
+			bool fHasSymbolTin = pStnodNew->m_pTin == pSymPrev->m_pTin;
+			auto pSymNew = PSymRemapGeneric(pTcwork, &pStnodNew->m_lexloc, pSymPrev, pmpPSymGenericPSymRemapped);
 			if (fHasSymbolTin)
 			{
 				pStnodNew->m_pTin = pSymNew->m_pTin;
 			}
 
-			pStnodNew->m_pSym = pSymNew;
+			pStnodNew->m_pSymbase = pSymNew;
 			if (pSymNew)
 			{
 				if (pStnodNew->m_pTin)
@@ -4885,7 +4891,7 @@ void RemapGenericStnodCopy(
 			auto pStnodChildGen = pStnodGen->PStnodChild(iStnod);
 			auto pStnodChildNew = pStnodNew->PStnodChild(iStnod);
 
-			SSymbol * pSymGen = pStnodChildNew->m_pSym;
+			SSymbol * pSymGen = pStnodChildNew->PSym();
 			if (!pSymGen && pStnodChildGen->m_park == PARK_Identifier)
 			{
 				CString strIdent = StrFromIdentifier(pStnodChildGen);
@@ -4962,9 +4968,10 @@ CString StrComputeMangled(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSymb
 {
 	auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnod->m_pStmap);
 	STypeInfoProcedure * pTinproc = nullptr;
-	if (pStnod->m_pSym)
+	auto pSym = pStnod->PSym();
+	if (pSym)
 	{
-		pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pStnod->m_pSym->m_pTin);
+		pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pSym->m_pTin);
 	}
 
 	if (!EWC_FVERIFY(pStproc && pTinproc, "bad procedure definition in StrComputeMangled"))
@@ -5110,12 +5117,13 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	auto pTinNew = 	PTinSubstituteGenerics(pTcwork, pSymtabNew, &pStnodGeneric->m_lexloc, pTinprocSrc, pGenmap, ERREP_ReportErrors);
 	auto pTinprocNew = PTinDerivedCast<STypeInfoProcedure *>(pTinNew);
 
-	pInsreq->m_pSym = pSymtabNew->PSymGenericInstantiate(pStnodGeneric->m_pSym, pTinprocNew);
-	EWC_ASSERT(pInsreq->m_pSym, "null symbol");
+	auto pSymInsreq = pSymtabNew->PSymGenericInstantiate(pStnodGeneric->PSym(), pTinprocNew);
+	pInsreq->m_pSym = pSymInsreq;
+	EWC_ASSERT(pSymInsreq, "null symbol");
 
 	pStnodProcCopy->m_pTin = pTinprocNew;
-	pStnodProcCopy->m_pSym = pInsreq->m_pSym;
-	pInsreq->m_pSym->m_pStnodDefinition = pStnodProcCopy;
+	pStnodProcCopy->m_pSymbase = pSymInsreq;
+	pSymInsreq->m_pStnodDefinition = pStnodProcCopy;
 
 	for (int ipStnod = 0; ipStnod < pStnodProcCopy->CStnodChild(); ++ipStnod)
 	{
@@ -5139,7 +5147,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 			auto pStdeclChild = PStmapRtiCast<CSTDecl *>(pStnodChild->m_pStmap);
 			if (pStdeclChild && pStdeclChild->m_fIsBakedConstant)
 			{
-				pStnodChild->m_pSym = nullptr;
+				pStnodChild->m_pSymbase = nullptr;
 			}
 		}
 	}
@@ -5495,7 +5503,7 @@ bool FIsDirectCall(CSTNode * pStnodCall)
 		return false;
 
 	auto pStnod = pStnodCall->PStnodChild(0);
-	auto pSym = pStnod->m_pSym;
+	auto pSym = pStnod->PSym();
 	if (pSym && pSym->m_pStnodDefinition && pSym->m_pStnodDefinition->m_park == PARK_ProcedureDefinition)
 	{
 		return true;
@@ -5565,6 +5573,68 @@ SOverloadCheck OvcheckTryCheckOverload(
 	return SOverloadCheck(pTinproc, TCRET_Complete, argord);
 }
 
+CSymbolTable * SymtabFindUsingTable(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, CSTNode * pStnodDecl)
+{
+	switch (pTin->m_tink)
+	{
+	case TINK_Pointer:
+		{
+			auto pTinptr = (STypeInfoPointer *)pTin;
+			return SymtabFindUsingTable(pTcwork, pTinptr->m_pTinPointedTo, pStnodDecl);
+		}
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			return SymtabFindUsingTable(pTcwork, pTinqual->m_pTin, pStnodDecl);
+		}
+	case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+			EWC_ASSERT(pTinstruct->m_pStnodStruct->m_pSymtab, "missing symbol table");
+			return pTinstruct->m_pStnodStruct->m_pSymtab;
+		} break;
+	case TINK_Enum:
+		{
+			auto pTinenum = (STypeInfoEnum *)pTin;
+			auto pSymtab = pTinenum->m_tinstructProduced.m_pStnodStruct->m_pSymtab;
+			EWC_ASSERT(pSymtab, "missing symbol table");
+			return pSymtab;
+		} break;
+	default:
+		auto strTin = StrFromTypeInfo(pTin);
+		EmitError(pTcwork, pStnodDecl, "cannot supply type '%s' in a 'using' statement", strTin.PCoz());
+		return nullptr;
+	}
+}
+
+#if EWC_MODIFY_AST_FOR_USING
+CSTNode * PStnodReplaceSymbolPath(STypeCheckWorkspace * pTcwork, CSTNode * pStnodSource, CDynAry<SSymbol * > * parypSymPath)
+{
+	if (parypSymPath->C() <= 1)
+		return nullptr;
+
+	if (!EWC_FVERIFY(pStnodSource->m_park == PARK_MemberLookup && pStnodSource->m_arypStnodChild.C()==2, "only currently support member lookup"))
+		return nullptr;
+
+	CSTNode * pStnodPrev = pStnodSource->m_arypStnodChild[0];
+	for (int ipSym = int(parypSymPath->C())-1; ipSym >= 0; --ipSym)
+	{
+		auto pSym = (*parypSymPath)[ipSym];
+		auto pStnodIdent = PStnodAllocateIdentifier(pTcwork->m_pAlloc, pStnodSource->m_lexloc, pSym->m_strName);
+
+		CSTNode * pStnodMember = EWC_NEW(pTcwork->m_pAlloc, CSTNode) CSTNode(pTcwork->m_pAlloc, pStnodSource->m_lexloc);
+		pStnodMember->m_park = PARK_MemberLookup;
+		pStnodMember->IAppendChild(pStnodPrev);
+		pStnodMember->IAppendChild(pStnodIdent);
+
+		pStnodPrev = pStnodMember;
+
+	}
+	printf(" returning 0x%p\n", pStnodPrev);
+	return pStnodPrev;
+}
+#endif
+
 TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
@@ -5589,8 +5659,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 				case 0:
 					{	
-						EWC_ASSERT(pStnod->m_pSym, "expected procedure symbol");
-						pTcsentTop->m_pSymContext = pStnod->m_pSym;
+						auto pSym = pStnod->PSym();
+						EWC_ASSERT(pSym, "expected procedure symbol");
+						pTcsentTop->m_pSymContext = pSym;
 
 						// push the parameter list
 						if (pStproc->m_iStnodParameterList >= 0)
@@ -5716,17 +5787,16 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 						}
 
-						SSymbol * pSymProc = pStnod->m_pSym;
+						SSymbol * pSymProc = pStnod->PSym();
 						if (!EWC_FVERIFY(pSymProc, "failed to find procedure name symbol: %s", pTinproc->m_strName.PCoz()))
 							return TCRET_StoppingError;
 						if (!EWC_FVERIFY(pSymProc->m_pTin, "expected procedure type info to be created during parse"))
 							return TCRET_StoppingError;
 
-						EWC_ASSERT(pStnod->m_pSym, "null symbol");
+						EWC_ASSERT(pSymProc, "null symbol");
 
 						if (pTinproc && FIsGenericType(pTinproc))
 						{
-							SSymbol * pSymProc = pStnod->m_pSym;
 							auto pTinproc = PTinDerivedCast<STypeInfoProcedure *>(pSymProc->m_pTin);
 
 							OnTypeResolve(pTcwork, pSymProc);
@@ -5759,8 +5829,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pTinproc->m_strMangled = StrComputeMangled(pTcwork, pStnod, pTcsentTop->m_pSymtab);
 						PopTcsent(pTcfram, &pTcsentTop, pStnod);
 
-						SSymbol * pSymProc = pStnod->m_pSym;
-
+						SSymbol * pSymProc = pStnod->PSym();
 						if (pStproc->m_grfstproc.FIsSet(FSTPROC_PublicLinkage))
 						{
 							pSymProc->m_symdep = SYMDEP_PublicLinkage;
@@ -5917,7 +5986,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						SSymbol * pSymStruct = (pInsreq) ? pInsreq->m_pSym : nullptr;
 						AddSymbolReference(pTcsentTop->m_pSymContext, pSymProc);
 
-						pStnod->m_pSym = pSymStruct;
+						pStnod->m_pSymbase = pSymStruct;
 						pStnod->m_pTin = pSymStruct->m_pTin;
 
 						if (pSymStruct->m_pStnodDefinition->m_strees < STREES_TypeChecked)
@@ -5947,7 +6016,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					case TCRET_Complete:
 						{
 
-							pStnod->m_pSym = pSymProc;
+							pStnod->m_pSymbase = pSymProc;
 							ResolveProcCallArguments(pTcwork, pStnod, pmparam.m_pPmfit, 1, pStnod->m_arypStnodChild.C());
 
 							if (pmparam.m_pPmfit->m_pGenmap)
@@ -5972,13 +6041,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 							// Note: The callee's symbol and pTin are set by type checking the identifier, this may pick the wrong
 							//  overload, clean it up here.
-							pStnodCallee->m_pSym = pSymProc;
+							pStnodCallee->m_pSymbase = pSymProc;
 
 							pTinproc = (pSymProc) ? PTinRtiCast<STypeInfoProcedure*>(pSymProc->m_pTin) : nullptr;
 							pStnodCallee->m_pTin = pTinproc;
 
 							// make sure the instanced symbol is pushed to the PARK_ProcedureCall node
-							pStnod->m_pSym = pSymProc;
+							pStnod->m_pSymbase = pSymProc;
 							pStnod->m_pTin = pTinproc;
 
 							fIsDirectCall = FIsDirectCall(pStnod);
@@ -6111,8 +6180,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					++pTcsentTop->m_nState;
 
-					EWC_ASSERT(pStnod->m_pSym, "expected enum symbol");
-					pTcsentTop->m_pSymContext = pStnod->m_pSym;
+					auto pSym = pStnod->PSym();
+					EWC_ASSERT(pSym, "expected enum symbol");
+					pTcsentTop->m_pSymContext = pSym;
 
 					// type spec
 					if (pStenum->m_iStnodType >= 0)
@@ -6427,6 +6497,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				// Find our symbol and resolve any pending unknown types - we don't have a concrete type yet
 				//  but that should be ok.
 				auto pSymtab = pTcsentTop->m_pSymtab;
+
+				// TODO: Using
 				SSymbol * pSymIdent = pSymtab->PSymLookup(
 												strIdent,
 												pStnodIdent->m_lexloc,
@@ -6436,7 +6508,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					AddSymbolReference(pTcsentTop->m_pSymContext, pSymIdent);
 
-					pStnod->m_pSym = pSymIdent;
+					pStnod->m_pSymbase = pSymIdent;
 					if (pSymIdent->m_pTin == nullptr)
 					{
 						pSymIdent->m_pTin = pStnod->m_pTin;
@@ -6504,7 +6576,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					pTypememb->m_pTin = pTypememb->m_pStnod->m_pTin;
 				}
 
-				SSymbol * pSymStruct = pStnod->m_pSym;
+				SSymbol * pSymStruct = pStnod->PSym();
 				if (!EWC_FVERIFY(pSymStruct, "struct symbol should be created during parse"))
 					return TCRET_StoppingError;
 				if (!EWC_FVERIFY(pSymStruct->m_pTin, "expected structure type info to be created during parse"))
@@ -6512,6 +6584,31 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 
 				pStnod->m_strees = STREES_TypeChecked;
+
+				// insert symbol table using statements
+				if (pStstruct->m_iStnodDeclList >= 0)
+				{
+					auto pStnodDeclList = pStnod->PStnodChild(pStstruct->m_iStnodDeclList);
+					for (int ipStnodChild = 0; ipStnodChild < pStnodDeclList->CStnodChild(); ++ipStnodChild)
+					{
+						auto pStnodChild = pStnodDeclList->PStnodChild(ipStnodChild);
+						auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodChild->m_pStmap);
+						if (pStdecl == nullptr || !pStdecl->m_fHasUsingPrefix)
+							continue;
+						
+						if (!EWC_FVERIFY(pStnodChild->m_strees >= STREES_TypeChecked && pStnodChild->m_pTin, "expected decl type to be resolved"))
+							continue;
+
+
+						auto pTinUsing = pStnodChild->m_pTin;
+						auto pSymtab = SymtabFindUsingTable(pTcwork, pTinUsing, pStnodChild);
+						if (!pSymtab)
+							continue;
+						
+						pStnod->m_pSymtab->AddUsingScope(pTcwork->m_pErrman, pSymtab, pStnodChild);
+						
+					}
+				}
 
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 				OnTypeResolve(pTcwork, pSymStruct);
@@ -6526,6 +6623,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (EWC_FVERIFY(!strIdent.FIsEmpty(), "identifier node with no value"))
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
+					//TODO: Using? is this needed?
 					auto pSym = pSymtab->PSymLookup(strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
 					if (!pSym)
 					{
@@ -6536,7 +6634,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					if (pSym->m_grfsym.FIsSet(FSYM_IsBuiltIn))
 					{
 						pStnod->m_pTin = pSym->m_pTin;
-						pStnod->m_pSym = pSym;
+						pStnod->m_pSymbase = pSym;
 					}
 					else if (EWC_FVERIFY(pSym->m_pStnodDefinition, "Non-built-in types must have a STNode"))
 					{
@@ -6547,7 +6645,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							//  this symbol will be replaced later
 
 							pStnod->m_pTin = pStnodDefinition->m_pTin;
-							pStnod->m_pSym = pSym;
+							pStnod->m_pSymbase = pSym;
 							AddSymbolReference(pTcsentTop->m_pSymContext, pSym);
 
 						}
@@ -6565,7 +6663,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							{
 								EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
 								pStnod->m_pTin = pStnodDefinition->m_pTin;
-								pStnod->m_pSym = pSym;
+								pStnod->m_pSymbase = pSym;
 
 								AddSymbolReference(pTcsentTop->m_pSymContext, pSym);
 
@@ -6607,7 +6705,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					break;
 				}
 
-				auto pSymInst = pStnod->m_pSym;
+				auto pSymInst = pStnod->PSym();
 				if (!pSymInst)
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
@@ -6619,7 +6717,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				STypeCheckStackEntry * pTcsentTop = pTcfram->m_aryTcsent.PLast();
 				AddSymbolReference(pTcsentTop->m_pSymContext, pSymInst);
-				pStnod->m_pSym = pSymInst;
+				pStnod->m_pSymbase = pSymInst;
 
 				EWC_ASSERT(!FIsGenericType(pSymInst->m_pTin), "remap failed");
 
@@ -6638,7 +6736,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			{
 				// Don't push the identifier
 
-				OnTypeResolve(pTcwork, pStnod->m_pSym);
+				OnTypeResolve(pTcwork, pStnod->PSym());
 
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
@@ -6718,8 +6816,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					auto pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 					if (EWC_FVERIFY(pStnodIdent, "constant missing identifier"))
 					{
-						EWC_ASSERT(pStnodIdent->m_pSym, "expected symbol for declaration");
-						pTcsentTop->m_pSymContext = pStnodIdent->m_pSym;
+						auto pSym = pStnodIdent->PSym();
+						EWC_ASSERT(pSym, "expected symbol for declaration");
+						pTcsentTop->m_pSymContext = pSym;
 					}
 				}
 
@@ -6787,6 +6886,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				// find our symbol and resolve any pending unknown types
 				if (EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))
 				{
+					// TODO: Using?
 					SSymbol * pSymIdent = pSymtab->PSymLookup(
 													strIdent,
 													pStnodIdent->m_lexloc,
@@ -6799,7 +6899,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 					else
 					{
-						pStnod->m_pSym = pSymIdent;
+						pStnod->m_pSymbase = pSymIdent;
 						if (pSymIdent->m_pTin == nullptr)
 						{
 							pSymIdent->m_pTin = pStnod->m_pTin;
@@ -6822,8 +6922,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					auto pTcsentPushed = PTcsentPush(pTcfram, &pTcsentTop, pStnodType);
 					if (pTcsentPushed)
 					{
-						EWC_ASSERT(pStnod->m_pSym, "expected typedef symbol");
-						pTcsentPushed->m_pSymContext = pStnod->m_pSym;
+						auto pSym = pStnod->PSym();
+						EWC_ASSERT(pSym, "expected typedef symbol");
+						pTcsentPushed->m_pSymContext = pSym;
 
 						pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
 					}
@@ -6855,7 +6956,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (EWC_FVERIFY(pStnodIdent, "constant Declaration without identifier"))
 				{
 					CString strIdent = StrFromIdentifier(pStnodIdent);
-					auto pSym = pSymtab->PSymLookup( strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook);
+					auto pSym = pSymtab->PSymLookup( strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook); // TODO: using
 
 					if (EWC_FVERIFY(pSym, "symbol lookup failed for '%s'", strIdent.PCoz()))
 					{
@@ -6873,7 +6974,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						}
 						else
 						{
-							pStnod->m_pSym = pSym;
+							pStnod->m_pSymbase = pSym;
 							if (pSym->m_pTin == nullptr)
 							{
 								pSym->m_pTin = pStnod->m_pTin;
@@ -6968,8 +7069,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto pStnodIdent = pStnod->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 				if (pStnodIdent && pTcsentTop->m_pSymContext == nullptr)
 				{
-					EWC_ASSERT(pStnodIdent->m_pSym, "expected symbol for declaration");
-					pTcsentTop->m_pSymContext = pStnodIdent->m_pSym;
+					auto pSym = pStnodIdent->PSym();
+					EWC_ASSERT(pSym, "expected symbol for declaration");
+					pTcsentTop->m_pSymContext = pSym;
 				}
 
 				if (pTcsentTop->m_nState < pStnod->CStnodChild())
@@ -7039,12 +7141,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							CSymbolTable::CSymbolIterator symiter(pSymtab, strIdent, pStnodIdent->m_lexloc, pTcsentTop->m_grfsymlook);
 							auto pSymPrior = symiter.PSymNext();
 
-							while (!symiter.FIsDone() && LexlocFromSym(pStnodIdent->m_pSym) <= LexlocFromSym(pSymPrior))
+							auto pSymIdent = pStnodIdent->PSym();
+							while (!symiter.FIsDone() && LexlocFromSym(pSymIdent) <= LexlocFromSym(pSymPrior))
 							{
 								pSymPrior = symiter.PSymNext();
 							}
 
-							if (pSymPrior && LexlocFromSym(pSymPrior) < LexlocFromSym(pStnodIdent->m_pSym))
+							if (pSymPrior && LexlocFromSym(pSymPrior) < LexlocFromSym(pSymIdent))
 							{
 								if (!pSymPrior->m_pStnodDefinition)
 								{
@@ -7199,11 +7302,11 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							CString strIdent = StrFromIdentifier(pStnodIdent);
 
 							// may not have symbols for a declaration if this is inside a procedure reference decl
-							if (pStnodIdent->m_pSym)
+							auto pSymIdent = pStnodIdent->PSym();
+							if (pSymIdent)
 							{
-								auto pSymIdent = pStnodIdent->m_pSym;
 								pSymIdent->m_pTin = pStnod->m_pTin;
-								pStnod->m_pSym = pSymIdent;
+								pStnod->m_pSymbase = pSymIdent;
 								OnTypeResolve(pTcwork, pSymIdent);
 							}
 						}
@@ -7449,6 +7552,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				STypeInfo * pTinMember = nullptr;
 				CSTValue * pStvalMember = nullptr;
 				bool fIsFlagEnumInstance = false;
+				bool fReplacedChild = false;
 				if (pTinLhs)
 				{
 					switch (pTinLhs->m_tink)
@@ -7456,7 +7560,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						case TINK_Enum:
 						{
 							auto pTinenum = (STypeInfoEnum *)pTinLhs;
-							auto pSymLhs = pStnodLhs->m_pSym;
+							auto pSymLhs = pStnodLhs->PSym();
 							if (EWC_FVERIFY(pSymLhs, "expected lhs symbol") && !pSymLhs->m_grfsym.FIsSet(FSYM_IsType))
 							{
 								if (pTinenum->m_enumk != ENUMK_FlagEnum)
@@ -7486,17 +7590,89 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								break;
 
 							CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
-							if (EWC_FVERIFY(pStnodStruct && pStnodStruct->m_pSym, "Struct type missing symbol"))
+							SSymbol * pSymStruct = nullptr;
+							if (EWC_FVERIFY(pStnodStruct && (pSymStruct = pStnodStruct->PSym()), "Struct type missing symbol"))
 							{
 								if (pStnodStruct->m_strees != STREES_TypeChecked)
 								{
 									// wait for this type to be resolved.
-									SUnknownType * pUntype = PUntypeEnsure(pTcwork, pStnodStruct->m_pSym);
+									SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymStruct);
 									pUntype->m_arypTcframDependent.Append(pTcfram);
 									return TCRET_WaitingForSymbolDefinition;
 								}
 							}
+#define EWC_SYMBOL_PATH_FOR_USING 1
+#if EWC_SYMBOL_PATH_FOR_USING
+							auto pSymbase = PSymbaseLookup(
+												pStnodStruct->m_pSymtab,
+												strMemberName,
+												pStnodRhs->m_lexloc,
+												FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
 
+							if (!pSymbase)
+							{
+								auto pLexlocStruct = &pStnodStruct->m_lexloc;
+								s32 iLine;
+								s32 iCol;
+								CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocStruct, &iLine, &iCol);
+
+								EmitError(pTcwork, pStnod, ERRID_BadMemberLookup, 
+									"%s is not a member of %s, see %s(%d, %d)", 
+									strMemberName.PCoz(), 
+									pTinstruct->m_strName.PCoz(),
+									pLexlocStruct->m_strFilename.PCoz(), iLine, iCol);
+
+								return TCRET_StoppingError;
+							}
+							else
+							{
+								pStnodRhs->m_pSymbase = pSymbase;
+								pStnod->m_pSymbase = pSymbase;
+							}
+#endif
+
+#if EWC_MODIFY_AST_FOR_USING
+							CDynAry<SSymbol *> arypSymPath(pTcwork->m_pAlloc, BK_Symbol);
+							bool fFound = pStnodStruct->m_pSymtab->FTryLookupSymbolPath(
+																		strMemberName, 
+																		pStnodRhs->m_lexloc, 
+																		FSYMLOOK_Local | FSYMLOOK_IgnoreOrder, 
+																		&arypSymPath);
+
+							/*
+							char aCh[256];
+							{
+								EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+								pStnod->WriteDebugString(&strbuf, FDBGSTR_Type | FDBGSTR_LiteralSize | FDBGSTR_NoWhitespace);
+								printf("pre replace '%s'\n", aCh);
+							}*/
+
+							if (fFound)
+							{
+								auto pStnodNew = PStnodReplaceSymbolPath(pTcwork, pStnod, &arypSymPath);
+								if (pStnodNew && EWC_FVERIFY(paryTcsent->C() >= 2,"expected parent node"))
+								{
+									// Replace this pStnod child mid-typecheck - kinda icky!
+									PopTcsent(pTcfram, &pTcsentTop, pStnod);
+									STypeCheckStackEntry * pTcsentParent = paryTcsent->PLast();
+
+									auto pTcsentPushed = PTcsentPush(pTcfram, &pTcsentParent, pStnodNew);
+
+									printf("0x%p replaceChild(0x%p, 0x%p)\n", pTcsentParent->m_pStnod, pStnod, pStnodNew);
+									pTcsentParent->m_pStnod->ReplaceChild(pStnod, pStnodNew);
+									/*
+									EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+									pStnodNew->WriteDebugString(&strbuf, FDBGSTR_Type | FDBGSTR_LiteralSize | FDBGSTR_NoWhitespace);
+									EnsureTerminated(&strbuf, '\0');
+									printf("post replace '%s'\n", aCh);
+									*/
+
+									fReplacedChild = true;
+									break;
+								}
+							}
+
+							// TODO: Move 'not a member' error handling into lookupSymbolPath
 							auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
 							if (!pSymMember)
 							{
@@ -7506,7 +7682,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocStruct, &iLine, &iCol);
 
 								EmitError(pTcwork, pStnod, ERRID_BadMemberLookup, 
-									"%s is not a member of %s, see  %s(%d, %d)", 
+									"%s is not a member of %s, see %s(%d, %d)", 
 									strMemberName.PCoz(), 
 									pTinstruct->m_strName.PCoz(),
 									pLexlocStruct->m_strFilename.PCoz(), iLine, iCol);
@@ -7517,9 +7693,13 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							AddSymbolReference(pTcsentTop->m_pSymContext, pSymMember);
 							EWC_ASSERT(pSymMember->m_pTin, "expected symbol to have type");
 							pTinMember = pSymMember->m_pTin;
+#endif
 
-							pStnodRhs->m_pSym = pSymMember;	
-							pStnod->m_pSym = pSymMember;
+							auto pSymMember = pStnod->PSym();
+							AddSymbolReference(pTcsentTop->m_pSymContext, pSymMember);
+
+							EWC_ASSERT(pSymMember->m_pTin, "expected symbol to have type");
+							pTinMember = pSymMember->m_pTin;
 
 							if (pTinMember && pSymMember->m_pStnodDefinition)
 							{
@@ -7586,6 +7766,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					}
 				}
 
+				if (fReplacedChild)
+				{
+					pStnod->m_arypStnodChild.RemoveFastByI(0);
+					pTcwork->m_pAlloc->EWC_DELETE(pStnod);
+					break;
+				}
 
 				if (fIsFlagEnumInstance)
 				{
@@ -8461,11 +8647,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 												break;
 										}
 
-										if (pStnodMember && pStnodMember->m_pSym && pStnodMember->m_pSym->m_pStnodDefinition)
+										if (pStnodMember)
 										{
-											PARK parkDefinition = pStnodMember->m_pSym->m_pStnodDefinition->m_park;
-											fCanTakeReference = (parkDefinition != PARK_ProcedureDefinition) | 
-																(parkDefinition != PARK_EnumConstant);
+											auto pSymMember = pStnodMember->PSym();
+											if (pSymMember && pSymMember->m_pStnodDefinition)
+											{
+												PARK parkDefinition = pSymMember->m_pStnodDefinition->m_park;
+												fCanTakeReference = (parkDefinition != PARK_ProcedureDefinition) | 
+																	(parkDefinition != PARK_EnumConstant);
+											}
 										}
 
 										if (!fCanTakeReference)

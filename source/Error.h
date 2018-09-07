@@ -58,6 +58,8 @@ enum ERRID
 	ERRID_BadMemberLookup			= 2020,
 	ERRID_CannotTakeReference		= 2021,
 	ERRID_InvalidUnaryOp			= 2022,
+	ERRID_UsingStatementCycle		= 2023,
+	ERRID_UsingStatementCollision	= 2024,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

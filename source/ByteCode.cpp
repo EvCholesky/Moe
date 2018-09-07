@@ -474,9 +474,10 @@ SValue * CBuilder::PValCreateProc(
 	if (!EWC_FVERIFY(pStproc, "expected stproc"))
 		return nullptr;
 
-	if (EWC_FVERIFY(pStnod->m_pSym, "expected symbol to be set during type check"))
+	auto pSym = pStnod->PSym();
+	if (EWC_FVERIFY(pSym, "expected symbol to be set during type check"))
 	{
-		SetSymbolValue(pStnod->m_pSym, pValReturn);
+		SetSymbolValue(pSym, pValReturn);
 	}
 
 	return pValReturn;
@@ -507,9 +508,12 @@ void CBuilder::SetupParamBlock(
 			continue;
 
 		EWC_ASSERT(iParam < pTinproc->m_arypTinParams.C(), "parameter count mismatch");
-		auto strArgName = StrPunyEncode(pStnodParam->m_pSym->m_strName.PCoz());
 
-		if (EWC_FVERIFY(pStnodParam->m_pSym, "missing symbol for argument"))
+
+		auto pSym = pStnodParam->PSym();
+		auto strArgName = StrPunyEncode(pSym->m_strName.PCoz());
+
+		if (EWC_FVERIFY(pSym, "missing symbol for argument"))
 		{
 			if (!pTinproc->m_grftinproc.FIsSet(FTINPROC_IsForeign))
 			{
@@ -519,13 +523,13 @@ void CBuilder::SetupParamBlock(
 				{
 					auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, PRegArg(pParam->m_iBStack, 32), nullptr);
 					pInstvalAddr->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTinproc->m_arypTinParams[iParam]);
-					SetSymbolValue(pStnodParam->m_pSym, pInstvalAddr);
+					SetSymbolValue(pStnodParam->PSym(), pInstvalAddr);
 				}
 				else
 				{
 					auto pInstvalAddr = PInstCreateRaw(IROP_StoreAddress, m_pDlay->m_cBPointer, PRegArg(pParam->m_iBStack, cB*8), nullptr);
 					pInstvalAddr->m_pTinOperand = m_pSymtab->PTinptrAllocate(pTinproc->m_arypTinParams[iParam]);
-					SetSymbolValue(pStnodParam->m_pSym, pInstvalAddr);
+					SetSymbolValue(pStnodParam->PSym(), pInstvalAddr);
 				}
 			}
 		}
