@@ -4046,6 +4046,7 @@ SSymbol * CSymbolTable::PSymEnsure(
 	GRFSYM grfsym,
 	FSHADOW fshadow)
 {
+	EWC_ASSERT(!FIsLocked(), "cannot add symbol to locked table");
 	SLexerLocation lexloc;
 	if (pStnodDefinition)
 		lexloc = pStnodDefinition->m_lexloc;
@@ -4164,6 +4165,7 @@ bool FTryCheckUsingCollisions(
 
 void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtabNew, CSTNode * pStnodUsingDecl)
 {
+	EWC_ASSERT(!FIsLocked(), "cannot add using reference to locked table");
 	if (pSymtabNew == this)
 	{
 		EmitError(pErrman, &pStnodUsingDecl->m_lexloc, ERRID_UsingStatementCollision, 
@@ -4171,7 +4173,7 @@ void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtab
 		return;
 	}
 
-	// BB - ASSERT symtab is locked
+	EWC_ASSERT(pSymtabNew->FIsLocked(), "expected symbol table to be locked before referenced in a using statement.");
 
 	if (FTryCheckUsingCollisions(m_pAlloc, pErrman, pSymtabNew, pStnodUsingDecl, this, pStnodUsingDecl))
 	{
@@ -4265,111 +4267,6 @@ SSymbolBase * PSymbaseLookup(
 
 	return nullptr;
 }
-
-#if EWC_MODIFY_AST_FOR_USING
-// look up a local symbol and return the complete using statement symbol path
-static bool FTryLookupSymbolReversePath(
-	CSymbolTable * pSymtab,
-	const CString & str,
-	const SLexerLocation & lexloc,
-	GRFSYMLOOK grfsymlook,
-	EWC::CDynAry<SSymbol* > * parypSymPath)
-{
-	EWC_ASSERT(!grfsymlook.FIsSet(FSYMLOOK_Ancestors), "ancestor lookup not supported with using paths");
-	auto pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook);
-	if (pSym)
-	{
-		parypSymPath->Append(pSym);
-		return true;
-	}
-
-	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
-	{
-		if (FTryLookupSymbolReversePath(pUsing->m_pSymtab, str, lexloc, grfsymlook, parypSymPath))
-		{
-			parypSymPath->Append(pUsing->m_pStnod->PSym());
-			return true;
-		}
-	}
-	return false;
-}
-
-bool CSymbolTable::FTryLookupSymbolPath(
-	const CString & str,
-	const SLexerLocation & lexloc,
-	GRFSYMLOOK grfsymlook,
-	EWC::CDynAry<SSymbol* > * parypSymPath)
-{
-	bool fRet = FTryLookupSymbolReversePath(this, str, lexloc, grfsymlook, parypSymPath);
-	parypSymPath->Reverse();
-	return fRet;
-}
-
-SSymbolBase * CSymbolTable::PSymbaseLookup(
-	const EWC::CString & str,
-	const SLexerLocation & lexloc,
-	GRFSYMLOOK grfsymlook)
-{
-	if (grfsymlook.FIsSet(FSYMLOOK_Local))
-	{
-		auto tabvis = TabvisCompute(this, m_iNestingDepth, grfsymlook);
-		auto pSym = PSymLookup(str, lexloc, FSYMLOOK_Local);
-		while (pSym)
-		{
-			SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
-			bool fVisibleWhenNested = pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
-			if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= lexloc)))
-			{
-				return pSym;
-			}
-			pSym = pSym->m_pSymPrev;
-		}
-
-		auto ppSymp = m_hashHvPSymp.Lookup(str.Hv());
-		if (ppSymp)
-		{
-			return *ppSymp;	
-		}
-		//what to do in the complex path cases? no shadowing? no nesting?
-		// could use lexloc, (for the using statement?)
-
-		// search SUsings for symbol path
-		
-	}
-
-	CSymbolTable * pSymtab = (grfsymlook.FIsSet(FSYMLOOK_Ancestors)) ? m_pSymtabParent : nullptr;
-	SLexerLocation lexlocChild = lexloc;
-	while (pSymtab)
-	{
-		auto ppSymp = pSymtab->m_hashHvPSymp.Lookup(str.Hv());
-		if (ppSymp)
-		{
-			return *ppSymp;	
-		}
-
-		SSymbol ** ppSym = pSymtab->m_hashHvPSym.Lookup(str.Hv()); 
-
-		if (ppSym)
-		{
-			auto tabvis = TabvisCompute(pSymtab, m_iNestingDepth, grfsymlook);
-			SSymbol * pSym = *ppSym;
-			while (pSym)
-			{
-				SLexerLocation lexlocSym = (pSym->m_pStnodDefinition) ? pSym->m_pStnodDefinition->m_lexloc : SLexerLocation();
-				bool fVisibleWhenNested = pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested);
-				if (fVisibleWhenNested | (tabvis == TABVIS_Unordered) | ((tabvis < TABVIS_NoInstances) & (lexlocSym <= lexloc)))
-				{
-					return pSym;
-				}
-				pSym = pSym->m_pSymPrev;
-			}
-		}
-
-		pSymtab = pSymtab->m_pSymtabParent;
-	}
-	return nullptr;
-}
-#endif
 
 SSymbol * CSymbolTable::PSymLookup(const CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook, CSymbolTable ** ppSymtabOut)
 {

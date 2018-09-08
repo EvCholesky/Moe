@@ -245,9 +245,6 @@ struct SSymbolPath : public SSymbolBase // tag = symp
 };
 
 
-// just checking these in for version control history, will delete
-#define EWC_MODIFY_AST_FOR_USING 0
-
 
 // node type for mutually exlusive syntax tree nodes 
 enum STMAPK // Syntax Tree MAP  Kind
@@ -768,6 +765,7 @@ protected:
 							,m_pSymtabNextManaged(nullptr)
 							,m_iNestingDepth(0)
 							,m_scopid(pUntyper->ScopidAlloc())
+							,m_fIsLocked(false)
 								{ ; }
 
 public:
@@ -858,18 +856,6 @@ public:
 								const SLexerLocation & lexloc, 
 								GRFSYMLOOK grfsymlook = FSYMLOOK_Default,
 								CSymbolTable ** ppSymtabOut = nullptr);
-#if EWC_MODIFY_AST_FOR_USING
-	bool					FTryLookupSymbolPath(
-								const EWC::CString & str,
-								const SLexerLocation & lexloc,
-								GRFSYMLOOK grfsymlook,
-								EWC::CDynAry<SSymbol* > * parypSymPath);
-	
-	SSymbolBase *			PSymbaseLookup(
-								const EWC::CString & str,
-								const SLexerLocation & lexloc,
-								GRFSYMLOOK grfsymlook);
-#endif
 
 	STypeInfo *				PTinBuiltin(const EWC::CString & str);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
@@ -886,6 +872,10 @@ public:
 	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin, GRFSYM grfsym = FSYM_None);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
+	void					LockTable()
+								{ m_fIsLocked = true; }
+	bool					FIsLocked() const
+								{ return m_fIsLocked; }
 
 	void					PrintDump();
 
@@ -913,6 +903,7 @@ public:
 	CSymbolTable *					m_pSymtabNextManaged;	// next table in the global list
 	s32								m_iNestingDepth;					
 	SCOPID							m_scopid;				// unique table id, for unique type strings
+	bool							m_fIsLocked;			// No more symbols can be added to this table (guarantee simplifies using statement collision check)
 };
 
 SSymbolBase * PSymbaseLookup(CSymbolTable * pSymtab, const EWC::CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook);
@@ -946,6 +937,7 @@ STypeInfoProcedure * PTinprocAlloc(CSymbolTable * pSymtab, size_t cParam, size_t
 
 STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab);
 STypeInfo * PTinStripQualifiers(STypeInfo * pTin);
+STypeInfo * PTinStripQualifiersAndPointers(STypeInfo * pTin);
 
 const char * PCozOverloadNameFromTok(TOK tok);
 ERRID ErridCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc);

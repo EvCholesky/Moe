@@ -517,6 +517,32 @@ STypeInfo * PTinStripQualifiers(STypeInfo * pTin)
 	return pTin;
 }
 
+STypeInfo * PTinStripQualifiersAndPointers(STypeInfo * pTin)
+{
+	int cQualifiers = 0;
+	while (pTin)
+	{
+		switch (pTin->m_tink)
+		{
+		case TINK_Qualifier:
+			{
+				auto pTinqual = (STypeInfoQualifier *)pTin;
+				pTin = pTinqual->m_pTin;
+				EWC_ASSERT(++cQualifiers < 2, "STypeInfoQualifiers should not be directly nested");
+			} break;
+		case TINK_Pointer:
+			{
+				auto pTinptr = (STypeInfoPointer *)pTin;
+				pTin = pTinptr->m_pTinPointedTo;
+			} break;
+		default:
+			return pTin;
+		}
+	}
+	return pTin;
+}
+
+
 STypeInfoStruct * PTinstructAlloc(
 	CSymbolTable * pSymtab,
 	CString strIdent,
@@ -5607,34 +5633,6 @@ CSymbolTable * SymtabFindUsingTable(STypeCheckWorkspace * pTcwork, STypeInfo * p
 	}
 }
 
-#if EWC_MODIFY_AST_FOR_USING
-CSTNode * PStnodReplaceSymbolPath(STypeCheckWorkspace * pTcwork, CSTNode * pStnodSource, CDynAry<SSymbol * > * parypSymPath)
-{
-	if (parypSymPath->C() <= 1)
-		return nullptr;
-
-	if (!EWC_FVERIFY(pStnodSource->m_park == PARK_MemberLookup && pStnodSource->m_arypStnodChild.C()==2, "only currently support member lookup"))
-		return nullptr;
-
-	CSTNode * pStnodPrev = pStnodSource->m_arypStnodChild[0];
-	for (int ipSym = int(parypSymPath->C())-1; ipSym >= 0; --ipSym)
-	{
-		auto pSym = (*parypSymPath)[ipSym];
-		auto pStnodIdent = PStnodAllocateIdentifier(pTcwork->m_pAlloc, pStnodSource->m_lexloc, pSym->m_strName);
-
-		CSTNode * pStnodMember = EWC_NEW(pTcwork->m_pAlloc, CSTNode) CSTNode(pTcwork->m_pAlloc, pStnodSource->m_lexloc);
-		pStnodMember->m_park = PARK_MemberLookup;
-		pStnodMember->IAppendChild(pStnodPrev);
-		pStnodMember->IAppendChild(pStnodIdent);
-
-		pStnodPrev = pStnodMember;
-
-	}
-	printf(" returning 0x%p\n", pStnodPrev);
-	return pStnodPrev;
-}
-#endif
-
 TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
@@ -6433,6 +6431,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "loose", pTinenum->m_pTinLoose, grfsymlook);
 				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "strict", pTinenum, grfsymlook);
 
+				if (EWC_FVERIFY(pStnod->m_pSymtab, "expected symbol table"))
+				{
+					pStnod->m_pSymtab->LockTable();
+				}
 				OnTypeResolve(pTcwork, pSymEnum);
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
@@ -6611,6 +6613,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
+				if (EWC_FVERIFY(pStnod->m_pSymtab, "expected symbol table"))
+				{
+					pStnod->m_pSymtab->LockTable();
+				}
 				OnTypeResolve(pTcwork, pSymStruct);
 			}break;
 			case PARK_Identifier:
@@ -7601,8 +7607,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									return TCRET_WaitingForSymbolDefinition;
 								}
 							}
-#define EWC_SYMBOL_PATH_FOR_USING 1
-#if EWC_SYMBOL_PATH_FOR_USING
+
 							auto pSymbase = PSymbaseLookup(
 												pStnodStruct->m_pSymtab,
 												strMemberName,
@@ -7629,71 +7634,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								pStnodRhs->m_pSymbase = pSymbase;
 								pStnod->m_pSymbase = pSymbase;
 							}
-#endif
-
-#if EWC_MODIFY_AST_FOR_USING
-							CDynAry<SSymbol *> arypSymPath(pTcwork->m_pAlloc, BK_Symbol);
-							bool fFound = pStnodStruct->m_pSymtab->FTryLookupSymbolPath(
-																		strMemberName, 
-																		pStnodRhs->m_lexloc, 
-																		FSYMLOOK_Local | FSYMLOOK_IgnoreOrder, 
-																		&arypSymPath);
-
-							/*
-							char aCh[256];
-							{
-								EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-								pStnod->WriteDebugString(&strbuf, FDBGSTR_Type | FDBGSTR_LiteralSize | FDBGSTR_NoWhitespace);
-								printf("pre replace '%s'\n", aCh);
-							}*/
-
-							if (fFound)
-							{
-								auto pStnodNew = PStnodReplaceSymbolPath(pTcwork, pStnod, &arypSymPath);
-								if (pStnodNew && EWC_FVERIFY(paryTcsent->C() >= 2,"expected parent node"))
-								{
-									// Replace this pStnod child mid-typecheck - kinda icky!
-									PopTcsent(pTcfram, &pTcsentTop, pStnod);
-									STypeCheckStackEntry * pTcsentParent = paryTcsent->PLast();
-
-									auto pTcsentPushed = PTcsentPush(pTcfram, &pTcsentParent, pStnodNew);
-
-									printf("0x%p replaceChild(0x%p, 0x%p)\n", pTcsentParent->m_pStnod, pStnod, pStnodNew);
-									pTcsentParent->m_pStnod->ReplaceChild(pStnod, pStnodNew);
-									/*
-									EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
-									pStnodNew->WriteDebugString(&strbuf, FDBGSTR_Type | FDBGSTR_LiteralSize | FDBGSTR_NoWhitespace);
-									EnsureTerminated(&strbuf, '\0');
-									printf("post replace '%s'\n", aCh);
-									*/
-
-									fReplacedChild = true;
-									break;
-								}
-							}
-
-							// TODO: Move 'not a member' error handling into lookupSymbolPath
-							auto pSymMember = pStnodStruct->m_pSymtab->PSymLookup(strMemberName, pStnodRhs->m_lexloc, FSYMLOOK_Local | FSYMLOOK_IgnoreOrder);
-							if (!pSymMember)
-							{
-								auto pLexlocStruct = &pStnodStruct->m_lexloc;
-								s32 iLine;
-								s32 iCol;
-								CalculateLinePosition(pTcwork->m_pErrman->m_pWork, pLexlocStruct, &iLine, &iCol);
-
-								EmitError(pTcwork, pStnod, ERRID_BadMemberLookup, 
-									"%s is not a member of %s, see %s(%d, %d)", 
-									strMemberName.PCoz(), 
-									pTinstruct->m_strName.PCoz(),
-									pLexlocStruct->m_strFilename.PCoz(), iLine, iCol);
-
-								return TCRET_StoppingError;
-							}
-
-							AddSymbolReference(pTcsentTop->m_pSymContext, pSymMember);
-							EWC_ASSERT(pSymMember->m_pTin, "expected symbol to have type");
-							pTinMember = pSymMember->m_pTin;
-#endif
 
 							auto pSymMember = pStnod->PSym();
 							AddSymbolReference(pTcsentTop->m_pSymContext, pSymMember);

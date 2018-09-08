@@ -653,7 +653,7 @@ int main(int cpChzArg, const char * apChzArg[])
 
 		SErrorManager errman(&allocError);
 		CWorkspace work(&alloc, &errman);
-		FUnitTestFile(&work, comline.m_pChzFilename);
+		FUnitTestFile(&work, comline.m_pChzFilename, grfcompile.m_raw);
 
 		StaticShutdownStrings(&allocString);
 	}

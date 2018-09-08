@@ -5137,6 +5137,7 @@ typename BUILD::Instruction * PInstGepFromSymbase(
 			if (pTinLhs->m_tink == TINK_Pointer)
 			{
 				pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+				pValLhs = pBuild->PInstCreate(IROP_Load, pValLhs, "");
 			}
 
 			pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
@@ -5750,17 +5751,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			BUILD::Constant * pConstEnum = nullptr;
 			if (auto pSym = pStnodLhs->PSym())
 			{
-				auto pTinLhs = PTinStripQualifiers(pSym->m_pTin);
-
-				VALGENK valgenkLhs = VALGENK_Reference;
-				if (pTinLhs)
-				{
-					if (pTinLhs->m_tink == TINK_Pointer)
-					{
-						pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
-						valgenkLhs = VALGENK_Instance;
-					}
-				}
+				auto pTinLhs = PTinStripQualifiersAndPointers(pSym->m_pTin);
 
 				if (pTinLhs && pTinLhs->m_tink == TINK_Enum)
 				{

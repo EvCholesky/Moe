@@ -182,10 +182,11 @@ typedef CFixAry<SSubstitution, 64> CSubStack;
 
 struct STestContext // tag= tesctx
 {
-						STestContext(EWC::CAlloc * pAlloc, SErrorManager * pErrman, CWorkspace * pWork)
+						STestContext(EWC::CAlloc * pAlloc, SErrorManager * pErrman, CWorkspace * pWork, GRFCOMPILE grfcompile)
 						:m_pAlloc(pAlloc)
 						,m_pErrman(pErrman)
 						,m_pWork(pWork)
+						,m_grfcompile(grfcompile)
 						,m_arySubStack()
 							{ ZeroAB(m_mpTestresCResults, sizeof(m_mpTestresCResults)); }
 
@@ -193,6 +194,7 @@ struct STestContext // tag= tesctx
 	SErrorManager *			m_pErrman;
 	CWorkspace *			m_pWork;
 
+	GRFCOMPILE				m_grfcompile;
 	int						m_mpTestresCResults[TESTRES_Max];
 	CSubStack				m_arySubStack;
 };
@@ -770,6 +772,7 @@ bool FCheckForExpectedErrors(SErrorManager * pErrman, ERRID erridMin, ERRID erri
 TESTRES TestresRunUnitTest(
 	CWorkspace * pWorkParent,
 	SUnitTest * pUtest,
+	GRFCOMPILE grfcompile,
 	const char * pCozPrereq,
 	const char * pCozIn,
 	const char * pCozParseExpected,
@@ -951,7 +954,10 @@ TESTRES TestresRunUnitTest(
 				BCode::SProcedure * pProcUnitTest = nullptr;
 				BCode::CBuilder buildBc(&work, &dlay, &hashHvPFn);
 				CodeGenEntryPointsBytecode(&work, &buildBc, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, &pProcUnitTest);
-				buildBc.PrintDump();
+				if (grfcompile.FIsSet(FCOMPILE_PrintIR))
+				{
+					buildBc.PrintDump();
+				}
 
 				char aCh[2048];
 				SStringBuffer strbufBytecode(aCh, EWC_DIM(aCh));
@@ -1081,6 +1087,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 					testres = TestresRunUnitTest(
 								pTesctx->m_pWork,
 								pUtest,
+								pTesctx->m_grfcompile,
 								pCozPrereq,
 								pCozInput,
 								pCozParse,
@@ -1235,9 +1242,9 @@ bool FRunBuiltinTest(const CString & strName, CAlloc * pAlloc)
 	return fReturn;
 }
 
-void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLexer * pLex)
+void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLexer * pLex, GRFCOMPILE grfcompile)
 {
-	STestContext tesctx(pAlloc, pErrman, pErrman->m_pWork);
+	STestContext tesctx(pAlloc, pErrman, pErrman->m_pWork, grfcompile);
 	CDynAry<SUnitTest *> arypUtest(pAlloc, BK_UnitTest);
 
 	ParseMoetestFile(&tesctx, pLex, &arypUtest);
@@ -1276,6 +1283,7 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 			testres = TestresRunUnitTest(
 						tesctx.m_pWork, 
 						pUtest, 
+						tesctx.m_grfcompile,
 						pUtest->m_pCozPrereq,
 						pUtest->m_pCozInput,
 						pUtest->m_pCozParse,
@@ -1308,7 +1316,7 @@ void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLex
 	printf("%d / %d tests succeeded\n", tesctx.m_mpTestresCResults[TESTRES_Success], cTests);
 }
 
-bool FUnitTestFile(CWorkspace * pWork, const char * pChzFilenameIn)
+bool FUnitTestFile(CWorkspace * pWork, const char * pChzFilenameIn, unsigned grfcompile)
 {
 	CAlloc * pAlloc = pWork->m_pAlloc;
 	if (!pChzFilenameIn)
@@ -1336,7 +1344,7 @@ bool FUnitTestFile(CWorkspace * pWork, const char * pChzFilenameIn)
 	InitLexer(&lex, pCozFileBody, &pCozFileBody[CBCoz(pCozFileBody)-1], aChStorage, cChStorage);
 	lex.m_pCozFilename = pFile->m_strFilename.PCoz();
 
-	ParseAndTestMoetestFile(pAlloc, pWork->m_pErrman, &lex);
+	ParseAndTestMoetestFile(pAlloc, pWork->m_pErrman, &lex, grfcompile);
 	return !pWork->m_pErrman->FHasErrors();
 }
 		

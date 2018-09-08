@@ -17,4 +17,4 @@
 
 class CWorkspace;
 
-bool FUnitTestFile(CWorkspace * pWork, const char * pChzFilenameIn);
+bool FUnitTestFile(CWorkspace * pWork, const char * pChzFilenameIn, unsigned grfcompile);

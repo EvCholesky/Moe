@@ -1239,6 +1239,40 @@ test EmptyCase
 			?statement("n = 2")
 		},
 	}
+	
+// Using statements	
+test StructUsingMember
+	prereq "SA struct {m_x, m_y: int } SB struct { using m_a: SA}"
+	input "b: SB; b.?rhs = 123"
+	parse "(decl b SB) (= (member b ?rhs) 123)"
+	typecheck "(SB b SB) (= (int SB ?rhs) Literal:Int64)"
+	bytecode "{123;}"
+	{
+		?rhs(m_x),
+		?rhs(m_y),
+	}
+
+test StructUsingRefMember
+	prereq "SA struct {m_x, m_y: int } SB struct { using m_pA: & SA}"
+	input "b: SB; a: SA; b.m_pA = &a; b.?rhs = 123"
+	parse "(decl b SB) (decl a SA) (= (member b m_pA) (unary[&] a)) (= (member b ?rhs) 123)"
+	typecheck "(SB b SB) (SA a SA) (= (&SA SB m_pA) (&SA SA)) (= (int SB ?rhs) Literal:Int64)"
+	bytecode "{&{`m_x 0, `m_y 0};123;}"
+	{
+		?rhs(m_x),
+		?rhs(m_y),
+	}
+
+test StructUsingMemberFromRef
+	prereq "SA struct {m_x, m_y: int } SB struct { using m_a: SA}"
+	input "b: SB; pB := &b; pB.?rhs = 123"
+	parse "(decl b SB) (decl pB (unary[&] b)) (= (member pB ?rhs) 123)"
+	typecheck "(SB b SB) (&SB pB (&SB SB)) (= (int &SB ?rhs) Literal:Int64)"
+	bytecode "{&{`m_a {`m_x 0, `m_y 0}};123;}"
+	{
+		?rhs(m_x),
+		?rhs(m_y),
+	}
 
 // Unicode
 test UnicodeIdent
