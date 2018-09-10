@@ -5599,19 +5599,19 @@ SOverloadCheck OvcheckTryCheckOverload(
 	return SOverloadCheck(pTinproc, TCRET_Complete, argord);
 }
 
-CSymbolTable * SymtabFindUsingTable(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, CSTNode * pStnodDecl)
+CSymbolTable * SymtabUsingTableFromType(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, CSTNode * pStnodDecl)
 {
 	switch (pTin->m_tink)
 	{
 	case TINK_Pointer:
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
-			return SymtabFindUsingTable(pTcwork, pTinptr->m_pTinPointedTo, pStnodDecl);
+			return SymtabUsingTableFromType(pTcwork, pTinptr->m_pTinPointedTo, pStnodDecl);
 		}
 	case TINK_Qualifier:
 		{
 			auto pTinqual = (STypeInfoQualifier *)pTin;
-			return SymtabFindUsingTable(pTcwork, pTinqual->m_pTin, pStnodDecl);
+			return SymtabUsingTableFromType(pTcwork, pTinqual->m_pTin, pStnodDecl);
 		}
 	case TINK_Struct:
 		{
@@ -5628,7 +5628,10 @@ CSymbolTable * SymtabFindUsingTable(STypeCheckWorkspace * pTcwork, STypeInfo * p
 		} break;
 	default:
 		auto strTin = StrFromTypeInfo(pTin);
-		EmitError(pTcwork, pStnodDecl, "cannot supply type '%s' in a 'using' statement", strTin.PCoz());
+		EmitError(
+			pTcwork, pStnodDecl, 
+			ERRID_UsingStatementBadType,
+			"cannot supply type '%s' in a 'using' statement", strTin.PCoz());
 		return nullptr;
 	}
 }
@@ -6587,31 +6590,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 
 				pStnod->m_strees = STREES_TypeChecked;
 
-				// insert symbol table using statements
-				if (pStstruct->m_iStnodDeclList >= 0)
-				{
-					auto pStnodDeclList = pStnod->PStnodChild(pStstruct->m_iStnodDeclList);
-					for (int ipStnodChild = 0; ipStnodChild < pStnodDeclList->CStnodChild(); ++ipStnodChild)
-					{
-						auto pStnodChild = pStnodDeclList->PStnodChild(ipStnodChild);
-						auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodChild->m_pStmap);
-						if (pStdecl == nullptr || !pStdecl->m_fHasUsingPrefix)
-							continue;
-						
-						if (!EWC_FVERIFY(pStnodChild->m_strees >= STREES_TypeChecked && pStnodChild->m_pTin, "expected decl type to be resolved"))
-							continue;
-
-
-						auto pTinUsing = pStnodChild->m_pTin;
-						auto pSymtab = SymtabFindUsingTable(pTcwork, pTinUsing, pStnodChild);
-						if (!pSymtab)
-							continue;
-						
-						pStnod->m_pSymtab->AddUsingScope(pTcwork->m_pErrman, pSymtab, pStnodChild);
-						
-					}
-				}
-
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 				if (EWC_FVERIFY(pStnod->m_pSymtab, "expected symbol table"))
 				{
@@ -6629,30 +6607,31 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				if (EWC_FVERIFY(!strIdent.FIsEmpty(), "identifier node with no value"))
 				{
 					CSymbolTable * pSymtab = pTcsentTop->m_pSymtab;
-					//TODO: Using? is this needed?
-					auto pSym = pSymtab->PSymLookup(strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
-					if (!pSym)
+
+					auto pSymbase = PSymbaseLookup(pSymtab, strIdent, pStnod->m_lexloc, pTcsentTop->m_grfsymlook);
+					if (!pSymbase)
 					{
 						EmitError(pTcwork, pStnod, "'%s' unknown identifier detected", strIdent.PCoz());
 						return TCRET_StoppingError;
 					}
 
-					if (pSym->m_grfsym.FIsSet(FSYM_IsBuiltIn))
+					SSymbol * pSymLast = PSymLast(pSymbase);
+					if (pSymLast->m_grfsym.FIsSet(FSYM_IsBuiltIn))
 					{
-						pStnod->m_pTin = pSym->m_pTin;
-						pStnod->m_pSymbase = pSym;
+						pStnod->m_pTin = pSymLast->m_pTin;
+						pStnod->m_pSymbase = pSymbase;
 					}
-					else if (EWC_FVERIFY(pSym->m_pStnodDefinition, "Non-built-in types must have a STNode"))
+					else if (EWC_FVERIFY(pSymLast->m_pStnodDefinition, "Non-built-in types must have a STNode"))
 					{
-						CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
+						CSTNode * pStnodDefinition = pSymLast->m_pStnodDefinition;
 						if (pStnodDefinition->m_park == PARK_GenericDecl)
 						{
 							// We're type checking the uninstantiated generic, don't wait for a symbol definition
 							//  this symbol will be replaced later
 
 							pStnod->m_pTin = pStnodDefinition->m_pTin;
-							pStnod->m_pSymbase = pSym;
-							AddSymbolReference(pTcsentTop->m_pSymContext, pSym);
+							pStnod->m_pSymbase = pSymbase;
+							AddSymbolReference(pTcsentTop->m_pSymContext, pSymLast);
 
 						}
 						else if (pStnodDefinition->m_park == PARK_Decl ||
@@ -6669,9 +6648,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							{
 								EWC_ASSERT(pStnodDefinition->m_pTin, "symbol definition was type checked, but has no type?");
 								pStnod->m_pTin = pStnodDefinition->m_pTin;
-								pStnod->m_pSymbase = pSym;
+								pStnod->m_pSymbase = pSymbase;
 
-								AddSymbolReference(pTcsentTop->m_pSymContext, pSym);
+								AddSymbolReference(pTcsentTop->m_pSymContext, pSymLast);
 
 								if (pStnod->m_pTin && 
 									(pStnod->m_pTin->m_tink == TINK_Literal || pStnod->m_pTin->m_tink == TINK_Enum) &&
@@ -6684,8 +6663,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							{
 								// set up dependency for either the definition or the type...
 								
-								SSymbol * pSymDepend = pSym;
-								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymDepend);
+								SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymLast);
 								pUntype->m_arypTcframDependent.Append(pTcfram);
 								return TCRET_WaitingForSymbolDefinition;
 							}
@@ -7112,12 +7090,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						SSymbol * pSymType = nullptr;
 						bool fIsValidTypeSpec;
 						STypeInfo * pTinType = PTinFromTypeSpecification(
-												pTcwork,
-												pSymtab,
-												pStnodType,
-												pTcsentTop->m_grfsymlook,
-												&pSymType,
-												&fIsValidTypeSpec);
+													pTcwork,
+													pSymtab,
+													pStnodType,
+													pTcsentTop->m_grfsymlook,
+													&pSymType,
+													&fIsValidTypeSpec);
 
 						if (!fIsValidTypeSpec)
 							return TCRET_StoppingError;
@@ -7215,7 +7193,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							CSTNode * apStnod[2];
 							apStnod[0] = pStnodOpLhs;
 							apStnod[1] = pStnodInit;
-							
+
 							SProcMatchParam pmparam(pTcwork->m_pAlloc, &pStnod->m_lexloc);
 							pmparam.m_cpStnodCall = 2;
 							pmparam.m_ppStnodCall = apStnod;
@@ -7268,12 +7246,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 								else
 								{
-									const char * pChzFormat = (pTcsentTop->m_parkDeclContext == PARK_ParameterList) ? 
-									"parameter '%s' is type '%s', but default argument is '%s'" :
-									"Cannot initialize variable '%s' of type '%s' with '%s'";
+									const char * pChzFormat = (pTcsentTop->m_parkDeclContext == PARK_ParameterList) ?
+										"parameter '%s' is type '%s', but default argument is '%s'" :
+										"Cannot initialize variable '%s' of type '%s' with '%s'";
 
 									CString strIdent = StrFromIdentifier(pStnodIdent);
-									EmitError(pTcwork, pStnod, ERRID_InitTypeMismatch, 
+									EmitError(pTcwork, pStnod, ERRID_InitTypeMismatch,
 										pChzFormat,
 										strIdent.PCoz(),
 										StrFromTypeInfo(pStnod->m_pTin).PCoz(),
@@ -7314,6 +7292,16 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								pSymIdent->m_pTin = pStnod->m_pTin;
 								pStnod->m_pSymbase = pSymIdent;
 								OnTypeResolve(pTcwork, pSymIdent);
+							}
+						}
+
+						if (pStdecl->m_fHasUsingPrefix)
+						{
+							auto pTinUsing = pStnod->m_pTin;
+							auto pSymtabUsing = SymtabUsingTableFromType(pTcwork, pTinUsing, pStnod);
+							if (pSymtabUsing)
+							{
+								pSymtab->AddUsingScope(pTcwork->m_pErrman, pSymtabUsing, pStnod);
 							}
 						}
 					}

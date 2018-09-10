@@ -244,7 +244,23 @@ struct SSymbolPath : public SSymbolBase // tag = symp
 														// foo.m_x is implicitly foo.m_mid.m_base.m_x  [m_mid, m_base, m_x]
 };
 
+inline SSymbol * PSymLast(SSymbolBase * pSymbase)
+	{
 
+		switch (pSymbase->m_symk)
+		{
+		case SYMK_Symbol:	return (SSymbol *)pSymbase;
+		case SYMK_Path:
+			{
+				auto pSymp = (SSymbolPath *)pSymbase;
+				if (pSymp->m_arypSym.FIsEmpty())
+					return nullptr;
+
+				return pSymp->m_arypSym.Last();
+			}
+		}
+		return nullptr;
+	}
 
 // node type for mutually exlusive syntax tree nodes 
 enum STMAPK // Syntax Tree MAP  Kind
@@ -566,20 +582,10 @@ public:
 							}
 	SSymbol *			PSym() const
 							{
+								
 								if (m_pSymbase)
 								{
-									switch (m_pSymbase->m_symk)
-									{
-									case SYMK_Symbol:	return (SSymbol *)m_pSymbase;
-									case SYMK_Path:
-										{
-											auto pSymp = (SSymbolPath *)m_pSymbase;
-											if (pSymp->m_arypSym.FIsEmpty())
-												return nullptr;
-
-											return pSymp->m_arypSym.Last();
-										}
-									}
+									return PSymLast(m_pSymbase);
 								}
 								return nullptr;
 							}
@@ -907,7 +913,6 @@ public:
 };
 
 SSymbolBase * PSymbaseLookup(CSymbolTable * pSymtab, const EWC::CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook);
-
 
 
 class CParseContext // tag = parctx

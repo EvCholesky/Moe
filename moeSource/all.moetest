@@ -1239,8 +1239,47 @@ test EmptyCase
 			?statement("n = 2")
 		},
 	}
-	
+
 // Using statements	
+test StructUsingLocal
+	prereq "SA struct {m_x, m_y: int }"
+	input "foo proc () {using a: SA; ?rhs = 123 }"
+	parse "(func foo void ({} (decl a SA) (= ?rhs 123) (return)))"
+	typecheck "(foo()->void foo void ({} (SA a SA) (= int Literal:Int64) (void)))"
+	{
+		?rhs(m_x),
+		?rhs(m_y),
+	}
+
+test StructUsingArgumentDef
+	prereq "SA struct {m_x, m_y: int }"
+	input "foo proc (using a: SA)->int { return ?rhs }"
+	parse "(func foo (params (decl a SA)) int ({} (return ?rhs)))"
+	typecheck "(foo(SA)->int foo (Params (SA a SA)) int ({} (int int)))"
+	{
+		?rhs(m_x),
+		?rhs(m_y),
+	}
+
+test StructUsingArgumentUse
+	prereq "SA struct {m_x, m_y: int } foo proc (using a: SA)->int { return ?rhs }"
+	input "a: SA; a.m_x = 123; a.m_y = 456; ret := foo(a)"
+	parse "(decl a SA) (= (member a m_x) 123) (= (member a m_y) 456) (decl ret (procCall foo a))"
+	typecheck "(SA a SA) (= (int SA m_x) Literal:Int64) (= (int SA m_y) Literal:Int64) (int ret (int foo(SA)->int SA))"
+	bytecode "{123;456;foo({`m_x 123, `m_y 456}){}->?ret; ?ret;}"
+	{
+		?rhs(m_x) + ?ret(123),
+		?rhs(m_y) + ?ret(456),
+	}
+	
+test StructUsingFails
+	input "using x: ?type"
+	bytecode "{123;}"
+	{
+		?type("int"?errid(2025)),
+		?type("[]int"?errid(2025)),
+	}
+
 test StructUsingMember
 	prereq "SA struct {m_x, m_y: int } SB struct { using m_a: SA}"
 	input "b: SB; b.?rhs = 123"

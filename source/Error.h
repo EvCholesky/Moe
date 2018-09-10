@@ -60,6 +60,7 @@ enum ERRID
 	ERRID_InvalidUnaryOp			= 2022,
 	ERRID_UsingStatementCycle		= 2023,
 	ERRID_UsingStatementCollision	= 2024,
+	ERRID_UsingStatementBadType		= 2025,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

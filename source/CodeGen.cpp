@@ -5095,38 +5095,16 @@ static inline bool FIsNull(BCode::SValue * pVal)
 	return pVal == nullptr;
 }
 
-
 template <typename BUILD>
-typename BUILD::Instruction * PInstGepFromSymbase(
+typename BUILD::Instruction * PInstGepFromSymbolList(
 	BUILD * pBuild,
-	SSymbolBase * pSymbase,
+	SSymbol ** ppSymBegin,
+	SSymbol ** ppSymEnd,
 	typename BUILD::Value * pValLhs,
 	STypeInfo * pTinLhs,
 	VALGENK valgenk)
 {
 	BUILD::Instruction * pInstRet = nullptr;
-
-	SSymbol ** ppSymBegin;
-	SSymbol ** ppSymEnd;
-	switch(pSymbase->m_symk)
-	{
-	case SYMK_Symbol:
-		{
-			ppSymBegin = (SSymbol**)&pSymbase;
-			ppSymEnd = ppSymBegin+1;
-
-		} break;
-	case SYMK_Path:
-		{
-			auto pSymp = (SSymbolPath *)pSymbase;
-			ppSymBegin = pSymp->m_arypSym.A();
-			ppSymEnd = pSymp->m_arypSym.PMac();
-		} break;
-	default:
-		EWC_ASSERT(false, "unhandled symbol kind %d", pSymbase->m_symk);
-		return nullptr;
-	}
-
 	for (auto ppSym = ppSymBegin; ppSym != ppSymEnd; ++ppSym)	
 	{
 		auto pSym = *ppSym;
@@ -5168,6 +5146,74 @@ typename BUILD::Instruction * PInstGepFromSymbase(
 	}
 
 	return pInstRet;
+}
+
+
+
+template <typename BUILD>
+typename BUILD::Value * PValForSymbase(
+	BUILD * pBuild,
+	SSymbolBase * pSymbase,
+	VALGENK valgenk)
+{
+	if (!pSymbase)
+		return nullptr;
+
+	switch (pSymbase->m_symk)
+	{
+	case SYMK_Path:
+		{
+			auto pSymp = (SSymbolPath *)pSymbase;
+			auto pSymRoot = pSymp->m_arypSym[0];
+			auto pValRoot = pBuild->PValFromSymbol(pSymRoot);
+
+			auto ppSymBegin = &pSymp->m_arypSym[1];
+			auto ppSymEnd = pSymp->m_arypSym.PMac();
+			return PInstGepFromSymbolList(pBuild, ppSymBegin, ppSymEnd, pValRoot, pSymRoot->m_pTin, valgenk);
+			
+		} break;
+	case SYMK_Symbol:
+		{
+			return pBuild->PValFromSymbol((SSymbol *)pSymbase);
+		} break;
+	default:
+		EWC_ASSERT(false, "unhandled symk");
+		return nullptr;
+	}
+}
+
+template <typename BUILD>
+typename BUILD::Instruction * PInstGepFromSymbase(
+	BUILD * pBuild,
+	SSymbolBase * pSymbase,
+	typename BUILD::Value * pValLhs,
+	STypeInfo * pTinLhs,
+	VALGENK valgenk)
+{
+	BUILD::Instruction * pInstRet = nullptr;
+
+	SSymbol ** ppSymBegin;
+	SSymbol ** ppSymEnd;
+	switch(pSymbase->m_symk)
+	{
+	case SYMK_Symbol:
+		{
+			ppSymBegin = (SSymbol**)&pSymbase;
+			ppSymEnd = ppSymBegin+1;
+
+		} break;
+	case SYMK_Path:
+		{
+			auto pSymp = (SSymbolPath *)pSymbase;
+			ppSymBegin = pSymp->m_arypSym.A();
+			ppSymEnd = pSymp->m_arypSym.PMac();
+		} break;
+	default:
+		EWC_ASSERT(false, "unhandled symbol kind %d", pSymbase->m_symk);
+		return nullptr;
+	}
+
+	return PInstGepFromSymbolList(pBuild, ppSymBegin, ppSymEnd, pValLhs, pTinLhs, valgenk);
 }
 
 template <typename BUILD>
@@ -5715,15 +5761,18 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 	case PARK_Identifier:
 		{
-			// BB - clean this up so we don't call PValFromSymbol twice
-			auto pSym = pStnod->PSym();
-			if (!pSym || !pBuild->PValFromSymbol(pSym))
+			BUILD::Value * pVal = nullptr;
+			if (pStnod->m_pSymbase)
+			{
+				pVal = PValForSymbase(pBuild, pStnod->m_pSymbase, VALGENK_Reference);
+			}
+
+			if (!pVal)
 			{
 				CString strName(StrFromIdentifier(pStnod));
 				EmitError(pWork, &pStnod->m_lexloc, ERRID_UnknownError, "INTERNAL ERROR: Missing value for symbol %s", strName.PCoz());
 			}
 
-			auto pVal = pBuild->PValFromSymbol(pSym);
 			if (!EWC_FVERIFY(pVal, "unknown identifier in codegen"))
 				return nullptr;
 
@@ -5733,6 +5782,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			{
 				if (!fIsProcedureRef)
 				{
+					auto pSym = pStnod->PSym();
 					auto strPunyName = StrPunyEncode(pSym->m_strName.PCoz());
 					return pBuild->PInstCreate(IROP_Load, pVal, strPunyName.PCoz());
 				}

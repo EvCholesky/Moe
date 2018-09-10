@@ -2043,7 +2043,7 @@ CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, C
 		PushSymbolTable(pParctx, pSymtabProc, lexloc);
 	}
 
-	GRFPDECL grfpdecl = FPDECL_AllowVariadic | FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues;
+	GRFPDECL grfpdecl = FPDECL_AllowVariadic | FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues | FPDECL_AllowUsing;
 	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pLex, pSymtabProc, grfpdecl);
 	CSTNode * pStnodList = nullptr;
 	bool fHasVarArgs = pStnodParam && pStnodParam->m_park == PARK_VariadicArg;
@@ -4241,28 +4241,60 @@ SSymbolBase * PSymbaseLookup(
 	const SLexerLocation & lexloc,
 	GRFSYMLOOK grfsymlook)
 {
-	EWC_ASSERT(!grfsymlook.FIsSet(FSYMLOOK_Ancestors), "ancestor lookup not supported with using paths");
-	auto pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook);
-	if (pSym)
-		return pSym;
-
-	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+	if (grfsymlook.FIsSet(FSYMLOOK_Local))
 	{
-		auto ppSymp = pUsing->m_hashHvPSymp.Lookup(str.Hv());
-		if (ppSymp)
+		auto pSym = pSymtab->PSymLookup(str, lexloc, grfsymlook);
+		if (pSym)
+			return pSym;
+
+		for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
 		{
-			return *ppSymp;
+			auto ppSymp = pUsing->m_hashHvPSymp.Lookup(str.Hv());
+			if (ppSymp)
+			{
+				return *ppSymp;
+			}
+		}
+
+		for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+		{
+			auto pSymp = PSympLookup(pUsing, str, lexloc, grfsymlook | FSYMLOOK_IgnoreOrder, 1);
+			if (pSymp)
+			{
+				pUsing->m_hashHvPSymp.FinsEnsureKeyAndValue(str.Hv(), pSymp);
+				return pSymp;
+			}
 		}
 	}
 
-	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+	CSymbolTable * pSymtabIt = (grfsymlook.FIsSet(FSYMLOOK_Ancestors)) ? pSymtab->m_pSymtabParent : nullptr;
+	SLexerLocation lexlocChild = lexloc;
+	while (pSymtabIt)
 	{
-		auto pSymp = PSympLookup(pUsing, str, lexloc, grfsymlook, 1);
-		if (pSymp)
+		auto pSym = pSymtabIt->PSymLookup(str, lexloc, grfsymlook);
+		if (pSym)
+			return pSym;
+
+		for (auto pUsing = pSymtabIt->m_aryUsing.A(); pUsing != pSymtabIt->m_aryUsing.PMac(); ++pUsing)
 		{
-			pUsing->m_hashHvPSymp.FinsEnsureKeyAndValue(str.Hv(), pSymp);
-			return pSymp;
+			auto ppSymp = pUsing->m_hashHvPSymp.Lookup(str.Hv());
+			if (ppSymp)
+			{
+				return *ppSymp;
+			}
 		}
+
+		for (auto pUsing = pSymtabIt->m_aryUsing.A(); pUsing != pSymtabIt->m_aryUsing.PMac(); ++pUsing)
+		{
+			auto pSymp = PSympLookup(pUsing, str, lexloc, grfsymlook | FSYMLOOK_IgnoreOrder, 1);
+			if (pSymp)
+			{
+				pUsing->m_hashHvPSymp.FinsEnsureKeyAndValue(str.Hv(), pSymp);
+				return pSymp;
+			}
+		}
+		
+		pSymtabIt = pSymtabIt->m_pSymtabParent;
 	}
 
 	return nullptr;
