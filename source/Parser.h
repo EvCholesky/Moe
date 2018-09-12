@@ -765,13 +765,13 @@ protected:
 							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
 							,m_arypSymGenerics(pAlloc, EWC::BK_Symbol)	
 							,m_aryUsing(pAlloc, EWC::BK_Symbol)
+							,m_arypSymtabUsedBy(pAlloc, EWC::BK_Symbol)
 							,m_pUntyper(pUntyper)
 							,m_pUnsetTin(pUnsetTin)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
 							,m_iNestingDepth(0)
 							,m_scopid(pUntyper->ScopidAlloc())
-							,m_fIsLocked(false)
 								{ ; }
 
 public:
@@ -878,10 +878,6 @@ public:
 	void					AddBuiltInType(SErrorManager * pErrman, SLexer * pLex, STypeInfo * pTin, GRFSYM grfsym = FSYM_None);
 	void					AddManagedTin(STypeInfo * pTin);
 	void					AddManagedSymtab(CSymbolTable * pSymtab);
-	void					LockTable()
-								{ m_fIsLocked = true; }
-	bool					FIsLocked() const
-								{ return m_fIsLocked; }
 
 	void					PrintDump();
 
@@ -899,6 +895,7 @@ public:
 	EWC::CDynAry<STypeInfo *>		m_arypTinManaged;		// all type info structs that need to be deleted.
 	EWC::CDynAry<SSymbol *>			m_arypSymGenerics;		// symbol copies for generics, not mapped to an identifier
 	EWC::CDynAry<SUsing>			m_aryUsing;				// symbol tables with members pushed into this table's scope
+	EWC::CDynAry<CSymbolTable *>	m_arypSymtabUsedBy;		// symbol tables that refer to this one via a using statement
 	CUniqueTypeRegistry *			m_pUntyper;				// hashes to find unique type instances
 	SUniqueNameSet *				m_pUnsetTin;			// set of unique names for types (created during parse)
 	EWC::CDynAry<STypeInfoLiteral *>	
@@ -909,7 +906,7 @@ public:
 	CSymbolTable *					m_pSymtabNextManaged;	// next table in the global list
 	s32								m_iNestingDepth;					
 	SCOPID							m_scopid;				// unique table id, for unique type strings
-	bool							m_fIsLocked;			// No more symbols can be added to this table (guarantee simplifies using statement collision check)
+	u64								m_nVisitId;				// id to check if this table has been visited during collision check
 };
 
 SSymbolBase * PSymbaseLookup(CSymbolTable * pSymtab, const EWC::CString & str, const SLexerLocation & lexloc, GRFSYMLOOK grfsymlook);

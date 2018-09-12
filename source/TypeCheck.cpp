@@ -6434,10 +6434,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "loose", pTinenum->m_pTinLoose, grfsymlook);
 				ResolveSpoofTypedef(pTcwork, pStnod->m_pSymtab, pStnod, "strict", pTinenum, grfsymlook);
 
-				if (EWC_FVERIFY(pStnod->m_pSymtab, "expected symbol table"))
-				{
-					pStnod->m_pSymtab->LockTable();
-				}
 				OnTypeResolve(pTcwork, pSymEnum);
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
@@ -6591,10 +6587,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				pStnod->m_strees = STREES_TypeChecked;
 
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
-				if (EWC_FVERIFY(pStnod->m_pSymtab, "expected symbol table"))
-				{
-					pStnod->m_pSymtab->LockTable();
-				}
 				OnTypeResolve(pTcwork, pSymStruct);
 			}break;
 			case PARK_Identifier:

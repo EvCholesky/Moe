@@ -1271,7 +1271,7 @@ test StructUsingArgumentUse
 		?rhs(m_x) + ?ret(123),
 		?rhs(m_y) + ?ret(456),
 	}
-	
+
 test StructUsingFails
 	input "using x: ?type"
 	bytecode "{123;}"
@@ -1311,6 +1311,24 @@ test StructUsingMemberFromRef
 	{
 		?rhs(m_x),
 		?rhs(m_y),
+	}
+
+test StructUsingCollision
+	input "SA struct {m_x, m_y: int ?ainc} SB struct { m_z: int; using m_a: & SA ?binc}"
+	{
+		?ainc("") + ?binc("; m_x: int"?errid(2024)),
+		?ainc(";m_z: int") + ?binc(""?errid(2024)),
+		?ainc("; using m_pB: & SB"?errid(2023)) + ?binc(""),
+		?ainc("; using m_pA: & SA"?errid(2023)) + ?binc(""),
+	}
+
+test StructUsingCollisionCycle
+	input "SA struct {?abody} SB struct {?bbody} SC struct {?cbody} SD struct {?dbody}"
+	{
+		?abody("using m_b: SB; using m_c: SC") + ?bbody("using m_d1: SD") + ?cbody("using m_d2: SD") + ?dbody(""?errid(2023)),
+		?abody("") + ?bbody("using m_a1: SA") + ?cbody("using m_a2: SA") + ?dbody("using m_b1: SB; using m_c1: SC"?errid(2023)),
+		?abody("using m_b: SB; using m_d: SD") + ?bbody("using m_c: SC") + ?cbody("using m_d2: SD") + ?dbody(""?errid(2023)),
+		?abody("using m_d: SD") + ?bbody("using m_c: SC; using m_a: SC") + ?cbody("using m_d2: SD") + ?dbody(""?errid(2023)),
 	}
 
 // Unicode

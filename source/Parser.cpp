@@ -49,6 +49,8 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const char * pCozErrorContext, GRFPDECL grfpdecl);
 
+static int g_nSymtabVisitId = 1; // visit index used by symbol table collision walks
+
 const char * PChzFromPark(PARK park)
 {
 	static const char * s_mpParkPChz[] =
@@ -4039,6 +4041,104 @@ SSymbol * CSymbolTable::PSymGenericInstantiate(SSymbol * pSymGeneric, STypeInfo 
 	return pSymNew;
 }
 
+enum SYMCOLLIS 
+{
+	SYMCOLLIS_SymbolName,
+	SYMCOLLIS_CyclicUsing,
+
+	EWC_MAX_MIN_NIL(SYMCOLLIS)
+};
+
+SYMCOLLIS SymcollisCheck(
+	CSymbolTable * pSymtab,
+	const HV * pHvMin,
+	const HV * pHvMax,
+	u64 nVisitId,
+	FSHADOW fshadow, 
+	CSTNode ** ppStnodCollision)
+{
+	if (pSymtab->m_nVisitId == nVisitId)
+	{
+		*ppStnodCollision = nullptr;
+		return SYMCOLLIS_CyclicUsing;
+	}
+	pSymtab->m_nVisitId = nVisitId;
+
+	SYMCOLLIS symcollis = SYMCOLLIS_Nil;
+	if (fshadow == FSHADOW_NoShadowing)
+	{
+		for (auto pHvIt = pHvMin; pHvIt != pHvMax; ++pHvIt)
+		{
+			SSymbol ** ppSym = pSymtab->m_hashHvPSym.Lookup(*pHvIt);
+			if (ppSym)
+			{
+				*ppStnodCollision = (*ppSym)->m_pStnodDefinition;
+				symcollis = SYMCOLLIS_SymbolName;
+				break;
+			}
+		}
+	}
+
+	auto pUsingMax = pSymtab->m_aryUsing.PMac();
+	for (auto pUsingIt = pSymtab->m_aryUsing.A(); pUsingIt != pUsingMax; ++pUsingIt)
+	{
+		symcollis = ewcMax(symcollis, SymcollisCheck(pUsingIt->m_pSymtab, pHvMin, pHvMax, nVisitId, FSHADOW_NoShadowing, ppStnodCollision));
+		if (symcollis == SYMCOLLIS_CyclicUsing)
+			return symcollis;
+	}
+
+	auto ppSymtabMax = pSymtab->m_arypSymtabUsedBy.PMac();
+	for (auto ppSymtabIt = pSymtab->m_arypSymtabUsedBy.A(); ppSymtabIt != ppSymtabMax; ++ppSymtabIt)
+	{
+		auto pSymtabUsedBy = *ppSymtabIt;
+		symcollis = ewcMax(symcollis, SymcollisCheck(pSymtabUsedBy, pHvMin, pHvMax, nVisitId, FSHADOW_NoShadowing, ppStnodCollision));
+		if (symcollis == SYMCOLLIS_CyclicUsing)
+			return symcollis;
+	}
+
+	return symcollis;
+}
+
+ERRID ErridCheckSymbolCollision(
+	SErrorManager * pErrman,
+	SLexerLocation * pLexloc,
+	const char * pChzContext,
+	CSymbolTable * pSymtabContext,
+	const HV * pHvMin,
+	const HV * pHvMax,
+	FSHADOW fshadow,
+	u64 nVisitId)
+{
+	CSTNode * pStnodCollision = nullptr;
+	auto symcollis = SymcollisCheck(pSymtabContext, pHvMin, pHvMax, g_nSymtabVisitId, fshadow, &pStnodCollision);
+	if (symcollis != SYMCOLLIS_Nil)
+	{
+		s32 iLine = 0;
+		s32 iCol = 0;
+		const char * pChzFilename = "unknown";
+		if (pStnodCollision)
+		{
+			CalculateLinePosition(pErrman->m_pWork, &pStnodCollision->m_lexloc, &iLine, &iCol);
+			pChzFilename = pStnodCollision->m_lexloc.m_strFilename.PCoz();
+		}
+
+		switch (symcollis)
+		{
+		case SYMCOLLIS_SymbolName: EmitError(pErrman, pLexloc, ERRID_UsingStatementCollision, 
+										"%s shadows symbol name at %s(%d, %d)", 
+										pChzContext,
+										pChzFilename, iLine, iCol);
+									return ERRID_UsingStatementCollision;
+		case SYMCOLLIS_CyclicUsing: EmitError(pErrman, pLexloc, ERRID_UsingStatementCycle, 
+										"%s causes using statement cycle at %s(%d, %d)", 
+										pChzContext,
+										pChzFilename, iLine, iCol);
+									return ERRID_UsingStatementCycle;
+		}
+	}
+	return ERRID_Nil;
+}
+
 SSymbol * CSymbolTable::PSymEnsure(
 	SErrorManager * pErrman,
 	const CString & strName,
@@ -4046,10 +4146,19 @@ SSymbol * CSymbolTable::PSymEnsure(
 	GRFSYM grfsym,
 	FSHADOW fshadow)
 {
-	EWC_ASSERT(!FIsLocked(), "cannot add symbol to locked table");
 	SLexerLocation lexloc;
 	if (pStnodDefinition)
 		lexloc = pStnodDefinition->m_lexloc;
+
+	HV hv = strName.Hv();
+	(void) ErridCheckSymbolCollision(
+		pErrman, 
+		&pStnodDefinition->m_lexloc,
+		strName.PCoz(),
+		this,
+		&hv, &hv + 1,
+		fshadow,
+		++g_nSymtabVisitId);
 
 	SSymbol * pSymPrev = nullptr;
 	SSymbol * pSym = nullptr;
@@ -4093,96 +4202,63 @@ SSymbol * CSymbolTable::PSymEnsure(
 	return pSym;
 }
 
-void FlattenUsingTree(CSymbolTable * pSymtab, CDynAry<CSymbolTable::SUsing *> * parypUsing)
+void FlattenUsingTree(CSymbolTable * pSymtab, CDynAry<HV> * paryHv, u64 nVisitId)
 {
-	for (auto pUsing = pSymtab->m_aryUsing.A(); pUsing != pSymtab->m_aryUsing.PMac(); ++pUsing)
+	if (pSymtab->m_nVisitId == nVisitId)
+		return;
+	pSymtab->m_nVisitId = nVisitId;
+
+	paryHv->EnsureSize(paryHv->C() + pSymtab->m_hashHvPSym.C());
+	EWC::CHash<HV, SSymbol *>::CIterator iter(&pSymtab->m_hashHvPSym);
+	HV * pHv;
+	while (SSymbol ** ppSym = iter.Next(&pHv))
 	{
-		parypUsing->Append(pUsing);
-		FlattenUsingTree(pUsing->m_pSymtab, parypUsing);
-	}
-}
-
-bool FTryCheckUsingCollisions(
-	CAlloc * pAlloc,
-	SErrorManager * pErrman,
-	CSymbolTable * pSymtabNew,
-	CSTNode * pStnodNew,
-	CSymbolTable * pSymtabCheck,
-	CSTNode * pStnodCheck)
-{
-	CDynAry<CSymbolTable::SUsing *> arypUsingNew(pAlloc, BK_Symbol);
-	CSymbolTable::SUsing usingNew;
-	usingNew.m_pSymtab = pSymtabNew;
-	usingNew.m_pStnod = pStnodNew;
-	arypUsingNew.Append(&usingNew);
-	FlattenUsingTree(pSymtabNew, &arypUsingNew);
-
-	CDynAry<CSymbolTable::SUsing *> arypUsingCheck(pAlloc, BK_Symbol);
-	CSymbolTable::SUsing usingRoot;
-	usingRoot.m_pSymtab = pSymtabCheck;
-	usingRoot.m_pStnod = pStnodCheck;
-	arypUsingCheck.Append(&usingRoot);
-	FlattenUsingTree(pSymtabCheck, &arypUsingCheck);
-
-	bool fIsOk = true;
-	for (auto ppUsingNew = arypUsingNew.A(); ppUsingNew != arypUsingNew.PMac(); ++ppUsingNew)
-	{
-		auto pUsingNew = *ppUsingNew;
-		for (auto ppUsingCheck = arypUsingCheck.A(); ppUsingCheck != arypUsingCheck.PMac(); ++ppUsingCheck)
-		{
-			auto pUsingCheck = *ppUsingCheck;
-
-			if (pUsingNew->m_pSymtab == pUsingCheck->m_pSymtab)
-			{
-				SError error(pErrman, ERRID_UsingStatementCycle);
-				PrintErrorLine(&error, "Error:", &pUsingNew->m_pStnod->m_lexloc, "'using' statement '%s' would cause cycle", pUsingNew->m_pSymtab->m_strNamespace.PCoz());
-				PrintErrorLine(&error, "", &pUsingCheck->m_pStnod->m_lexloc, "with '%s' included here", pUsingCheck->m_pSymtab->m_strNamespace.PCoz());
-				fIsOk = false;
-				continue;
-			}
-
-			auto pHashHvPSymCheck = &pUsingCheck->m_pSymtab->m_hashHvPSym;
-			EWC::CHash<HV, SSymbol *>::CIterator iterNew(&pUsingNew->m_pSymtab->m_hashHvPSym);
-			while (SSymbol ** ppSymNew = iterNew.Next())
-			{
-				SSymbol * pSymNew = *ppSymNew;
-				SSymbol ** ppSymCollis = pHashHvPSymCheck->Lookup(pSymNew->m_strName.Hv()); 
-				if (ppSymCollis)
-				{
-					SError error(pErrman, ERRID_UsingStatementCollision);
-					PrintErrorLine(&error, "Error:", &pUsingNew->m_pStnod->m_lexloc, 
-						"'using' statement causes name collision for '%s'", pSymNew->m_strName.PCoz());
-
-					PrintErrorLine(&error, "   ", &(*ppSymCollis)->m_pStnodDefinition->m_lexloc, "found here");
-					fIsOk = false;
-				}
-			}
-		}
+		paryHv->Append(*pHv);
 	}
 
-	return fIsOk;
+	auto pUsingMax = pSymtab->m_aryUsing.PMac();
+	for (auto pUsingIt = pSymtab->m_aryUsing.A(); pUsingIt != pUsingMax; ++pUsingIt)
+	{
+		FlattenUsingTree(pUsingIt->m_pSymtab, paryHv, nVisitId);
+	}
+
+	auto ppSymtabMax = pSymtab->m_arypSymtabUsedBy.PMac();
+	for (auto ppSymtabIt = pSymtab->m_arypSymtabUsedBy.A(); ppSymtabIt != ppSymtabMax; ++ppSymtabIt)
+	{
+		FlattenUsingTree(*ppSymtabIt, paryHv, nVisitId);
+	}
 }
 
 void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtabNew, CSTNode * pStnodUsingDecl)
 {
-	EWC_ASSERT(!FIsLocked(), "cannot add using reference to locked table");
-	if (pSymtabNew == this)
+	CDynAry<HV> aryHvFlat(m_pAlloc, BK_Symbol);
+	FlattenUsingTree(pSymtabNew, &aryHvFlat, ++g_nSymtabVisitId);
+
+	CSTNode * pStnodCollis = nullptr;
+
+	++g_nSymtabVisitId;
+	pSymtabNew->m_nVisitId = g_nSymtabVisitId;
+
+	auto errid = ErridCheckSymbolCollision(
+					pErrman, 
+					&pStnodUsingDecl->m_lexloc,
+					"using declaration",
+					this,
+					aryHvFlat.A(), aryHvFlat.PMac(),
+					FSHADOW_NoShadowing,
+					g_nSymtabVisitId);
+	if (errid != ERRID_Nil)
 	{
-		EmitError(pErrman, &pStnodUsingDecl->m_lexloc, ERRID_UsingStatementCollision, 
-			"Using statement would cause name collision (cyclic using statements)");
 		return;
 	}
 
-	EWC_ASSERT(pSymtabNew->FIsLocked(), "expected symbol table to be locked before referenced in a using statement.");
+	auto pUsingNew = m_aryUsing.AppendNew();
+	pUsingNew->m_pSymtab = pSymtabNew;
+	pUsingNew->m_pStnod = pStnodUsingDecl;
+	pUsingNew->m_hashHvPSymp.SetAlloc(m_pAlloc, BK_Symbol);
+	EWC_ASSERT(pStnodUsingDecl->PSym(), "expected symbol for using decl");
 
-	if (FTryCheckUsingCollisions(m_pAlloc, pErrman, pSymtabNew, pStnodUsingDecl, this, pStnodUsingDecl))
-	{
-		auto pUsingNew = m_aryUsing.AppendNew();
-		pUsingNew->m_pSymtab = pSymtabNew;
-		pUsingNew->m_pStnod = pStnodUsingDecl;
-		pUsingNew->m_hashHvPSymp.SetAlloc(m_pAlloc, BK_Symbol);
-		EWC_ASSERT(pStnodUsingDecl->PSym(), "expected symbol for using decl");
-	}
+	pSymtabNew->m_arypSymtabUsedBy.Append(this);
 }
 
 SSymbol * CSymbolTable::PSymNewUnmanaged(const CString & strName, CSTNode * pStnodDefinition, GRFSYM grfsym)
