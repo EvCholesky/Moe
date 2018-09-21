@@ -152,7 +152,8 @@ struct OpSignature // tag = opsig
 		\
 		OPMN(UnaryOp,	NNeg)		OPSIZE(CB, 0, CB) \
 		OP(				GNeg)		OPSIZE(CB, 0, CB) \
-		OPMX(UnaryOp,	Not)		OPSIZE(CB, 0, CB) \
+		OP(				Not)		OPSIZE(CB, 0, CB) \
+		OPMX(UnaryOp,	FNot)		OPSIZE(CB, 0, CB) \
 		\
 		OPMN(CmpOp,		NCmp)		OPSIZE(CB, CB, 1) \
 		OPMX(CmpOp,		GCmp)		OPSIZE(CB, CB, 1) \

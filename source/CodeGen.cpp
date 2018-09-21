@@ -235,6 +235,7 @@ static inline llvm::CallingConv::ID CallingconvFromCallconv(CALLCONV callconv)
 	return s_mpCallconvCallingconv[callconv];
 }
 
+void DumpLtype(const char * pChzLabel, BCode::SValue * pVal);
 static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
 {
 	printf("%s: ", pChzLabel);
@@ -1637,6 +1638,7 @@ CIRInstruction * CBuilderIR::PInstCreate(IROP irop, CIRValue * pValOperand, cons
 
 	case IROP_NNeg:		pInst->m_pLval = LLVMBuildNeg(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
 	case IROP_GNeg:		pInst->m_pLval = LLVMBuildFNeg(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
+	case IROP_FNot:		pInst->m_pLval = LLVMBuildNot(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
 	case IROP_Not:		pInst->m_pLval = LLVMBuildNot(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
 	case IROP_Load:		pInst->m_pLval = LLVMBuildLoad(m_pLbuild, pValOperand->m_pLval, OPNAME(pChzName)); break;
 	default: EWC_ASSERT(false, "%s is not a unary opcode supported by PInstCreate", PChzFromIrop(irop)); break;
@@ -5095,6 +5097,155 @@ static inline bool FIsNull(BCode::SValue * pVal)
 	return pVal == nullptr;
 }
 
+// called with a terminal identifier symbol, NOT a symbol path (symbol path handling will call this)
+template <typename BUILD>
+typename BUILD::Value * PValFromIdentifierSym(CWorkspace * pWork, BUILD * pBuild, SSymbol * pSymIdent, VALGENK valgenk)
+{
+	BUILD::Value * pVal = pBuild->PValFromSymbol(pSymIdent);
+
+	if (!pVal)
+	{
+		SLexerLocation lexloc;
+		if (pSymIdent->m_pStnodDefinition)
+		{
+			lexloc = pSymIdent->m_pStnodDefinition->m_lexloc;
+		}
+
+		EmitError(pWork, &lexloc, ERRID_UnknownError, "INTERNAL ERROR: Missing value for symbol %s", pSymIdent->m_strName.PCoz());
+		return nullptr;
+	}
+
+	return pVal;
+}
+
+VALGENK ValgenkLhs(STypeInfo * pTinLhs, STypeInfo ** ppTinLhsValue)
+{
+	auto pTinLhsValue = PTinStripQualifiers(pTinLhs);
+
+	VALGENK valgenkLhs = VALGENK_Reference;
+	if (pTinLhsValue)
+	{
+		if (pTinLhsValue->m_tink == TINK_Pointer)
+		{
+			pTinLhsValue = ((STypeInfoPointer *)pTinLhsValue)->m_pTinPointedTo;
+			valgenkLhs = VALGENK_Instance;
+		}
+	}
+
+	*ppTinLhsValue = pTinLhsValue;
+	return valgenkLhs;
+}
+
+template <typename BUILD>
+typename BUILD::Value * PValGenerateSymbolPath(
+	CWorkspace * pWork,
+	BUILD * pBuild,
+	STypeInfo * pTinLhs,
+	typename BUILD::Value * pValLhs,
+	SSymbol ** ppSymMin,
+	SSymbol ** ppSymMax, 
+	VALGENK valgenkFinal)
+{
+
+	for (auto ppSymRhs = ppSymMin; ppSymRhs != ppSymMax; ++ppSymRhs)
+	{
+		// check the symbol because we need to differentiate between enum namespacing and enum struct member.
+		BUILD::Constant * pConstEnum = nullptr;
+
+		auto pSymRhs = *ppSymRhs;
+		
+		auto pTinLhsValue = pTinLhs;
+		bool fWasPointerType = false;
+		while (pTinLhsValue)
+		{
+			if (pTinLhsValue->m_tink == TINK_Qualifier)
+			{
+				auto pTinqual = (STypeInfoQualifier *)pTinLhsValue;
+				pTinLhsValue = pTinqual->m_pTin;
+			}
+			else if (pTinLhsValue->m_tink == TINK_Pointer)
+			{
+				pTinLhsValue = ((STypeInfoPointer *)pTinLhsValue)->m_pTinPointedTo;
+				fWasPointerType = true;
+			}
+			else 
+				break;
+		}
+
+		// we want val lhs to be a reference type here, but if pTinLhs was a pointer the instance IS the reference type.
+		if (fWasPointerType)
+		{
+			pValLhs = pBuild->PInstCreate(IROP_Load, pValLhs, "ptrLoad");
+		}
+
+		auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinLhsValue);
+		if (pTinenum)
+		{
+			CSTValue * pStvalRhs = nullptr;
+			if (pSymRhs->m_pStnodDefinition)
+			{
+				pStvalRhs = pSymRhs->m_pStnodDefinition->m_pStval;
+			}
+
+			if (EWC_FVERIFY(pStvalRhs, "Enum constant lookup without value"))
+			{
+				pConstEnum = pBuild->PConstEnumLiteral(pTinenum, pStvalRhs);
+
+				if (pTinenum->m_enumk != ENUMK_FlagEnum)
+					return pConstEnum;
+			}
+		}
+
+		if (pConstEnum)
+		{
+			if (valgenkFinal == VALGENK_Reference)
+			{
+				// set val: (n & ~flag) | (sext(fNew) & flag)
+				// return the instance here, the assignment operator will have to flip the right bits 
+				return pValLhs;
+			}
+
+			// get val: (n & flag) == flag;
+			auto pInstLhsLoad = pBuild->PInstCreate(IROP_Load, pValLhs, "membLoad");
+			auto pInstAnd = pBuild->PInstCreate(IROP_And, pInstLhsLoad, pConstEnum, "and");
+			auto pInstCmp = pBuild->PInstCreateNCmp(NPRED_EQ, pInstAnd, pConstEnum, "cmpEq");
+			return pInstCmp;
+		}
+
+		CString strMemberName = pSymRhs->m_strName;
+		auto pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhsValue);
+
+		if (!EWC_FVERIFY(pTinstruct, "missing type structure in symbol path for %s", StrFromTypeInfo(pTinLhs).PCoz()))
+			return nullptr;
+
+		auto pTypememb = PTypemembLookup(pTinstruct, pSymRhs->m_strName);
+		if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s.%s", pTinstruct->m_strName.PCoz(), pSymRhs->m_strName.PCoz()))
+			return nullptr;
+
+		BUILD::GepIndex * apLvalIndex[3] = {};
+		int cpLvalIndex = 0;
+		apLvalIndex[cpLvalIndex++] = pBuild->PGepIndex(0);
+		apLvalIndex[cpLvalIndex++] = pBuild->PGepIndex(pTinstruct->m_aryTypemembField.IFromP(pTypememb));
+		pValLhs = pBuild->PInstCreateGEP(pValLhs, apLvalIndex, cpLvalIndex, "aryGep");
+		pTinLhs = pSymRhs->m_pTin;
+	}
+
+	bool fIsProcedureRef = FIsProcedure(pValLhs);
+	if (valgenkFinal == VALGENK_Instance)
+	{
+		if (!fIsProcedureRef)
+		{
+			return pBuild->PInstCreate(IROP_Load, pValLhs, "rhsLoad");
+		}
+	}
+	else if (valgenkFinal == VALGENK_Reference)
+	{
+		EWC_ASSERT(!fIsProcedureRef, "Cannot return reference for instance symbol type");
+	}
+
+	return pValLhs;
+}
+
 template <typename BUILD>
 typename BUILD::Instruction * PInstGepFromSymbolList(
 	BUILD * pBuild,
@@ -5147,8 +5298,6 @@ typename BUILD::Instruction * PInstGepFromSymbolList(
 
 	return pInstRet;
 }
-
-
 
 template <typename BUILD>
 typename BUILD::Value * PValForSymbase(
@@ -5214,6 +5363,70 @@ typename BUILD::Instruction * PInstGepFromSymbase(
 	}
 
 	return PInstGepFromSymbolList(pBuild, ppSymBegin, ppSymEnd, pValLhs, pTinLhs, valgenk);
+}
+
+void AppendSymbase(EWC::CDynAry<SSymbol *> * parypSym, SSymbolBase * pSymbase)
+{
+	switch (pSymbase->m_symk)
+	{
+	case SYMK_Path:
+		{
+			auto pSymp = (SSymbolPath *)pSymbase;
+			auto ppSymMax = pSymp->m_arypSym.PMac();
+			for(auto ppSymIt = pSymp->m_arypSym.A(); ppSymIt != ppSymMax; ++ppSymIt)
+			{
+				parypSym->Append(*ppSymIt);
+			}
+
+		} break;
+	case SYMK_Symbol:
+		{
+			parypSym->Append((SSymbol *)pSymbase);
+		} break;
+	default:
+		EWC_ASSERT(false, "unhandled symk");
+	}
+}
+
+template <typename BUILD>
+typename BUILD::Constant * PConstEnumLiteralFromStnod(BUILD * pBuild, CSTNode * pStnod, STypeInfo ** ppTinLoose)
+{
+	EWC::CDynAry<SSymbol *> arypSym(pBuild->m_pAlloc, BK_CodeGen);
+	switch (pStnod->m_park)
+	{
+	case PARK_MemberLookup:
+		{
+			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
+			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
+			AppendSymbase(&arypSym, pStnodLhs->m_pSymbase);
+			AppendSymbase(&arypSym, pStnodRhs->m_pSymbase);
+		} break;
+	case PARK_Identifier:
+		{
+			AppendSymbase(&arypSym, pStnod->m_pSymbase);
+		} break;
+	default:
+		EWC_ASSERT(false, "unexpected parse kind %s", PChzFromPark(pStnod->m_park));
+		return nullptr;
+	}
+
+	auto cSym = arypSym.C();
+	if (cSym >= 2)
+	{
+		auto pSymEnum = arypSym[cSym-2];
+		auto pSymConstant = arypSym[cSym-1];
+
+		auto pTin = PTinStripQualifiersAndPointers(pSymEnum->m_pTin);
+		auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTin);
+		CSTValue * pStval = pSymConstant->m_pStnodDefinition->m_pStval;
+		if (pTinenum && pStval)
+		{
+			*ppTinLoose = pTinenum->m_pTinLoose;
+			return pBuild->PConstEnumLiteral(pTinenum, pStval);
+		}
+	}
+
+	return nullptr;
 }
 
 template <typename BUILD>
@@ -5761,6 +5974,41 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 	case PARK_Identifier:
 		{
+#if 1
+			SSymbol ** ppSymMin = nullptr;
+			SSymbol ** ppSymMax = nullptr;
+			if (pStnod->m_pSymbase)
+			{
+				switch (pStnod->m_pSymbase->m_symk)
+				{
+				case SYMK_Symbol:
+					{
+						ppSymMin = (SSymbol**)&pStnod->m_pSymbase;
+						ppSymMax = ppSymMin+1;
+
+					} break;
+				case SYMK_Path:
+					{
+						auto pSymp = (SSymbolPath *)pStnod->m_pSymbase;
+						ppSymMin = pSymp->m_arypSym.A();
+						ppSymMax = pSymp->m_arypSym.PMac();
+					} break;
+				default: break;
+				}
+			}
+
+			if (ppSymMin == ppSymMax)
+			{
+				CString strName(StrFromIdentifier(pStnod));
+				EmitError(pWork, &pStnod->m_lexloc, ERRID_UnknownError, "INTERNAL ERROR: Missing value for symbol %s", strName.PCoz());
+			}
+
+			auto pSymLeft = *ppSymMin;
+			++ppSymMin;
+			BUILD::Value * pValLhs = PValFromIdentifierSym(pWork, pBuild, pSymLeft, VALGENK_Reference);
+			return PValGenerateSymbolPath(pWork, pBuild, pSymLeft->m_pTin, pValLhs, ppSymMin, ppSymMax, valgenk);
+
+#else
 			BUILD::Value * pVal = nullptr;
 			if (pStnod->m_pSymbase)
 			{
@@ -5792,9 +6040,87 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 				ASSERT_STNOD(pWork, pStnod, valgenkSym == VALGENK_Reference, "Cannot return reference for instance symbol type");
 			}
 			return pVal;
+#endif
 		}
 	case PARK_MemberLookup:
 		{
+#if 1
+			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
+			SSymbol ** ppSymMin = nullptr;
+			SSymbol ** ppSymMax = nullptr;
+			if (pStnodRhs->m_pSymbase)
+			{
+				switch (pStnodRhs->m_pSymbase->m_symk)
+				{
+				case SYMK_Symbol:
+					{
+						ppSymMin = (SSymbol**)&pStnodRhs->m_pSymbase;
+						ppSymMax = ppSymMin+1;
+
+					} break;
+				case SYMK_Path:
+					{
+						auto pSymp = (SSymbolPath *)pStnodRhs->m_pSymbase;
+						ppSymMin = pSymp->m_arypSym.A();
+						ppSymMax = pSymp->m_arypSym.PMac();
+					} break;
+				default: break;
+				}
+			}
+
+			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
+			auto pTinLhs = pStnodLhs->m_pTin;
+			VALGENK valgenkLhs = VALGENK_Reference;
+			if (pTinLhs)
+			{
+				if (pTinLhs->m_tink == TINK_Pointer)
+				{
+					pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
+					valgenkLhs = VALGENK_Instance;
+				}
+			}
+			BUILD::Value * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, valgenkLhs);
+
+			// implicit array members don't have a symbol for the RHS
+			CString strMemberName = StrFromIdentifier(pStnod->PStnodChild(1));
+			if (pTinLhs && pTinLhs->m_tink == TINK_Array)
+			{
+				auto pTinary = (STypeInfoArray *)pTinLhs;
+				ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
+				return PValFromArrayMember(pWork, pBuild, pValLhs, pTinary, arymemb, valgenk);
+			}
+			if (pTinLhs && pTinLhs->m_tink == TINK_Literal)
+			{
+				auto pTinlit = (STypeInfoLiteral *)pTinLhs;
+				BUILD::Global ** ppGlob = pBuild->m_hashPTinlitPGlob.Lookup(pTinlit);
+				if (EWC_FVERIFY(ppGlob, "expected global instance for array literal"))
+				{
+					// BB - cleanup this (BUILD::Global *) cast
+					BUILD::Global * pGlobLit = (BUILD::Global *)*ppGlob;
+
+					if (pTinlit->m_litty.m_litk == LITK_Array)
+					{
+						ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
+
+						EWC_ASSERT(valgenk == VALGENK_Instance, "expected instance");
+						if (arymemb == ARYMEMB_Count)
+						{
+							return pBuild->PConstInt(pTinlit->m_c, 64, true);
+						}
+
+						// the type of aN.data is &N so a reference would need to be a &&N which we don't have
+						EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
+
+						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinlit->m_pTinSource);
+
+						return pBuild->PInstCreateCast(IROP_Bitcast, pGlobLit, pTinptr, "Bitcast");
+					}
+					return pGlobLit;
+				}
+			}
+
+			return PValGenerateSymbolPath(pWork, pBuild, pTinLhs, pValLhs, ppSymMin, ppSymMax, valgenk);
+#else
 			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
 
 			// check the symbol because we need to differentiate between enum namespacing and enum struct member.
@@ -5802,6 +6128,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			if (auto pSym = pStnodLhs->PSym())
 			{
 				auto pTinLhs = PTinStripQualifiersAndPointers(pSym->m_pTin);
+				EWC_ASSERT(FTypesAreSame(pSym->m_pTin, pStnodLhs->m_pTin), "type mismatch between symbol and AST");
 
 				if (pTinLhs && pTinLhs->m_tink == TINK_Enum)
 				{
@@ -5887,6 +6214,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			
 			auto pInst = PInstGepFromSymbase(pBuild, pStnod->m_pSymbase, pValLhs, pTinLhs, valgenk);
 			return pInst;
+#endif
 		}
 	case PARK_ArrayElement:
 		{ 
@@ -6004,25 +6332,8 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 				if (pStnodLhs->m_pTin->m_tink == TINK_Flag)
 				{
 					STypeInfo * pTinLoose = nullptr;
-					BUILD::Constant * pConstEnum = nullptr;
-					if (EWC_FVERIFY(pStnodLhs->m_park == PARK_MemberLookup, "expected member lookup"))
-					{
-						CSTNode * pStnodEnum = pStnodLhs->PStnodChildSafe(0);
-						STypeInfo * pTinLhs = (pStnodEnum) ? pStnodEnum->m_pTin : nullptr;
-						if (pTinLhs->m_tink == TINK_Pointer)
-						{
-							pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
-						}
-
-						if (EWC_FVERIFY(pTinLhs && pTinLhs->m_tink == TINK_Enum, "expected enum type"))
-						{
-							auto pTinenum = (STypeInfoEnum *)pTinLhs;
-							pTinLoose = pTinenum->m_pTinLoose;
-
-							pConstEnum = pBuild->PConstEnumLiteral(pTinenum, pStnodLhs->m_pStval);
-						}
-
-					}
+					BUILD::Constant * pConstEnum = PConstEnumLiteralFromStnod(pBuild, pStnodLhs, &pTinLoose);
+					EWC_ASSERT(pConstEnum, "failed to find constant for flag enum");
 
 					// set val: (n & ~flag) | (sext(rhs) & flag)
 
@@ -6250,11 +6561,20 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 						return nullptr;
 					}
 
-					pValOp = pBuild->PInstCreate(IROP_Not, pValOperandCast, "NCmpEq");
+					pValOp = pBuild->PInstCreate(IROP_FNot, pValOperandCast, "NCmpEq");
 				} break;
 			case '+':
 				{
 					pValOp = pValOperand;
+				} break;
+			case '~':
+				{
+					switch (tink)
+					{
+					case TINK_Integer : pValOp = pBuild->PInstCreate(IROP_Not, pValOperand, "NNot"); break;
+					default: EWC_ASSERT(false, "unexpected type '%s' for bitwise not operator", PChzFromTink(tink));
+					}
+
 				} break;
 			case '-':
 				{

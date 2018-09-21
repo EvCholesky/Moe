@@ -215,6 +215,46 @@ void BuildStubDataLayout(SDataLayout * pDlay)
 	pDlay->m_cBStackAlign = sizeof(void *);
 }
 
+inline STypeInfo * PTinFromVal(BCode::SValue * pVal)
+{
+	switch (pVal->m_valk)
+	{
+	case VALK_Constant:
+	case VALK_BCodeRegister:
+		{
+			auto pConst = (BCode::SConstant *)pVal;
+			return pConst->m_pTin;
+		}
+	case VALK_Instruction:
+		{
+			auto pInstval = (BCode::SInstructionValue *)pVal;
+			return pInstval->m_pTinOperand;
+		} break;
+	case VALK_Procedure:
+		{
+			// note - pFn's valk is only VALK_Procedure if fIsForeign == false
+			auto pProc = (BCode::SProcedure *)pVal;
+			auto pProcsig = pProc->m_pProcsig;
+			return pProcsig->m_pTinproc;
+		}
+	}
+
+	return nullptr;
+}
+
+void DumpLtype(const char * pChzLabel, BCode::SValue * pVal)
+{
+	EWC::CString strTin = "null";
+	auto pTin = PTinFromVal(pVal);
+	if (pTin)
+	{
+		strTin = StrFromTypeInfo(pTin);
+	}
+
+	printf("%s: %s", pChzLabel, strTin.PCoz());
+}
+
+
 namespace BCode 
 {
 inline bool FUseLargeOperand(IROP irop)
@@ -1764,33 +1804,6 @@ CBuilder::ProcArg *	CBuilder::PProcArg(SValue * pVal)
 	return pVal;
 }
 
-inline STypeInfo * PTinFromVal(SValue * pVal)
-{
-	switch (pVal->m_valk)
-	{
-	case VALK_Constant:
-	case VALK_BCodeRegister:
-		{
-			auto pConst = (SConstant *)pVal;
-			return pConst->m_pTin;
-		}
-	case VALK_Instruction:
-		{
-			auto pInstval = (SInstructionValue *)pVal;
-			return pInstval->m_pTinOperand;
-		} break;
-	case VALK_Procedure:
-		{
-			// note - pFn's valk is only VALK_Procedure if fIsForeign == false
-			auto pProc = (SProcedure *)pVal;
-			auto pProcsig = pProc->m_pProcsig;
-			return pProcsig->m_pTinproc;
-		}
-	}
-
-	return nullptr;
-}
-
 SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProcedure * pTinproc, ProcArg ** apLvalArgs, int cpLvalArg)
 {
 	if (!EWC_FVERIFY(m_pProcCur, "Cannot add a procedure call outside of a procedure"))
@@ -2105,6 +2118,7 @@ SInstructionValue * CBuilder::PInstCreate(IROP irop, SValue * pValLhs, const cha
 	case IROP_Ret:
 	case IROP_NNeg:
 	case IROP_GNeg:
+	case IROP_FNot:
 	case IROP_Not:
 		return PInstCreateRaw(irop, pValLhs, nullptr, pChzName);
 	default: 
@@ -2440,6 +2454,20 @@ SInstructionValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValSrc, SType
 	SWord wordLhs;
 	SValueOutput valout;
 	SetOperandFromValue(m_pDlay, pValSrc, &opkLhs, &wordLhs, OPSZ_CB, &valout);
+
+	auto pTinSrc = valout.m_pTin;
+	if (pTinSrc->m_tink == TINK_Bool ||
+		(pTinSrc->m_tink == TINK_Literal && ((STypeInfoLiteral*)pTinSrc)->m_litty.m_litk == LITK_Bool))
+	{
+		// we need to handle this carefully because our bytecode doesn't have a 1bit type
+		if (irop == IROP_SignExt)
+		{
+			auto pConstZero = PConstInt(0, valout.m_cBRegister);
+			pValSrc = PInstCreateRaw(IROP_NSub, -1, pConstZero, pValSrc, "");
+
+			SetOperandFromValue(m_pDlay, pValSrc, &opkLhs, &wordLhs, OPSZ_CB, &valout);
+		}
+	}
 
 	SInstructionValue * pInstval = PInstCreateRaw(irop, cBDst, nullptr, PConstInt(valout.m_cBRegister, 8), pChzName);
 	if (pInstval->FIsError())
@@ -3333,10 +3361,15 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		case MASHOP(IROP_GNeg, 4): ReadOpcode(pVm, pInst, 4, &wordLhs); STORE(pInst->m_iBStackOut, f32, -wordLhs.m_f32);	break;
 		case MASHOP(IROP_GNeg, 8): ReadOpcode(pVm, pInst, 8, &wordLhs); STORE(pInst->m_iBStackOut, f64, -wordLhs.m_f64);	break;
 
-		case MASHOP(IROP_Not, 1): ReadOpcode(pVm, pInst, 1, &wordLhs); STORE(pInst->m_iBStackOut, u8, !wordLhs.m_s8);	break;
-		case MASHOP(IROP_Not, 2): ReadOpcode(pVm, pInst, 2, &wordLhs); STORE(pInst->m_iBStackOut, u16, !wordLhs.m_s16);	break;
-		case MASHOP(IROP_Not, 4): ReadOpcode(pVm, pInst, 4, &wordLhs); STORE(pInst->m_iBStackOut, u32, !wordLhs.m_s32);	break;
-		case MASHOP(IROP_Not, 8): ReadOpcode(pVm, pInst, 8, &wordLhs); STORE(pInst->m_iBStackOut, u64, !wordLhs.m_s64);	break;
+		case MASHOP(IROP_Not, 1): ReadOpcode(pVm, pInst, 1, &wordLhs); STORE(pInst->m_iBStackOut, u8, ~wordLhs.m_s8);		break;
+		case MASHOP(IROP_Not, 2): ReadOpcode(pVm, pInst, 2, &wordLhs); STORE(pInst->m_iBStackOut, u16, ~wordLhs.m_s16);		break;
+		case MASHOP(IROP_Not, 4): ReadOpcode(pVm, pInst, 4, &wordLhs); STORE(pInst->m_iBStackOut, u32, ~wordLhs.m_s32);		break;
+		case MASHOP(IROP_Not, 8): ReadOpcode(pVm, pInst, 8, &wordLhs); STORE(pInst->m_iBStackOut, u64, ~wordLhs.m_s64);		break;
+
+		case MASHOP(IROP_FNot, 1): ReadOpcode(pVm, pInst, 1, &wordLhs); STORE(pInst->m_iBStackOut, u8, !wordLhs.m_s8);		break;
+		case MASHOP(IROP_FNot, 2): ReadOpcode(pVm, pInst, 2, &wordLhs); STORE(pInst->m_iBStackOut, u16, !wordLhs.m_s16);	break;
+		case MASHOP(IROP_FNot, 4): ReadOpcode(pVm, pInst, 4, &wordLhs); STORE(pInst->m_iBStackOut, u32, !wordLhs.m_s32);	break;
+		case MASHOP(IROP_FNot, 8): ReadOpcode(pVm, pInst, 8, &wordLhs); STORE(pInst->m_iBStackOut, u64, !wordLhs.m_s64);	break;
 #define STORE_CAST(TYPE, SIGN) \
 			ReadCastOpcodes(pVm, pInst, &wordLhs, &wordRhs); \
 			switch(wordRhs.m_s32) \

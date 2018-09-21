@@ -4049,13 +4049,22 @@ enum SYMCOLLIS
 	EWC_MAX_MIN_NIL(SYMCOLLIS)
 };
 
+enum SYMCCK		// SYMbol Collision Check Kind
+{
+	SYMCCK_Entry,
+	SYMCCK_UsedBy,	// walking symbol tables that use the entry table
+	SYMCCK_Uses,	// walking symtabs that the entry table uses
+};
+
 SYMCOLLIS SymcollisCheck(
 	CSymbolTable * pSymtab,
 	const HV * pHvMin,
 	const HV * pHvMax,
 	u64 nVisitId,
-	FSHADOW fshadow, 
-	CSTNode ** ppStnodCollision)
+	FSHADOW fshadow,
+	CSTNode ** ppStnodCollision, 
+	SYMCCK symcck = SYMCCK_Entry,
+	CSymbolTable * pSymtabUser = nullptr)
 {
 	if (pSymtab->m_nVisitId == nVisitId)
 	{
@@ -4079,19 +4088,28 @@ SYMCOLLIS SymcollisCheck(
 		}
 	}
 
+	// We need to check all of the symbol tables 'derived' from the one that started our recursive check, but not
+	//   tables derived from the symtabs we are using. Also we need to make sure we don't recurse back up the symtab path 
+	//   that brought us here.
+	if (symcck != SYMCCK_Uses )
+	{
+		auto ppSymtabMax = pSymtab->m_arypSymtabUsedBy.PMac();
+		for (auto ppSymtabIt = pSymtab->m_arypSymtabUsedBy.A(); ppSymtabIt != ppSymtabMax; ++ppSymtabIt)
+		{
+			auto pSymtabUsedBy = *ppSymtabIt;
+			symcollis = ewcMax(symcollis, SymcollisCheck(pSymtabUsedBy, pHvMin, pHvMax, nVisitId, FSHADOW_NoShadowing, ppStnodCollision, SYMCCK_UsedBy, pSymtab));
+			if (symcollis == SYMCOLLIS_CyclicUsing)
+				return symcollis;
+		}
+	}
+
 	auto pUsingMax = pSymtab->m_aryUsing.PMac();
 	for (auto pUsingIt = pSymtab->m_aryUsing.A(); pUsingIt != pUsingMax; ++pUsingIt)
 	{
-		symcollis = ewcMax(symcollis, SymcollisCheck(pUsingIt->m_pSymtab, pHvMin, pHvMax, nVisitId, FSHADOW_NoShadowing, ppStnodCollision));
-		if (symcollis == SYMCOLLIS_CyclicUsing)
-			return symcollis;
-	}
+		if (pUsingIt->m_pSymtab == pSymtabUser)
+			continue;
 
-	auto ppSymtabMax = pSymtab->m_arypSymtabUsedBy.PMac();
-	for (auto ppSymtabIt = pSymtab->m_arypSymtabUsedBy.A(); ppSymtabIt != ppSymtabMax; ++ppSymtabIt)
-	{
-		auto pSymtabUsedBy = *ppSymtabIt;
-		symcollis = ewcMax(symcollis, SymcollisCheck(pSymtabUsedBy, pHvMin, pHvMax, nVisitId, FSHADOW_NoShadowing, ppStnodCollision));
+		symcollis = ewcMax(symcollis, SymcollisCheck(pUsingIt->m_pSymtab, pHvMin, pHvMax, nVisitId, FSHADOW_NoShadowing, ppStnodCollision, SYMCCK_Uses));
 		if (symcollis == SYMCOLLIS_CyclicUsing)
 			return symcollis;
 	}
@@ -4116,17 +4134,24 @@ ERRID ErridCheckSymbolCollision(
 		s32 iLine = 0;
 		s32 iCol = 0;
 		const char * pChzFilename = "unknown";
+		const char * pChzSymName = "";
 		if (pStnodCollision)
 		{
 			CalculateLinePosition(pErrman->m_pWork, &pStnodCollision->m_lexloc, &iLine, &iCol);
 			pChzFilename = pStnodCollision->m_lexloc.m_strFilename.PCoz();
+
+			if (pStnodCollision->m_pSymbase && pStnodCollision->m_pSymbase->m_symk == SYMK_Symbol)
+			{
+				pChzSymName = ((SSymbol *)pStnodCollision->m_pSymbase)->m_strName.PCoz();
+			}
 		}
 
 		switch (symcollis)
 		{
 		case SYMCOLLIS_SymbolName: EmitError(pErrman, pLexloc, ERRID_UsingStatementCollision, 
-										"%s shadows symbol name at %s(%d, %d)", 
+										"%s shadows symbol name '%s' at %s(%d, %d)", 
 										pChzContext,
+										pChzSymName,
 										pChzFilename, iLine, iCol);
 									return ERRID_UsingStatementCollision;
 		case SYMCOLLIS_CyclicUsing: EmitError(pErrman, pLexloc, ERRID_UsingStatementCycle, 
@@ -4221,12 +4246,6 @@ void FlattenUsingTree(CSymbolTable * pSymtab, CDynAry<HV> * paryHv, u64 nVisitId
 	{
 		FlattenUsingTree(pUsingIt->m_pSymtab, paryHv, nVisitId);
 	}
-
-	auto ppSymtabMax = pSymtab->m_arypSymtabUsedBy.PMac();
-	for (auto ppSymtabIt = pSymtab->m_arypSymtabUsedBy.A(); ppSymtabIt != ppSymtabMax; ++ppSymtabIt)
-	{
-		FlattenUsingTree(*ppSymtabIt, paryHv, nVisitId);
-	}
 }
 
 void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtabNew, CSTNode * pStnodUsingDecl)
@@ -4234,9 +4253,6 @@ void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtab
 	CDynAry<HV> aryHvFlat(m_pAlloc, BK_Symbol);
 	FlattenUsingTree(pSymtabNew, &aryHvFlat, ++g_nSymtabVisitId);
 
-	CSTNode * pStnodCollis = nullptr;
-
-	++g_nSymtabVisitId;
 	pSymtabNew->m_nVisitId = g_nSymtabVisitId;
 
 	auto errid = ErridCheckSymbolCollision(

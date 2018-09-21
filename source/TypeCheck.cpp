@@ -3484,13 +3484,25 @@ STypeInfo * PTinFromTypeSpecification(
 		case PARK_Identifier:
 			{
 				auto strIdent = StrFromIdentifier(pStnodIt);
-				auto pSym = pSymtab->PSymLookup(strIdent, pStnodIt->m_lexloc, grfsymlook);
+				auto pSymbase = PSymbaseLookup(pSymtab, strIdent, pStnod->m_lexloc, grfsymlook);
+				SSymbol * pSym = nullptr;
+				if (!pSymbase)
+				{
+					EmitError(pTcwork, pStnod, "'%s' unknown identifier detected in type specificattion", strIdent.PCoz());
+					*pFIsValidTypeSpec = false;
+				}
+				else
+				{
+					pSym = PSymLast(pSymbase);
+				}
 
-				if (!pSym->m_grfsym.FIsSet(FSYM_IsType))
+				if (!pSym || !pSym->m_grfsym.FIsSet(FSYM_IsType))
 				{
 					EmitError(pTcwork, pStnodIt, "Expected type specification but encountered '%s'", strIdent.PCoz());
 					*pFIsValidTypeSpec = false;
 				}
+				if (!pSym)
+					break;
 
 				EWC_ASSERT(pSym && pSym->m_pTin, "bad type identifier in type specification");
 
@@ -3725,6 +3737,20 @@ const char * PChzFromIvalk(IVALK ivalk)
 	return s_mpIvalkPChz[ivalk];
 }
 
+IVALK IvalkFromSym(SSymbol * pSym)
+{
+	if (pSym->m_grfsym.FIsSet(FSYM_IsType))
+	{
+		return IVALK_Type;
+	}
+	else if (pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested))
+	{
+		return IVALK_RValue;
+	}
+
+	return (FIsMutableType(pSym->m_pTin)) ? IVALK_LValue : IVALK_RValue;
+}
+
 IVALK IvalkCompute(CSTNode * pStnod)
 {
 	if (pStnod->m_park == PARK_MemberLookup)
@@ -3801,6 +3827,38 @@ IVALK IvalkCompute(CSTNode * pStnod)
 		return (FIsMutableType(pStnod->m_pTin)) ? IVALK_LValue : IVALK_RValue;
 	}
 
+	auto pSymbase = pStnod->m_pSymbase;
+	if (pSymbase && pSymbase->m_symk == SYMK_Path)
+	{
+		auto pSymp = (SSymbolPath *)pSymbase;
+		auto ppSymEnd = pSymp->m_arypSym.PMac();
+		for (auto ppSymIt = pSymp->m_arypSym.A(); ppSymIt != ppSymEnd; ++ppSymIt)
+		{
+			IVALK ivalk = IvalkFromSym(*ppSymIt);
+			if (ivalk != IVALK_LValue)
+				return ivalk;
+
+			auto pTin = (*ppSymIt)->m_pTin;
+			if (!pTin)
+				continue;
+
+			auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTin);
+			if (pTin->m_tink == TINK_Pointer)
+			{
+				auto pTinptr = PTinRtiCast<STypeInfoPointer *>(pTin);
+				pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinptr->m_pTinPointedTo);
+			}
+
+			if (pTinenum)
+			{
+				// check for individual fflag setting (ie. fdir.m_left = true)
+				if (pTinenum->m_enumk == ENUMK_FlagEnum)
+						return IVALK_LValue;
+				return IVALK_RValue;
+			}
+		}
+	}
+
 	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 		return IVALK_RValue;
 
@@ -3810,16 +3868,7 @@ IVALK IvalkCompute(CSTNode * pStnod)
 		EWC_ASSERT(pStnod->m_park != PARK_Identifier, "Expected identifiers to have symbol");
 		return IVALK_RValue;
 	}
-	else if (pSym->m_grfsym.FIsSet(FSYM_IsType))
-	{
-		return IVALK_Type;
-	}
-	else if (pSym->m_grfsym.FIsSet(FSYM_VisibleWhenNested))
-	{
-		return IVALK_RValue;
-	}
-
-	return (FIsMutableType(pSym->m_pTin)) ? IVALK_LValue : IVALK_RValue;
+	return IvalkFromSym(pSym);
 }
 
 
@@ -5636,6 +5685,28 @@ CSymbolTable * SymtabUsingTableFromType(STypeCheckWorkspace * pTcwork, STypeInfo
 	}
 }
 
+static bool FIsEnumFlagLValue(SSymbolBase * pSymbase)
+{
+	if (pSymbase->m_symk != SYMK_Path)
+		return false;
+
+	auto pSympath = (SSymbolPath *)pSymbase;pSymbase;pSymbase;pSymbase;
+	if (pSympath->m_arypSym.C() < 2)
+		return false;
+
+	auto pSymEnum = pSympath->m_arypSym[pSympath->m_arypSym.C() - 2];
+	if (pSymEnum->m_grfsym.FIsSet(FSYM_IsType))
+		return false; 
+
+	auto pTin = PTinStripQualifiersAndPointers(pSymEnum->m_pTin);
+	auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTin);
+	if (!pTinenum || pTinenum->m_enumk != ENUMK_FlagEnum)
+		return false;
+
+	// BB - need to make sure constant is not implicit constant
+	return true;
+}
+
 TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
 	CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
@@ -6649,6 +6720,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 									pStnodDefinition->m_pStval)
 								{
 									pStnod->m_pStval = PStvalCopy(pSymtab->m_pAlloc, pStnodDefinition->m_pStval);
+
+									if (FIsEnumFlagLValue(pSymbase))
+									{
+										auto pTinFlag = pSymtab->PTinBuiltin("_flag");
+										pStnod->m_pTin = pTinFlag;
+									}
 								}
 							}
 							else
@@ -7560,6 +7637,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								}
 								else
 								{
+									// BB - need to make sure constant is not implicit constant
 									fIsFlagEnumInstance = true;
 								}
 							}
