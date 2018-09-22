@@ -1212,7 +1212,7 @@ test BreakContinue
 
 test BreakContinueLabel
 	prereq "n:s64 = 5"
-	input "#label ?label while ?cond { ?jump ?label}"
+	input "` ?label while ?cond { ?jump ?label}"
 	parse "(while ?cond ({} (?jump)))"
 	typecheck "(bool ?tccond ({} (?jump)))"
 	{

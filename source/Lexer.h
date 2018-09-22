@@ -101,7 +101,6 @@ enum TOK
 		RW(FileDirective) STR(#file), \
 		RW(LineDirective) STR(#line), \
 		RW(StringDirective) STR(#string), \
-		RW(LabelDirective) STR(#label), \
 		RW(ForeignLibraryDirective) STR(#foreign_library), \
 		RW(StaticLibraryDirective) STR(#static_library), \
 		RW(DynamicLibraryDirective) STR(#dynamic_library), \

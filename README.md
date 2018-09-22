@@ -288,7 +288,7 @@ The `continue` keyword will jump to the end of the current loop body and execute
 Both the `break` and `continue` keywords support supplying a label for a named loop rather than exiting the innermost one.
 
 ```
-#label Outer
+`Outer
 for y:=0; y<10; ++y
 {
   for x:=0; x<10; ++x
@@ -392,16 +392,14 @@ foo = 2.2 * foo // still ok!
 ## To Do
 
 smallish tasks:
-- [ ] use quote for loop label
 - [x] fix typeinfo operator
 - [x] FTypesAreEquivalent function
 - [ ] 'Boxed' type
 
 longer term tasks:
-- [ ] First class types
 - [ ] Generic structs
 - [ ] non-foreign variadic args
-- [ ] using struct members
+- [x] using struct members
 - [x] run time type info
 - [ ] first class string type
 - [ ] array bounds checking

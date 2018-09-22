@@ -1425,7 +1425,7 @@ FHandleEvents proc (pGame: & SGame) -> bool
 	}
 
 	event : SEvent
-	#label EventLoop
+	`EventLoop
 	while FGetNextEvent(&event)
 	{
 		/*
@@ -2434,7 +2434,7 @@ UpdateDropAccel proc (pGame: & SGame, iPlay: int)
 	// walk the board and find the highest virus	
 
 	yVirusMin : int = kDYCellBoard
-	#label BoardLoop
+	`BoardLoop
 	for yCell := kDYCellBoard; --yCell; ;
 	{	
 		for xCell := 0; xCell < kDXCellBoard; ++xCell

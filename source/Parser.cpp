@@ -3630,11 +3630,9 @@ CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex)
 	// handle label for switches or loops
 
 	CSTIdentifier * pStidentLabel = nullptr;
-	RWORD rword = RwordLookup(pLex);
-	if (rword == RWORD_LabelDirective)
-	{
-		TokNext(pLex);
 
+	if (FConsumeToken(pLex, TOK('`')))
+	{
 		if (pLex->m_tok != TOK_Identifier)
 		{
 			ParseError(pParctx, pLex, "Encountered Label directive without label string");

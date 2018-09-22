@@ -900,7 +900,7 @@ FMapGridFromString proc (pChzInput: & const u8, aChMap: [] u8) -> bool
 
 	aChMap[(g_dYMapCell-1) * g_dXMapCell] = 'W'
 
-	#label Outer	
+	`Outer	
 	for yCell := 0; yCell < g_dYMapCell; ++yCell
 	{
 		for xCell := 0; true; ++xCell

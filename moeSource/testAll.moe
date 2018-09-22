@@ -937,7 +937,7 @@ TestBreakContinue proc ()
 	}
 
 	// labels
-	#label Outer
+	`Outer
 	for y:=0; y<10; ++y
 	{
 		for x:=0; x<10; ++x
@@ -985,7 +985,7 @@ TestSwitch proc ()
 
 	for i := 0; i < 4; ++i
 	{
-		#label SwitchLabel
+		`SwitchLabel
 		switch i
 		{
 			case 1,2,3:
