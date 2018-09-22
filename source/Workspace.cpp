@@ -390,7 +390,7 @@ CSymbolTable * PSymtabNew(CAlloc * pAlloc, CSymbolTable * pSymtabParent, const E
 	if (!EWC_FVERIFY(pSymtabParent, "Null parent passed into pSymtabNew, use other overload for root."))
 		return nullptr;
 
-	return PSymtabNew(pAlloc, pSymtabParent, strNamespace, pSymtabParent->m_pUntyper, pSymtabParent->m_pUnsetTin);
+	return PSymtabNew(pAlloc, pSymtabParent, strNamespace, pSymtabParent->m_pUntyper, pSymtabParent->m_pUnset);
 }
 
 void GenerateUniqueName(SUniqueNameSet * pUnset, const char * pCozIn, char * pCozOut, size_t cBOutMax)

@@ -1243,52 +1243,79 @@ test EmptyCase
 // Using statements	
 test StructUsingLocal
 	prereq "SA struct {m_x, m_y: int }"
-	input "foo proc () {using a: SA; ?rhs = 123 }"
-	parse "(func foo void ({} (decl a SA) (= ?rhs 123) (return)))"
-	typecheck "(foo()->void foo void ({} (SA a SA) (= int Literal:Int64) (void)))"
+	input "foo proc () {using ?anon SA; ?rhs = 123 }"
+	parse "(func foo void ({} (decl ?name SA) (= ?rhs 123) (return)))"
+	typecheck "(foo()->void foo void ({} (SA ?name SA) (= int Literal:Int64) (void)))"
 	{
-		?rhs(m_x),
-		?rhs(m_y),
+		?rhs(m_x)
+		{ 
+			?anon("a :") + ?name("a"),
+			?anon("") + ?name("0SA"),
+		},
+		?rhs(m_y)
+		{ 
+			?anon("a :") + ?name("a"),
+			?anon("") + ?name("0SA"),
+		}
 	}
 
 test StructUsingArgumentDef
 	prereq "SA struct {m_x, m_y: int }"
-	input "foo proc (using a: SA)->int { return ?rhs }"
-	parse "(func foo (params (decl a SA)) int ({} (return ?rhs)))"
-	typecheck "(foo(SA)->int foo (Params (SA a SA)) int ({} (int int)))"
+	input "foo proc (using ?anon SA)->int { return ?rhs }"
+	parse "(func foo (params (decl ?name SA)) int ({} (return ?rhs)))"
+	typecheck "(foo(SA)->int foo (Params (SA ?name SA)) int ({} (int int)))"
 	{
-		?rhs(m_x),
-		?rhs(m_y),
+		?rhs(m_x)
+		{ 
+			?anon("a :") + ?name("a"),
+			?anon("") + ?name("0SA"),
+		},
+		?rhs(m_y)
+		{ 
+			?anon("a :") + ?name("a"),
+			?anon("") + ?name("0SA"),
+		}
 	}
 
 test StructUsingArgumentUse
-	prereq "SA struct {m_x, m_y: int } foo proc (using a: SA)->int { return ?rhs }"
+	prereq "SA struct {m_x, m_y: int } foo proc (using ?anon SA)->int { return ?rhs }"
 	input "a: SA; a.m_x = 123; a.m_y = 456; ret := foo(a)"
 	parse "(decl a SA) (= (member a m_x) 123) (= (member a m_y) 456) (decl ret (procCall foo a))"
 	typecheck "(SA a SA) (= (int SA m_x) Literal:Int64) (= (int SA m_y) Literal:Int64) (int ret (int foo(SA)->int SA))"
 	bytecode "{123;456;foo({`m_x 123, `m_y 456}){}->?ret; ?ret;}"
 	{
-		?rhs(m_x) + ?ret(123),
-		?rhs(m_y) + ?ret(456),
+		?rhs(m_x) + ?ret(123)
+		{ 
+			?anon("a :") + ?name("a"),
+			?anon("") + ?name("0SA"),
+		},
+		?rhs(m_y) + ?ret(456)
+		{ 
+			?anon("a :") + ?name("a"),
+			?anon("") + ?name("0SA"),
+		}
 	}
 
 test StructUsingFails
-	input "using x: ?type"
+	prereq "SFoo struct { m_x: int }"
+	input "using ?anon ?type"
 	bytecode "{123;}"
 	{
-		?type("int"?errid(2025)),
-		?type("[]int"?errid(2025)),
+		?type("int"?errid(2025)) + ?anon("a : "),
+		?type("[]int"?errid(2025)) + ?anon("a : "),
+		?type("SFoo") + ?anon(": "?errid(1012)),
+		?type("SFoo"?errid(1014)) + ?anon("m_a, m_b: "?errid(1013)),
 	}
 
 test StructUsingMember
-	prereq "SA struct {m_x, m_y: int } SB struct { using m_a: SA}"
+	prereq "SA struct {m_x, m_y: int } SB struct { using ?anon SA}"
 	input "b: SB; b.?rhs = 123"
 	parse "(decl b SB) (= (member b ?rhs) 123)"
 	typecheck "(SB b SB) (= (int SB ?rhs) Literal:Int64)"
 	bytecode "{123;}"
 	{
-		?rhs(m_x),
-		?rhs(m_y),
+		?rhs(m_x) + ?anon("m_a :"),
+		?rhs(m_y) + ?anon("m_a :"),
 	}
 
 test StructUsingRefMember
@@ -1299,18 +1326,26 @@ test StructUsingRefMember
 	bytecode "{&{`m_x 0, `m_y 0};123;}"
 	{
 		?rhs(m_x),
-		?rhs(m_y),
+		?rhs(m_y)
 	}
 
 test StructUsingMemberFromRef
-	prereq "SA struct {m_x, m_y: int } SB struct { using m_a: SA}"
+	prereq "SA struct {m_x, m_y: int } SB struct { using ?anon SA}"
 	input "b: SB; pB := &b; pB.?rhs = 123"
 	parse "(decl b SB) (decl pB (unary[&] b)) (= (member pB ?rhs) 123)"
 	typecheck "(SB b SB) (&SB pB (&SB SB)) (= (int &SB ?rhs) Literal:Int64)"
-	bytecode "{&{`m_a {`m_x 0, `m_y 0}};123;}"
+	bytecode "{&{`?name {`m_x 0, `m_y 0}};123;}"
 	{
-		?rhs(m_x),
-		?rhs(m_y),
+		?rhs(m_x)
+		{
+			?anon("m_a :") + ?name("m_a"),
+			?anon("") + ?name("0SA"),
+		},
+		?rhs(m_y)
+		{
+			?anon("m_a :") + ?name("m_a"),
+			?anon("") + ?name("0SA"),
+		},
 	}
 
 test StructUsingCollision

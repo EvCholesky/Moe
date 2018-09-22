@@ -33,6 +33,10 @@ enum ERRID
 	ERRID_MissingName				= 1008,
 	ERRID_NoGenericReturn			= 1009,
 	ERRID_MultipleAnchorDef			= 1010,
+	ERRID_UsingStatementNotAllowed	= 1011,
+	ERRID_BadUsingSyntax			= 1012,
+	ERRID_ExpectedEndOfLine			= 1013,
+	ERRID_UnexpectedToken			= 1014,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,

@@ -378,6 +378,14 @@ void ParseError(CParseContext * pParctx, SLexerLocation * pLexloc, ERRID errid, 
 	EmitError(pParctx->m_pWork->m_pErrman, pLexloc, errid, pChzFormat, ap);
 }
 
+void ParseError(CParseContext * pParctx, SLexer * pLex, ERRID errid, const char * pChzFormat, ...)
+{
+	SLexerLocation lexloc(pLex);
+	va_list ap;
+	va_start(ap, pChzFormat);
+	EmitError(pParctx->m_pWork->m_pErrman, &lexloc, errid, pChzFormat, ap);
+}
+
 void ParseError(CParseContext * pParctx, SLexer * pLex, const char * pChzFormat, ...)
 {
 	SLexerLocation lexloc(pLex);
@@ -487,7 +495,7 @@ void ExpectEndOfStatement(CParseContext * pParctx, SLexer * pLex, const char * p
 		}
 
 		auto strUnexpected = StrUnexpectedToken(pLex);
-		ParseError(pParctx, pLex, "Expected end-of-line or ';' before '%s' %s", strUnexpected.PCoz(), aB);
+		ParseError(pParctx, pLex, ERRID_ExpectedEndOfLine, "Expected end-of-line or ';' before '%s' %s", strUnexpected.PCoz(), aB);
 	}
 }
 
@@ -1757,6 +1765,101 @@ void ValidateDeclaration(CParseContext * pParctx, SLexer * pLex, CSTNode * pStno
 	}
 }
 
+CString StrFauxIdentifierFromTypeSpecifier(CSymbolTable * pSymtab, CSTNode * pStnodType)
+{
+	// we just need a unique name here - we'll walk the type spec looking for an identifier to use as a reference
+	//  and then just fall back to the symbol table's 
+
+	char aCh[128];
+	SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+	AppendCoz(&strbuf, "0");	// appending an illegal prefix character to avoid collisions with legit symbol names
+
+	auto pStnodIt = pStnodType;
+	while (pStnodIt)
+	{
+		switch (pStnodIt->m_park)
+		{
+		case PARK_Identifier:
+			{
+				auto str = StrFromIdentifier(pStnodIt);
+				AppendCoz(&strbuf, str.PCoz());
+				pStnodIt = nullptr;
+			} break;
+		default:
+			{
+				AppendCoz(&strbuf, "unnamed");
+				pStnodIt = nullptr;
+			} break;
+		}
+	}
+
+	EnsureTerminated(&strbuf, '\0');
+	char aChOut[128];
+	GenerateUniqueName(pSymtab->m_pUnset, strbuf.m_pCozBegin, aChOut, sizeof(aChOut));
+	return CString(aChOut);
+}
+
+CSTNode * PStnodParseUsingStatement(
+	CParseContext * pParctx,
+	SLexer * pLex,
+	CSymbolTable * pSymtab)
+{
+	RWORD rword = RwordLookup(pLex);
+	if (rword != RWORD_Using)
+	{
+		return nullptr;
+	}
+
+	TokNext(pLex);
+
+	SLexerLocation lexloc(pLex);
+
+	SLexer lexPeek = *pLex;
+	if (lexPeek.m_tok == TOK_Identifier)
+	{
+		TokNext(&lexPeek);
+	}
+
+	CSTNode * pStnodIdent = nullptr;
+	bool fHasExplicitName = lexPeek.m_tok == TOK(':');
+	if (fHasExplicitName)
+	{
+		pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+
+		if (!pStnodIdent)
+		{
+			ParseError(pParctx, &lexloc, ERRID_BadUsingSyntax, "Anonymous using statement should not have ':' before type specification");
+		}
+
+		FExpect(pParctx, pLex, TOK(':'));
+	}
+
+	CSTNode * pStnodDecl = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+	pStnodDecl->m_park = PARK_Decl;
+	auto pStdecl = pStnodDecl->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
+	pStdecl->m_fHasUsingPrefix = true;
+
+	GRFPDECL grfpdecl = FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues;
+	auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "declaration", grfpdecl);
+
+	if (!pStnodIdent)	
+	{
+		auto strFauxIdent = StrFauxIdentifierFromTypeSpecifier(pSymtab, pStnodType);
+		pStnodIdent = PStnodAllocateIdentifier(pParctx->m_pAlloc, lexloc, strFauxIdent);
+	}
+
+	pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
+	pStdecl->m_iStnodType = pStnodDecl->IAppendChild(pStnodType);
+
+	// NOTE: May not resolve symbols (symtab is null if this is a procedure reference)
+	if (pSymtab)
+	{
+		pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
+	}
+
+	ValidateDeclaration(pParctx, pLex, pStnodDecl);
+	return pStnodDecl;
+}
 
 CSTNode * PStnodParseParameter(
 	CParseContext * pParctx,
@@ -1776,14 +1879,25 @@ CSTNode * PStnodParseParameter(
 		return pStnodVarArgs;
 	}
 
+	auto pStnodUsing = PStnodParseUsingStatement(pParctx, pLex, pSymtab);
+	if (pStnodUsing)
+	{
+		if (grfpdecl.FIsSet(FPDECL_AllowUsing))
+		{
+			return pStnodUsing;
+		}
+
+		ParseError(pParctx, &lexloc, ERRID_UsingStatementNotAllowed, "Using statement not allowed in this context");
+		pParctx->m_pAlloc->EWC_DELETE(pStnodUsing);
+		return nullptr;
+	}
+
 	CSTNode * pStnodReturn = nullptr;
 	CSTNode * pStnodCompound = nullptr;
 	CSTNode * pStnodInit = nullptr;
 	bool fAllowCompoundDecl = grfpdecl.FIsSet(FPDECL_AllowCompoundDecl);
 	bool fAllowBakedValues = grfpdecl.FIsSet(FPDECL_AllowBakedValues);
 	bool fAllowConstants = grfpdecl.FIsSet(FPDECL_AllowConstants);
-	bool fAllowUsingPrefix = grfpdecl.FIsSet(FPDECL_AllowUsing);
-	bool fHasUsingPrefix = false;
 
 	SLexer lexPeek = *pLex;
 	int cIdent = 0;
@@ -1792,11 +1906,6 @@ CSTNode * PStnodParseParameter(
 		if (fAllowBakedValues)
 		{
 			(void)FConsumeToken(&lexPeek, TOK_Generic); // ignore baked constant marks
-		}
-
-		if (fAllowUsingPrefix && RwordLookup(&lexPeek) == RWORD_Using)
-		{
-			TokNext(&lexPeek);
 		}
 
 		if (lexPeek.m_tok != TOK_Identifier)
@@ -1828,12 +1937,6 @@ CSTNode * PStnodParseParameter(
 			fIsBakedConstant = true;
 		}
 
-		if (fAllowUsingPrefix && RwordLookup(pLex) == RWORD_Using)
-		{
-			fHasUsingPrefix = true;
-			TokNext(pLex);
-		}
-
 		if (pStnodInit)
 			ParseError(pParctx, pLex, "Initializer must come after all comma separated declarations");
 
@@ -1846,7 +1949,6 @@ CSTNode * PStnodParseParameter(
 
 		auto pStdecl = pStnodDecl->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 		pStdecl->m_fIsBakedConstant = fIsBakedConstant;
-		pStdecl->m_fHasUsingPrefix = fHasUsingPrefix;
 		++cTypeNeeded;
 
 		if (pStnodReturn)
@@ -3629,7 +3731,7 @@ void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntri
 
 		if (!pStnod)
 		{
-			ParseError( pParctx, pLex, "Unexpected token at global scope '%s'", PCozCurrentToken(pLex));
+			ParseError( pParctx, pLex, ERRID_UnexpectedToken, "Unexpected token at global scope '%s'", PCozCurrentToken(pLex));
 			break;
 		}
 

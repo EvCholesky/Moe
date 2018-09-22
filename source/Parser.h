@@ -756,7 +756,7 @@ protected:
 								const EWC::CString & strNamespace,
 								EWC::CAlloc * pAlloc,
 								CUniqueTypeRegistry * pUntyper,
-								SUniqueNameSet * pUnsetTin)
+								SUniqueNameSet * pUnset)
 							:m_strNamespace(strNamespace)
 							,m_pAlloc(pAlloc)
 							,m_hashHvPSym(pAlloc, EWC::BK_Symbol)
@@ -767,7 +767,7 @@ protected:
 							,m_aryUsing(pAlloc, EWC::BK_Symbol)
 							,m_arypSymtabUsedBy(pAlloc, EWC::BK_Symbol)
 							,m_pUntyper(pUntyper)
-							,m_pUnsetTin(pUnsetTin)
+							,m_pUnset(pUnset)
 							,m_pSymtabParent(nullptr)
 							,m_pSymtabNextManaged(nullptr)
 							,m_iNestingDepth(0)
@@ -897,7 +897,7 @@ public:
 	EWC::CDynAry<SUsing>			m_aryUsing;				// symbol tables with members pushed into this table's scope
 	EWC::CDynAry<CSymbolTable *>	m_arypSymtabUsedBy;		// symbol tables that refer to this one via a using statement
 	CUniqueTypeRegistry *			m_pUntyper;				// hashes to find unique type instances
-	SUniqueNameSet *				m_pUnsetTin;			// set of unique names for types (created during parse)
+	SUniqueNameSet *				m_pUnset;				// set of unique names for implict names (created during parse)
 	EWC::CDynAry<STypeInfoLiteral *>	
 									m_mpLitkArypTinlit[LITK_Max];
 
