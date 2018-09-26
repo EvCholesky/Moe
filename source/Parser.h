@@ -118,9 +118,7 @@ enum PARK : s16 // PARse Kind
 	PARK_AdditiveOp,
 	PARK_MultiplicativeOp,
 	PARK_ShiftOp,
-	PARK_EqualityOp,
 	PARK_RelationalOp,
-	PARK_BitwiseAndOrOp,
 	PARK_LogicalAndOrOp,
 	PARK_AssignmentOp,
 	PARK_UnaryOp,
@@ -932,7 +930,6 @@ public:
 
 void			PushSymbolTable(CParseContext * pParctx, CSymbolTable * pSymtab, const SLexerLocation & lexloc);
 CSymbolTable *	PSymtabPop(CParseContext * pParctx);
-CSymbolTable *	PSymtabFromPTin(STypeInfo * pTin);
 
 STypeInfoStruct * PTinstructAlloc(CSymbolTable * pSymtab, EWC::CString strIdent, size_t cField, size_t cGenericParam);
 STypeInfoProcedure * PTinprocAlloc(CSymbolTable * pSymtab, size_t cParam, size_t cReturn, const char * pCozName);

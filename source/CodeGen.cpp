@@ -6414,9 +6414,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 		} // fallthrough
 	case PARK_MultiplicativeOp:
 	case PARK_ShiftOp:
-	case PARK_BitwiseAndOrOp:
 	case PARK_RelationalOp:
-	case PARK_EqualityOp:
 		{
 			ASSERT_STNOD(pWork, pStnod, valgenk != VALGENK_Reference, "operand result is not a valid LValue");
 

@@ -42,7 +42,7 @@ CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pLex, C
 CSTNode * PStnodExpectCompoundStatement(CParseContext * pParctx, SLexer * pLex, const char * pCozPriorStatement);
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex);
-CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pLex);
+CSTNode * PStnodParseLogicalOrExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload);
 CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex);
@@ -63,9 +63,7 @@ const char * PChzFromPark(PARK park)
 		"Additive Operator",
 		"Multiplicative Operator",
 		"Shift Operator",
-		"Equality Operator",
 		"Relational Operator",
-		"BitwiseAndOr Operator",
 		"LogicalAndOr Operator",
 		"Assignment Operator",
 		"Unary Operator",
@@ -194,6 +192,7 @@ const char * PChzFromTink(TINK tink)
 		"any",
 		"enum",
 		"qualifier",
+		"interface",
 		"forwardDecl",
 		"literal",
 		"generic",
@@ -795,7 +794,7 @@ void ParseArgumentList(CParseContext * pParctx, SLexer * pLex, CSTNode * pStnodA
 			}
 		}
 
-		CSTNode * pStnodArg = PStnodParseLogicalAndOrExpression(pParctx, pLex);
+		CSTNode * pStnodArg = PStnodParseLogicalOrExpression(pParctx, pLex);
 		if (pStnodLabel)
 		{
 			if (!pStnodArg)
@@ -1090,9 +1089,34 @@ CSTNode * PStnodHandleExpressionRHS(
 	return pStnodExp;
 }
 
-CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseShiftExpression(CParseContext * pParctx, SLexer * pLex)
 {
 	CSTNode * pStnod = PStnodParseCastExpression(pParctx, pLex);
+	if (!pStnod)
+		return nullptr;
+
+	while (1)
+	{
+		switch (pLex->m_tok)
+		{
+		case TOK_ShiftLeft:
+		case TOK_ShiftRight:
+			{
+				SLexerLocation lexloc(pLex);
+				TOK tokPrev = TOK(pLex->m_tok);	
+				TokNext(pLex); // consume operator
+
+				CSTNode * pStnodExp = PStnodParseCastExpression(pParctx, pLex);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_ShiftOp, pStnod, pStnodExp);
+			} break;
+		default: return pStnod;
+		}
+	}
+}
+
+CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pLex)
+{
+	CSTNode * pStnod = PStnodParseShiftExpression(pParctx, pLex);
 	if (!pStnod)
 		return nullptr;
 
@@ -1103,12 +1127,13 @@ CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * 
 		case TOK('*'):
 		case TOK('/'):
 		case TOK('%'):
+		case TOK('&'):
 			{
 				SLexerLocation lexloc(pLex);
 				TOK tokPrev = TOK(pLex->m_tok);	
 				TokNext(pLex); // consume operator
 
-				CSTNode * pStnodExp = PStnodParseCastExpression(pParctx, pLex);
+				CSTNode * pStnodExp = PStnodParseShiftExpression(pParctx, pLex);
 				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_MultiplicativeOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
@@ -1128,6 +1153,8 @@ CSTNode * PStnodParseAdditiveExpression(CParseContext * pParctx, SLexer * pLex)
 		{
 		case TOK('+'):
 		case TOK('-'):
+		case TOK('|'):
+		case TOK('^'):
 			{
 				SLexerLocation lexloc(pLex);
 				TOK tokPrev = TOK(pLex->m_tok);	
@@ -1141,34 +1168,9 @@ CSTNode * PStnodParseAdditiveExpression(CParseContext * pParctx, SLexer * pLex)
 	}
 }
 
-CSTNode * PStnodParseShiftExpression(CParseContext * pParctx, SLexer * pLex)
-{
-	CSTNode * pStnod = PStnodParseAdditiveExpression(pParctx, pLex);
-	if (!pStnod)
-		return nullptr;
-
-	while (1)
-	{
-		switch (pLex->m_tok)
-		{
-		case TOK_ShiftLeft:
-		case TOK_ShiftRight:
-			{
-				SLexerLocation lexloc(pLex);
-				TOK tokPrev = TOK(pLex->m_tok);	
-				TokNext(pLex); // consume operator
-
-				CSTNode * pStnodExp = PStnodParseAdditiveExpression(pParctx, pLex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_ShiftOp, pStnod, pStnodExp);
-			} break;
-		default: return pStnod;
-		}
-	}
-}
-
 CSTNode * PStnodParseRelationalExpression(CParseContext * pParctx, SLexer * pLex)
 {
-	CSTNode * pStnod = PStnodParseShiftExpression(pParctx, pLex);
+	CSTNode * pStnod = PStnodParseAdditiveExpression(pParctx, pLex);
 	if (!pStnod)
 		return nullptr;
 
@@ -1180,58 +1182,6 @@ CSTNode * PStnodParseRelationalExpression(CParseContext * pParctx, SLexer * pLex
 		case TOK('>'):
 		case TOK_LessEqual:
 		case TOK_GreaterEqual:
-			{
-				SLexerLocation lexloc(pLex);
-				TOK tokPrev = TOK(pLex->m_tok);	
-				TokNext(pLex); // consume operator
-
-				CSTNode * pStnodExp = PStnodParseShiftExpression(pParctx, pLex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_RelationalOp, pStnod, pStnodExp);
-			} break;
-		default: return pStnod;
-		}
-	}
-}
-
-CSTNode * PStnodParseBitwiseAndOrExpression(CParseContext * pParctx, SLexer * pLex)
-{
-	// BB - This is a little different than ISO C precedence rules, we're treating all bitwise operators the same
-	//  rather than inclusiveOr < exclusiveOr < bitwiseAnd
-
-	CSTNode * pStnod = PStnodParseRelationalExpression(pParctx, pLex);
-	if (!pStnod)
-		return nullptr;
-
-	while (1)
-	{
-		switch (pLex->m_tok)
-		{
-		case TOK('|'):
-		case TOK('&'):
-		case TOK('^'):
-			{
-				SLexerLocation lexloc(pLex);
-				TOK tokPrev = TOK(pLex->m_tok);	
-				TokNext(pLex); // consume operator
-
-				CSTNode * pStnodExp = PStnodParseRelationalExpression(pParctx, pLex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_BitwiseAndOrOp, pStnod, pStnodExp);
-			} break;
-		default: return pStnod;
-		}
-	}
-}
-
-CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SLexer * pLex)
-{
-	CSTNode * pStnod = PStnodParseBitwiseAndOrExpression(pParctx, pLex);
-	if (!pStnod)
-		return nullptr;
-
-	while (1)
-	{
-		switch (pLex->m_tok)
-		{
 		case TOK_EqualEqual:
 		case TOK_NotEqual:
 			{
@@ -1239,42 +1189,65 @@ CSTNode * PStnodParseEqualityExpression(CParseContext * pParctx, SLexer * pLex)
 				TOK tokPrev = TOK(pLex->m_tok);	
 				TokNext(pLex); // consume operator
 
-				CSTNode * pStnodExp = PStnodParseBitwiseAndOrExpression(pParctx, pLex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_EqualityOp, pStnod, pStnodExp);
+				CSTNode * pStnodExp = PStnodParseAdditiveExpression(pParctx, pLex);
+				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_RelationalOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
 		}
 	}
 }
 
-CSTNode * PStnodParseLogicalAndOrExpression(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseLogicalAndExpression(CParseContext * pParctx, SLexer * pLex)
 {
-	CSTNode * pStnod = PStnodParseEqualityExpression(pParctx, pLex);
+	CSTNode * pStnod = PStnodParseRelationalExpression(pParctx, pLex);
 	if (!pStnod)
 		return nullptr;
 
 	while (1)
 	{
-		switch (pLex->m_tok)
+		if (pLex->m_tok == TOK_AndAnd)
 		{
-		case TOK_OrOr:
-		case TOK_AndAnd:
-			{
-				SLexerLocation lexloc(pLex);
-				TOK tokPrev = TOK(pLex->m_tok);	
-				TokNext(pLex); // consume operator
+			SLexerLocation lexloc(pLex);
+			TOK tokPrev = TOK(pLex->m_tok);
+			TokNext(pLex); // consume operator
 
-				CSTNode * pStnodExp = PStnodParseEqualityExpression(pParctx, pLex);
-				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_LogicalAndOrOp, pStnod, pStnodExp);
-			} break;
-		default: return pStnod;
+			CSTNode * pStnodExp = PStnodParseRelationalExpression(pParctx, pLex);
+			pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_LogicalAndOrOp, pStnod, pStnodExp);
+		}
+		else
+		{
+			return pStnod;
+		}
+	}
+}
+
+CSTNode * PStnodParseLogicalOrExpression(CParseContext * pParctx, SLexer * pLex)
+{
+	CSTNode * pStnod = PStnodParseLogicalAndExpression(pParctx, pLex);
+	if (!pStnod)
+		return nullptr;
+
+	while (1)
+	{
+		if (pLex->m_tok == TOK_OrOr)
+		{
+			SLexerLocation lexloc(pLex);
+			TOK tokPrev = TOK(pLex->m_tok);	
+			TokNext(pLex); // consume operator
+
+			CSTNode * pStnodExp = PStnodParseLogicalAndExpression(pParctx, pLex);
+			pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_LogicalAndOrOp, pStnod, pStnodExp);
+		}
+		else
+		{
+			return pStnod;
 		}
 	}
 }
 
 CSTNode * PStnodParseAssignmentExpression(CParseContext * pParctx, SLexer * pLex)
 {
-	CSTNode * pStnod = PStnodParseLogicalAndOrExpression(pParctx, pLex);
+	CSTNode * pStnod = PStnodParseLogicalOrExpression(pParctx, pLex);
 	if (!pStnod)
 		return nullptr;
 
@@ -1296,7 +1269,7 @@ CSTNode * PStnodParseAssignmentExpression(CParseContext * pParctx, SLexer * pLex
 				TOK tokPrev = TOK(pLex->m_tok);	
 				TokNext(pLex); // consume operator
 
-				CSTNode * pStnodExp = PStnodParseLogicalAndOrExpression(pParctx, pLex);
+				CSTNode * pStnodExp = PStnodParseLogicalOrExpression(pParctx, pLex);
 				pStnod = PStnodHandleExpressionRHS(pParctx, pLex, lexloc, tokPrev, PARK_AssignmentOp, pStnod, pStnodExp);
 			} break;
 		default: return pStnod;
@@ -2335,20 +2308,20 @@ struct SOverloadInfo // tag = ovinf
 static const SOverloadInfo s_aOvinf[] = {
 	{ "operator+", TOK('+'),			{ PARK_AdditiveOp, PARK_UnaryOp} },
 	{ "operator-", TOK('-'),			{ PARK_AdditiveOp, PARK_UnaryOp} },
+	{ "operator|", TOK('|'),			{ PARK_AdditiveOp, PARK_Nil} },
+	{ "operator^", TOK('^'),			{ PARK_AdditiveOp, PARK_Nil} },
 	{ "operator*", TOK('*'),			{ PARK_MultiplicativeOp, PARK_Nil} },
 	{ "operator/", TOK('/'),			{ PARK_MultiplicativeOp, PARK_Nil} },
 	{ "operator%", TOK('%'),			{ PARK_MultiplicativeOp, PARK_Nil} },
-	{ "operator|", TOK('|'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
-	{ "operator&", TOK('&'),			{ PARK_BitwiseAndOrOp, PARK_UnaryOp} },
-	{ "operator^", TOK('^'),			{ PARK_BitwiseAndOrOp, PARK_Nil} },
+	{ "operator&", TOK('&'),			{ PARK_MultiplicativeOp, PARK_UnaryOp} },
 	{ "operator<<", TOK_ShiftLeft,		{ PARK_ShiftOp, PARK_Nil} },
 	{ "operator>>", TOK_ShiftRight,		{ PARK_ShiftOp, PARK_Nil} },
 	{ "operator>", TOK('>'),			{ PARK_RelationalOp, PARK_Nil} },
 	{ "operator<", TOK('<'),			{ PARK_RelationalOp, PARK_Nil} },
 	{ "operator<=", TOK_LessEqual,		{ PARK_RelationalOp, PARK_Nil} },
 	{ "operator>=", TOK_GreaterEqual,	{ PARK_RelationalOp, PARK_Nil} },
-	{ "operator==", TOK_EqualEqual,		{ PARK_EqualityOp, PARK_Nil} },
-	{ "operator!=", TOK_NotEqual,		{ PARK_EqualityOp, PARK_Nil} },
+	{ "operator==", TOK_EqualEqual,		{ PARK_RelationalOp, PARK_Nil} },
+	{ "operator!=", TOK_NotEqual,		{ PARK_RelationalOp, PARK_Nil} },
 	{ "operator+=", TOK_PlusEqual,		{ PARK_AssignmentOp, PARK_Nil} },
 	{ "operator-=", TOK_MinusEqual,		{ PARK_AssignmentOp, PARK_Nil} },
 	{ "operator*=", TOK_MulEqual,		{ PARK_AssignmentOp, PARK_Nil} },
@@ -2387,10 +2360,8 @@ SOverloadSignature s_aOvsig[] =
 {
 	{ PARK_AdditiveOp,			2, 1,	FOVSIG_AllowCommutative,	"(Lhs: A, Rhs: B)->C" },
 	{ PARK_MultiplicativeOp,	2, 1,	FOVSIG_AllowCommutative,	"(Lhs: A, Rhs: B)->C" },
-	{ PARK_BitwiseAndOrOp,		2, 1,	FOVSIG_AllowCommutative,	"(Lhs: A, Rhs: B)->C" },
 	{ PARK_ShiftOp,				2, 1,	false,	"(Lhs: A, Rhs: B)->C" },
 	{ PARK_RelationalOp,		2, 1,	FOVSIG_ReturnBool,	"(Lhs: A, Rhs: B)->bool" },
-	{ PARK_EqualityOp,			2, 1,	FOVSIG_ReturnBool,	"(Lhs: A, Rhs: B)->bool" },
 	{ PARK_AssignmentOp,		2, 0,	FOVSIG_MustTakeReference,	"(Lhs: &B, Rhs: A)" },
 	{ PARK_Decl,				2, 0,	FOVSIG_MustTakeReference,	"(Lhs: &B, Rhs: A)" },
 	{ PARK_PostfixUnaryOp,		1, 1,	FOVSIG_MustTakeReference,	"(lHs: &A)->B" },
@@ -2810,7 +2781,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pStenum->m_iStnodIdentifier = pStnodEnum->IAppendChild(pStnodIdent);
 				pStenum->m_enumk = (rword == RWORD_FlagEnum) ? ENUMK_FlagEnum : ENUMK_Basic;
 
-				CSTNode * pStnodType = PStnodParseIdentifier(pParctx, pLex);
+				CSTNode * pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "looseType", FPDECL_None);
 				pStenum->m_iStnodType = pStnodEnum->IAppendChild(pStnodType);
 				
 				const CString & strIdent = StrFromIdentifier(pStnodIdent);
@@ -5354,9 +5325,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_AdditiveOp:		    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
 	case PARK_MultiplicativeOp:	    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
 	case PARK_ShiftOp:			    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
-	case PARK_EqualityOp:		    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
 	case PARK_RelationalOp:		    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
-	case PARK_BitwiseAndOrOp:	    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
 	case PARK_LogicalAndOrOp:	    FormatCoz(pStrbuf, "%s", PCozFromTok(pStnod->m_tok));				return;
 	case PARK_UnaryOp:			    FormatCoz(pStrbuf, "unary[%s]", PCozFromTok(pStnod->m_tok));		return;
 	case PARK_PostfixUnaryOp:		FormatCoz(pStrbuf, "postUnary[%s]", PCozFromTok(pStnod->m_tok));	return;

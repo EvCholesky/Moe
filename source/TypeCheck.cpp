@@ -190,6 +190,7 @@ enum ARGORD // ARGument ORDer
 };
 
 
+CSymbolTable *	PSymtabFromType(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, SLexerLocation * pLexloc);
 
 bool FVerifyIvalk(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, IVALK ivalkExpected);
 extern bool FDoesOperatorExist(TOK tok, const SOpTypes * pOptype);
@@ -2149,7 +2150,7 @@ inline STypeInfo * PTinElement(STypeInfo * pTin)
 bool FDoesOperatorReturnBool(PARK park)
 {
 	// return if operator returns a bool (rather than the operand type)
-	return  (park == PARK_RelationalOp) | (park == PARK_EqualityOp) | (park == PARK_LogicalAndOrOp);
+	return  (park == PARK_RelationalOp) | (park == PARK_LogicalAndOrOp);
 }
 
 inline STypeInfo * PTinResult(PARK park, CSymbolTable * pSymtab, STypeInfo * pTinOp)
@@ -2235,10 +2236,13 @@ SOpTypes OptypeFromPark(
 			}
 
 			bool fIsOneTypeVoid = (pTinRefMin->m_tink == TINK_Void) | (pTinRefMax->m_tink == TINK_Void);
-			if (parkOperator == PARK_EqualityOp && (fAreRefTypesSame | fIsOneTypeVoid))
+			if (parkOperator == PARK_RelationalOp && (fAreRefTypesSame | fIsOneTypeVoid))
 			{
-				// cast the array to a pointer before comparing
-				return SOpTypes(pTinMin, pTinMin, pSymtab->PTinBuiltin(CSymbolTable::s_strBool));
+				if ((tok == TOK_EqualEqual) | (tok == TOK_NotEqual))
+				{
+					// cast the array to a pointer before comparing
+					return SOpTypes(pTinMin, pTinMin, pSymtab->PTinBuiltin(CSymbolTable::s_strBool));
+				}
 			}
 
 			if (parkOperator == PARK_AdditiveOp)
@@ -3419,72 +3423,67 @@ SSymbol * PSymInstantiateGenericStruct(
 	return pInsreq->m_pSym;
 }
 
+
+struct STinSpecEntry // tag = tinse
+{
+	int				m_nState;
+	CSTNode *		m_pStnod;
+	CSymbolTable *	m_pSymtab;
+	STypeInfo *		m_pTin;			// should this be pushed into the stnod's m_pTin pointer?
+};
+
+void PushTinSpecStack(CDynAry<STinSpecEntry> * paryTinse, CSTNode * pStnod, CSymbolTable * pSymtab)
+{
+	auto pTinse = paryTinse->AppendNew();
+	pTinse->m_nState = 0;
+	pTinse->m_pStnod = pStnod;
+	pTinse->m_pSymtab = pSymtab;
+	pTinse->m_pTin = nullptr;
+}
+
+void PopTinSpecStack(CDynAry<STinSpecEntry> * paryTinse, STypeInfo * pTin, STypeInfo ** ppTinRoot)
+{
+	paryTinse->PopLast();
+	if (paryTinse->FIsEmpty())
+	{
+		*ppTinRoot = pTin;
+	}
+	else
+	{
+		paryTinse->PLast()->m_pTin = pTin;
+	}
+}
+
 STypeInfo * PTinFromTypeSpecification(
 	STypeCheckWorkspace * pTcwork,
-	CSymbolTable * pSymtab,
+	CSymbolTable * pSymtabRoot,
 	CSTNode * pStnod,
 	GRFSYMLOOK grfsymlook,
 	SSymbol **ppSymType,
 	bool * pFIsValidTypeSpec)
 {
-	*pFIsValidTypeSpec = true;
+	CDynAry<STinSpecEntry> aryTinse(pTcwork->m_pAlloc, BK_TypeCheck);
 
-	// returns null if this is an instance of an unknown type, if this is a reference to an unknown type we will return
+	// Returns null if this is an instance of an unknown type, if this is a reference to an unknown type we will return
 	//  tinptr->tin(TINK_Unknown) because we need this to handle a struct with a pointer to an instance of itself.
 
 	// Essentially, any non-null returned from this should be enough to determine the size of this type spec and 
 	//  determine target type equivalence.
 
 	bool fAllowForwardDecl = false;
+	PushTinSpecStack(&aryTinse, pStnod, pSymtabRoot);
+	STypeInfo * pTinReturn = nullptr;
 
-	// loop and find the concrete target type
-	STypeInfo * pTinFinal = nullptr;
-	auto pStnodIt = pStnod;
-
-	EWC_ASSERT(pStnodIt->m_strees == STREES_TypeChecked, "Type specification should be type checked first, (for literal op eval)");
-
-	while (pStnodIt)
+	while (!aryTinse.FIsEmpty())
 	{
-		switch(pStnodIt->m_park)
+		auto pTinse = aryTinse.PLast();
+		auto pStnod = pTinse->m_pStnod;
+		switch (pStnod->m_park)
 		{
-		case PARK_MemberLookup:
-			{
-				EWC_ASSERT(pStnodIt->CStnodChild() == 2, "Expected Lhs.Rhs in PARK_MemberLookup");
-				CSTNode * pStnodIdent = pStnodIt->PStnodChild(0);
-				auto strIdent = StrFromIdentifier(pStnodIdent);
-				auto pSym = pSymtab->PSymLookup(strIdent, pStnodIdent->m_lexloc, grfsymlook);
-				EWC_ASSERT(pSym && pSym->m_pStnodDefinition, "bad outer type in type specification");
-
-				CSTNode * pStnodDefinition = pSym->m_pStnodDefinition;
-				if (EWC_FVERIFY(pStnodDefinition->m_pSymtab, "Struct without symbol table"))
-				{
-					pSymtab = pStnodDefinition->m_pSymtab;
-				}
-
-				pStnodIt = pStnodIt->PStnodChild(1);
-			} break;
-		case PARK_GenericStructInst:
-			{
-				EWC_ASSERT(pStnodIt->m_strees == STREES_TypeChecked, "generic inst needs to by type checked first");
-
-				pTinFinal = nullptr;
-				auto pSym = pStnodIt->PSym();
-				if (pSym && pSym->m_pTin)
-				{
-					pTinFinal = pSym->m_pTin;
-				}
-				else
-				{
-					*pFIsValidTypeSpec = false;
-				}
-				
-				pStnodIt->m_pTin = pTinFinal;
-				pStnodIt = nullptr;
-			} break;
 		case PARK_Identifier:
 			{
-				auto strIdent = StrFromIdentifier(pStnodIt);
-				auto pSymbase = PSymbaseLookup(pSymtab, strIdent, pStnod->m_lexloc, grfsymlook);
+				auto strIdent = StrFromIdentifier(pStnod);
+				auto pSymbase = PSymbaseLookup(pTinse->m_pSymtab, strIdent, pStnod->m_lexloc, grfsymlook);
 				SSymbol * pSym = nullptr;
 				if (!pSymbase)
 				{
@@ -3498,201 +3497,162 @@ STypeInfo * PTinFromTypeSpecification(
 
 				if (!pSym || !pSym->m_grfsym.FIsSet(FSYM_IsType))
 				{
-					EmitError(pTcwork, pStnodIt, "Expected type specification but encountered '%s'", strIdent.PCoz());
-					*pFIsValidTypeSpec = false;
+					EmitError(pTcwork, pStnod, "Expected type specification but encountered '%s'", strIdent.PCoz());
+					return nullptr;
 				}
-				if (!pSym)
-					break;
-
-				EWC_ASSERT(pSym && pSym->m_pTin, "bad type identifier in type specification");
 
 				auto pTinstruct = PTinRtiCast<STypeInfoStruct *>(pSym->m_pTin);
 				if (pTinstruct && pTinstruct->FHasGenericParams())
 				{
-					EmitError(pTcwork, pStnodIt, "Generic struct '%s' needs argument list for instantiation", strIdent.PCoz());
+					EmitError(pTcwork, pStnod, "Generic struct '%s' needs argument list for instantiation", strIdent.PCoz());
 					*pFIsValidTypeSpec = false;
 				}
-				
+
 				if (ppSymType)
 				{
 					*ppSymType = pSym;
 				}
+	
+				pStnod->m_pTin = pSym->m_pTin;
+				PopTinSpecStack(&aryTinse, pSym->m_pTin, &pTinReturn);
+			} break;
+		case PARK_MemberLookup:
+			{
+				EWC_ASSERT(pStnod->CStnodChild() == 2, "Expected Lhs.Rhs in PARK_MemberLookup");
+				auto nState = pTinse->m_nState++;
+				if (nState == 0)
+				{
+					// walk down the right side of the tree to find the type/symtab to search
 
-				pTinFinal = pSym->m_pTin;
-				pStnodIt->m_pTin = pTinFinal;
-				pStnodIt = nullptr;
+					PushTinSpecStack(&aryTinse, pStnod->PStnodChild(0), pTinse->m_pSymtab);
+				}
+				else if (nState == 1)
+				{
+					auto pSymtabTin = PSymtabFromType(pTcwork, pTinse->m_pTin, &pStnod->m_lexloc);
+
+					CSTNode * pStnodIdent = pStnod->PStnodChild(1);
+					auto strIdent = StrFromIdentifier(pStnodIdent);
+					auto pSym = pSymtabTin->PSymLookup(strIdent, pStnod->m_lexloc, grfsymlook);
+
+					PushTinSpecStack(&aryTinse, pStnod->PStnodChild(1), pSymtabTin);
+				}
+				else
+				{
+					pStnod->m_pTin = pTinse->m_pTin;
+					PopTinSpecStack(&aryTinse, pStnod->m_pTin, &pTinReturn);
+				}
 			} break;
 		case PARK_ArrayDecl:
 			{
-				// array decl's children are [type] or [m_c, type]
-				pStnodIt = pStnodIt->PStnodChild(pStnodIt->CStnodChild()-1);
-				EWC_ASSERT(pStnodIt, "bad array declaration");
+				if (pTinse->m_nState++ == 0)
+				{
+					// array decl's children are [type] or [m_c, type]
+					PushTinSpecStack(&aryTinse, pStnod->PStnodChild(pStnod->CStnodChild() - 1), pTinse->m_pSymtab);
+				}
+				else
+				{
+					STypeInfoArray * pTinary = EWC_NEW(pSymtabRoot->m_pAlloc, STypeInfoArray) STypeInfoArray();
+					pTinary->m_pTin = pTinse->m_pTin;
+
+					if (pStnod->CStnodChild() == 2)
+					{
+						CSTNode * pStnodDim = pStnod->PStnodChild(0);
+						CSTValue * pStvalDim = nullptr;
+						if (!FIsCompileTimeConstant(pStnodDim->m_pTin))
+						{
+							EmitError(pTcwork, pStnod, "Only static sized arrays are currently supported");
+							*pFIsValidTypeSpec = false;
+						}
+						else
+						{
+							STypeInfo * pTinCount = pTinse->m_pSymtab->PTinBuiltin(CSymbolTable::s_strInt);
+							STypeInfo * pTinPromoted = PTinPromoteUntypedTightest(pTcwork, pTinse->m_pSymtab, pStnodDim, pTinCount);
+							if (!FCanImplicitCast(pTinPromoted, pTinCount))
+							{
+								EmitError(pTcwork, pStnod, "static integer array size expected");
+								*pFIsValidTypeSpec = false;
+							}
+							else
+							{
+								FinalizeLiteralType(pTcwork, pTinse->m_pSymtab, pTinCount, pStnodDim);
+								pStvalDim = pStnodDim->m_pStval;
+							}
+						}
+
+						if (!pStvalDim)
+							return nullptr;
+
+						pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnod, pStvalDim);
+						pTinary->m_aryk = ARYK_Fixed;
+					}
+					else
+					{
+						pTinary->m_aryk = (pStnod->m_tok == TOK_PeriodPeriod) ? ARYK_Dynamic : ARYK_Reference;
+					}
+
+					if (pTinary->m_aryk == ARYK_Dynamic)
+					{
+						EmitError(pTcwork, pStnod, ERRID_NotYetSupported, "Dynamic arrays are not yet supported");
+					}
+
+					pStnod->m_pTin = pTinary;
+					pTinse->m_pSymtab->AddManagedTin(pTinary);
+					PopTinSpecStack(&aryTinse, pStnod->m_pTin, &pTinReturn);
+				}
 			} break;
 		case PARK_QualifierDecl:
 			{
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
-				pStnodIt = pStnodIt->PStnodChild(0);
+				if (pTinse->m_nState++ == 0)
+				{
+					EWC_ASSERT(pStnod->CStnodChild() == 1, "expected one child");
+					PushTinSpecStack(&aryTinse, pStnod->PStnodChild(0), pTinse->m_pSymtab);
+				}
+				else
+				{
+					QUALK qualk = QualkFromRword(PStvalExpected(pStnod)->m_rword);
+					GRFQUALK grfqualk = 0x1 << qualk;
+					
+					if (auto pTinqualPrev = PTinRtiCast<STypeInfoQualifier *>(pTinse->m_pTin))
+					{
+						pTinqualPrev->m_grfqualk.AddFlags(grfqualk);
+						pStnod->m_pTin = pTinqualPrev;
+					}
+					else
+					{
+						auto pTinqual = pTinse->m_pSymtab->PTinqualEnsure(pTinse->m_pTin, grfqualk);
+						pStnod->m_pTin = pTinqual;
+					}
+
+					PopTinSpecStack(&aryTinse, pStnod->m_pTin, &pTinReturn);
+				}
 			} break;
 		case PARK_ReferenceDecl:
 			{
-				fAllowForwardDecl |= true;
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
-				pStnodIt = pStnodIt->PStnodChild(0);
+				if (pTinse->m_nState++ == 0)
+				{
+					fAllowForwardDecl |= true;
+					EWC_ASSERT(pStnod->CStnodChild() == 1, "expected one child");
+					PushTinSpecStack(&aryTinse, pStnod->PStnodChild(0), pTinse->m_pSymtab);
+				}
+				else
+				{
+					auto pTinptr = pTinse->m_pSymtab->PTinptrAllocate(pTinse->m_pTin);
+					pStnod->m_pTin = pTinptr;
+
+					PopTinSpecStack(&aryTinse, pStnod->m_pTin, &pTinReturn);
+				}
 			} break;
 		case PARK_ProcedureReferenceDecl:
-			{
-				pTinFinal = pStnodIt->m_pTin;
-				EWC_ASSERT(pTinFinal, "Expected pTinproc before PTinFromTypeSpecification");
-				pStnodIt = nullptr;
-			} break;
 		case PARK_GenericDecl:
-			{ 
-				pTinFinal = pStnodIt->m_pTin;
-				EWC_ASSERT(pTinFinal, "Expected pTingen before PTinFromTypeSpecification");
-				pStnodIt = nullptr;
+			{
+				PopTinSpecStack(&aryTinse, pStnod->m_pTin, &pTinReturn);
 			} break;
 		default: EWC_ASSERT(false, "Unexpected parse node %s in PTinFromTypeSpecification", PChzFromPark(pStnod->m_park));
 			break;
 		}
 	}
 
-	if (!pTinFinal)
-		return nullptr;
-
-	STypeInfo * pTinReturn = nullptr;
-	STypeInfo ** ppTinCur = &pTinReturn;
-
-	// build the fully qualified type info
-	pStnodIt = pStnod;
-	STypeInfo * pTinPrev = nullptr;
-	while (pStnodIt)
-	{
-		switch (pStnodIt->m_park)
-		{
-		case PARK_QualifierDecl:
-			{
-				QUALK qualk = QualkFromRword(PStvalExpected(pStnodIt)->m_rword);
-				GRFQUALK grfqualk = 0x1 << qualk;
-				
-				if (auto pTinqualPrev = PTinRtiCast<STypeInfoQualifier *>(pTinPrev))
-				{
-					pTinqualPrev->m_grfqualk.AddFlags(grfqualk);
-					pStnodIt->m_pTin = pTinqualPrev;
-				}
-				else
-				{
-					auto pTinqual = pSymtab->PTinqualEnsure(nullptr, grfqualk);
-					pStnodIt->m_pTin = pTinqual;
-
-					pTinPrev = pTinqual;
-					*ppTinCur = pTinqual;
-					ppTinCur = &pTinqual->m_pTin;
-				}
-
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
-				pStnodIt = pStnodIt->PStnodChild(0);
-			} break;
-		case PARK_ReferenceDecl:
-			{
-				auto pTinptr = pSymtab->PTinptrAllocate(nullptr);
-				pStnodIt->m_pTin = pTinptr;
-
-				pTinPrev = pTinptr;
-				*ppTinCur = pTinptr;
-				ppTinCur = &pTinptr->m_pTinPointedTo;
-
-				EWC_ASSERT(pStnodIt->CStnodChild() == 1, "expected one child");
-				pStnodIt = pStnodIt->PStnodChild(0);
-			} break;
-		case PARK_ArrayDecl:
-			{
-				STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-
-				*ppTinCur = pTinary;
-				ppTinCur = &pTinary->m_pTin;
-
-				if (pStnodIt->CStnodChild() == 2)
-				{
-					CSTNode * pStnodDim = pStnodIt->PStnodChild(0);
-					STypeInfoLiteral * pTinlitDim = (STypeInfoLiteral *)pStnodDim->m_pTin;
-					CSTValue * pStvalDim = nullptr;
-					if (!FIsCompileTimeConstant(pTinlitDim))
-					{
-						EmitError(pTcwork, pStnodIt, "Only static sized arrays are currently supported");
-						*pFIsValidTypeSpec = false;
-					}
-					else
-					{
-						STypeInfo * pTinCount = pSymtab->PTinBuiltin(CSymbolTable::s_strInt);
-						STypeInfo * pTinPromoted = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodDim, pTinCount);
-						if (!FCanImplicitCast(pTinPromoted, pTinCount))
-						{
-							EmitError(pTcwork, pStnodIt, "static integer array size expected");
-							*pFIsValidTypeSpec = false;
-						}
-						else
-						{
-							FinalizeLiteralType(pTcwork, pSymtab, pTinCount, pStnodDim);
-							pStvalDim = pStnodDim->m_pStval;
-						}
-					}
-
-					if (!pStvalDim)
-						return nullptr;
-
-					pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnodIt, pStvalDim);
-					pTinary->m_aryk = ARYK_Fixed;
-				}
-				else
-				{
-					pTinary->m_aryk = (pStnodIt->m_tok == TOK_PeriodPeriod) ? ARYK_Dynamic : ARYK_Reference;
-				}
-
-				if (pTinary->m_aryk == ARYK_Dynamic)
-				{
-					EmitError(pTcwork, pStnod, ERRID_NotYetSupported, "Dynamic arrays are not yet supported");
-				}
-
-				pSymtab->AddManagedTin(pTinary);
-
-				pStnodIt->m_pTin = pTinary;
-				pStnodIt = pStnodIt->PStnodChild(pStnodIt->CStnodChild()-1);
-			} break;
-		case PARK_MemberLookup:
-			{
-				// don't need to update pSymtab, already have pTinFinal
-				EWC_ASSERT(pStnodIt->CStnodChild() == 2, "Expected Lhs.Rhs in PARK_MemberLookup");
-				pStnodIt = pStnodIt->PStnodChild(1);
-			} break;
-		case PARK_ProcedureReferenceDecl:
-		case PARK_GenericDecl:
-		case PARK_GenericStructInst:
-			{
-				*ppTinCur = pTinFinal;
-				ppTinCur = nullptr;
-				pStnodIt = nullptr;
-			} break;
-		case PARK_Identifier:
-			{
-				if (pTinFinal->m_tink == TINK_ForwardDecl &&
-					EWC_FVERIFY(pTinPrev != nullptr, "how did we get here without a prev type info?"))
-				{
-					STypeInfoForwardDecl * pTinfwd = (STypeInfoForwardDecl *)pTinFinal;
-					pTinfwd->m_arypTinReferences.Append(pTinPrev);
-				}
-
-				*ppTinCur = pTinFinal;
-				ppTinCur = nullptr;
-				pStnodIt = nullptr;
-			} break;
-		default:
-			{
-				EWC_ASSERT(false, "unexpected parse node kind. PARK_%s", PChzFromPark(pStnodIt->m_park));
-			} break;
-		}
-	}
-
-	pTinReturn = pSymtab->PTinMakeUnique(pTinReturn);
+	pTinReturn = pSymtabRoot->PTinMakeUnique(pTinReturn);
 	return pTinReturn;
 }
 
@@ -5648,19 +5608,19 @@ SOverloadCheck OvcheckTryCheckOverload(
 	return SOverloadCheck(pTinproc, TCRET_Complete, argord);
 }
 
-CSymbolTable * SymtabUsingTableFromType(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, CSTNode * pStnodDecl)
+CSymbolTable * PSymtabFromType(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, SLexerLocation * pLexloc)
 {
 	switch (pTin->m_tink)
 	{
 	case TINK_Pointer:
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
-			return SymtabUsingTableFromType(pTcwork, pTinptr->m_pTinPointedTo, pStnodDecl);
+			return PSymtabFromType(pTcwork, pTinptr->m_pTinPointedTo, pLexloc);
 		}
 	case TINK_Qualifier:
 		{
 			auto pTinqual = (STypeInfoQualifier *)pTin;
-			return SymtabUsingTableFromType(pTcwork, pTinqual->m_pTin, pStnodDecl);
+			return PSymtabFromType(pTcwork, pTinqual->m_pTin, pLexloc);
 		}
 	case TINK_Struct:
 		{
@@ -5678,7 +5638,7 @@ CSymbolTable * SymtabUsingTableFromType(STypeCheckWorkspace * pTcwork, STypeInfo
 	default:
 		auto strTin = StrFromTypeInfo(pTin);
 		EmitError(
-			pTcwork, pStnodDecl, 
+			pTcwork->m_pErrman, pLexloc, 
 			ERRID_UsingStatementBadType,
 			"cannot supply type '%s' in a 'using' statement", strTin.PCoz());
 		return nullptr;
@@ -6372,12 +6332,20 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					pTinenum->m_bintMin = bintMin;
 					pTinenum->m_bintMax = bintMax;
 
-					if (!pTinenum->m_pTinLoose)
+					auto pTinLoose = pTinenum->m_pTinLoose;
+					if (pTinLoose && pTinLoose->m_tink != TINK_Integer)
 					{
-						pTinenum->m_pTinLoose = PTinFromRange(pTcwork, pTcsentTop->m_pSymtab, pStnod, bintMin, bintLast);
+						auto strTin = StrFromTypeInfo(pTinLoose);
+						EmitError(pTcwork, pStnod, "loose type for enum %s should be integer type, but is %s", pTinenum->m_strName.PCoz(), strTin.PCoz());
+						pTinLoose = nullptr;
 					}
 
-					auto pTinLoose = pTinenum->m_pTinLoose;
+					if (!pTinLoose)
+					{
+						pTinenum->m_pTinLoose = PTinFromRange(pTcwork, pTcsentTop->m_pSymtab, pStnod, bintMin, bintLast);
+						pTinLoose = pTinenum->m_pTinLoose;
+					}
+
 					if (EWC_FVERIFY(pTinLoose && pTinLoose->m_tink == TINK_Integer, "bad enum pTinLoose"))
 					{
 						auto pTinint = PTinRtiCast<STypeInfoInteger *>(pTinLoose);
@@ -7367,7 +7335,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (pStdecl->m_fHasUsingPrefix)
 						{
 							auto pTinUsing = pStnod->m_pTin;
-							auto pSymtabUsing = SymtabUsingTableFromType(pTcwork, pTinUsing, pStnod);
+							auto pSymtabUsing = PSymtabFromType(pTcwork, pTinUsing, &pStnod->m_lexloc);
 							if (pSymtabUsing)
 							{
 								pSymtab->AddUsingScope(pTcwork->m_pErrman, pSymtabUsing, pStnod);
@@ -8358,9 +8326,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 			case PARK_AdditiveOp:
 			case PARK_MultiplicativeOp:
 			case PARK_ShiftOp:
-			case PARK_BitwiseAndOrOp:
 			case PARK_RelationalOp:
-			case PARK_EqualityOp:
 			case PARK_LogicalAndOrOp:
 			{
 				if (pTcsentTop->m_nState >= pStnod->CStnodChild())

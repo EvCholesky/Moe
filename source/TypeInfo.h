@@ -78,6 +78,7 @@ enum TINK : s8
     TINK_Any		= 9,			// no specialized type info
     TINK_Enum		= 10,
 	TINK_Qualifier	= 11,
+	TINK_Interface  = 12,
 	TINK_ReflectedMax,
 
 	TINK_ForwardDecl= TINK_ReflectedMax,	// Type info added for resolving pointers to self during the type-check phase.
@@ -234,7 +235,6 @@ struct STypeInfoQualifier : public STypeInfo // tag == tinqual
 	STypeInfo *			m_pTin;
 	GRFQUALK			m_grfqualk;
 };
-
 
 
 enum CALLCONV
@@ -485,6 +485,21 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 
 void DeleteTypeInfo(EWC::CAlloc * pAlloc, STypeInfo * pTin);
 bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs);
+
+
+
+struct STypeInfoInterface : public STypeInfo // tag == tinin
+{
+	static const TINK s_tink = TINK_Interface;
+
+						STypeInfoInterface()
+						:STypeInfo("", SCOPID_Nil, s_tink)
+							{ ; }
+
+
+	EWC::CAllocAry<EWC::CString>			m_aryStrArgument;
+	EWC::CAllocAry<STypeInfoProcedure *>	m_arypTinproc;
+};
 
 
 

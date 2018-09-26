@@ -46,6 +46,22 @@ test builtin Unicode
 test builtin UniqueNames
 test builtin BlockList
 
+// Operator precedence:
+
+test OperatorPrecedence
+	input "n: = false || true && 0 ?rel 123 ?add 456 ?mul 789 ?shift 2"
+	parse "(decl n (|| false (&& true (?rel 0 (?add 123 (?mul 456 (?shift 789 2)))))))"
+	{
+		?shift("<<"|">>") + ?mul("*"|"/"|"%"|"&") + ?add("+"|"-"|"|"|"^") + ?rel("<"|">"|"<="|">="|"=="|"!=")
+	}
+
+test OperatorPrecedence2
+	input "n: = 2 ?shift 789 ?mul 456 ?add 123 ?rel 0 && true || false"
+	parse "(decl n (|| (&& (?rel (?add (?mul (?shift 2 789) 456) 123) 0) true) false))"
+	{
+		?shift("<<"|">>") + ?mul("*"|"/"|"%"|"&") + ?add("+"|"-"|"|"|"^") + ?rel("<"|">"|"<="|">="|"=="|"!=")
+	}
+
 // Declaration Tests:
 
 test DeclareAssign
@@ -339,6 +355,17 @@ test StructMemberPointer
 	typecheck "(= ?type (?type &SFoo m_n)) (= (?type &SFoo m_n) ?type)"
 	{
 		?type(int|"&SFoo")
+	}
+
+test NestedTypespec
+	prereq "SOutside struct { SInside struct { iint typedef s32 }}"
+	input "?inp"
+	typecheck "?tc"
+	{
+		?inp("ENU enum SOutside.SInside.iint { A }") + ?tc(""),
+		?inp("fun proc (n: SOutside.SInside.iint) {}") + ?tc("(fun(s32)->void fun (Params (s32 n (s32 (SInside SOutside SInside) s32))) void ({} (void)))"),
+		?inp("n: int; n2 := cast(SOutside.SInside.iint)n") + ?tc("(int n int) (s32 n2 (s32 (s32 (SInside SOutside SInside) s32) int))"),
+		?inp("aN := { :SOutside.SInside.iint: 1, 2}") + ?tc("([2]s32 aN (Literal:Array (s32 (SInside SOutside SInside) s32) ({} Literal:Int32 Literal:Int32)))")
 	}
 
 // Enumerations:
