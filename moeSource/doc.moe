@@ -15,34 +15,32 @@
 
 // orig: 64x128 px, 8x8 cells, 8x16 playspace
 
-//kDXWindow :: 1280
-//kDYWindow :: 720
-kDXWindow :: 1920
-kDYWindow :: 1080
+kDXWindow immutable := 1920
+kDYWindow immutable := 1080
 
-kDXCellBoard :: 8
-kDYCellBoard :: 17
-kDYCellBoardVisible :: 16 // the last row is only for overflow off the top, shouldn't draw (unless occupied)
-kBoardBorderWidth :: 10
-kDYBoardBorderBottom :: 54
+kDXCellBoard immutable := 8
+kDYCellBoard immutable := 17
+kDYCellBoardVisible immutable := 16 // the last row is only for overflow off the top, shouldn't draw (unless occupied)
+kBoardBorderWidth immutable := 10
+kDYBoardBorderBottom immutable := 54
 
-kCCellPerBoard :: kDXCellBoard * kDYCellBoard
-kEntMax :: kCCellPerBoard * kCPlayerMax
-kYMaxVirusStart :: 12
+kCCellPerBoard immutable := kDXCellBoard * kDYCellBoard
+kEntMax immutable := kCCellPerBoard * kCPlayerMax
+kYMaxVirusStart immutable := 12
 
-kDTStartingSpawn :: 1
-kDTNextPill	:: 0.3
-kDTShowDead :: 0.3
-kDTStabilize :: 0.05
+kDTStartingSpawn immutable := 1
+kDTNextPill	immutable := 0.3
+kDTShowDead immutable := 0.3
+kDTStabilize immutable := 0.05
 
-kDTEndgameMin :: 1.5
-kDTPulseTotal :: 1.5
-kDTPulseBell :: 0.25
+kDTEndgameMin immutable := 1.5
+kDTPulseTotal immutable := 1.5
+kDTPulseBell immutable := 0.25
 
-kCVirusStarting :: 15
-kCPlayerMax :: 4
+kCVirusStarting immutable := 15
+kCPlayerMax immutable := 4
 
-kDTPulseBellStabilize :: 0.35
+kDTPulseBellStabilize immutable := 0.35
 
 g_fApplyGravity := true	// debug toggle for falling pieces
 g_nSoundIdNext : u64
@@ -143,8 +141,8 @@ SSpriteSet struct // tag = spset
 
 InitSpriteFrame proc (pSpset: & SSpriteSet, tilak: TILAK, sfram: SFRAM, xMin: f32, xMax: f32, yMin: f32, yMax: f32)
 {
-	dXImage :: 1024
-	dYImage :: 1024
+	dXImage immutable := 1024
+	dYImage immutable := 1024
 
 	pSp := &pSpset.m_mpSframSp[sfram]
 	pSp.m_tilak = tilak
@@ -785,11 +783,11 @@ ClearBoard proc (pBoard: & SBoard, pGame: & SGame)
 InitBoard proc (iPlay: int, cPlay: int,	dXyVport: s32x2, pBoard: & SBoard, cVirus: int)
 {
 	// 40 x 40
-	kDYBorderTop :: 120
-	kDYBorderBottom :: 120
-	kDXBorderLeft :: 30
-	kDXBorderRight :: 30
-	kDXBorderMiddle :: 30
+	kDYBorderTop immutable := 120
+	kDYBorderBottom immutable := 120
+	kDXBorderLeft immutable := 30
+	kDXBorderRight immutable := 30
+	kDXBorderMiddle immutable := 30
 
 	// find our cell size
 	dYMax := cast(s32)dXyVport.m_y - (kDYBorderTop + kDYBorderBottom)
@@ -874,9 +872,9 @@ DrawBoardBackground proc (pBoard: & SBoard, pillcolSelf: PILLCOL, pillcolTarget:
 	AppendTile(SFRAM.Untextured, xMin, yMin - dYBottom, xMax, yMin, &colvecBorder, &g_tilbuf)
 	*/
 
-	kDXBackgroundPad :: 24
-	kMinBackgroundPad :: 20
-	kMaxBackgroundPad :: 30
+	kDXBackgroundPad immutable := 24
+	kMinBackgroundPad immutable := 20
+	kMaxBackgroundPad immutable := 30
 	colvecWhite := ColvecFromCol(ColCreate(255,255,255))	
 	posMin := F32x2Create(xMin - kDXBackgroundPad, yMin - kMinBackgroundPad)
 	posMax := F32x2Create(xMax + kDXBackgroundPad, yMax + kMaxBackgroundPad)
@@ -930,7 +928,7 @@ DrawNineCell proc (sfram: SFRAM, posMin: f32x2, posMax: f32x2, pColvec: & SColor
 	if pTilay.m_aTilvert.count < pTilay.m_cTilvert + (4 * 9)
 		{ return }
 
-	kRScale :: 0.5	
+	kRScale immutable := 0.5	
 	dU := (pSp.m_u2 - pSp.m_u1)
 	dV := (pSp.m_v2 - pSp.m_v1)
 	ddXU := pSp.m_dX / dU
@@ -999,8 +997,8 @@ DrawNineCell proc (sfram: SFRAM, posMin: f32x2, posMax: f32x2, pColvec: & SColor
 
 DrawPill proc (pBoard: & SBoard, pos: f32x2, rad: f32, pillcolHead: PILLCOL, fHasTail: bool, pillcolTail: PILLCOL, rOpacity: f32, rXScale: f32, uPulse: f32 = 0) 
 {
-	kXShadowPad :: 4
-	kYShadowPad :: 4 
+	kXShadowPad immutable := 4
+	kYShadowPad immutable := 4 
 
 	colWhite := ColCreate(255, 255, 255, 255)
 	colHead := ColLerp(ColFromPillcol(pillcolHead), colWhite, uPulse)
@@ -1036,8 +1034,8 @@ DrawPill proc (pBoard: & SBoard, pos: f32x2, rad: f32, pillcolHead: PILLCOL, fHa
 		posMaxTail.m_x = (posMaxTail.m_x - xMid) * rXScale + xMid
 	}
 
-	kXPulseScale :: 4
-	kYPulseScale :: 4
+	kXPulseScale immutable := 4
+	kYPulseScale immutable := 4
 	xPulse := kXPulseScale * uPulse
 	yPulse := kYPulseScale * uPulse
 	posMin.m_x -= xPulse
@@ -1104,8 +1102,8 @@ DrawPill proc (pBoard: & SBoard, pos: f32x2, rad: f32, pillcolHead: PILLCOL, fHa
 
 DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 {
-	kVirusBorderSeparation :: 2
-	kDeadEntWidth :: 3
+	kVirusBorderSeparation immutable := 2
+	kDeadEntWidth immutable := 3
 
 	posMin := pos + F32x2Cast(pBoard.m_pos)
 	posMax := posMin + F32x2Cast(pBoard.m_dXyTile)
@@ -1115,7 +1113,7 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 	colvecEnt := ColvecFromCol(ColCreate(255, 255, 255))
 	colvecEnt.m_w *= rOpacity
 
-	kULerpStable :: 1.0 // 0.7
+	kULerpStable immutable := 1.0 // 0.7
 	colvecStable := ColvecFromCol(ColCreate(0, 0, 0, 255))
 	uLerpStable := 1.0
 	if pEnt.m_ents == ENTS.Stable
@@ -1141,8 +1139,8 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 					uPulse = GCurveBell(u)
 				}
 
-				kPulseWidthShrink :: 3
-				kPulseWidthGrow :: 2
+				kPulseWidthShrink immutable := 3
+				kPulseWidthGrow immutable := 2
 				uShrink := uPulse * kPulseWidthShrink
 				uGrow := uPulse * kPulseWidthGrow
 
@@ -1192,8 +1190,8 @@ DrawEntity proc (pEnt: & SEntity, pBoard: & SBoard, pos: f32x2, rOpacity: f32)
 
 			if (pEnt.m_ents != ENTS.Dead)	
 			{
-				kRPillPulseScale :: 0.2
-				kPulseEdge:: 0.3 // hold pulse at 0.5 for most of the range
+				kRPillPulseScale immutable := 0.2
+				kPulseEdge immutable := 0.3 // hold pulse at 0.5 for most of the range
 				uPulse := 0.0
 
 				if pEnt.m_dTPulse < 0
@@ -1287,8 +1285,8 @@ DrawBoards proc (pGame : & SGame, pDrac: & SDrawContext)
 
 		if pGame.m_gams == GAMS.InGame
 		{
-			kRGarbageTrimBottom :: 0.25
-			kRGarbageSpacing :: 1.25
+			kRGarbageTrimBottom immutable := 0.25
+			kRGarbageSpacing immutable := 1.25
 
 			posGarbage := pBoard.m_pos + S32x2Create(-kBoardBorderWidth, kBoardBorderWidth)
 			posGarbage.m_y += pBoard.m_dXyBoard.m_y + cast(s32)(cast(f32)pBoard.m_dXyTile.m_y * kRGarbageTrimBottom)
@@ -1314,7 +1312,7 @@ DrawBoards proc (pGame : & SGame, pDrac: & SDrawContext)
 			posLabel.m_x += pBoard.m_dXyBoard.m_x / 2
 			posLabel.m_y -= kDYBoardBorderBottom - 10
 
-			kGCharSizeVirus :: 50
+			kGCharSizeVirus immutable := 50
 			pFontd := &pDrac.m_pDras.m_fontd
 			gCharSizePrev := pFontd.m_gCharSize
 			pFontd.m_gCharSize = kGCharSizeVirus
@@ -1807,20 +1805,20 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 
 UpdatePlayers proc (pGame : & SGame, dT: f32)
 {
-	kDTStepDownSteerSlowMin :: 0.6
-	kDTStepDownSteerSlowMax :: 0.4
-	kDTStepDownDropSlow :: 0.3
+	kDTStepDownSteerSlowMin immutable := 0.6
+	kDTStepDownSteerSlowMax immutable := 0.4
+	kDTStepDownDropSlow immutable := 0.3
 
-	kDTStepDownSteerMedMin :: 0.4
-	kDTStepDownSteerMedMax :: 0.25
-	kDTStepDownDropMed :: 0.25
+	kDTStepDownSteerMedMin immutable := 0.4
+	kDTStepDownSteerMedMax immutable := 0.25
+	kDTStepDownDropMed immutable := 0.25
 
-	kDTStepDownSteerFastMin :: 0.32
-	kDTStepDownSteerFastMax :: 0.32
-	kDTStepDownDropFast :: 0.25
+	kDTStepDownSteerFastMin immutable := 0.32
+	kDTStepDownSteerFastMax immutable := 0.32
+	kDTStepDownDropFast immutable := 0.25
 
-	kDTHoldRepeatInitial :: 0.2
-	kDTHoldRepeatAgain :: 0.15
+	kDTHoldRepeatInitial immutable := 0.2
+	kDTHoldRepeatAgain immutable := 0.15
 
 	aFStepDown: [pGame.m_aPlay.count] bool
 
@@ -1867,8 +1865,8 @@ UpdatePlayers proc (pGame : & SGame, dT: f32)
 			pPlay.m_dTStepDown = 0
 		}
 
-		kDCellPerSecond :: 0
-		kDCellPerSecondPressDown :: 20
+		kDCellPerSecond immutable := 0
+		kDCellPerSecondPressDown immutable := 20
 		dCellPerSecond : f32 = kDCellPerSecond
 
 		// update steering for player pill
@@ -2448,8 +2446,8 @@ UpdateDropAccel proc (pGame: & SGame, iPlay: int)
 		}
 	}
 
-	kAccelMin :: 0.4
-	kAccelMax :: 0.8
+	kAccelMin immutable := 0.4
+	kAccelMax immutable := 0.8
 	uVirus := 1.0 - (cast(f32)(yVirusMin) / kDYCellBoard)
 	uVirus = (uVirus - kAccelMin) / (kAccelMax - kAccelMin)
 	uVirus = GClamp(uVirus, 0, 1)	
@@ -2574,7 +2572,7 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 		switch pPlay.m_plays
 		{
 			case PLAYS.Inactive:
-				kGCharSizePrompt :: 60
+				kGCharSizePrompt immutable := 60
 
 				pFontd := &pDrac.m_pDras.m_fontd
 				gCharSizePrev := pFontd.m_gCharSize
@@ -2589,9 +2587,9 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 
 			case PLAYS.PregameOptions:
 
-				kGCharSizeOptions :: 45
-				kGCharSizePrompt :: 45
-				kDYWindow :: 45
+				kGCharSizeOptions immutable := 45
+				kGCharSizePrompt immutable := 45
+				kDYWindow immutable := 45
 				pFontd := &pDrac.m_pDras.m_fontd
 				gCharSizePrev := pFontd.m_gCharSize
 				pFontd.m_gCharSize = kGCharSizeOptions
@@ -2641,7 +2639,7 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 				pDrac.m_pDras.m_fontd.m_colMain = ColCreate(255,255,255)
 				pFontd.m_gCharSize = gCharSizePrev
 
-				cMenuItem :: 2
+				cMenuItem immutable := 2
 
 				if pPlayinp.m_mpButkEdges[BUTK.Up] == EDGES.Press
 				{
@@ -2662,8 +2660,8 @@ UpdatePregame proc (pGame: & SGame, pDrac: & SDrawContext)
 					SetPlays(pPlay, PLAYS.Inactive)
 				}
 			case PLAYS.PregameReady:
-				kGCharSizeTitle :: 60
-				kDYLine :: 45
+				kGCharSizeTitle immutable := 60
+				kDYLine immutable := 45
 
 				pFontd := &pDrac.m_pDras.m_fontd
 				gCharSizePrev := pFontd.m_gCharSize
@@ -2702,10 +2700,10 @@ DrawGameResults proc (pDrac: & SDrawContext, pPlay: & SPlayer, pBoard: & SBoard)
 	colvecBg : SColorVec
 
 
-	kGCharSizeWinLose :: 80
-	kGCharSizeStats :: 45
-	kGCharSizePrompt :: 40
-	kDYTextLine	:: 55
+	kGCharSizeWinLose immutable := 80
+	kGCharSizeStats immutable := 45
+	kGCharSizePrompt immutable := 40
+	kDYTextLine	immutable := 55
 
 	posCenter := F32x2Cast(pBoard.m_pos) + F32x2Cast(pBoard.m_dXyBoard) * 0.5
 	posCenter.m_y += kDYTextLine * 5
@@ -2792,13 +2790,13 @@ main proc () -> int
 	//SeedRandom(&g_rng, 0xBADDBEEF)
 	SeedRandom(&g_rng, NTimeSeed())
 
-    dRadSpin :: 0.01
+    dRadSpin immutable := 0.01
     gRadSpin: float
 
 	InitUnusedEntList(g_game.m_aEnt, &g_game.m_pEntUnusedFirst)
 
     // Make sure sleep has 1ms granularity
-    s_cMsDesiredGranularity :: 1
+    s_cMsDesiredGranularity immutable := 1
     fIsSleepGranular := FTrySetTimerResolution(s_cMsDesiredGranularity)
     g_cTickPerSecond = CTickPerSecond() 
 

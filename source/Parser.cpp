@@ -164,6 +164,7 @@ const char * PChzFromLitk(LITK litk)
 		"Null",
 		"Enum",
 		"Array",
+		"Struct",
 		"Pointer",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpLitkPChz) == LITK_Max, "missing LITK string");
@@ -728,30 +729,33 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 				TokNext(pLex);
 				return pStnod;
 			} 
+		case TOK(':'): // struct literal
 		case TOK('{'): // array literals
 			{
 				SLexerLocation lexloc(pLex);
-				TokNext(pLex); // consume '{'
 
 				CSTNode * pStnodLit = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 				pStnodLit->m_tok = TOK(pLex->m_tok);
-				pStnodLit->m_park = PARK_ArrayLiteral;
+				pStnodLit->m_park = PARK_CompoundLiteral;
 
-				// We're using a decl here... may need a custom SSyntaxTreeMap structure
+				// We're using a decl here... may need a custom structure
 				auto pStdecl = pStnodLit->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
-				if (FConsumeToken(pLex, TOK(':')))
+				if (pLex->m_tok == TOK(':'))
 				{
-					auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "array literal", FPDECL_None);
+					// parse type specifier
+					TokNext(pLex); // consume ':'
+					
+					auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "typelit", FPDECL_None);
 					pStdecl->m_iStnodType = pStnodLit->IAppendChild(pStnodType);
-
-					FExpect(pParctx, pLex, TOK(':'));
 				}
+
+				FExpect(pParctx, pLex, TOK('{'), "while parsing struct/array literal");
 
 				CSTNode * pStnodValues = PStnodParseExpressionList(pParctx, pLex);
 				pStdecl->m_iStnodInit = pStnodLit->IAppendChild(pStnodValues);
 
-				FExpect(pParctx, pLex, TOK('}'), "while parsing array literal");
+				FExpect(pParctx, pLex, TOK('}'), "while parsing struct/array literal");
 				return pStnodLit;
 			} break;
 		case '(':	// ( Expression )
@@ -1892,12 +1896,13 @@ CSTNode * PStnodParseParameter(
 		if (fAllowCompoundDecl && FConsumeToken(&lexPeek, TOK(',')))
 			continue;
 
-		if ((lexPeek.m_tok != TOK(':')) & (lexPeek.m_tok != TOK_ColonEqual))
-		{
-			return nullptr;
-		}
+		if (RwordLookup(&lexPeek) == RWORD_Immutable)
+			break;
 
-		break;
+		if ((lexPeek.m_tok == TOK(':')) | (lexPeek.m_tok == TOK_ColonEqual))
+			break;
+
+		return nullptr;
 	}
 
 	int cTypeNeeded = 0;
@@ -1952,6 +1957,23 @@ CSTNode * PStnodParseParameter(
 		}
 
 		pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
+
+		if (RwordLookup(pLex) == RWORD_Immutable)
+		{
+			TokNext(pLex);
+
+			if (pStnodCompound)
+				ParseError(pParctx, pLex, "Comma separated declarations not supported for immutable values");
+
+			if (!fAllowConstants)
+			{
+				ParseError(pParctx, pLex, "immutable declarations not supported in parameter list");
+			}
+			else
+			{
+				pStnodDecl->m_park = PARK_ConstantDecl;
+			}
+		}
 
 		if (FConsumeToken(pLex, TOK_ColonEqual))
 		{
@@ -2008,21 +2030,6 @@ CSTNode * PStnodParseParameter(
 				}
 				else
 				{
-					pStnodInit = PStnodParseExpression(pParctx, pLex);
-					if (!pStnodInit)
-						ParseError(pParctx, pLex, "initial value expected before %s", PCozCurrentToken(pLex));
-				}
-			}
-			else if (FConsumeToken(pLex, TOK(':')))
-			{
-				if (pStnodCompound)
-					ParseError(pParctx, pLex, "Comma separated declarations not supported for constants");
-
-				if (!fAllowConstants)
-					ParseError(pParctx, pLex, "constant declarations not supported in parameter list");
-				else
-				{
-					pStnodDecl->m_park = PARK_ConstantDecl;
 					pStnodInit = PStnodParseExpression(pParctx, pLex);
 					if (!pStnodInit)
 						ParseError(pParctx, pLex, "initial value expected before %s", PCozCurrentToken(pLex));
@@ -2273,7 +2280,7 @@ CSTNode * PStnodParseEnumConstantList(CParseContext * pParctx, SLexer * pLex, CS
 		if (!FNeedsImplicitMember((ENUMIMP)enumimp, pStenum->m_enumk))
 			continue;
 
-		PARK park = ((enumimp == ENUMIMP_Names) | (enumimp == ENUMIMP_Values)) ? PARK_ArrayLiteral : PARK_EnumConstant;
+		PARK park = ((enumimp == ENUMIMP_Names) | (enumimp == ENUMIMP_Values)) ? PARK_CompoundLiteral : PARK_EnumConstant;
 		auto pStnodImplicit = PStnodSpoofEnumConstant(pParctx, lexloc, PChzFromEnumimp((ENUMIMP)enumimp), park);
 		pStenum->m_mpEnumimpIstnod[enumimp] = pStnodList->IAppendChild(pStnodImplicit);
 	
@@ -2508,7 +2515,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			rword = RwordLookup(&lexPeek);
 		}
 
-		bool fIsConstantDecl = lexPeek.m_tok == TOK_ColonColon;
 		bool fIsDefinition;
 		switch (rword)
 		{
@@ -2521,7 +2527,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 			fIsDefinition = true;
 			break;
 		default: 
-			fIsDefinition = fIsConstantDecl;
+			fIsDefinition = false;
 			break;
 		}
 
@@ -2840,7 +2846,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 							pTinlit->m_pTinSource = pTinenum;
 							pStnodMember->m_pTin = pTinlit;
 						} break;
-					case PARK_ArrayLiteral:
+					case PARK_CompoundLiteral:
 						{
 						} break;
 					default: EWC_ASSERT(false, "Expected enum child value");
@@ -3015,36 +3021,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 
 				return pStnodTypedef;
-			}
-			else if (fIsConstantDecl)
-			{
-				// constant decl
-
-				auto pStnodInit = PStnodParseExpression(pParctx, pLex);
-				ExpectEndOfStatement(pParctx, pLex);
-				
-				CString strIdent = StrFromIdentifier(pStnodIdent);
-				if (!pStnodInit)
-				{
-					ParseError(pParctx, pLex, "missing constant value for %s", strIdent.PCoz());
-
-					pParctx->m_pAlloc->EWC_DELETE(pStnodIdent);
-					return nullptr;
-				}
-
-				CSTNode * pStnodConst = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodConst->m_park = PARK_ConstantDecl;
-
-				auto pStdecl = pStnodConst->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
-
-				pStdecl->m_iStnodIdentifier = pStnodConst->IAppendChild(pStnodIdent);
-				pStdecl->m_iStnodInit = pStnodConst->IAppendChild(pStnodInit);
-
-				CSymbolTable * pSymtab = pParctx->m_pSymtab;
-				auto pErrman = pParctx->m_pWork->m_pErrman;
-				pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pErrman, strIdent, pStnodConst, FSYM_VisibleWhenNested);
-
-				return pStnodConst;
 			}
 		} // rword definitions
 	}
@@ -4199,7 +4175,7 @@ ERRID ErridCheckSymbolCollision(
 	u64 nVisitId)
 {
 	CSTNode * pStnodCollision = nullptr;
-	auto symcollis = SymcollisCheck(pSymtabContext, pHvMin, pHvMax, g_nSymtabVisitId, fshadow, &pStnodCollision);
+	auto symcollis = SymcollisCheck(pSymtabContext, pHvMin, pHvMax, nVisitId, fshadow, &pStnodCollision);
 	if (symcollis != SYMCOLLIS_Nil)
 	{
 		s32 iLine = 0;
@@ -4249,7 +4225,7 @@ SSymbol * CSymbolTable::PSymEnsure(
 	HV hv = strName.Hv();
 	(void) ErridCheckSymbolCollision(
 		pErrman, 
-		&pStnodDefinition->m_lexloc,
+		&lexloc,
 		strName.PCoz(),
 		this,
 		&hv, &hv + 1,
@@ -5353,7 +5329,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_StructDefinition:		AppendCoz(pStrbuf, "struct");				return;
 	case PARK_EnumConstant:			AppendCoz(pStrbuf, "enumConst");			return;
 	case PARK_VariadicArg:			AppendCoz(pStrbuf, "..");					return;
-	case PARK_ArrayLiteral:			AppendCoz(pStrbuf, "arrayLit");				return;
+	case PARK_CompoundLiteral:		AppendCoz(pStrbuf, "compLit");				return;
 	case PARK_Cast:					AppendCoz(pStrbuf, "cast");					return;
 	case PARK_ArgumentLabel:		AppendCoz(pStrbuf, "`"); 					return;
 	case PARK_GenericDecl:			AppendCoz(pStrbuf, "gendecl"); 				return;

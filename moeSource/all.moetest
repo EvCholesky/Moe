@@ -166,7 +166,7 @@ test MultiDeclare
 	}	
 
 test ConstantDecl
-	input "SomeConst :: ?value?extra"
+	input "SomeConst immutable := ?value?extra"
 	parse "(const SomeConst ?pvalue)?pextra"
 	typecheck "(Literal:?lit SomeConst Literal:?lit)"
 	{
@@ -182,7 +182,7 @@ test ConstantDecl
 	}
 
 test ConstantTypedDecl
-	input "SomeConst : ?type : ?value"
+	input "SomeConst immutable : ?type = ?value"
 	parse "(const SomeConst ?type ?value)"
 	typecheck "(Literal:?lit SomeConst ?type Literal:?lit)"
 	{
@@ -318,7 +318,7 @@ test StructDecl
 		?init(": int") + ?initp("int") + ?decl(decl) + ?typememb("int m_n int"),
 		?init(": int = 2") + ?initp("int 2") + ?decl(decl) + ?typememb("int m_n int Literal:Int##"),
 		?init(": int = ---") + ?initp("int (---)") + ?decl(decl) + ?typememb("int m_n int (---)"),
-		?init(" :: 2") + ?initp(2) + ?decl(const) + ?typememb("Literal:Int m_n Literal:Int"),
+		?init(" immutable := 2") + ?initp(2) + ?decl(const) + ?typememb("Literal:Int m_n Literal:Int"),
 	}
 
 test StructNesting
@@ -327,7 +327,7 @@ test StructNesting
 	typecheck "(SOuter SOuter ({} (SInner SInner ({} ?tcnested))))"
 	{
 		?nested("m_f: bool") + ?pnested("(decl m_f bool)") + ?tcnested("(bool m_f bool)"), 
-		?nested("ConstTwo :: 2") + ?pnested("(const ConstTwo 2)") + ?tcnested("(Literal:Int ConstTwo Literal:Int)")
+		?nested("ConstTwo immutable := 2") + ?pnested("(const ConstTwo 2)") + ?tcnested("(Literal:Int ConstTwo Literal:Int)")
 	}
 
 test StructNesting
@@ -365,14 +365,14 @@ test NestedTypespec
 		?inp("ENU enum SOutside.SInside.iint { A }") + ?tc(""),
 		?inp("fun proc (n: SOutside.SInside.iint) {}") + ?tc("(fun(s32)->void fun (Params (s32 n (s32 (SInside SOutside SInside) s32))) void ({} (void)))"),
 		?inp("n: int; n2 := cast(SOutside.SInside.iint)n") + ?tc("(int n int) (s32 n2 (s32 (s32 (SInside SOutside SInside) s32) int))"),
-		?inp("aN := { :SOutside.SInside.iint: 1, 2}") + ?tc("([2]s32 aN (Literal:Array (s32 (SInside SOutside SInside) s32) ({} Literal:Int32 Literal:Int32)))")
+		?inp("aN := :[]SOutside.SInside.iint { 1, 2}") + ?tc("([]s32 aN (Literal:Array ([]s32 (s32 (SInside SOutside SInside) s32)) ({} Literal:Int32 Literal:Int32)))")
 	}
 
 // Enumerations:
 
 test EnumDecl
 	input "ENUMK enum ?loose { Ick := 1, Foo, Bah := 3 }"
-	parse "(enum ENUMK ?loose({} (enumConst nil) (enumConst min) (enumConst last) (enumConst max) (arrayLit names) (arrayLit values) (enumConst Ick 1) (enumConst Foo) (enumConst Bah 3)))"
+	parse "(enum ENUMK ?loose({} (enumConst nil) (enumConst min) (enumConst last) (enumConst max) (compLit names) (compLit values) (enumConst Ick 1) (enumConst Foo) (enumConst Bah 3)))"
 	typecheck "(ENUMK_enum ENUMK ?loose({} (ENUMK_enum Literal:Enum nil) (ENUMK_enum Literal:Enum min) (ENUMK_enum Literal:Enum last) (ENUMK_enum Literal:Enum max) (Literal:Array names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array values (Literal:Array Literal:?litk Literal:?litk Literal:?litk)) (ENUMK_enum Literal:Enum Ick Literal:Int) (ENUMK_enum Literal:Enum Foo) (ENUMK_enum Literal:Enum Bah Literal:Int)))"
 	values "(_ ENUMK ?loose(_ (?nil nil) (1 min) (3 last) (4 max) (_ names (_ 'Ick' 'Foo' 'Bah')) (_ values (_ 1 2 3)) (1 Ick 1) (2 Foo) (3 Bah 3)))"
 	{
@@ -631,37 +631,27 @@ test ArrayToPointer
 	}
 
 test ArrayLiteral
-	input "aN ?tdecl {?tspec 1, 2, 3}"
-	parse "(decl aN ?ptdecl(arrayLit ?elemspec({} 1 2 3)))"
-	typecheck "([3]?elemtype aN ?tcdecl(Literal:Array ?elemspec({} Literal:?lit Literal:?lit Literal:?lit)))"
+	input "aN ?decl { 1, 2, 3}"
+	parse "(decl aN ?parsedecl(compLit ?parsedecl({} 1 2 3)))"
+	typecheck "(?tcdecl aN ?tcdetail(Literal:Array ?tcdetail({} Literal:?lit Literal:?lit Literal:?lit)))"
 	{
-		?tdecl(": [3] s16 = ") + ?ptdecl("([] 3 s16) ") + ?tcdecl("([3]s16 Literal:Int64 s16) ") + ?elemtype(s16)
+		?type(s16) + ?lit(Int16) + ?decl(": [3] ?type = : [3] ?type") + ?parsedecl("([] 3 ?type) ") + ?tcdecl("[3]?type") + ?tcdetail("(?tcdecl Literal:Int64 ?type) "),
+		?type(int) + ?lit(Int64) + ?decl(": [3] ?type = : [3] ?type") + ?parsedecl("([] 3 ?type) ") + ?tcdecl("[3]?type") + ?tcdetail("(?tcdecl Literal:Int64 ?type) "),
+		?type(int) + ?lit(Int64) + ?decl(":=") + ?parsedecl("") + ?tcdecl("[3]int") + ?tcdetail("")
 		{
-			?tspec(":?elemtype:") + ?elemspec("?elemtype ") + ?lit(Int16),
-		},
-		?tdecl(": [3] int = ") + ?ptdecl("([] 3 int) ") + ?tcdecl("([3]int Literal:Int64 int) ") + ?elemtype(int) + ?lit("Int64")
-		{
-			?tspec("") + ?elemspec(""),
-			?tspec(":?elemtype:") + ?elemspec("?elemtype "),
-		},
-		?tdecl(":=") + ?ptdecl("") + ?tcdecl("") + ?elemtype(int) + ?lit("Int64")
-		{
-			?tspec("") + ?elemspec(""),
-			?tspec(":?elemtype:") + ?elemspec("?elemtype "),
-		},
+		}	
 	}
 
-test ArrayLiteralConst
-	input "aN :: {?tspec 1, 2, 3}"
-	parse "(const aN (arrayLit ?elemspec({} 1 2 3)))"
-	typecheck "(Literal:Array aN (Literal:Array ?elemspec({} Literal:Int Literal:Int Literal:Int)))"
-	values "()"
-	values "(_ aN (_ ?elemspec(_ 1 2 3)))"
+	test ArrayLiteralConst
+	input "aN immutable := ?decl {1, 2, 3}"
+	parse "(const aN (compLit ?parsedecl({} 1 2 3)))"
+	typecheck "(Literal:Array aN (Literal:Array ?tcdetail({} Literal:?lit Literal:?lit Literal:?lit)))"
+	values "(_ aN (_ ?valdecl(_ 1 2 3)))"
 	{
-		?elemtype(int|s8) + ?lit("Int")
+		?type("int"|"s8") + ?lit("Int")
 		{
-			?tspec("") + ?elemspec(""),
-			?tspec(":?elemtype:") + ?elemspec("?elemtype "),
+			?decl("") + ?parsedecl("") + ?valdecl("") + ?tcdecl("[3]int") + ?tcdetail(""),
+			?decl(":[] ?type") + ?parsedecl("([] ?type) ") + ?valdecl("(_ ?type) ") + ?tcdecl("[]?type") + ?tcdetail("(?tcdecl ?type) ")
 		},
 	}
 
@@ -1155,12 +1145,12 @@ test StructBakedDef
 	parse "(struct SFoo (params (decl BAKE ?type)) ({} (?pdecl)))"
 	typecheck "(SFoo SFoo (Params (?type BAKE ?type)) ({} (?tcdecl)))"
 	{
-		?type(int|s16) + ?decl("kConst :: BAKE") + ?pdecl("const kConst BAKE") + ?tcdecl("constdecl kConst BAKE"),
+		?type(int|s16) + ?decl("kConst immutable := BAKE") + ?pdecl("const kConst BAKE") + ?tcdecl("constdecl kConst BAKE"),
 		?type(int|s16) + ?decl("m_a: [BAKE] ?type") + ?pdecl("decl m_a ([] BAKE ?type)") + ?tcdecl("decl m_a (arydecl BAKE ?type)"),
 	}
 
 test StructBakedInstance
-	prereq "SFoo struct ($BAKE: ?type) { kConst : ?type : BAKE}"
+	prereq "SFoo struct ($BAKE: ?type) { kConst immutable : ?type = BAKE}"
 	input "n := SFoo(?args).kConst"
 	parse "(decl n (member (procCall SFoo ?args) kConst))"
 	typecheck "(?type n (Literal:?littype (SFoo SFoo Literal:Int) kConst)) (SFoo SFoo (Params Literal:Int) ({} (Literal:?littype kConst ?type Literal:?littype)))"
@@ -1183,7 +1173,7 @@ test StringLiteral
 
 test HereString
 	// UGH! these are so fragile, the first string delimeter needs to end a line and the second delimiter needs to be on it's own line
-	input "g_pChz :: #string END\nmultiline\n test string \"with quotes\"\nEND"
+	input "g_pChz immutable := #string END\nmultiline\n test string \"with quotes\"\nEND"
 	parse "(const g_pChz \"multiline\n test string \"with quotes\"\n\")"
 	typecheck "(Literal:String g_pChz Literal:String)"
 	{
@@ -1193,7 +1183,7 @@ test HereString
 // For Loops:
 
 test ForLoopBasic
-	prereq "cLoop :: 5; n:s64 = 2"
+	prereq "cLoop immutable := 5; n:s64 = 2"
 	input "for i:=0; ?cond; ++i; { --n }"
 	parse "(for (decl i 0) ?pcond (unary[++] i) ({} (unary[--] n)))"
 	typecheck "(for (int i Literal:Int64) ?tccond (int int) ({} (s64 s64)))"

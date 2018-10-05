@@ -1,4 +1,4 @@
-g_fontMainVertex :: #string END
+g_fontMainVertex immutable := #string END
 #version 120
 varying vec4 color;
 varying vec4 minMaxUV;
@@ -18,7 +18,7 @@ END
 // "Real-Time Texture-Mapped Vector Glyphs" is very unclear about how to compute the smoothstep scalar
 //  (and wrong? s is in pixels?)
 
-g_fontMainFragment :: #string END
+g_fontMainFragment immutable := #string END
 #version 120
 uniform sampler2D s_glyphTexture;
 varying vec4 color;

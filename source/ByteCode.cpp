@@ -251,7 +251,7 @@ void DumpLtype(const char * pChzLabel, BCode::SValue * pVal)
 		strTin = StrFromTypeInfo(pTin);
 	}
 
-	printf("%s: %s", pChzLabel, strTin.PCoz());
+	printf("%s: %s\n", pChzLabel, strTin.PCoz());
 }
 
 
@@ -1465,9 +1465,12 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 
 				if (EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "non-array literal types should be finalized away by here"))
 				{
-					CalculateByteSizeAndAlign(m_pDlay, pTinlit->m_pTinSource, &cB, &cBAlign);
+					auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+					EWC_ASSERT(pTinary, "expected array type");
+					pTin = pTinary->m_pTin;
+
+					CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
 					cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
-					pTin = pTinlit->m_pTinSource;
 				}
 			} break;
 		default:
@@ -1651,6 +1654,7 @@ void CBuilder::AddPhiIncoming(SValue * pInstPhi, SValue * pVal, SBlock * pBlock)
 	SValueOutput valout;
 	SetOperandFromValue(m_pDlay, pVal, &pInstInc->m_opkLhs, &pInstInc->m_wordLhs, OPSZ_CB, &valout);
 	pInstInc->m_cBRegister = valout.m_cBRegister;
+	pInstvalInc->m_pTinOperand = valout.m_pTin;
 	pInstInc->m_wordRhs.m_pV = pBlock;
 
 	if (fIsPhiNode)
@@ -1833,17 +1837,19 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 	u64 cBReturn = 0;
 	u64 cBAlignReturn = 1;
 	u32 iBStackOut = 0;
+	STypeInfo * pTinReturn = nullptr;
 	int cpTinReturn = (int)pTinproc->m_arypTinReturns.C();
 	for (int ipTinReturn = 0; ipTinReturn < cpTinReturn; ++ipTinReturn)
 	{
-		auto pTinRet = pTinproc->m_arypTinReturns[ipTinReturn];
-		if (pTinRet->m_tink == TINK_Void)
+		auto pTinRetIt = pTinproc->m_arypTinReturns[ipTinReturn];
+		if (pTinRetIt->m_tink == TINK_Void)
 			break;
 
-		CalculateByteSizeAndAlign(m_pDlay, pTinRet, &cBReturn, &cBAlignReturn);
+		CalculateByteSizeAndAlign(m_pDlay, pTinRetIt, &cBReturn, &cBAlignReturn);
 		if (cBReturn)
 		{
 			iBStackOut = S32Coerce(IBStackAlloc(cBReturn, cBAlignReturn));
+			pTinReturn  = pTinRetIt;
 #ifdef EWC_TRACE_RETURN_STACK
 			printf("%s() -> ibStackOut = %d, %llu bytes\n", pTinproc->m_strName.PCoz(), iBStackOut, cBReturn);
 #endif
@@ -1890,6 +1896,7 @@ SInstructionValue * CBuilder::PInstCreateCall(SValue * pValProc, STypeInfoProced
 	auto pValProcsig = PConstPointer(pProcsig);
 	auto pInstvalCall = PInstCreateRaw(IROP_Call, 0, pValProc, pValProcsig);
 	pInstvalCall->m_pInst->m_iBStackOut = iBStackOut;
+	pInstvalCall->m_pTinOperand = pTinReturn;
 
 	if (cArgVariadic)
 	{
@@ -2456,8 +2463,9 @@ SInstructionValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValSrc, SType
 	SetOperandFromValue(m_pDlay, pValSrc, &opkLhs, &wordLhs, OPSZ_CB, &valout);
 
 	auto pTinSrc = valout.m_pTin;
-	if (pTinSrc->m_tink == TINK_Bool ||
-		(pTinSrc->m_tink == TINK_Literal && ((STypeInfoLiteral*)pTinSrc)->m_litty.m_litk == LITK_Bool))
+	if (EWC_FVERIFY(pTinSrc, "null type used as RHS to cast") && 
+		(pTinSrc->m_tink == TINK_Bool ||
+		(pTinSrc->m_tink == TINK_Literal && ((STypeInfoLiteral*)pTinSrc)->m_litty.m_litk == LITK_Bool)))
 	{
 		// we need to handle this carefully because our bytecode doesn't have a 1bit type
 		if (irop == IROP_SignExt)

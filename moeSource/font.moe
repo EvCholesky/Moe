@@ -319,8 +319,8 @@ SQuadVertex struct // tag=qvert
 	m_r, m_g, m_b, m_a: f32
 }
 
-g_cQskeyMax :: 16 * 1024
-g_cQvertMax :: g_cQskeyMax * 4
+g_cQskeyMax immutable := 16 * 1024
+g_cQvertMax immutable := g_cQskeyMax * 4
 g_aQskey : & SQuadSortKey
 g_aQvert : & SQuadVertex
 g_aQvertSorted : & SQuadVertex
@@ -390,7 +390,7 @@ SFontVertex struct // tag=fvert
 	m_uMin, m_vMin, m_uMax, m_vMax: f32 // glyph bounds for clamping texture filtering
 }
 
-kChMaxDrawText :: 1024
+kChMaxDrawText immutable := 1024
 
 SFontVertexBuffer struct // tag=fvbuf
 {

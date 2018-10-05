@@ -1,14 +1,14 @@
 #import "Basic"
 
-kPi :: 3.1415926535897932
-kPiOver2 :: 1.5707963267948966
-kTwoPi :: 2.0 * 3.1415926535897932
+kPi immutable := 3.1415926535897932
+kPiOver2 immutable := 1.5707963267948966
+kTwoPi immutable := 2.0 * 3.1415926535897932
 
 // limits
-F32_MAX :: 3.402823466e+38
-F32_MIN :: 1.175494351e-38
-F64_MAX :: 1.7976931348623158e+308
-F64_MIN :: 2.2250738585072014e-308
+F32_MAX immutable := 3.402823466e+38
+F32_MIN immutable := 1.175494351e-38
+F64_MAX immutable := 1.7976931348623158e+308
+F64_MIN immutable := 2.2250738585072014e-308
 
 
 f32x2 struct
@@ -319,8 +319,8 @@ VecSign proc (vec: f32x2) -> s32x2
 }
 
 
-gEpsilon :: 0.0001
-gEpsilonNormalize :: 0.00001
+gEpsilon immutable := 0.0001
+gEpsilonNormalize immutable := 0.00001
 GLengthSqr proc (vec: f32x2) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y) }
 GLengthSqr proc (vec: f32x3) -> f32 inline 					{ return (vec.m_x * vec.m_x + vec.m_y * vec.m_y + vec.m_z * vec.m_z) }
 

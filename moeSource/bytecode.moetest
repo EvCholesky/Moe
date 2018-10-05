@@ -33,7 +33,7 @@ test BytecodePointer
 	}
 	
 test BytecodePointerArithmetic
-	prereq 	"aN := {:int: 2, 3, 4}"
+	prereq 	"aN := :[3]int {2, 3, 4}"
 	input 	"pN := &aN[1]; pN = pN ?op 1"
 	bytecode "{&3;?val}"
 	{
@@ -90,7 +90,7 @@ test BytecodeArray
 	}
 
 test BytecodeArrayAccess
-	input "{a := {:?type: 1, 2, 3}; n := a[2] }"
+	input "{a := :[]?type {1, 2, 3}; n := a[2] }"
 	bytecode "{3;}"
 	{
 		?type(int),
@@ -98,7 +98,7 @@ test BytecodeArrayAccess
 	}
 
 test BytecodeArrayLoop
-	prereq "a := {:?type: 11, 22, 33, 44 }"
+	prereq "a := :[]?type {11, 22, 33, 44 }"
 	input "for i := 0; i<a.count; ++i; { n := a[i] }"
 	bytecode "{0;11;22;33;44;}"
 	{
@@ -249,7 +249,7 @@ test BytecodeReturnLargeVal
 	}
 
 test BytecodeArrayRef
-	input "aN : [] int= {:int: 111, 222, 333}; n:= aN?elem"
+	input "aN : [] int= :[]int { 111, 222, 333}; n:= aN?elem"
 	bytecode "{?res;}"
 	{
 		?elem("[0]") + ?res(111),
@@ -259,7 +259,7 @@ test BytecodeArrayRef
 	}
 
 test BytecodeArrayFixed
-	input "aN :[3] int = {:int: 111, 222, 333}; n:= aN?elem"
+	input "aN :[3]int = {111, 222, 333}; n:= aN?elem"
 	bytecode "{?res;}"
 	{
 		?elem("[0]") + ?res(111),

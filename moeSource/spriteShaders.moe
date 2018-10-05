@@ -1,4 +1,4 @@
-g_spriteMainVertex :: #string END
+g_spriteMainVertex immutable := #string END
 varying vec4 vecColor;
 varying vec4 vecColorOvr;
 
@@ -18,7 +18,7 @@ END
 
 
 
-g_spriteMainFragment :: #string END
+g_spriteMainFragment immutable := #string END
 uniform sampler2D s_sampTexture;
 varying vec4 vecColor;
 varying vec4 vecColorOvr;
@@ -34,7 +34,7 @@ END
 
 
 
-g_spriteUntexturedFragment :: #string END
+g_spriteUntexturedFragment immutable := #string END
 varying vec4 vecColor;
 
 void main()

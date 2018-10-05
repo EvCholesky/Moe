@@ -2,7 +2,7 @@
 #dynamic_library "kernel32"
 #import "Basic"
 
-kCBFilePathMax :: 1024
+kCBFilePathMax immutable := 1024
 
 FFILEACCESS enum s32
 {

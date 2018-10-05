@@ -82,6 +82,7 @@ enum TOK
 		RW(Proc) STR(proc), \
 		RW(Struct) STR(struct), \
 		RW(Const) STR(const), \
+		RW(Immutable) STR(immutable), \
 		RW(InArg) STR(inarg), \
 		RW(Typedef) STR(typedef), \
 		RW(Soa) STR(SOA), \
@@ -138,6 +139,7 @@ enum LITK
 	LITK_Null,
 	LITK_Enum,
 	LITK_Array,
+	LITK_Struct,
 	LITK_Pointer,	// pointer literal in bytecode
 
 	EWC_MAX_MIN_NIL(LITK)

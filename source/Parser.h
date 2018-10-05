@@ -151,7 +151,7 @@ enum PARK : s16 // PARse Kind
 	PARK_StructDefinition,
 	PARK_EnumConstant,
 	PARK_VariadicArg,
-	PARK_ArrayLiteral,
+	PARK_CompoundLiteral,	// array/struct literal
 	PARK_ArgumentLabel,
 	PARK_GenericDecl,
 	PARK_GenericStructInst,		// 
@@ -770,6 +770,7 @@ protected:
 							,m_pSymtabNextManaged(nullptr)
 							,m_iNestingDepth(0)
 							,m_scopid(pUntyper->ScopidAlloc())
+							,m_nVisitId(0)
 								{ ; }
 
 public:

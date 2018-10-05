@@ -255,6 +255,25 @@ static inline void DumpLtype(const char * pChzLabel, CIRValue * pVal)
 #endif
 }
 
+static inline void DumpLtype(const char * pChzLabel, LLVMOpaqueValue * pLval)
+{
+	printf("%s: ", pChzLabel);
+
+#if LLVM_ENABLE_DUMP
+	if (pLval)
+	{
+		auto pLtype = LLVMTypeOf(pLval);
+		LLVMDumpType(pLtype);
+	}
+	else
+	{
+		printf("null value");
+	}
+#else
+	printf("LLVM_ENABLE_DUMP is not defined.");
+#endif
+}
+
 // Debug Info Wrappers
 
 LLVMValueRef PLvalDInfoCreateLexicalBlock(CBuilderIR * pBuild, LLVMValueRef pLvalScope, SDIFile * pDif, unsigned nLine, unsigned nCol)
@@ -656,12 +675,19 @@ LLVMOpaqueType * CBuilderIR::PLtypeFromPTin(STypeInfo * pTin)
 			case LITK_Char:		return nullptr;
 			case LITK_String:	return LLVMPointerType(LLVMInt8Type(), 0);
 			case LITK_Null:		return PLtypeFromPTin(pTinlit->m_pTinSource);
+			case LITK_Struct:	return PLtypeFromPTin(pTinlit->m_pTinSource);
 			case LITK_Array:
 			{
-				auto pLtypeElement = PLtypeFromPTin(pTinlit->m_pTinSource);
+				auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+				if (!EWC_FVERIFY(pTinary, "expected array type"))
+					return nullptr;
+
+				// create a static array for the literal, even if we're assigning it to a literal reference
+				auto pLtypeElement = PLtypeFromPTin(pTinary->m_pTin); //->m_pTin);
 				return LLVMArrayType(pLtypeElement, u32(pTinlit->m_c));
 			}
-			default:			return nullptr;
+			default:	
+				return nullptr;
 			}
 		}
 		case TINK_Enum:
@@ -2773,7 +2799,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 {
 	CSTValue * pStval = pStnod->m_pStval;
 
-	bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Array;
+	bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Array || pTinlit->m_litty.m_litk == LITK_Struct;
 	if (!fIsContainerLiteral)
 	{
 		if (!EWC_FVERIFY(pStval, "literal missing value"))
@@ -2901,7 +2927,10 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 				apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlitChild, pStnodChild);
 			}
 
-			auto pLtypeElement = pBuild->PLtypeFromPTin(pTinlit->m_pTinSource);
+			auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+			if (!EWC_FVERIFY(pTinary, "expected array type for array literal"))
+				return nullptr;
+			auto pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
 			return pBuild->PLvalConstantArray(pLtypeElement, apLval, u32(pTinlit->m_c));
 		} break;
 	default:
@@ -6110,8 +6139,8 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 						// the type of aN.data is &N so a reference would need to be a &&N which we don't have
 						EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
-
-						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinlit->m_pTinSource);
+						auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinary->m_pTin);
 
 						return pBuild->PInstCreateCast(IROP_Bitcast, pGlobLit, pTinptr, "Bitcast");
 					}
@@ -6204,7 +6233,8 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 						// the type of aN.data is &N so a reference would need to be a &&N which we don't have
 						EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
 
-						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinlit->m_pTinSource);
+						auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinary->m_pTin);
 
 						return pBuild->PInstCreateCast(IROP_Bitcast, pGlobLit, pTinptr, "Bitcast");
 					}

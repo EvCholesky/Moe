@@ -4,11 +4,11 @@
 #import "GL"
 #import "Math"
 
-g_dXWindow :: 1280
-g_dYWindow :: 720
+g_dXWindow immutable := 1280
+g_dYWindow immutable := 720
 g_cTickPerSecond: s64 = 1
 
-g_pChzMap :: #string END
+g_pChzMap immutable := #string END
 WWWWWWWWWW.WWWWWWWWWW
 Wo......W...W......oW
 W.WWWWW.W.W.W.WWWWW.W
@@ -28,16 +28,16 @@ Wo......W...W......oW
 WWWWWWWWWW.WWWWWWWWWW
 END
 
-g_dXCell :: 35
-g_dYCell :: 35
-g_dXCellHalf : float : (g_dXCell / 2.0)
-g_dYCellHalf : float : (g_dYCell / 2.0)
+g_dXCell immutable := 35
+g_dYCell immutable := 35
+g_dXCellHalf immutable : float = (g_dXCell / 2.0)
+g_dYCellHalf immutable : float = (g_dYCell / 2.0)
 
-g_dXMapCell :: 21
-g_dYMapCell :: 17
+g_dXMapCell immutable := 21
+g_dYMapCell immutable := 17
 
-g_dXyPuckSpeed :: 100
-g_gInputWindow :: 50
+g_dXyPuckSpeed immutable := 100
+g_gInputWindow immutable := 50
 
 g_pActPuck: & SActor
 g_pActBlinky: & SActor	// global blinky reference, needed for inky's behavior
@@ -164,8 +164,8 @@ DirFromVec proc (vec: f32x2) -> DIR
 
 VecFromDir proc(dir: DIR) -> f32x2
 {
-	mpDirXy :=
-	{:float:
+	mpDirXy := :[]float
+	{
 		-1, 0, 	//Left,
 		0,	1, 	//Up,
 		1,	0,	//Right,
@@ -519,7 +519,7 @@ SetGhostColor proc (pAct: & SActor)
 		return
 	}
 
-	aNGhostColor := {:u8: 	152, 50, 62, 255,
+	aNGhostColor := :[] u8{ 152, 50, 62, 255,
 							221, 145, 152, 255,
 							31, 91, 152, 255,
 							223, 174, 138, 255 }
@@ -816,7 +816,7 @@ SActor struct // tag = act
 	m_cCoin: int
 }
 
-kDtEating :: 10.0
+kDtEating immutable := 10.0
 
 BUTK enum // button kind
 {
@@ -1276,7 +1276,7 @@ FlushTileVerts proc (pDrac: & SDrawContext, pTilbuf: & STileVertexBuffer)
 
 DrawTestTriangle proc (gRadians:float)
 {
-	dRad :: kPi * 2.0 / 3.0
+	dRad immutable := kPi * 2.0 / 3.0
 	vecCenter := F32x2Create(g_dXWindow / 2.0, g_dYWindow / 2.0)
 	vecRadius := F32x2Create(300, 0)
 	vecA := VecRotate(gRadians, vecRadius)
@@ -1322,11 +1322,11 @@ main proc () -> int
 
 	SeedRandom(&g_rng, 0xBADDBEEF)
 
-    dRadSpin :: 0.01
+    dRadSpin immutable := 0.01
     gRadSpin: float
 
     // Make sure sleep has 1ms granularity
-    s_cMsDesiredGranularity :: 1
+    s_cMsDesiredGranularity immutable := 1
     fIsSleepGranular := FTrySetTimerResolution(s_cMsDesiredGranularity)
     g_cTickPerSecond = CTickPerSecond() 
 

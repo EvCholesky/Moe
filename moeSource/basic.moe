@@ -20,7 +20,7 @@ tolower proc (ch: int) -> int #foreign
 HANDLE typedef int 	// This actually needs to be pointer-sized, so s32 in 32-bit, 
 						//  but lots of people use integers too, arrrrgh!!
 
-INVALID_HANDLE :: -1
+INVALID_HANDLE immutable := -1
 
 HWND typedef &void
 HDC  typedef HANDLE

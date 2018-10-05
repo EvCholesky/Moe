@@ -114,7 +114,7 @@ TestIfElse proc ()
 {
 	printf("If/Else:\n")
 
-	cLoop :: 4
+	cLoop immutable := 4
 	aN: [cLoop] int
 	for i:= 0; i < cLoop; ++i
 	{
@@ -181,7 +181,7 @@ TestInitializers proc ()
 
 	// local arrays
 	aNZero : [5] int	
-	aNInit := {:int: 1, 2, 3, 4, 5}
+	aNInit := :[]int { 1, 2, 3, 4, 5}
 
 	assert(aNZero[0] == 0 && aNZero[1] == 0 && aNZero[2] == 0 && aNZero[3] == 0 && aNZero[4] == 0, "bad init", #file, #line)
 	//printf("aNInit = {%d, %d, %d, %d, %d}\n",aNInit[0], aNInit[1], aNInit[2], aNInit[3], aNInit[4])
@@ -229,7 +229,7 @@ TestInitializers proc ()
 
 	SBarInit struct
 	{
-		m_aN := {:int: 1, 2, 3, 4, 5}
+		m_aN := :[]int { 1, 2, 3, 4, 5}
 	}
 
 	barzero: SBarZero
@@ -294,7 +294,7 @@ TestStructures proc ()
 
 	 	SNested struct
 	 	{
-	 		NestedCount :: 3
+	 		NestedCount immutable := 3
 	 		m_nNested := 17
 	 	}
 	}
@@ -474,13 +474,13 @@ TestArrays proc ()
 
 	assert(aN.data == aNRef.data, "array with bad data member", #file, #line)
 
-	ConstAry :: { 1, 2, 3, 4}
+	ConstAry immutable := { 1, 2, 3, 4}
 	for iN := 0; iN < ConstAry.count; ++iN
 	{
 		ConstAry[iN] == iN + 1
 	}
 
-	aNExplicit : [] int = {:int: 2, 4, 5}
+	aNExplicit : [] int = {2, 4, 5}
 	for iN := 0; iN < aNExplicit.count; ++iN
 	{
 		aNExplicit[iN] == iN + 2
@@ -507,12 +507,12 @@ TestArrays proc ()
 	}
 
 
-	kN :: {1, 2, 3, 4}
+	kN immutable := {1, 2, 3, 4}
 
 	aN1: [4] int = {1, 2, 3, 4}
 	aN2: [] int = {1, 2, 3, 4}
 	aN3 := {1, 2, 3, 4}
-	aN4 := {:int: 1, 2, 3, 4}
+	aN4 := :[]int { 1, 2, 3, 4}
 	aN5 := kN
 
 	aN6 : [] int
@@ -750,7 +750,7 @@ TestGlobals proc ()
 }
 
 g_n : s32 =15
-g_aN := {:s32: 2, 4, 5} // array globals
+g_aN := :[]s32 { 2, 4, 5} // array globals
 
 SGlobal struct
 {
@@ -828,7 +828,7 @@ TestProcedureRef proc () -> int
 	return 1
 }
 
-g_pChzHere :: #string END
+g_pChzHere immutable := #string END
 This is a string
 that should just work
 even though it's several lines
@@ -1038,7 +1038,7 @@ main proc () -> int
 
 SLater struct
 {
-	ConstFour :: 4
+	ConstFour immutable := 4
 
 	IntAlias typedef s32
 	QuadArray typedef [ConstFour] IntAlias

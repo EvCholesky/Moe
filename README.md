@@ -60,10 +60,10 @@ nUninitialized : s32 = ---
 ```
 
 
-Constants are defined with a name, followed by the `::` operator and the constant value.
+Constants are defined with a declaration that has the keyword `immutable` before the type specification or initial value.
 ```
-kPi :: 3.14159         
-kAnswer : s32 : 42   // constants can be explicitly typed
+kPi immutable := 3.14159         
+kAnswer immutable : s32 = 42   // constants can be explicitly typed
 ```
 
 Literals and most constants are unsized until assigned to an instance value. Variables that are type inferred from an untyped value will use the fitting default type (ie `n := 2` is an `int`).

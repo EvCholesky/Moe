@@ -31,111 +31,111 @@ FGetNextEvent proc (pEvent: & SEvent) -> bool #foreign
 CreateJoystickManager proc () -> & void #foreign
 UpdateJoystickManager proc (pVJoyman: & void) #foreign
 
-kNDeviceIdJoystickMin :: 0
-kNDeviceIdJoystickMax :: 16
+kNDeviceIdJoystickMin immutable := 0
+kNDeviceIdJoystickMax immutable := 16
 FIsJoystickConnected proc (nDeviceId: s32) -> bool #foreign
 PChzJoystickName proc (nDeviceId: s32) -> & u8 #foreign
 NTimeSeed proc () -> u32 #foreign
 
 
-GL_POINTS ::                0x0000
-GL_LINES ::                 0x0001
-GL_LINE_LOOP ::             0x0002
-GL_LINE_STRIP ::            0x0003
-GL_TRIANGLES ::             0x0004
-GL_TRIANGLE_STRIP ::        0x0005
-GL_TRIANGLE_FAN ::          0x0006
-GL_QUADS ::                 0x0007
-GL_QUAD_STRIP ::            0x0008
-GL_POLYGON ::               0x0009
+GL_POINTS immutable :=                0x0000
+GL_LINES immutable :=                 0x0001
+GL_LINE_LOOP immutable :=             0x0002
+GL_LINE_STRIP immutable :=            0x0003
+GL_TRIANGLES immutable :=             0x0004
+GL_TRIANGLE_STRIP immutable :=        0x0005
+GL_TRIANGLE_FAN immutable :=          0x0006
+GL_QUADS immutable :=                 0x0007
+GL_QUAD_STRIP immutable :=            0x0008
+GL_POLYGON immutable :=               0x0009
 
-GL_BLEND ::                 0x0BE2
-GL_TEXTURE_2D ::            0x0DE1
-GL_BYTE ::                  0x1400
-GL_UNSIGNED_BYTE ::         0x1401
-GL_SHORT ::                 0x1402
-GL_UNSIGNED_SHORT ::        0x1403
-GL_INT ::                   0x1404
-GL_UNSIGNED_INT ::          0x1405
-GL_FLOAT ::                 0x1406
-GL_2_BYTES ::               0x1407
-GL_3_BYTES ::               0x1408
-GL_4_BYTES ::               0x1409
-GL_DOUBLE ::                0x140A
+GL_BLEND immutable :=                 0x0BE2
+GL_TEXTURE_2D immutable :=            0x0DE1
+GL_BYTE immutable :=                  0x1400
+GL_UNSIGNED_BYTE immutable :=         0x1401
+GL_SHORT immutable :=                 0x1402
+GL_UNSIGNED_SHORT immutable :=        0x1403
+GL_INT immutable :=                   0x1404
+GL_UNSIGNED_INT immutable :=          0x1405
+GL_FLOAT immutable :=                 0x1406
+GL_2_BYTES immutable :=               0x1407
+GL_3_BYTES immutable :=               0x1408
+GL_4_BYTES immutable :=               0x1409
+GL_DOUBLE immutable :=                0x140A
 
-GL_MODELVIEW ::             0x1700
-GL_PROJECTION ::            0x1701
-GL_TEXTURE ::               0x1702
+GL_MODELVIEW immutable :=             0x1700
+GL_PROJECTION immutable :=            0x1701
+GL_TEXTURE immutable :=               0x1702
 
-GL_RGBA ::                  0x1908
+GL_RGBA immutable :=                  0x1908
 
-GL_VERTEX_ARRAY ::          0x8074
-GL_NORMAL_ARRAY ::          0x8075
-GL_COLOR_ARRAY ::           0x8076
-GL_INDEX_ARRAY ::           0x8077
-GL_TEXTURE_COORD_ARRAY ::   0x8078
-GL_EDGE_FLAG_ARRAY ::       0x8079
+GL_VERTEX_ARRAY immutable :=          0x8074
+GL_NORMAL_ARRAY immutable :=          0x8075
+GL_COLOR_ARRAY immutable :=           0x8076
+GL_INDEX_ARRAY immutable :=           0x8077
+GL_TEXTURE_COORD_ARRAY immutable :=   0x8078
+GL_EDGE_FLAG_ARRAY immutable :=       0x8079
 
-GL_TEXTURE_BASE_LEVEL ::    0x813C
-GL_TEXTURE_MAX_LEVEL  ::    0x813D
+GL_TEXTURE_BASE_LEVEL immutable :=    0x813C
+GL_TEXTURE_MAX_LEVEL  immutable :=    0x813D
 
-GL_TEXTURE0 ::              0x84C0
-GL_TEXTURE1 ::              0x84C1
-GL_TEXTURE2 ::              0x84C2
-GL_TEXTURE3 ::              0x84C3
-GL_TEXTURE4 ::              0x84C4
-GL_TEXTURE5 ::              0x84C5
-GL_TEXTURE6 ::              0x84C6
-GL_TEXTURE7 ::              0x84C7
-GL_TEXTURE8 ::              0x84C8
-GL_TEXTURE9 ::              0x84C9
-GL_TEXTURE10 ::             0x84CA
-GL_TEXTURE11 ::             0x84CB
-GL_TEXTURE12 ::             0x84CC
-GL_TEXTURE13 ::             0x84CD
-GL_TEXTURE14 ::             0x84CE
-GL_TEXTURE15 ::             0x84CF
-GL_TEXTURE16 ::             0x84D0
-GL_TEXTURE17 ::             0x84D1
-GL_TEXTURE18 ::             0x84D2
-GL_TEXTURE19 ::             0x84D3
-GL_TEXTURE20 ::             0x84D4
-GL_TEXTURE21 ::             0x84D5
-GL_TEXTURE22 ::             0x84D6
-GL_TEXTURE23 ::             0x84D7
-GL_TEXTURE24 ::             0x84D8
-GL_TEXTURE25 ::             0x84D9
-GL_TEXTURE26 ::             0x84DA
-GL_TEXTURE27 ::             0x84DB
-GL_TEXTURE28 ::             0x84DC
-GL_TEXTURE29 ::             0x84DD
-GL_TEXTURE30 ::             0x84DE
-GL_TEXTURE31 ::             0x84DF
+GL_TEXTURE0 immutable :=              0x84C0
+GL_TEXTURE1 immutable :=              0x84C1
+GL_TEXTURE2 immutable :=              0x84C2
+GL_TEXTURE3 immutable :=              0x84C3
+GL_TEXTURE4 immutable :=              0x84C4
+GL_TEXTURE5 immutable :=              0x84C5
+GL_TEXTURE6 immutable :=              0x84C6
+GL_TEXTURE7 immutable :=              0x84C7
+GL_TEXTURE8 immutable :=              0x84C8
+GL_TEXTURE9 immutable :=              0x84C9
+GL_TEXTURE10 immutable :=             0x84CA
+GL_TEXTURE11 immutable :=             0x84CB
+GL_TEXTURE12 immutable :=             0x84CC
+GL_TEXTURE13 immutable :=             0x84CD
+GL_TEXTURE14 immutable :=             0x84CE
+GL_TEXTURE15 immutable :=             0x84CF
+GL_TEXTURE16 immutable :=             0x84D0
+GL_TEXTURE17 immutable :=             0x84D1
+GL_TEXTURE18 immutable :=             0x84D2
+GL_TEXTURE19 immutable :=             0x84D3
+GL_TEXTURE20 immutable :=             0x84D4
+GL_TEXTURE21 immutable :=             0x84D5
+GL_TEXTURE22 immutable :=             0x84D6
+GL_TEXTURE23 immutable :=             0x84D7
+GL_TEXTURE24 immutable :=             0x84D8
+GL_TEXTURE25 immutable :=             0x84D9
+GL_TEXTURE26 immutable :=             0x84DA
+GL_TEXTURE27 immutable :=             0x84DB
+GL_TEXTURE28 immutable :=             0x84DC
+GL_TEXTURE29 immutable :=             0x84DD
+GL_TEXTURE30 immutable :=             0x84DE
+GL_TEXTURE31 immutable :=             0x84DF
 
-GL_FRAGMENT_SHADER_ARB ::   0x8B30
-GL_VERTEX_SHADER_ARB ::     0x8B31
+GL_FRAGMENT_SHADER_ARB immutable :=   0x8B30
+GL_VERTEX_SHADER_ARB immutable :=     0x8B31
 
-GL_COMPILE_STATUS ::        0x8B81
-GL_LINK_STATUS ::           0x8B82
-GL_INFO_LOG_LENGTH ::       0x8B84
+GL_COMPILE_STATUS immutable :=        0x8B81
+GL_LINK_STATUS immutable :=           0x8B82
+GL_INFO_LOG_LENGTH immutable :=       0x8B84
 
 
 
 
 // BlendingFactorDest
-GL_ZERO ::                  0
-GL_ONE ::                   1
-GL_SRC_COLOR ::             0x0300
-GL_ONE_MINUS_SRC_COLOR ::   0x0301
-GL_SRC_ALPHA ::             0x0302
-GL_ONE_MINUS_SRC_ALPHA ::   0x0303
-GL_DST_ALPHA ::             0x0304
-GL_ONE_MINUS_DST_ALPHA ::   0x0305
+GL_ZERO immutable :=                  0
+GL_ONE immutable :=                   1
+GL_SRC_COLOR immutable :=             0x0300
+GL_ONE_MINUS_SRC_COLOR immutable :=   0x0301
+GL_SRC_ALPHA immutable :=             0x0302
+GL_ONE_MINUS_SRC_ALPHA immutable :=   0x0303
+GL_DST_ALPHA immutable :=             0x0304
+GL_ONE_MINUS_DST_ALPHA immutable :=   0x0305
 
 // BlendingFactorSrc
-GL_DST_COLOR ::             0x0306
-GL_ONE_MINUS_DST_COLOR ::   0x0307
-GL_SRC_ALPHA_SATURATE ::    0x0308
+GL_DST_COLOR immutable :=             0x0306
+GL_ONE_MINUS_DST_COLOR immutable :=   0x0307
+GL_SRC_ALPHA_SATURATE immutable :=    0x0308
 
 
 glsizei typedef s32
