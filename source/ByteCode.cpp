@@ -710,14 +710,26 @@ u8 * CDataSegment::PBFromIndex(s32 iB)
 
 u8 * CDataSegment::PBFromGlobal(SConstant * pConstGlob)
 {
-	EWC_ASSERT(pConstGlob->m_opk == OPK_Global, "expected global value");
 
 	// iBPointer is the index that stores a pointer in the data segment (ie. a global value lhs reference)
 	//  if we haven't adjusted pointers yet it's just an index, otherwise it's the address
 
-	auto pBPointer = PBFromIndex(pConstGlob->m_word.m_s32);
-	s32 iBValue = *(s32*)pBPointer;
-	return PBFromIndex(iBValue);
+	switch (pConstGlob->m_opk)
+	{
+	case OPK_Global:
+	{
+		auto pBPointer = PBFromIndex(pConstGlob->m_word.m_s32);
+		s32 iBValue = *(s32*)pBPointer;
+		return PBFromIndex(iBValue);
+	}
+	case OPK_GlobalVal:
+	{
+		return PBFromIndex(pConstGlob->m_word.m_s32);
+	}
+	default:
+		EWC_ASSERT(false, "expected global pointer value");
+		return nullptr;
+	}
 }
 
 size_t CDataSegment::CB()
@@ -1030,6 +1042,10 @@ static void PrintIntOperand(SStringBuffer * pStrbuf, int cBOperand, OPK opk, SWo
 	case OPK_RegisterArg:
 		{
 			FormatCoz(pStrbuf, "a[%d]", word.m_s32);
+		} break;
+	case OPK_GlobalVal:
+		{
+			FormatCoz(pStrbuf, "gv[%d]", word.m_s32);
 		} break;
 	case OPK_Global:
 		{
@@ -1759,14 +1775,13 @@ CBuilder::Global * CBuilder::PGlobCreate(STypeInfo * pTin, const char * pChzName
 void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit)
 {
 	BCode::SConstant * pConstGlob = PValDerivedCast<SConstant *>(pValGlob);
-	if (!EWC_FVERIFY(pConstGlob || pConstGlob->m_opk != OPK_Global, "initializing non global"))
+	if (!EWC_FVERIFY(pConstGlob && (pConstGlob->m_opk == OPK_Global || pConstGlob->m_opk == OPK_GlobalVal), "initializing non global"))
 		return;
 
 	BCode::SConstant * pConstInit = PValDerivedCast<SConstant *>(pValInit);
 	if (!EWC_FVERIFY(pConstInit, "initializer must be constant"))
 		return;
 	
-	EWC_ASSERT(pConstGlob->m_opk == OPK_Global, "expected global");
 	u64 cBGlob;
 	u64 cBGlobAlign;
 	if (pConstInit->m_opk == OPK_Global)
@@ -1775,13 +1790,23 @@ void CBuilder::SetInitializer(BCode::SValue * pValGlob, BCode::SValue * pValInit
 		auto pTinDst = pTinptrGlob->m_pTinPointedTo;
 		
 		{
-			CalculateByteSizeAndAlign(m_pDlay, pTinptrGlob->m_pTinPointedTo, &cBGlob, &cBGlobAlign);
-
 			auto pIGlobIndex = (s32*)m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
+
 			auto pIInitIndex = (s32*)m_dataseg.PBFromIndex(pConstInit->m_word.m_s32);
 			m_dataseg.DeepCopy(m_pDlay, pTinptrGlob->m_pTinPointedTo, *pIGlobIndex, *pIInitIndex);
 			return;
 		}
+	}
+	else if (pConstInit->m_opk == OPK_GlobalVal)
+	{
+		auto pTinptrGlob = PTinRtiCast<STypeInfoPointer *>(pConstGlob->m_pTin);
+		auto pTinDst = pTinptrGlob->m_pTinPointedTo;
+
+		auto pIGlobIndex = (s32*)m_dataseg.PBFromIndex(pConstGlob->m_word.m_s32);
+		s32 iBSrc = pConstInit->m_word.m_s32;
+
+		m_dataseg.DeepCopy(m_pDlay, pTinptrGlob->m_pTinPointedTo, *pIGlobIndex, iBSrc);
+		return;
 	}
 
 	CalculateByteSizeAndAlign(m_pDlay, pConstGlob->m_pTin, &cBGlob, &cBGlobAlign);
@@ -2210,10 +2235,6 @@ inline void SetOperandFromValue(
 				pValout->m_cBRegister = (pConst->m_litty.m_cBit + 7) / 8;
 				EWC_ASSERT(FIsValidCBRegister(pValout->m_cBRegister), "unexpected operand size.");
 			} break;
-		case OPK_Global:
-			{
-				pValout->m_cBRegister = pDlay->m_cBPointer;
-			} break;
 		default:
 			{
 				u64 cB; 
@@ -2592,6 +2613,7 @@ static inline void ReadOpcode(CVirtualMachine * pVm, SInstruction * pInst, int c
 	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
+	case OPK_GlobalVal:
 	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordLhs, pInst->m_wordLhs.m_s32, cB);	break;
 	}
 }
@@ -2604,6 +2626,7 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, cB);		break;
+	case OPK_GlobalVal:
 	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordLhs, pInst->m_wordLhs.m_s32, cB);	break;
 	}
 
@@ -2613,6 +2636,7 @@ static inline void ReadOpcodes(CVirtualMachine * pVm, SInstruction * pInst, int 
 	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, cB);		break;
+	case OPK_GlobalVal:
 	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordRhs, pInst->m_wordRhs.m_s32, cB);	break;
 	}
 }
@@ -2627,6 +2651,7 @@ static inline void ReadCastOpcodes(CVirtualMachine * pVm, SInstruction * pInst, 
 	case OPK_LiteralArg:	*pWordRhs = pInst->m_wordRhs;										break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordRhs, pInst->m_wordRhs.m_s32, 8);		break;
+	case OPK_GlobalVal:
 	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordRhs, pInst->m_wordRhs.m_s32, 8);		break;
 	}
 
@@ -2636,6 +2661,7 @@ static inline void ReadCastOpcodes(CVirtualMachine * pVm, SInstruction * pInst, 
 	case OPK_LiteralArg:	*pWordLhs = pInst->m_wordLhs;															break;
 	case OPK_Register:
 	case OPK_RegisterArg:	LoadWord(pVm->m_pBStack, pWordLhs, pInst->m_wordLhs.m_s32, int(pWordRhs->m_u64));		break;
+	case OPK_GlobalVal:
 	case OPK_Global:		LoadWord(pVm->m_pBGlobal, pWordLhs, pInst->m_wordLhs.m_s32, int(pWordRhs->m_u64));		break;
 	}
 }
@@ -2650,6 +2676,7 @@ static inline void * PVReadAddressLhs(CVirtualMachine * pVm, SInstruction * pIns
 	case OPK_Register:
 	case OPK_RegisterArg:	
 		return &pVm->m_pBStack[pInst->m_wordLhs.m_s32];
+	case OPK_GlobalVal:
 	case OPK_Global:		
 		return &pVm->m_pBGlobal[pInst->m_wordLhs.m_s32];
 	default: 
@@ -2657,20 +2684,6 @@ static inline void * PVReadAddressLhs(CVirtualMachine * pVm, SInstruction * pIns
 		return nullptr;
 	}
 }
-
-/*
-template <typename T> struct SWordElement		{ T Lookup(SWord & word) { return word.m_u64; } };
-template <> struct SWordElement<s8>				{ T Lookup(SWord & word) { return word.m_s8; } };
-template <> struct SWordElement<s16>			{ T Lookup(SWord & word) { return word.m_s16; } };
-template <> struct SWordElement<s32>			{ T Lookup(SWord & word) { return word.m_s32; } };
-template <> struct SWordElement<s64>			{ T Lookup(SWord & word) { return word.m_s64; } };
-template <> struct SWordElement<u8>				{ T Lookup(SWord & word) { return word.m_u8; } };
-template <> struct SWordElement<u16>			{ T Lookup(SWord & word) { return word.m_u16; } };
-template <> struct SWordElement<u32>			{ T Lookup(SWord & word) { return word.m_u32; } };
-template <> struct SWordElement<u64>			{ T Lookup(SWord & word) { return word.m_u64; } };
-template <> struct SWordElement<f32>			{ T Lookup(SWord & word) { return word.m_f32; } };
-template <> struct SWordElement<f64>			{ T Lookup(SWord & word) { return word.m_f64; } };
-*/
 
 // partial specialization to help write op handlers
 template <s32 CB> struct SWordOpsize			{ };
@@ -4242,7 +4255,6 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 	if (!pTinstruct)
 		return nullptr;
 
-
 	u64 cB;
 	u64 cBAlign;
 	CalculateByteSizeAndAlign(m_pDlay, pTinstruct, &cB, &cBAlign);
@@ -4254,9 +4266,9 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 	auto pBGlobalStart = pBGlobal;
 
 	auto pConstPtr = m_blistConst.AppendNew();
-	pConstPtr->m_opk = OPK_Global;
-	pConstPtr->m_pTin = m_pSymtab->PTinptrAllocate(pTinstruct);
-	pConstPtr->m_word.m_s64 = iBPointer;
+	pConstPtr->m_opk = OPK_GlobalVal;
+	pConstPtr->m_pTin = pTinstruct;
+	pConstPtr->m_word.m_s64 = iBGlobal;
 
 	for (u32 ipLval = 0; ipLval < cpLval; ++ipLval)
 	{
@@ -4273,7 +4285,7 @@ CBuilder::LValue * CBuilder::PLvalConstantStruct(STypeInfo * pTin, LValue ** apL
 		pBGlobal = (u8 *)PVAlign(pBGlobal, cBAlignField);
 		EWC_ASSERT(ptrdiff_t(pTypememb->m_dBOffset) == (pBGlobal - pBGlobalStart), "element layout error");	
 
-		if (pConst->m_opk == OPK_Global)
+		if (pConst->m_opk == OPK_Global || pConst->m_opk == OPK_GlobalVal)
 		{
 			auto pBSource = m_dataseg.PBFromGlobal(pConst);
 			// BB - needs deep copy

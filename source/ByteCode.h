@@ -39,7 +39,8 @@ namespace BCode
 		OPK_Register,		// stack indexed "register" value (relative to local stack frame)
 		OPK_RegisterArg,	// stack indexed "register" value (relative to argument stack frame)
 
-		OPK_Global,			// global index, lives in the data segment
+		OPK_GlobalVal,		// global index, lives in the data segment
+		OPK_Global,			// global index, lives in the data segment, is expected to be a pointer to the value 
 	};
 
 	inline bool FIsLiteral(OPK opk)
@@ -107,6 +108,17 @@ namespace BCode
 						:SConstant(VALK_BCodeRegister)
 							{ ; }
 	};
+
+	// Should change BCode::SInstruction to use this rather than cBRegister to make handling 1 bit sign extensions less hacky
+	/* enum OPBITS
+	{
+		OPBITS_1,
+		OPBITS_8,
+		OPBITS_16,
+		OPBITS_32,
+		OPBITS_64,
+		OPBITS_Nil = -1,
+	};*/
 
 	// packed instruction - just the info needed for runtime - not for building bytecode
 	struct SInstruction // tag = inst

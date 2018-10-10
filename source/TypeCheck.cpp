@@ -1508,7 +1508,7 @@ void FinalizeStructLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSy
 		return;
 
 	auto pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinlit->m_pTinSource);
-	if (EWC_FVERIFY(pTinstruct, "struct literal missing struct type"))
+	if (!EWC_FVERIFY(pTinstruct, "struct literal missing struct type"))
 	{
 		return;
 	}
@@ -3740,16 +3740,17 @@ STypeInfo * PTinReturnFromStnodProcedure(CSTNode * pStnod)
 	return pStnod->PStnodChild(pStproc->m_iStnodReturnType)->m_pTin;
 }
 
-STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
+int ITypemembLookup(STypeInfoStruct * pTinstruct, const CString & strMemberName)
 {
 	// BB - could just store the members in a contiguous array... simplify this loop
+	int iTypememb = 0;
 	auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
-	for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb)
+	for (auto pTypememb = pTinstruct->m_aryTypemembField.A(); pTypememb != pTypemembMax; ++pTypememb, ++iTypememb)
 	{
 		if (pTypememb->m_strName == strMemberName)
-			return pTypememb;
+			return iTypememb;
 	}
-	return nullptr;
+	return -1;
 }
 
 const char * PChzFromIvalk(IVALK ivalk)

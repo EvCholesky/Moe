@@ -365,7 +365,7 @@ test NestedTypespec
 		?inp("ENU enum SOutside.SInside.iint { A }") + ?tc(""),
 		?inp("fun proc (n: SOutside.SInside.iint) {}") + ?tc("(fun(s32)->void fun (Params (s32 n (s32 (SInside SOutside SInside) s32))) void ({} (void)))"),
 		?inp("n: int; n2 := cast(SOutside.SInside.iint)n") + ?tc("(int n int) (s32 n2 (s32 (s32 (SInside SOutside SInside) s32) int))"),
-		?inp("aN := :[]SOutside.SInside.iint { 1, 2}") + ?tc("([]s32 aN (Literal:Array ([]s32 (s32 (SInside SOutside SInside) s32)) ({} Literal:Int32 Literal:Int32)))")
+		?inp("aN := :[]SOutside.SInside.iint { 1, 2}") + ?tc("([2]s32 aN (Literal:Array ([]s32 (s32 (SInside SOutside SInside) s32)) ({} Literal:Int32 Literal:Int32)))")
 	}
 
 // Enumerations:

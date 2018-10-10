@@ -78,7 +78,7 @@ aN : [2] int;   // fixed size array
 aN : [] int;    // array reference (pointer + size)
 aN : [..] int;  // dynamic array (not yet implemented)
 
-aN := {:s16: 2, 3, 4}
+aN := :[]s16 {2, 3, 4}
 ```
 
 Each array type also has a member `count` to query the number of elements it contains.

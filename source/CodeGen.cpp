@@ -2933,6 +2933,28 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 			auto pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
 			return pBuild->PLvalConstantArray(pLtypeElement, apLval, u32(pTinlit->m_c));
 		} break;
+	case LITK_Struct:
+		{
+			auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTinlit->m_pTinSource);
+			auto cginitk = CginitkCompute(pTinstruct, nullptr);
+			switch (cginitk)
+			{
+			case CGINITK_NoInit:
+			case CGINITK_MemsetZero:
+			case CGINITK_AssignInitializer:
+			case CGINITK_MemcpyGlobal:
+				{
+					pLval = PLvalBuildConstantInitializer(pBuild, pTinstruct, pStnod);
+				} break;
+			case CGINITK_LoopingInit:
+			case CGINITK_InitializerProc:
+				EWC_ASSERT(false, "TDB struct literal with difficult init kind.")
+					break;
+			default:
+				EWC_ASSERT(false, "unhandled init kind.");
+				break;
+			}
+		} break;
 	default:
 		break;
 	}
@@ -3236,7 +3258,7 @@ typename BUILD::Instruction * PInstCreateLoopingInit(CWorkspace * pWork, BUILD *
 
 // allocate a global constant used to initialize type with memcpy
 template <typename BUILD>
-typename BUILD::LValue * PLvalBuildConstantInitializer(CWorkspace * pWork, BUILD * pBuild, STypeInfo * pTin, CSTNode * pStnodInit)
+typename BUILD::LValue * PLvalBuildConstantInitializer(BUILD * pBuild, STypeInfo * pTin, CSTNode * pStnodInit)
 {
 	if (pTin->m_tink == TINK_Struct)
 	{
@@ -3250,16 +3272,61 @@ typename BUILD::LValue * PLvalBuildConstantInitializer(CWorkspace * pWork, BUILD
 		CSTNode * pStnodStruct = pTinstruct->m_pStnodStruct;
 		EWC_ASSERT(pStnodStruct, "missing definition in struct type info");
 
+		// build up member initializer array
+		CDynAry<CSTNode *> arypStnodInit(pBuild->m_pAlloc, BK_CodeGen, cTypememb);
+		arypStnodInit.AppendFill(cTypememb, nullptr);
+
+		CSTNode * pStnodList = nullptr;
+		if (pStnodInit && EWC_FVERIFY(pStnodInit->m_park == PARK_CompoundLiteral, "expected struct literal"))
+		{
+			pStnodList = pStnodInit->PStnodChildSafe(1);
+			if (!EWC_FVERIFY(pStnodList && pStnodList->m_park == PARK_ExpressionList, "expected expression list"))
+			{
+				pStnodList = nullptr;
+			}
+		}
+
+		// build up initial values from explicit initializer
+		if (pStnodList)
+		{
+			for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
+			{
+				if (!pStnodInit)
+					continue;
+
+				auto pStnodInit = pStnodList->PStnodChildSafe(iTypememb);
+				if (pStnodInit && pStnodInit->m_park == PARK_ArgumentLabel)
+				{
+					auto strIdent = StrFromIdentifier(pStnodInit->PStnodChildSafe(0));
+					auto iTypemembLabel = ITypemembLookup(pTinstruct, strIdent);
+					if (EWC_FVERIFY(iTypemembLabel >= 0, "failed looking up member"))
+					{
+						arypStnodInit[iTypemembLabel] = pStnodInit;
+					}
+					continue;
+				}
+
+				arypStnodInit[iTypememb] = pStnodInit;
+			}
+		}
+
 		for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 		{
 			STypeStructMember * pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 			CSTNode * pStnodDecl = pTypememb->m_pStnod;
-			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
-			if (!EWC_FVERIFY(pStdecl, "expected decl"))
-				continue;
 
 			BUILD::LValue * pLvalMember = nullptr;
-			auto pStnodInitMemb = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
+			auto pStnodInitMemb = arypStnodInit[iTypememb];
+
+			// no explicit initializer, see if struct has an inital value
+			if (!pStnodInitMemb)
+			{
+				auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
+				if (EWC_FVERIFY(pStdecl, "expected decl"))
+				{
+					pStnodInitMemb = pStnodDecl->PStnodChildSafe(pStdecl->m_iStnodInit);
+				}
+			}
 
 			if (pStnodInitMemb && pStnodInitMemb->m_park != PARK_Uninitializer)
 			{
@@ -3272,13 +3339,15 @@ typename BUILD::LValue * PLvalBuildConstantInitializer(CWorkspace * pWork, BUILD
 
 			if (!pLvalMember)
 			{
-				pLvalMember = PLvalBuildConstantInitializer(pWork, pBuild, pTypememb->m_pTin, nullptr);
+				pLvalMember = PLvalBuildConstantInitializer(pBuild, pTypememb->m_pTin, nullptr);
 			}
 			apLvalMember[iTypememb] = pLvalMember;
 		}
 
 		auto pCgstruct = pBuild->PCgstructEnsure(pTinstruct);
-		return pBuild->PLvalConstantStruct(pCgstruct->m_pLtype, apLvalMember, cTypememb);
+		auto pLvalStruct = pBuild->PLvalConstantStruct(pCgstruct->m_pLtype, apLvalMember, cTypememb);
+		
+		return pLvalStruct;
 	}
 	else if (pTin->m_tink == TINK_Array)
 	{
@@ -3300,7 +3369,7 @@ typename BUILD::LValue * PLvalBuildConstantInitializer(CWorkspace * pWork, BUILD
 					auto cginitk = CginitkCompute(pTinary->m_pTin, nullptr);
 					if (cginitk == CGINITK_MemcpyGlobal)
 					{
-						auto pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pTinary->m_pTin, nullptr);
+						auto pLvalInit = PLvalBuildConstantInitializer(pBuild, pTinary->m_pTin, nullptr);
 						auto apLval = (BUILD::LValue **)pBuild->m_pAlloc->EWC_ALLOC_TYPE_ARRAY(BUILD::LValue*, (size_t)pTinary->m_c);
 
 						for (s64 iElement = 0; iElement < pTinary->m_c; ++iElement)
@@ -3475,7 +3544,7 @@ static inline typename BUILD::Value * PValInitialize(
 					auto strName = pTin->m_strName;
 					auto strPunyName = StrPunyEncode(strName.PCoz());
 
-					auto pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pTin, pStnodInit);
+					auto pLvalInit = PLvalBuildConstantInitializer(pBuild, pTin, pStnodInit);
 
 					auto pLtype = pBuild->PLtypeFromPTin(pTin);
 
@@ -3503,7 +3572,7 @@ static inline typename BUILD::Value * PValInitialize(
 					auto strName = pTin->m_strName;
 					auto strPunyName = StrPunyEncode(strName.PCoz());
 
-					auto pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pTin, pStnodInit);
+					auto pLvalInit = PLvalBuildConstantInitializer(pBuild, pTin, pStnodInit);
 
 					auto pLtype = pBuild->PLtypeFromPTin(pTin);
 
@@ -4647,7 +4716,7 @@ typename BUILD::Value * PValGenerateDecl(
 			return pGlob;
 		}
 
-		pLvalInit = PLvalBuildConstantInitializer(pWork, pBuild, pStnod->m_pTin, pStnodInit);
+		pLvalInit = PLvalBuildConstantInitializer(pBuild, pStnod->m_pTin, pStnodInit);
 		pBuild->SetInitializer(pGlob, pLvalInit);
 
 		return pGlob;
@@ -5247,9 +5316,10 @@ typename BUILD::Value * PValGenerateSymbolPath(
 		if (!EWC_FVERIFY(pTinstruct, "missing type structure in symbol path for %s", StrFromTypeInfo(pTinLhs).PCoz()))
 			return nullptr;
 
-		auto pTypememb = PTypemembLookup(pTinstruct, pSymRhs->m_strName);
-		if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s.%s", pTinstruct->m_strName.PCoz(), pSymRhs->m_strName.PCoz()))
+		int iTypememb = ITypemembLookup(pTinstruct, pSymRhs->m_strName);
+		if (!EWC_FVERIFY(iTypememb >= 0, "cannot find structure member %s.%s", pTinstruct->m_strName.PCoz(), pSymRhs->m_strName.PCoz()))
 			return nullptr;
+		auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 
 		BUILD::GepIndex * apLvalIndex[3] = {};
 		int cpLvalIndex = 0;
@@ -5303,9 +5373,10 @@ typename BUILD::Instruction * PInstGepFromSymbolList(
 		if (!EWC_FVERIFY(pTinstruct, "missing type structure in symbol path for %s", pSym->m_strName.PCoz()))
 			return nullptr;
 
-		auto pTypememb = PTypemembLookup(pTinstruct, pSym->m_strName);
-		if (!EWC_FVERIFY(pTypememb, "cannot find structure member %s", pSym->m_strName.PCoz()))
+		int iTypememb = PTypemembLookup(pTinstruct, pSym->m_strName);
+		if (!EWC_FVERIFY(iTypememb >= 0, "cannot find structure member %s", pSym->m_strName.PCoz()))
 			return nullptr;
+		auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
 
 
 		BUILD::GepIndex * apLvalIndex[3] = {};

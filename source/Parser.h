@@ -133,7 +133,7 @@ enum PARK : s16 // PARse Kind
 
 	PARK_List,				// declarations used by structs
 	PARK_ParameterList,		// comma separated declarations used by argument lists
-	PARK_ExpressionList,	// list of expressions, used by array literals - doesn't error on rhs only values.
+	PARK_ExpressionList,	// list of expressions, used by compound literals - doesn't error on rhs only values.
 	PARK_If,
 	PARK_Else,
 

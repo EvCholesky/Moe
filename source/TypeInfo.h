@@ -405,7 +405,7 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	s64									m_cBAlign;
 };
 
-STypeStructMember * PTypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
+int ITypemembLookup(STypeInfoStruct * pTinstruct, const EWC::CString & strMemberName);
 
 struct STypeInfoEnumConstant // tag = tinecon
 {
