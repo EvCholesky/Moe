@@ -38,10 +38,19 @@ enum FPDECL
 };
 EWC_DEFINE_GRF(GRFPDECL, FPDECL, u32);
 
+enum FEXP
+{
+	FEXP_AllowLiteralMemberLabel = 0x1,
+
+	FEXP_None			= 0x0,
+	FEXP_All			= 0x1,
+};
+EWC_DEFINE_GRF(GRFEXP, FEXP, u32);
+
 CSTNode * PStnodParseCompoundStatement(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtab);
 CSTNode * PStnodExpectCompoundStatement(CParseContext * pParctx, SLexer * pLex, const char * pCozPriorStatement);
 CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex);
-CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex);
+CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex, GRFEXP grfexp = FEXP_None);
 CSTNode * PStnodParseLogicalOrExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload);
@@ -575,11 +584,12 @@ STypeInfo * PTinForInt(CSymbolTable * pSymtab, u64 uMin, u64 nLast)
 
 CSTNode * PStnodParseExpressionList(
 	CParseContext * pParctx,
-	SLexer * pLex)
+	SLexer * pLex,
+	GRFEXP grfexp)
 {
 	SLexerLocation lexloc(pLex);
 
-	CSTNode * pStnodExp = PStnodParseExpression(pParctx, pLex);
+	CSTNode * pStnodExp = PStnodParseExpression(pParctx, pLex, grfexp);
 	CSTNode * pStnodList = nullptr;
 
 	if (pStnodExp)
@@ -590,7 +600,9 @@ CSTNode * PStnodParseExpressionList(
 
 		while (FConsumeToken(pLex, TOK(',')))
 		{
-			pStnodExp = PStnodParseExpression(pParctx, pLex);
+			CSTNode * pStnodLabel = nullptr;
+
+			pStnodExp = PStnodParseExpression(pParctx, pLex, grfexp);
 
 			if (!pStnodExp)
 			{
@@ -752,7 +764,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 
 				FExpect(pParctx, pLex, TOK('{'), "while parsing struct/array literal");
 
-				CSTNode * pStnodValues = PStnodParseExpressionList(pParctx, pLex);
+				CSTNode * pStnodValues = PStnodParseExpressionList(pParctx, pLex, FEXP_AllowLiteralMemberLabel);
 				pStdecl->m_iStnodInit = pStnodLit->IAppendChild(pStnodValues);
 
 				FExpect(pParctx, pLex, TOK('}'), "while parsing struct/array literal");
@@ -1281,13 +1293,55 @@ CSTNode * PStnodParseAssignmentExpression(CParseContext * pParctx, SLexer * pLex
 	}
 }
 
-CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex, GRFEXP grfexp)
 {
-	CSTNode * pStnod = PStnodParseAssignmentExpression(pParctx, pLex);
+	SLexer lexStart = *pLex;
+
+	CSTNode * pStnodLabel = nullptr;
+
+	if (pLex->m_tok == TOK_Label && grfexp.FIsSet(FEXP_AllowLiteralMemberLabel))
+	{
+		TokNext(pLex);
+		SLexerLocation lexloc(pLex);
+
+		pStnodLabel = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+		pStnodLabel->m_tok = TOK_Label;
+		pStnodLabel->m_park = PARK_ArgumentLabel;
+
+		CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+		if (!pStnodIdent)
+		{
+			ParseError(pParctx, pLex, "Argument label did not specify an argument name");
+		}
+		else
+		{
+			pStnodLabel->IAppendChild(pStnodIdent);
+		}
+	}
+
+	CSTNode * pStnodExp = PStnodParseAssignmentExpression(pParctx, pLex);
+	if (!pStnodExp)
+	{
+		*pLex = lexStart;
+		if (pStnodLabel)
+		{
+			CSTNode * pStnodIdent = pStnodLabel->PStnodChildSafe(0);
+			ParseError(pParctx, pLex, "Labeled expression '%s' does not specify a value", StrFromIdentifier(pStnodIdent).PCoz());
+
+			pParctx->m_pAlloc->EWC_DELETE(pStnodLabel);
+		}
+		return nullptr;
+	}
+
+	if (pStnodLabel)
+	{
+		pStnodLabel->IAppendChild(pStnodExp);
+		pStnodExp = pStnodLabel;
+	}
 
 	// TODO: handle Expression > AssignmentExpression , AssignmentExpression
 
-	return pStnod;
+	return pStnodExp;
 }
 
 CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SLexer * pLex)
@@ -3578,7 +3632,7 @@ CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex)
 
 	CSTIdentifier * pStidentLabel = nullptr;
 
-	if (FConsumeToken(pLex, TOK('`')))
+	if (FConsumeToken(pLex, TOK_Label))
 	{
 		if (pLex->m_tok != TOK_Identifier)
 		{

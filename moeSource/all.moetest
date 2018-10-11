@@ -1160,6 +1160,17 @@ test StructBakedInstance
 		?type(s16) + ?args(22|12345) + ?littype(Int16)
 	}
 
+test StructLiteral
+	prereq "SFoo struct { m_a, m_b, m_c: int }"
+	input "foo := :SFoo {?lit}"
+	parse "(decl foo (compLit SFoo (?plit)))"
+	typecheck "(SFoo foo (Literal:Struct SFoo (?tc)))"
+	{
+		?lit("11, 22, 33") + ?plit("{} 11 22 33") + ?tc("{} Literal:Int64 Literal:Int64 Literal:Int64"),
+		?lit("`m_a 11, `m_b 22, `m_c 33") + ?plit("{} (` m_a 11) (` m_b 22) (` m_c 33)") + ?tc("{} (Literal:Int m_a Literal:Int64) (Literal:Int m_b Literal:Int64) (Literal:Int m_c Literal:Int64)"),
+		?lit("11, 22, `bad 33") + ?plit("{} 11 22 (` bad 33)") + ?tc(""?errid(2026)),
+		?lit("11, `m_b 22, 33") + ?plit("{} 11 (` m_b 22) 33") + ?tc(""?errid(2027)),
+	}
 
 // Strings:
 test StringLiteral

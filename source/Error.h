@@ -65,6 +65,8 @@ enum ERRID
 	ERRID_UsingStatementCycle		= 2023,
 	ERRID_UsingStatementCollision	= 2024,
 	ERRID_UsingStatementBadType		= 2025,
+	ERRID_LiteralMemberNotFound		= 2026,
+	ERRID_LiteralUnnamedMember		= 2027,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

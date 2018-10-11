@@ -1486,7 +1486,14 @@ void FinalizeArrayLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSym
 	{
 		for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
 		{
-			FinalizeLiteralType(pTcwork, pSymtab, pTinary->m_pTin, pStnodList->PStnodChild(iStnod));
+			auto pStnodIt = pStnodList->PStnodChild(iStnod);
+			if (pStnodIt && pStnodIt->m_park == PARK_ArgumentLabel)
+			{
+				EmitError(pTcwork, pStnodLit, "labeled member not allowed in array literal"); 
+				pStnodIt = pStnodIt->PStnodChildSafe(1);
+			}
+
+			FinalizeLiteralType(pTcwork, pSymtab, pTinary->m_pTin, pStnodIt);
 		}
 	}
 }
@@ -1516,17 +1523,66 @@ void FinalizeStructLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSy
 	auto pStnodList = pStnodDef->PStnodChildSafe(pStdecl->m_iStnodInit);
 	if (pStnodList)
 	{
-		if (pStnodList->CStnodChild() > pTinstruct->m_aryTypemembField.C())
-		{
-			EWC_ASSERT(false, "too many initializers");
-			return;
-		}
+		int cTypememb = int(pTinstruct->m_aryTypemembField.C());
+        CDynAry<CSTNode *> arypStnodInit(pTcwork->m_pAlloc, BK_CodeGen, cTypememb);
+        arypStnodInit.AppendFill(cTypememb, nullptr);
 
-		// TODO - this needs to be changed to support named members in struct literals 
+		int iStnodNamed = -1;
 		for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
 		{
-			auto pTypememb = &pTinstruct->m_aryTypemembField[iStnod];
-			FinalizeLiteralType(pTcwork, pSymtab, pTypememb->m_pTin, pStnodList->PStnodChild(iStnod));
+			auto pStnodIt = pStnodList->PStnodChild(iStnod);
+			if (pStnodIt->m_park == PARK_ArgumentLabel)
+			{
+				if (iStnodNamed < 0)
+				{
+					iStnodNamed = iStnod;
+				}
+
+				CSTNode * pStnodIdentifier = pStnodIt->PStnodChild(0);
+				CString strIdentifier(StrFromIdentifier(pStnodIdentifier));
+				int iTypememb = ITypemembLookup(pTinstruct, strIdentifier.PCoz());
+				if (iTypememb < 0)
+				{
+					EmitError(pTcwork, pStnodLit, ERRID_LiteralMemberNotFound, "struct '%s' has no member named '%s'", 
+						pTinstruct->m_strName.PCoz(), 
+						strIdentifier.PCoz());
+					return;
+				}
+				else
+				{
+					EWC_ASSERT(pStnodIt->CStnodChild() == 2, "missing label value");
+					arypStnodInit[iTypememb] = pStnodIt->PStnodChildSafe(1);
+				}
+			}
+			else
+			{
+				if (iStnodNamed >= 0)
+				{
+					EmitError(pTcwork, pStnodLit, ERRID_LiteralUnnamedMember, 
+						"Unnamed expression encountered after named expression %d", iStnodNamed + 1);
+					return;
+				}
+
+				if (iStnod > pTinstruct->m_aryTypemembField.C())
+				{
+					EmitError(pTcwork, pStnodLit, "too many initializers for struct '%s'", pTinstruct->m_strName.PCoz());
+					return;
+				}
+				else
+				{
+					arypStnodInit[iStnod] = pStnodIt;
+				}
+			}
+		}
+
+		for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
+		{
+			auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
+			auto pStnodIt = arypStnodInit[iTypememb];
+			if (pStnodIt)
+			{
+				FinalizeLiteralType(pTcwork, pSymtab, pTypememb->m_pTin, pStnodIt);
+			}
 		}
 	}
 }
@@ -7538,7 +7594,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (pStdecl->m_iStnodInit >= 0)
 						{
 							auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
-							EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid ArrayLiteral");
+							EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid CompoundLiteral");
 						}
 
 						pSymtab->AddManagedTin(pTinlit);
@@ -7548,7 +7604,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					else
 					{
 						auto strTin = StrFromTypeInfo(pTinType);
-						EmitError(pTcwork, pStnod, "Compound literal expectes struct or array type, encountered %s", strTin.PCoz());
+						EmitError(pTcwork, pStnod, "Compound literal expects struct or array type, encountered %s", strTin.PCoz());
 						return TCRET_StoppingError;
 					}
 				}

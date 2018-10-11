@@ -3291,22 +3291,23 @@ typename BUILD::LValue * PLvalBuildConstantInitializer(BUILD * pBuild, STypeInfo
 		{
 			for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 			{
-				if (!pStnodInit)
-					continue;
+				auto pStnodTypememb = pStnodList->PStnodChildSafe(iTypememb);
 
-				auto pStnodInit = pStnodList->PStnodChildSafe(iTypememb);
-				if (pStnodInit && pStnodInit->m_park == PARK_ArgumentLabel)
+				if (pStnodTypememb && pStnodTypememb->m_park == PARK_ArgumentLabel)
 				{
-					auto strIdent = StrFromIdentifier(pStnodInit->PStnodChildSafe(0));
+					auto strIdent = StrFromIdentifier(pStnodTypememb->PStnodChildSafe(0));
 					auto iTypemembLabel = ITypemembLookup(pTinstruct, strIdent);
 					if (EWC_FVERIFY(iTypemembLabel >= 0, "failed looking up member"))
 					{
-						arypStnodInit[iTypemembLabel] = pStnodInit;
+						auto pStnodExp = pStnodTypememb->PStnodChild(1);
+						EWC_ASSERT(pStnodExp, "argument label missing expression value");
+						arypStnodInit[iTypemembLabel] = pStnodExp;
 					}
-					continue;
 				}
-
-				arypStnodInit[iTypememb] = pStnodInit;
+				else if (pStnodTypememb)
+				{
+					arypStnodInit[iTypememb] = pStnodTypememb;
+				}
 			}
 		}
 
