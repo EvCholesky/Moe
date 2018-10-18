@@ -365,7 +365,7 @@ test NestedTypespec
 		?inp("ENU enum SOutside.SInside.iint { A }") + ?tc(""),
 		?inp("fun proc (n: SOutside.SInside.iint) {}") + ?tc("(fun(s32)->void fun (Params (s32 n (s32 (SInside SOutside SInside) s32))) void ({} (void)))"),
 		?inp("n: int; n2 := cast(SOutside.SInside.iint)n") + ?tc("(int n int) (s32 n2 (s32 (s32 (SInside SOutside SInside) s32) int))"),
-		?inp("aN := :[]SOutside.SInside.iint { 1, 2}") + ?tc("([2]s32 aN (Literal:Array ([]s32 (s32 (SInside SOutside SInside) s32)) ({} Literal:Int32 Literal:Int32)))")
+		?inp("aN := :[]SOutside.SInside.iint { 1, 2}") + ?tc("([2]s32 aN (Literal:Compound ([]s32 (s32 (SInside SOutside SInside) s32)) ({} Literal:Int32 Literal:Int32)))")
 	}
 
 // Enumerations:
@@ -373,7 +373,7 @@ test NestedTypespec
 test EnumDecl
 	input "ENUMK enum ?loose { Ick := 1, Foo, Bah := 3 }"
 	parse "(enum ENUMK ?loose({} (enumConst nil) (enumConst min) (enumConst last) (enumConst max) (compLit names) (compLit values) (enumConst Ick 1) (enumConst Foo) (enumConst Bah 3)))"
-	typecheck "(ENUMK_enum ENUMK ?loose({} (ENUMK_enum Literal:Enum nil) (ENUMK_enum Literal:Enum min) (ENUMK_enum Literal:Enum last) (ENUMK_enum Literal:Enum max) (Literal:Array names (Literal:Array Literal:String Literal:String Literal:String)) (Literal:Array values (Literal:Array Literal:?litk Literal:?litk Literal:?litk)) (ENUMK_enum Literal:Enum Ick Literal:Int) (ENUMK_enum Literal:Enum Foo) (ENUMK_enum Literal:Enum Bah Literal:Int)))"
+	typecheck "(ENUMK_enum ENUMK ?loose({} (ENUMK_enum Literal:Enum nil) (ENUMK_enum Literal:Enum min) (ENUMK_enum Literal:Enum last) (ENUMK_enum Literal:Enum max) (Literal:Compound names (Literal:Compound Literal:String Literal:String Literal:String)) (Literal:Compound values (Literal:Compound Literal:?litk Literal:?litk Literal:?litk)) (ENUMK_enum Literal:Enum Ick Literal:Int) (ENUMK_enum Literal:Enum Foo) (ENUMK_enum Literal:Enum Bah Literal:Int)))"
 	values "(_ ENUMK ?loose(_ (?nil nil) (1 min) (3 last) (4 max) (_ names (_ 'Ick' 'Foo' 'Bah')) (_ values (_ 1 2 3)) (1 Ick 1) (2 Foo) (3 Bah 3)))"
 	{
 		?loose("") + ?litk("Int8") + ?nil(-1),
@@ -440,15 +440,15 @@ test EnumImplicitMembers
 		{
 			?memb(names)
 			{
-				?extra("") + ?tctype("[3]&u8") + ?pmemb("ENUMK ?memb") + ?lit(Array) + ?tcinit("Literal:?lit ENUMK_enum ?memb"),
-				?extra(".count") + ?tctype("int") + ?pmemb("(member ENUMK ?memb) count") + ?tcinit("Literal:Int64 (Literal:Array ENUMK_enum ?memb) count"),
-				?extra(".data") + ?tctype("&&u8") + ?pmemb("(member ENUMK ?memb) data") + ?tcinit("?tctype (Literal:Array ENUMK_enum ?memb) data"),
+				?extra("") + ?tctype("[3]&u8") + ?pmemb("ENUMK ?memb") + ?lit(Compound) + ?tcinit("Literal:?lit ENUMK_enum ?memb"),
+				?extra(".count") + ?tctype("int") + ?pmemb("(member ENUMK ?memb) count") + ?tcinit("Literal:Int64 (Literal:Compound ENUMK_enum ?memb) count"),
+				?extra(".data") + ?tctype("&&u8") + ?pmemb("(member ENUMK ?memb) data") + ?tcinit("?tctype (Literal:Compound ENUMK_enum ?memb) data"),
 			},
 			?memb(values)
 			{
-				?extra("") + ?tctype("[3]s8") + ?pmemb("ENUMK ?memb") + ?lit(Array) + ?tcinit("Literal:?lit ENUMK_enum ?memb"),
-				?extra(".count") + ?tctype("int") + ?pmemb("(member ENUMK ?memb) count") + ?tcinit("Literal:Int64 (Literal:Array ENUMK_enum ?memb) count"),
-				?extra(".data") + ?tctype("&s8") + ?pmemb("(member ENUMK ?memb) data") + ?tcinit("?tctype (Literal:Array ENUMK_enum ?memb) data"),
+				?extra("") + ?tctype("[3]s8") + ?pmemb("ENUMK ?memb") + ?lit(Compound) + ?tcinit("Literal:?lit ENUMK_enum ?memb"),
+				?extra(".count") + ?tctype("int") + ?pmemb("(member ENUMK ?memb) count") + ?tcinit("Literal:Int64 (Literal:Compound ENUMK_enum ?memb) count"),
+				?extra(".data") + ?tctype("&s8") + ?pmemb("(member ENUMK ?memb) data") + ?tcinit("?tctype (Literal:Compound ENUMK_enum ?memb) data"),
 			},
 		},
 	}
@@ -630,22 +630,35 @@ test ArrayToPointer
 		?type("&int") + ?ptype("(ptr int)") + ?tctype("(&int int)"),
 	}
 
-test ArrayLiteral
-	input "aN ?decl { 1, 2, 3}"
-	parse "(decl aN ?parsedecl(compLit ?parsedecl({} 1 2 3)))"
-	typecheck "(?tcdecl aN ?tcdetail(Literal:Array ?tcdetail({} Literal:?lit Literal:?lit Literal:?lit)))"
+test ArrayLit
+	prereq "SFoo struct {?memb}; n: int"
+	input "aN ?decl {?init}"
+	parse "(decl aN ([] ?type) (compLit ({} ?pinit)))"
+	typecheck "([]?type aN ([]?type ?type) (Literal:Compound ({} ?tcinit)))"
 	{
-		?type(s16) + ?lit(Int16) + ?decl(": [3] ?type = : [3] ?type") + ?parsedecl("([] 3 ?type) ") + ?tcdecl("[3]?type") + ?tcdetail("(?tcdecl Literal:Int64 ?type) "),
-		?type(int) + ?lit(Int64) + ?decl(": [3] ?type = : [3] ?type") + ?parsedecl("([] 3 ?type) ") + ?tcdecl("[3]?type") + ?tcdetail("(?tcdecl Literal:Int64 ?type) "),
-		?type(int) + ?lit(Int64) + ?decl(":=") + ?parsedecl("") + ?tcdecl("[3]int") + ?tcdetail("")
-		{
-		}	
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?pinit("1 2") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, n"?errid(2028)) + ?pinit("1 n") + ?decl(": []?type = ") + ?tcinit("Literal:?littype int"),
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2.2"?errid(2001)) + ?pinit("1 2.200000") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?pinit("1 2") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?pinit("1 2") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("m_a, m_b: int") + ?type(SFoo) + ?littype(Compound) + ?init("{1, 2}, {3, 4}") + ?pinit("(compLit ({} 1 2)) (compLit ({} 3 4))") + ?decl(": []?type = ") + ?tcinit("(Literal:Compound ({} Literal:Int64 Literal:Int64)) (Literal:Compound ({} Literal:Int64 Literal:Int64))"),
 	}
 
-	test ArrayLiteralConst
+test ArrayLitCast
+	prereq "SFoo struct {?memb}"
+	input "aN ?decl {?init}"
+	parse "(decl aN (compLit ([] 3 ?type) ({} 1 2)))"
+	typecheck "([2]?type aN (Literal:Compound ([2]?type Literal:Int64 ?type) ({} Literal:?littype Literal:?littype)))"
+	{
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?decl(":= :[3]?type "),
+		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?decl(":= :[3]?type "),
+		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?decl(":= :[3]?type "),
+	}
+
+test ArrayLiteralConst
 	input "aN immutable := ?decl {1, 2, 3}"
 	parse "(const aN (compLit ?parsedecl({} 1 2 3)))"
-	typecheck "(Literal:Array aN (Literal:Array ?tcdetail({} Literal:?lit Literal:?lit Literal:?lit)))"
+	typecheck "(Literal:Compound aN (Literal:Compound ?tcdetail({} Literal:?lit Literal:?lit Literal:?lit)))"
 	values "(_ aN (_ ?valdecl(_ 1 2 3)))"
 	{
 		?type("int"|"s8") + ?lit("Int")
@@ -1161,15 +1174,17 @@ test StructBakedInstance
 	}
 
 test StructLiteral
-	prereq "SFoo struct { m_a, m_b, m_c: int }"
+	prereq "SBar struct { m_n: s8 } SFoo struct { m_a, m_b: int ?nest}"
 	input "foo := :SFoo {?lit}"
 	parse "(decl foo (compLit SFoo (?plit)))"
-	typecheck "(SFoo foo (Literal:Struct SFoo (?tc)))"
+	typecheck "(SFoo foo (Literal:Compound SFoo (?tc)))"
 	{
-		?lit("11, 22, 33") + ?plit("{} 11 22 33") + ?tc("{} Literal:Int64 Literal:Int64 Literal:Int64"),
-		?lit("`m_a 11, `m_b 22, `m_c 33") + ?plit("{} (` m_a 11) (` m_b 22) (` m_c 33)") + ?tc("{} (Literal:Int m_a Literal:Int64) (Literal:Int m_b Literal:Int64) (Literal:Int m_c Literal:Int64)"),
-		?lit("11, 22, `bad 33") + ?plit("{} 11 22 (` bad 33)") + ?tc(""?errid(2026)),
-		?lit("11, `m_b 22, 33") + ?plit("{} 11 (` m_b 22) 33") + ?tc(""?errid(2027)),
+		?lit("11, 22") + ?plit("{} 11 22") + ?tc("{} Literal:Int64 Literal:Int64") + ?nest(""),
+		?lit("`m_a 11, `m_b 22") + ?plit("{} (` m_a 11) (` m_b 22)") + ?tc("{} (Literal:Int m_a Literal:Int64) (Literal:Int m_b Literal:Int64)") + ?nest(""),
+		?lit("11, `bad 33") + ?plit("{} 11 (` bad 33)") + ?tc(""?errid(2026)) + ?nest(""),
+		?lit("`m_b 11, 22") + ?plit("{} (` m_b 11) 22") + ?tc(""?errid(2027)) + ?nest(""),
+		?lit("11, 22, {33}") + ?plit("{} 11 22 (compLit ({} 33))") + ?tc("{} Literal:Int64 Literal:Int64 (Literal:Compound ({} Literal:Int32))") + ?nest("; m_aN: [1] s32"),
+		?lit("11, 22, {33}") + ?plit("{} 11 22 (compLit ({} 33))") + ?tc("{} Literal:Int64 Literal:Int64 (Literal:Compound ({} Literal:Int8))") + ?nest("; m_bar: SBar"),
 	}
 
 // Strings:

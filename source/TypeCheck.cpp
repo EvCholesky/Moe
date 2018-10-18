@@ -200,9 +200,18 @@ STypeInfo * PTinPromoteUntypedDefault(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLit,
+	STypeInfo * pTinExpected = nullptr,
 	ERREP errep = ERREP_ReportErrors);
 bool FDoesOperatorReturnBool(PARK park);
 void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit);
+bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst);
+
+STypeInfo * PTinPromoteUntypedTightest(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodLit,	
+	STypeInfo * pTinDst,
+	ERREP errep = ERREP_ReportErrors);
 
 void RemapGenericStnodCopy(
 	STypeCheckWorkspace * pTcwork,
@@ -1461,129 +1470,158 @@ inline bool FComputeBinaryOpOnLiterals(
 	}
 }
 
-
-void FinalizeArrayLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit, CSTNode * pStnodLit)
+void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit, CSTNode * pStnodLit)
 {
-	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "finalizing array with non-array literal"))
-		return;
-	
-	CSTNode * pStnodDef = pStnodLit;
-	if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
-	{
-		pStnodDef = pTinlit->m_pStnodDefinition;
-	}
-	
-	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDef->m_pStmap);
-	if (!pStdecl)
+	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Compound, "finalizing array with non-array literal"))
 		return;
 
-	auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
-	if (!EWC_FVERIFY(pTinary, "array literal missing array type"))
-		return;
-
-	auto pStnodList = pStnodDef->PStnodChildSafe(pStdecl->m_iStnodInit);
-	if (pStnodList)
-	{
-		for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
-		{
-			auto pStnodIt = pStnodList->PStnodChild(iStnod);
-			if (pStnodIt && pStnodIt->m_park == PARK_ArgumentLabel)
-			{
-				EmitError(pTcwork, pStnodLit, "labeled member not allowed in array literal"); 
-				pStnodIt = pStnodIt->PStnodChildSafe(1);
-			}
-
-			FinalizeLiteralType(pTcwork, pSymtab, pTinary->m_pTin, pStnodIt);
-		}
-	}
-}
-
-void FinalizeStructLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit, CSTNode * pStnodLit)
-{
-	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Struct, "finalizing struct with non-struct literal"))
-		return;
-	
 	CSTNode * pStnodDef = pStnodLit;
 	if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad literal definition"))
 	{
 		pStnodDef = pTinlit->m_pStnodDefinition;
 		EWC_ASSERT(pStnodDef->m_strees == STREES_TypeChecked, "expected type checked by now");
 	}
-	
+
 	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDef->m_pStmap);
 	if (!pStdecl)
 		return;
 
-	auto pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinlit->m_pTinSource);
-	if (!EWC_FVERIFY(pTinstruct, "struct literal missing struct type"))
-	{
-		return;
-	}
-
 	auto pStnodList = pStnodDef->PStnodChildSafe(pStdecl->m_iStnodInit);
-	if (pStnodList)
+	if (!pStnodList)
+		return;
+
+	switch (pTinlit->m_pTinSource->m_tink)
 	{
-		int cTypememb = int(pTinstruct->m_aryTypemembField.C());
-        CDynAry<CSTNode *> arypStnodInit(pTcwork->m_pAlloc, BK_CodeGen, cTypememb);
-        arypStnodInit.AppendFill(cTypememb, nullptr);
-
-		int iStnodNamed = -1;
-		for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
+	case TINK_Array:
 		{
-			auto pStnodIt = pStnodList->PStnodChild(iStnod);
-			if (pStnodIt->m_park == PARK_ArgumentLabel)
+			auto pTinary = (STypeInfoArray *)pTinlit->m_pTinSource;
+			pTinlit->m_c = pStnodList->CStnodChild();
+
+			for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
 			{
-				if (iStnodNamed < 0)
+				auto pStnodIt = pStnodList->PStnodChild(iStnod);
+				if (pStnodIt && pStnodIt->m_park == PARK_ArgumentLabel)
 				{
-					iStnodNamed = iStnod;
+					EmitError(pTcwork, pStnodLit, "labeled member not allowed in array literal"); 
+					pStnodIt = pStnodIt->PStnodChildSafe(1);
 				}
 
-				CSTNode * pStnodIdentifier = pStnodIt->PStnodChild(0);
-				CString strIdentifier(StrFromIdentifier(pStnodIdentifier));
-				int iTypememb = ITypemembLookup(pTinstruct, strIdentifier.PCoz());
-				if (iTypememb < 0)
+				STypeInfo * pTinInit = pStnodIt->m_pTin;
+				if (!pTinInit || pTinInit->m_tink != TINK_Literal)
 				{
-					EmitError(pTcwork, pStnodLit, ERRID_LiteralMemberNotFound, "struct '%s' has no member named '%s'", 
-						pTinstruct->m_strName.PCoz(), 
-						strIdentifier.PCoz());
-					return;
+					EmitError(pTcwork, pStnodIt, ERRID_NonConstantInLiteral,
+						"array element %d cannot be initialize with a non-literal type '%s'",
+						iStnod,
+						StrFromTypeInfo(pTinInit).PCoz());
+					continue;
+				}
+
+				auto pTinElement = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodIt, pTinary->m_pTin);
+				if (FCanImplicitCast(pTinElement, pTinary->m_pTin))
+				{
+					FinalizeLiteralType(pTcwork, pSymtab, pTinary->m_pTin, pStnodIt);
 				}
 				else
 				{
-					EWC_ASSERT(pStnodIt->CStnodChild() == 2, "missing label value");
-					arypStnodInit[iTypememb] = pStnodIt->PStnodChildSafe(1);
+					EmitError(pTcwork, pStnodIt, ERRID_InitTypeMismatch,
+						"array element %d is type '%s', cannot initialize with type '%s'",
+						iStnod,
+						StrFromTypeInfo(pTinary->m_pTin).PCoz(),
+						StrFromTypeInfo(pStnodIt->m_pTin).PCoz());
 				}
 			}
-			else
-			{
-				if (iStnodNamed >= 0)
-				{
-					EmitError(pTcwork, pStnodLit, ERRID_LiteralUnnamedMember, 
-						"Unnamed expression encountered after named expression %d", iStnodNamed + 1);
-					return;
-				}
+		} break;
+	case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTinlit->m_pTinSource;
 
-				if (iStnod > pTinstruct->m_aryTypemembField.C())
+			int cTypememb = int(pTinstruct->m_aryTypemembField.C());
+	        CDynAry<CSTNode *> arypStnodInit(pTcwork->m_pAlloc, BK_CodeGen, cTypememb);
+	        arypStnodInit.AppendFill(cTypememb, nullptr);
+
+			int iStnodNamed = -1;
+			for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
+			{
+				auto pStnodIt = pStnodList->PStnodChild(iStnod);
+				if (pStnodIt->m_park == PARK_ArgumentLabel)
 				{
-					EmitError(pTcwork, pStnodLit, "too many initializers for struct '%s'", pTinstruct->m_strName.PCoz());
-					return;
+					if (iStnodNamed < 0)
+					{
+						iStnodNamed = iStnod;
+					}
+
+					CSTNode * pStnodIdentifier = pStnodIt->PStnodChild(0);
+					CString strIdentifier(StrFromIdentifier(pStnodIdentifier));
+					int iTypememb = ITypemembLookup(pTinstruct, strIdentifier.PCoz());
+					if (iTypememb < 0)
+					{
+						EmitError(pTcwork, pStnodLit, ERRID_LiteralMemberNotFound, "struct '%s' has no member named '%s'", 
+							pTinstruct->m_strName.PCoz(), 
+							strIdentifier.PCoz());
+						return;
+					}
+					else
+					{
+						EWC_ASSERT(pStnodIt->CStnodChild() == 2, "missing label value");
+						arypStnodInit[iTypememb] = pStnodIt->PStnodChildSafe(1);
+					}
 				}
 				else
 				{
-					arypStnodInit[iStnod] = pStnodIt;
+					if (iStnodNamed >= 0)
+					{
+						EmitError(pTcwork, pStnodLit, ERRID_LiteralUnnamedMember, 
+							"Unnamed expression encountered after named expression %d", iStnodNamed + 1);
+						return;
+					}
+
+					if (iStnod > pTinstruct->m_aryTypemembField.C())
+					{
+						EmitError(pTcwork, pStnodLit, "too many initializers for struct '%s'", pTinstruct->m_strName.PCoz());
+						return;
+					}
+					else
+					{
+						arypStnodInit[iStnod] = pStnodIt;
+					}
 				}
 			}
-		}
 
-		for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
-		{
-			auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
-			auto pStnodIt = arypStnodInit[iTypememb];
-			if (pStnodIt)
+			for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 			{
-				FinalizeLiteralType(pTcwork, pSymtab, pTypememb->m_pTin, pStnodIt);
+				auto pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
+				auto pStnodIt = arypStnodInit[iTypememb];
+				if (pStnodIt)
+				{
+					STypeInfo * pTinInit = pStnodIt->m_pTin;
+					if (!pTinInit || pTinInit->m_tink != TINK_Literal)
+					{
+						EmitError(pTcwork, pStnodIt, ERRID_NonConstantInLiteral,
+							"struct member '%s' cannot be initialize with a non-literal type '%s'",
+							pTypememb->m_strName.PCoz(),
+							StrFromTypeInfo(pTinInit).PCoz());
+						continue;
+					}
+
+					pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodIt, pTypememb->m_pTin);
+					if (FCanImplicitCast(pTinInit, pTypememb->m_pTin))
+					{
+						FinalizeLiteralType(pTcwork, pSymtab, pTypememb->m_pTin, pStnodIt);
+					}
+					else
+					{
+						EmitError(pTcwork, pStnodIt, ERRID_InitTypeMismatch,
+							"struct member '%s' is type '%s', cannot initialize with type '%s'",
+							pTypememb->m_strName.PCoz(),
+							StrFromTypeInfo(pTypememb->m_pTin).PCoz(),
+							StrFromTypeInfo(pStnodIt->m_pTin).PCoz());
+					}
+				}
 			}
-		}
+		} break;
+	default:
+		EWC_ASSERT(false, "compound literal with unexpected type '%s'", PChzFromTink(pTinlit->m_pTinSource->m_tink));
+		return;
 	}
 }
 
@@ -1661,13 +1699,9 @@ void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, 
 					CSTValue * pStval = pStnodLit->m_pStval;
 					pTinlit = pSymtab->PTinlitFromLitk(LITK_Integer, 64, pStval->m_stvalk == STVALK_SignedInt);
 				} break;
-			case LITK_Array:
+			case LITK_Compound:
 				{
-					FinalizeArrayLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
-				} break;
-			case LITK_Struct:
-				{
-					FinalizeStructLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
+					FinalizeCompoundLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
 				} break;
 			default: EWC_ASSERT(false, "unexpected literal type");
 			}
@@ -1688,14 +1722,21 @@ void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, 
 			}
 		} break;
 	case TINK_Array:
-		{
-			STypeInfoLiteral * pTinlitPrev = PTinDerivedCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
-			FinalizeArrayLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
-		} break;
 	case TINK_Struct:
 		{
 			STypeInfoLiteral * pTinlitPrev = PTinDerivedCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
-			FinalizeStructLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
+			if (pTinlitPrev && pTinlitPrev->m_litty.m_litk == LITK_Compound)
+			{
+				FinalizeCompoundLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
+			}
+			else
+			{
+				const char * pChzExpect = (pTinDst->m_tink == TINK_Array) ? "array literal" : "struct literal";
+
+				EmitError(pTcwork, pStnodLit, ERRID_NonConstantInLiteral, "Expected %s in literal but encountered %s",
+					pChzExpect,
+					StrFromTypeInfo(pStnodLit->m_pTin).PCoz());
+			}
 		} break;
 	case TINK_Generic:
 		{
@@ -1811,7 +1852,12 @@ inline STypeInfo * PTinFromLiteralFinalized(
 	return nullptr;
 }
 
-static inline STypeInfo * PTinPromoteUntypedCommon(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, bool * pFWasHandled, CSTNode * pStnodLit)
+static inline STypeInfo * PTinPromoteUntypedCommon(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	bool * pFWasHandled,
+	CSTNode * pStnodLit,
+	STypeInfo * pTinExpected)
 {
 	*pFWasHandled = true;
 	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
@@ -1821,7 +1867,7 @@ static inline STypeInfo * PTinPromoteUntypedCommon(STypeCheckWorkspace * pTcwork
 	if (pTinlit->m_tink != TINK_Literal)
 		return pStnodLit->m_pTin;
 
-	if (pTinlit->m_litty.m_litk == LITK_Array)
+	if (pTinlit->m_litty.m_litk == LITK_Compound)
 	{
 		// if this is a constant we need to look up the source STNode
 		if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
@@ -1833,44 +1879,94 @@ static inline STypeInfo * PTinPromoteUntypedCommon(STypeCheckWorkspace * pTcwork
 		if (!EWC_FVERIFY(pStdecl, "bad array literal"))
 			return nullptr;
 
-		auto pStnodValues = pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit);
-
-		if (!pTinlit->m_pTinSource &&
-			EWC_FVERIFY(pStnodValues && pStnodValues->CStnodChild(), "Array literal has no child literals"))
+		auto pStnodInit = pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit);
+		auto pTinSource = pTinlit->m_pTinSource;
+		if (!pTinSource)
 		{
-			auto pTinElement = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodValues->PStnodChild(0));
-			STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+			if (pTinExpected)
+			{
+				if (EWC_FVERIFY(pTinExpected->m_tink == TINK_Array || pTinExpected->m_tink == TINK_Struct, ""))
+				{
+					pTinSource = pTinExpected;
+				}
+			}
 
-			pTinary->m_pTin = pTinElement;
-			pTinary->m_c = pTinlit->m_c;
-			pTinary->m_aryk = ARYK_Fixed;
-			pSymtab->AddManagedTin(pTinary);
-			pTinary = pSymtab->PTinMakeUnique(pTinary);
+			if (!pTinSource)
+			{
+				auto pTinElement = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodInit->PStnodChild(0));
 
-			pTinlit->m_pTinSource = pTinary;
+				STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+				pTinary->m_pTin = pTinElement;
+				pTinary->m_c = pTinlit->m_c;
+				pTinary->m_aryk = ARYK_Fixed;
+				pSymtab->AddManagedTin(pTinary);
+				pTinary = pSymtab->PTinMakeUnique(pTinary);
+
+				pTinSource = pTinary;
+			}
 		}
 
-		auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
-		EWC_ASSERT(pTinary, "array literal without array type");
-		return pTinary;
-	}
-	if (pTinlit->m_litty.m_litk == LITK_Struct)
-	{
-		// if this is a constant we need to look up the source STNode
-		if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
+		pTinlit->m_pTinSource = pTinSource;
+		if (pTinSource && pStnodInit && EWC_FVERIFY(pStnodInit->m_park == PARK_ExpressionList, "expression list expected"))
 		{
-			pStnodLit = pTinlit->m_pStnodDefinition;
+			bool fWasHandled;
+			auto pStnodInit = pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit);
+			switch(pTinSource->m_tink)
+			{
+			case TINK_Array:
+				{
+					auto pTinary = (STypeInfoArray *)pTinSource;
+					pTinary->m_c = pStnodInit->CStnodChild();
+					pTinlit->m_c = pTinary->m_c;
+					for (int ipStnod = 0; ipStnod < pStnodInit->CStnodChild(); ++ipStnod)
+					{
+						auto pStnodIt = pStnodInit->PStnodChild(ipStnod);
+						if (!pStnodIt->m_pTin || pStnodIt->m_pTin->m_tink != TINK_Literal)
+							continue;
+
+						auto pTinIt = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodIt, pTinary->m_pTin);
+						//pStnodIt->m_pTin = pTinIt;
+					}
+				} break;
+			case TINK_Struct:
+				{
+
+					auto pTinstruct = (STypeInfoStruct *)pTinSource;
+					for (int ipStnod = 0; ipStnod < pStnodInit->CStnodChild(); ++ipStnod)
+					{
+						auto pStnodIt = pStnodInit->PStnodChild(ipStnod);
+						if (!pStnodIt->m_pTin || pStnodIt->m_pTin->m_tink != TINK_Literal)
+							continue;
+
+						int iTypememb = ipStnod;
+						CSTNode * pStnodValue;
+						if (pStnodIt->m_park == PARK_ArgumentLabel)
+						{
+							CSTNode * pStnodIdentifier = pStnodIt->PStnodChild(0);
+							CString strIdentifier(StrFromIdentifier(pStnodIdentifier));
+
+							iTypememb = ITypemembLookup(pTinstruct, strIdentifier);
+							pStnodValue = pStnodIt->PStnodChildSafe(1);
+						}
+						else
+						{
+							//pStnodValue = pStnodIt->PStnodChildSafe(ipStnod);
+							pStnodValue = pStnodIt;
+						}
+						if (iTypememb < 0 || iTypememb >= pTinstruct->m_aryTypemembField.C())
+							continue;
+
+						auto pTypememb  = &pTinstruct->m_aryTypemembField[iTypememb];
+
+						auto pTinIt = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodValue, pTypememb->m_pTin);
+					}
+				} break;
+			default:
+				EWC_ASSERT(false, "unexpected literal type");
+				break;
+			}
 		}
-
-		auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLit->m_pStmap);
-		if (!EWC_FVERIFY(pStdecl, "bad struct literal"))
-			return nullptr;
-
-		auto pStnodType = pStnodLit->PStnodChildSafe(pStdecl->m_iStnodType);
-
-		auto pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinlit->m_pTinSource);
-		EWC_ASSERT(pTinstruct, "struct literal without struct type");
-		return pTinstruct;
+		return pTinSource;
 	}
 
 	if (pTinlit->m_fIsFinalized)
@@ -1889,6 +1985,7 @@ STypeInfo * PTinPromoteUntypedDefault(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLit,
+	STypeInfo * pTinExpected,
 	ERREP errep)
 {
 	if (pStnodLit->m_park == PARK_Cast)
@@ -1901,12 +1998,12 @@ STypeInfo * PTinPromoteUntypedDefault(
 			{
 				EmitError(pTcwork, pStnodLit, "Cannot resolve acast when the left hand side is untyped.");
 			}
-			return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit), errep);
+			return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit), pTinExpected, errep);
 		}
 	}
 
 	bool fWasHandled;
-	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit);
+	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit, pTinExpected);
 	if (fWasHandled)
 		return pTinReturn;
 
@@ -1976,7 +2073,7 @@ STypeInfo * PTinPromoteUntypedArgument(
 		}
 	}
 
-	return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit, errep);
+	return PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit, pTinArgument, errep);
 }
 
 inline STypeInfo * PTinPromoteUntypedTightest(
@@ -1984,7 +2081,7 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLit,	
 	STypeInfo * pTinDst,
-	ERREP errep = ERREP_ReportErrors)
+	ERREP errep)
 {
 	if (pStnodLit->m_park == PARK_Cast)
 	{
@@ -2016,7 +2113,7 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 	pTinDst = PTinStripQualifiers(pTinDst); 
 
 	bool fWasHandled;
-	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit);
+	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit, pTinDst);
 	if (fWasHandled)
 		return pTinReturn;
 
@@ -4103,7 +4200,7 @@ void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CS
 	STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
 	pSymtab->AddManagedTin(pTinlit);
 	pTinlit->m_c = cElement;
-	pTinlit->m_litty.m_litk = LITK_Array;
+	pTinlit->m_litty.m_litk = LITK_Compound;
 	pTinlit->m_pTinSource = pTinary;
 	pTinlit->m_pStnodDefinition = pStnodArray;
 	pStnodArray->m_pTin = pTinlit;
@@ -4804,12 +4901,15 @@ bool FLiteralsAreSame(CSTNode * pStnodA, CSTNode * pStnodB)
 
 			return pStvalA->m_nUnsigned == pStvalB->m_nUnsigned;
 		}
-	case LITK_Array:
+	case LITK_Compound:
 		{
+			if (pTinlitA->m_pTinSource != pTinlitB->m_pTinSource)
+				return false;
+
 			CSTDecl * pStdeclA = PStmapRtiCast<CSTDecl *>(pStnodA->m_pStmap);
 			CSTDecl * pStdeclB = PStmapRtiCast<CSTDecl *>(pStnodB->m_pStmap);
-			if (!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "array literal with no values") ||
-				!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "array literal with no values"))
+			if (!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "compound literal with no values") ||
+				!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "compound literal with no values"))
 			{
 				return false;
 			}
@@ -4827,16 +4927,6 @@ bool FLiteralsAreSame(CSTNode * pStnodA, CSTNode * pStnodB)
 			}
 
 			return true;
-		}
-	case LITK_Struct:
-		{
-			CSTDecl * pStdeclA = PStmapRtiCast<CSTDecl *>(pStnodA->m_pStmap);
-			CSTDecl * pStdeclB = PStmapRtiCast<CSTDecl *>(pStnodB->m_pStmap);
-			if (!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "struct literal with no values") ||
-				!EWC_FVERIFY(pStdeclA && pStdeclA->m_iStnodInit >= 0, "struct literal with no values"))
-			{
-				return false;
-			}
 		}
 	default:
 		EWC_ASSERT(false, "Unhandled LITK");
@@ -7523,12 +7613,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						SSymbol * pSymType = nullptr;
 						bool fIsValidTypeSpec;
 						pTinType = PTinFromTypeSpecification(
-												pTcwork,
-												pSymtab,
-												pStnodType,
-												pTcsentTop->m_grfsymlook,
-												&pSymType,
-												&fIsValidTypeSpec);
+										pTcwork,
+										pSymtab,
+										pStnodType,
+										pTcsentTop->m_grfsymlook,
+										&pSymType,
+										&fIsValidTypeSpec);
 
 						if (!fIsValidTypeSpec)
 							return TCRET_StoppingError;
@@ -7539,74 +7629,69 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					if (pStnodValues && pStnodValues->CStnodChild())
 					{
 						auto pTinValue = pStnodValues->PStnodChild(0)->m_pTin;
-						fHasValues = pTinValue && pTinValue->m_tink == TINK_Literal;
+						if (pTinValue)
+						{
+							if (pTinValue->m_tink != TINK_Literal)
+							{
+								EmitError(pTcwork, pStnod, ERRID_NonConstantInLiteral, "Compound literal is being initialized with non-constant.");
+								return TCRET_StoppingError;
+							}
+							fHasValues = true;
+						}
 					}
 
 					if (!fHasValues)
 					{
-						EmitError(pTcwork, pStnod, "Array literal without any element literals");
+						EmitError(pTcwork, pStnod, "Compound literal without any element literals");
 						return TCRET_StoppingError;
 					}
 
-					if (!pTinType || pTinType->m_tink == TINK_Array)
+					s64 cElement = -1;
+					if (pTinType)
 					{
-						s64 cElement = 0;
-						if (pStdecl->m_iStnodInit >= 0)
+						if (pTinType->m_tink == TINK_Array)
 						{
-							auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+							if (pStdecl->m_iStnodInit >= 0)
+							{
+								auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
 
-							EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid ArrayLiteral");
-							cElement = pStnodInit->CStnodChild();
+								EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid ArrayLiteral");
+								cElement = pStnodInit->CStnodChild();
+							}
+
+							auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinType);
+							if (pTinary && pTinary->m_aryk == ARYK_Reference)
+							{
+								// even if this is being assigned to an array reference, the literal is a fixed array
+
+								STypeInfoArray * pTinaryCopy = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+								pTinaryCopy->m_pTin = pTinary->m_pTin;
+
+								pTinaryCopy->m_aryk = ARYK_Fixed;
+								pTinaryCopy->m_c = cElement;
+								pSymtab->AddManagedTin(pTinaryCopy);
+								pTinType = pSymtab->PTinMakeUnique(pTinaryCopy);
+							}
 						}
-
-						auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinType);
-						if (pTinary && pTinary->m_aryk == ARYK_Reference)
+						else if (pTinType->m_tink == TINK_Struct)
 						{
-							// even if this is being assigned to an array reference, the literal is a fixed array
-
-							STypeInfoArray * pTinaryCopy = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-							pTinaryCopy->m_pTin = pTinary->m_pTin;
-
-							pTinaryCopy->m_aryk = ARYK_Fixed;
-							pTinaryCopy->m_c = cElement;
-							pSymtab->AddManagedTin(pTinaryCopy);
-							pTinType = pSymtab->PTinMakeUnique(pTinaryCopy);
+							if (pStdecl->m_iStnodInit >= 0)
+							{
+								auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
+								EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid CompoundLiteral");
+							}
 						}
-
-						// BB - can LITK_Array just go away? 
-						STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
-						pTinlit->m_litty.m_litk = LITK_Array;
-						pTinlit->m_pTinSource = pTinType;
-						pTinlit->m_pStnodDefinition = pStnod;
-						pTinlit->m_c = cElement;
-
-						pSymtab->AddManagedTin(pTinlit);
-						pTinlit = pSymtab->PTinMakeUnique(pTinlit);
-						pStnod->m_pTin = pTinlit;
 					}
-					else if (pTinType->m_tink == TINK_Struct)
-					{
-						STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
-						pTinlit->m_litty.m_litk = LITK_Struct;
-						pTinlit->m_pTinSource = pTinType;
-						pTinlit->m_pStnodDefinition = pStnod;
 
-						if (pStdecl->m_iStnodInit >= 0)
-						{
-							auto pStnodInit = pStnod->PStnodChild(pStdecl->m_iStnodInit);
-							EWC_ASSERT(pStnodInit->m_park == PARK_ExpressionList, "invalid CompoundLiteral");
-						}
+					STypeInfoLiteral * pTinlit = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+					pTinlit->m_litty.m_litk = LITK_Compound;
+					pTinlit->m_pTinSource = pTinType;
+					pTinlit->m_pStnodDefinition = pStnod;
+					pTinlit->m_c = cElement;
+					pSymtab->AddManagedTin(pTinlit);
 
-						pSymtab->AddManagedTin(pTinlit);
-						pTinlit = pSymtab->PTinMakeUnique(pTinlit);
-						pStnod->m_pTin = pTinlit;
-					}
-					else
-					{
-						auto strTin = StrFromTypeInfo(pTinType);
-						EmitError(pTcwork, pStnod, "Compound literal expects struct or array type, encountered %s", strTin.PCoz());
-						return TCRET_StoppingError;
-					}
+					pTinlit = pSymtab->PTinMakeUnique(pTinlit);
+					pStnod->m_pTin = pTinlit;
 				}
 
 				pStnod->m_strees = STREES_TypeChecked;

@@ -67,6 +67,7 @@ enum ERRID
 	ERRID_UsingStatementBadType		= 2025,
 	ERRID_LiteralMemberNotFound		= 2026,
 	ERRID_LiteralUnnamedMember		= 2027,
+	ERRID_NonConstantInLiteral		= 2028,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

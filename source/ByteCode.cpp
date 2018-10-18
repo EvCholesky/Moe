@@ -168,12 +168,12 @@ void CalculateByteSizeAndAlign(SDataLayout * pDlay, STypeInfo * pTin, u64 * pcB,
 	{
 		auto pTinlit = (STypeInfoLiteral *)pTin;
 
-		bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Array;
+		bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Compound;
 		EWC_ASSERT(pTinlit->m_fIsFinalized || fIsContainerLiteral, "cannot calculate size of unfinalized literal");
 
 		switch (pTinlit->m_litty.m_litk)
 		{
-		case LITK_Array:
+		case LITK_Compound:
 			{
 				CalculateByteSizeAndAlign(pDlay, pTinlit->m_pTinSource, pcB, pcBAlign);
 				*pcB = pTinlit->m_c * *pcB;
@@ -936,19 +936,9 @@ void CDataSegment::AddDeepCopyPointers(SDataLayout * pDlay, STypeInfo * pTin, s3
 					{
 						AddRelocatedPointer(pDlay, iBDst, iBSrc);
 					} break;
-				case LITK_Array:
+				case LITK_Compound:
 					{
-						u64 cB;
-						u64 cBAlign;
-						CalculateByteSizeAndAlign(pDlay, pTinlit->m_pTinSource, &cB, &cBAlign);
-						s32 cBStride = S32Coerce(EWC::CBAlign(cB, cBAlign));
-
-						for (int iElement = 0; iElement < pTinlit->m_c; ++iElement)
-						{
-							AddDeepCopyPointers(pDlay, pTinlit->m_pTinSource, iBDst, iBSrc);
-							iBSrc += cBStride;
-							iBDst += cBStride;
-						}
+						AddDeepCopyPointers(pDlay, pTinlit->m_pTinSource, iBDst, iBSrc);
 
 					} break;
 				}
@@ -1479,14 +1469,29 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 			{
 				auto pTinlit = (STypeInfoLiteral *)pTin;
 
-				if (EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "non-array literal types should be finalized away by here"))
+				if (EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Compound, "non-compound literal types should be finalized away by here"))
 				{
-					auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
-					EWC_ASSERT(pTinary, "expected array type");
-					pTin = pTinary->m_pTin;
+					TINK tinkSource = pTinlit->m_pTinSource->m_tink;
+					switch (tinkSource)
+					{
+						case TINK_Array:
+						{
+							auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+							EWC_ASSERT(pTinary, "expected array type");
+							pTin = pTinary->m_pTin;
 
-					CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
-					cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
+							CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+							cBStride = U32Coerce(EWC::CBAlign(cB, cBAlign));
+						} break;
+						case TINK_Struct:
+						{
+							pTinstruct = (STypeInfoStruct *)pTinlit->m_pTinSource;
+
+						} break;
+						default:
+							EWC_ASSERT(false, "unexpected type kind.");
+							break;
+					}
 				}
 			} break;
 		default:
@@ -3072,7 +3077,7 @@ inline void SetupForeignProcParam(DCCallVM * pDcvm, SDataLayout * pDlay, STypeIn
 				case LITK_Enum:
 					EWC_ASSERT(false, "unhandled type kind in foreign function args");
 					break;
-				case LITK_Array:
+				case LITK_Compound:
 					EWC_ASSERT(false, "unhandled type kind in foreign function args");
 					break;
 				case LITK_Null:		dcArgPointer(pDcvm, *(void**)pVArg);	break;
@@ -4215,6 +4220,7 @@ CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue 
 			memcpy(pBGlobal, pVSrc, cBElement);
 			break;
 		case OPK_Global:
+		case OPK_GlobalVal:
 		{
 			auto pTinElem = pConstElem->m_pTin;
 			s32 iBElem = pConstElem->m_word.m_s32;
@@ -4224,11 +4230,11 @@ CBuilder::LValue * CBuilder::PLvalConstantArray(STypeInfo * pTinElement, LValue 
 			if (pTinlitElem && pTinlitElem->m_litty.m_litk == LITK_String)
 			{
 				// BB - String literals are stored as OPK_Global, but are a index/ref to a block of characters, not
-				//      a lval ppChz as you weould expect from any other global
+				//      a lval ppChz as you would expect from any other global
 				// pTinElem = & const u8
 				pTinElem = pTinary->m_pTin;
 			}
-			else if (EWC_FVERIFY(pTinptrElem, "expected element to be pointer (to global)"))
+			else if (pConstElem->m_opk == OPK_Global && EWC_FVERIFY(pTinptrElem, "expected element to be pointer (to global)"))
 			{
 				iBElem = *(s32*)m_dataseg.PBFromIndex(iBElem);
 				pTinElem = pTinptrElem->m_pTinPointedTo;

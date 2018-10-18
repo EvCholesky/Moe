@@ -628,6 +628,7 @@ LLVMOpaqueType * CBuilderIR::PLtypeFromPTin(STypeInfo * pTin)
 			{
 				case ARYK_Fixed:
 				{
+					EWC_ASSERT(pTinary->m_c >= 0, "failed to set fixed array size");
 					return LLVMArrayType(pLtypeElement, u32(pTinary->m_c));
 				}
 				case ARYK_Reference:
@@ -675,16 +676,24 @@ LLVMOpaqueType * CBuilderIR::PLtypeFromPTin(STypeInfo * pTin)
 			case LITK_Char:		return nullptr;
 			case LITK_String:	return LLVMPointerType(LLVMInt8Type(), 0);
 			case LITK_Null:		return PLtypeFromPTin(pTinlit->m_pTinSource);
-			case LITK_Struct:	return PLtypeFromPTin(pTinlit->m_pTinSource);
-			case LITK_Array:
+			case LITK_Compound:
 			{
-				auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
-				if (!EWC_FVERIFY(pTinary, "expected array type"))
+				auto pTinSource = pTinlit->m_pTinSource;
+				if (!pTinSource)
 					return nullptr;
 
-				// create a static array for the literal, even if we're assigning it to a literal reference
-				auto pLtypeElement = PLtypeFromPTin(pTinary->m_pTin); //->m_pTin);
-				return LLVMArrayType(pLtypeElement, u32(pTinlit->m_c));
+				if (pTinSource->m_tink == TINK_Array)
+				{
+					auto pTinary = (STypeInfoArray *)pTinSource;
+					if (!EWC_FVERIFY(pTinary, "expected array type"))
+						return nullptr;
+
+					// create a static array for the literal, even if we're assigning it to a literal reference
+					auto pLtypeElement = PLtypeFromPTin(pTinary->m_pTin); //->m_pTin);
+					return LLVMArrayType(pLtypeElement, u32(pTinlit->m_c));
+				}
+
+				return PLtypeFromPTin(pTinSource);
 			}
 			default:	
 				return nullptr;
@@ -2799,8 +2808,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 {
 	CSTValue * pStval = pStnod->m_pStval;
 
-	bool fIsContainerLiteral = pTinlit->m_litty.m_litk == LITK_Array || pTinlit->m_litty.m_litk == LITK_Struct;
-	if (!fIsContainerLiteral)
+	if (pTinlit->m_litty.m_litk != LITK_Compound)
 	{
 		if (!EWC_FVERIFY(pStval, "literal missing value"))
 			return nullptr;
@@ -2897,62 +2905,72 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 
 			pLval = pBuild->PLvalConstantNull(pLtype);
 		} break;
-	case LITK_Array:
+	case LITK_Compound:
 		{
-			CSTNode * pStnodLit = pStnod;
-			if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
+			TINK tink = (pTinlit->m_pTinSource) ? pTinlit->m_pTinSource->m_tink : TINK_Nil;
+			switch (tink)
 			{
-				pStnodLit = pTinlit->m_pStnodDefinition;
-			}
-
-			CSTNode * pStnodList = nullptr;
-			CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLit->m_pStmap);
-			if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "array literal with no values"))
-			{
-				pStnodList = pStnodLit->PStnodChild(pStdecl->m_iStnodInit);
-			}
-
-			if (!pStnodList || !EWC_FVERIFY(pStnodList->CStnodChild() == pTinlit->m_c, "missing values for array literal"))
-				return nullptr;
-
-			size_t cB = sizeof(BUILD::LValue *) * (size_t)pTinlit->m_c;
-			auto apLval = (BUILD::LValue **)(alloca(cB));
-
-			for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
-			{
-				auto pStnodChild = pStnodList->PStnodChild(iStnod);
-				STypeInfoLiteral * pTinlitChild = (STypeInfoLiteral *)pStnodChild->m_pTin;
-				EWC_ASSERT(pTinlitChild->m_tink == TINK_Literal, "Bad array literal element");
-
-				apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlitChild, pStnodChild);
-			}
-
-			auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
-			if (!EWC_FVERIFY(pTinary, "expected array type for array literal"))
-				return nullptr;
-			auto pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
-			return pBuild->PLvalConstantArray(pLtypeElement, apLval, u32(pTinlit->m_c));
-		} break;
-	case LITK_Struct:
-		{
-			auto pTinstruct = PTinDerivedCast<STypeInfoStruct *>(pTinlit->m_pTinSource);
-			auto cginitk = CginitkCompute(pTinstruct, nullptr);
-			switch (cginitk)
-			{
-			case CGINITK_NoInit:
-			case CGINITK_MemsetZero:
-			case CGINITK_AssignInitializer:
-			case CGINITK_MemcpyGlobal:
+			case TINK_Array:
 				{
-					pLval = PLvalBuildConstantInitializer(pBuild, pTinstruct, pStnod);
+					CSTNode * pStnodLit = pStnod;
+					if (EWC_FVERIFY(pTinlit->m_pStnodDefinition, "bad array literal definition"))
+					{
+						pStnodLit = pTinlit->m_pStnodDefinition;
+					}
+
+					CSTNode * pStnodList = nullptr;
+					CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodLit->m_pStmap);
+					if (EWC_FVERIFY(pStdecl && pStdecl->m_iStnodInit >= 0, "array literal with no values"))
+					{
+						pStnodList = pStnodLit->PStnodChild(pStdecl->m_iStnodInit);
+					}
+
+					if (!pStnodList || !EWC_FVERIFY(pStnodList->CStnodChild() == pTinlit->m_c, "missing values for array literal"))
+						return nullptr;
+
+					size_t cB = sizeof(BUILD::LValue *) * (size_t)pTinlit->m_c;
+					auto apLval = (BUILD::LValue **)(alloca(cB));
+
+					for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
+					{
+						auto pStnodChild = pStnodList->PStnodChild(iStnod);
+						STypeInfoLiteral * pTinlitChild = (STypeInfoLiteral *)pStnodChild->m_pTin;
+						EWC_ASSERT(pTinlitChild->m_tink == TINK_Literal, "Bad array literal element");
+
+						apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlitChild, pStnodChild);
+					}
+
+					auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+					if (!EWC_FVERIFY(pTinary, "expected array type for array literal"))
+						return nullptr;
+					auto pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
+					return pBuild->PLvalConstantArray(pLtypeElement, apLval, u32(pTinlit->m_c));
+				}
+			case TINK_Struct:
+				{
+					auto pTinstruct = (STypeInfoStruct *)pTinlit->m_pTinSource;
+					auto cginitk = CginitkCompute(pTinstruct, nullptr);
+					switch (cginitk)
+					{
+					case CGINITK_NoInit:
+					case CGINITK_MemsetZero:
+					case CGINITK_AssignInitializer:
+					case CGINITK_MemcpyGlobal:
+						{
+							pLval = PLvalBuildConstantInitializer(pBuild, pTinstruct, pStnod);
+						} break;
+					case CGINITK_LoopingInit:
+					case CGINITK_InitializerProc:
+						EWC_ASSERT(false, "TDB struct literal with difficult init kind.")
+							break;
+					default:
+						EWC_ASSERT(false, "unhandled init kind.");
+						break;
+					}
 				} break;
-			case CGINITK_LoopingInit:
-			case CGINITK_InitializerProc:
-				EWC_ASSERT(false, "TDB struct literal with difficult init kind.")
-					break;
 			default:
-				EWC_ASSERT(false, "unhandled init kind.");
-				break;
+				EWC_ASSERT("compound literal should be array or struct is %s", PChzFromTink(tink));
+				break;	
 			}
 		} break;
 	default:
@@ -2986,7 +3004,7 @@ typename BUILD::Value * PValCreateCast(
 
 		auto pTinlitSrc = (STypeInfoLiteral *)pTinSrc;
 		auto pTinaryDst = PTinRtiCast<STypeInfoArray *>(pTinDst);
-		if (pTinlitSrc->m_litty.m_litk == LITK_Array && pTinaryDst && pTinaryDst->m_aryk == ARYK_Reference)
+		if (pTinlitSrc->m_litty.m_litk == LITK_Compound && pTinaryDst && pTinaryDst->m_aryk == ARYK_Reference)
 		{
 			// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
 			//  array that happens to be static and isn't read-only.
@@ -3279,7 +3297,8 @@ typename BUILD::LValue * PLvalBuildConstantInitializer(BUILD * pBuild, STypeInfo
 		CSTNode * pStnodList = nullptr;
 		if (pStnodInit && EWC_FVERIFY(pStnodInit->m_park == PARK_CompoundLiteral, "expected struct literal"))
 		{
-			pStnodList = pStnodInit->PStnodChildSafe(1);
+			auto pStdeclInit = PStmapRtiCast<CSTDecl *>(pStnodInit->m_pStmap);
+			pStnodList = pStnodInit->PStnodChildSafe(pStdeclInit->m_iStnodInit);
 			if (!EWC_FVERIFY(pStnodList && pStnodList->m_park == PARK_ExpressionList, "expected expression list"))
 			{
 				pStnodList = nullptr;
@@ -3679,7 +3698,7 @@ static inline typename BUILD::Value * PValGenerateCast(
 		rhsIsArray = pTinRhs->m_tink == TINK_Array;
 		if (auto pTinRhsLit = PTinRtiCast<STypeInfoLiteral *>(pTinRhs))
 		{
-			rhsIsArray = pTinRhsLit->m_litty.m_litk == LITK_Array;
+			rhsIsArray = FIsArrayLiteral(pTinRhsLit);
 		}
 	}
 
@@ -3742,7 +3761,7 @@ static inline typename BUILD::Value * PValGenerateCast(
 
 				auto pTinlitRhs = (STypeInfoLiteral *)pTinRhs;
 				auto pTinaryLhs = PTinRtiCast<STypeInfoArray *>(pTinOut);
-				if (pTinlitRhs->m_litty.m_litk == LITK_Array && pTinaryLhs && pTinaryLhs->m_aryk == ARYK_Reference)
+				if (FIsArrayLiteral(pTinlitRhs) && pTinaryLhs && pTinaryLhs->m_aryk == ARYK_Reference)
 				{
 					// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
 					//  array that happens to be static and isn't read-only.
@@ -3828,7 +3847,7 @@ typename BUILD::Instruction * PInstGenerateAssignmentFromRef(
 			case TINK_Literal:
 				{
 					auto pTinlitRhs = (STypeInfoLiteral *)pTinRhs;
-					EWC_ASSERT(pTinlitRhs->m_litty.m_litk == LITK_Array, "bad literal type in array assignment");
+					EWC_ASSERT(FIsArrayLiteral(pTinlitRhs), "bad literal type in array assignment");
 
 					arykRhs = ARYK_Fixed;
 					cRhs = pTinlitRhs->m_c;
@@ -4183,8 +4202,16 @@ static void GenerateOperatorInfo(TOK tok, const SOpTypes * pOptype, SOperatorInf
 			case LITK_Float:	tink = TINK_Float;		break;
 			case LITK_Enum:		tink = TINK_Enum;		break;
 			case LITK_Bool:		tink = TINK_Bool;		break;
-			case LITK_Array:	tink = TINK_Array;		break;
-			default:			tink = TINK_Nil;
+			case LITK_Compound:
+			{
+				TINK tinkSource = (pTinlit->m_pTinSource) ? pTinlit->m_pTinSource->m_tink : TINK_Nil;
+				EWC_ASSERT(tinkSource == TINK_Array || tinkSource == TINK_Struct, 
+					"unexpected compound literal type kind '%s'", PChzFromTink(tinkSource));
+				tink = tinkSource;
+				break;
+			} 
+			default:
+				tink = TINK_Nil;
 			}
 		}
 		else if (tink == TINK_Enum)
@@ -4780,7 +4807,7 @@ typename BUILD::Value * PValGenerateArrayLiteralReference(CWorkspace * pWork, BU
 	if (!pTinlit)
 		return nullptr;
 
-	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Array, "expected array literal"))
+	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Compound, "expected array literal"))
 		return nullptr;
 
 	BUILD::Global * pGlob = nullptr;
@@ -5530,6 +5557,14 @@ typename BUILD::Constant * PConstEnumLiteralFromStnod(BUILD * pBuild, CSTNode * 
 	return nullptr;
 }
 
+static bool FIsArrayLiteral(STypeInfoLiteral * pTinlit)
+{
+	if (pTinlit->m_litty.m_litk != LITK_Compound)
+		return false;
+
+	return pTinlit->m_pTinSource && pTinlit->m_pTinSource->m_tink == TINK_Array;
+}
+
 template <typename BUILD>
 typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode * pStnod, VALGENK valgenk)
 {
@@ -5540,7 +5575,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 		STypeInfoLiteral * pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnod->m_pTin);
 		if (valgenk == VALGENK_Reference)
 		{
-			if (pTinlit && pTinlit->m_litty.m_litk == LITK_Array)
+			if (pTinlit && pTinlit->m_litty.m_litk == LITK_Compound)
 			{
 				EWC_ASSERT(valgenk == VALGENK_Reference, "Trying to generate a reference from a literal");
 				return PValGenerateArrayLiteralReference(pWork, pBuild, pStnod);
@@ -6145,7 +6180,6 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 		}
 	case PARK_MemberLookup:
 		{
-#if 1
 			CSTNode * pStnodRhs = pStnod->PStnodChild(1);
 			SSymbol ** ppSymMin = nullptr;
 			SSymbol ** ppSymMax = nullptr;
@@ -6199,7 +6233,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 					// BB - cleanup this (BUILD::Global *) cast
 					BUILD::Global * pGlobLit = (BUILD::Global *)*ppGlob;
 
-					if (pTinlit->m_litty.m_litk == LITK_Array)
+					if (FIsArrayLiteral(pTinlit))
 					{
 						ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
 
@@ -6221,102 +6255,6 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			}
 
 			return PValGenerateSymbolPath(pWork, pBuild, pTinLhs, pValLhs, ppSymMin, ppSymMax, valgenk);
-#else
-			CSTNode * pStnodLhs = pStnod->PStnodChild(0);
-
-			// check the symbol because we need to differentiate between enum namespacing and enum struct member.
-			BUILD::Constant * pConstEnum = nullptr;
-			if (auto pSym = pStnodLhs->PSym())
-			{
-				auto pTinLhs = PTinStripQualifiersAndPointers(pSym->m_pTin);
-				EWC_ASSERT(FTypesAreSame(pSym->m_pTin, pStnodLhs->m_pTin), "type mismatch between symbol and AST");
-
-				if (pTinLhs && pTinLhs->m_tink == TINK_Enum)
-				{
-					auto pTinenum = (STypeInfoEnum *)pTinLhs;
-					if (EWC_FVERIFY(pStnod->m_pStval, "Enum constant lookup without value"))
-					{
-						pConstEnum = pBuild->PConstEnumLiteral(pTinenum, pStnod->m_pStval);
-
-						if (pTinenum->m_enumk != ENUMK_FlagEnum)
-							return pConstEnum;
-					}
-				}
-			}
-			STypeInfoStruct * pTinstruct = nullptr;
-			auto pTinLhs = PTinStripQualifiers(pStnodLhs->m_pTin);
-
-			VALGENK valgenkLhs = VALGENK_Reference;
-			if (pTinLhs)
-			{
-				if (pTinLhs->m_tink == TINK_Pointer)
-				{
-					pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
-					valgenkLhs = VALGENK_Instance;
-				}
-
-				pTinstruct = PTinRtiCast<STypeInfoStruct *>(pTinLhs);
-			}
-
-			BUILD::Value * pValLhs = PValGenerate(pWork, pBuild, pStnodLhs, valgenkLhs);
-			if (pConstEnum)
-			{
-				if (valgenk == VALGENK_Reference)
-				{
-					// set val: (n & ~flag) | (sext(fNew) & flag)
-					// return the instance here, the assignment operator will have to flip the right bits 
-					return pValLhs;
-				}
-
-				// get val: (n & flag) == flag;
-				auto pInstLhsLoad = pBuild->PInstCreate(IROP_Load, pValLhs, "membLoad");
-				auto pInstAnd = pBuild->PInstCreate(IROP_And, pInstLhsLoad, pConstEnum, "and");
-				auto pInstCmp = pBuild->PInstCreateNCmp(NPRED_EQ, pInstAnd, pConstEnum, "cmpEq");
-				return pInstCmp;
-			}
-
-			CString strMemberName = StrFromIdentifier(pStnod->PStnodChild(1));
-
-			if (pTinLhs && pTinLhs->m_tink == TINK_Array)
-			{
-				auto pTinary = (STypeInfoArray *)pTinLhs;
-				ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
-				return PValFromArrayMember(pWork, pBuild, pValLhs, pTinary, arymemb, valgenk);
-			}
-			if (pTinLhs && pTinLhs->m_tink == TINK_Literal)
-			{
-				auto pTinlit = (STypeInfoLiteral *)pTinLhs;
-				BUILD::Global ** ppGlob = pBuild->m_hashPTinlitPGlob.Lookup(pTinlit);
-				if (EWC_FVERIFY(ppGlob, "expected global instance for array literal"))
-				{
-					// BB - cleanup this (BUILD::Global *) cast
-					BUILD::Global * pGlobLit = (BUILD::Global *)*ppGlob;
-
-					if (pTinlit->m_litty.m_litk == LITK_Array)
-					{
-						ARYMEMB arymemb = ArymembLookup(strMemberName.PCoz());
-
-						EWC_ASSERT(valgenk == VALGENK_Instance, "expected instance");
-						if (arymemb == ARYMEMB_Count)
-						{
-							return pBuild->PConstInt(pTinlit->m_c, 64, true);
-						}
-
-						// the type of aN.data is &N so a reference would need to be a &&N which we don't have
-						EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
-
-						auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinlit->m_pTinSource);
-						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinary->m_pTin);
-
-						return pBuild->PInstCreateCast(IROP_Bitcast, pGlobLit, pTinptr, "Bitcast");
-					}
-					return pGlobLit;
-				}
-			}
-			
-			auto pInst = PInstGepFromSymbase(pBuild, pStnod->m_pSymbase, pValLhs, pTinLhs, valgenk);
-			return pInst;
-#endif
 		}
 	case PARK_ArrayElement:
 		{ 
@@ -6338,7 +6276,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			if (tinkLhs == TINK_Literal)
 			{
 				auto pTinlit = PTinDerivedCast<STypeInfoLiteral *>(pStnodLhs->m_pTin);
-				EWC_ASSERT(pTinlit->m_litty.m_litk == LITK_Array, "non-array literal being indexed like an array, missed during typecheck?");
+				EWC_ASSERT(FIsArrayLiteral(pTinlit), "non-array literal being indexed like an array, missed during typecheck?");
 
 				pValLhs = PValGenerateArrayLiteralReference(pWork, pBuild, pStnodLhs);
 				apLvalIndex[cpLvalIndex++] = pBuild->PGepIndex(0);

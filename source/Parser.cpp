@@ -172,8 +172,7 @@ const char * PChzFromLitk(LITK litk)
 		"Bool",
 		"Null",
 		"Enum",
-		"Array",
-		"Struct",
+		"Compound",
 		"Pointer",
 	};
 	EWC_CASSERT(EWC_DIM(s_mpLitkPChz) == LITK_Max, "missing LITK string");
@@ -5301,7 +5300,7 @@ void PrintStval(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 			case LITK_String:	stvalk = STVALK_String;																break;
 			case LITK_Bool:		FormatCoz(pStrbuf, "%s", (pStval->m_nUnsigned == 0) ? "false" : "true");			return;
 			case LITK_Null:		AppendCoz(pStrbuf, "null");															return;
-			case LITK_Array:
+			case LITK_Compound:
 				{
 					AppendCoz(pStrbuf, "(");
 
