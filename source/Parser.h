@@ -155,6 +155,7 @@ enum PARK : s16 // PARse Kind
 	PARK_ArgumentLabel,
 	PARK_GenericDecl,
 	PARK_GenericStructInst,		// 
+	PARK_TypeArgument,			// raw type, specified to a generic instantiation SFoo(:int)
 	
 	EWC_MAX_MIN_NIL(PARK)
 };
@@ -308,6 +309,10 @@ public:
 	int				m_iStnodChildMax;
 	STypeInfo * 	m_pTin;
 };
+
+bool FIsTrimmedGenericParameter(CSTDecl * pStdecl);
+
+
 
 class CSTFor : public SSyntaxTreeMap // tag = stfor
 {
@@ -783,6 +788,7 @@ public:
 	static EWC::CString s_strUsize;
 	static EWC::CString s_strFloat;
 	static EWC::CString s_strDouble;
+	static EWC::CString s_strType;
 	static EWC::CString s_strS8;
 	static EWC::CString s_strS16;
 	static EWC::CString s_strS32;

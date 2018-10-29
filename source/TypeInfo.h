@@ -79,6 +79,7 @@ enum TINK : s8
     TINK_Enum		= 10,
 	TINK_Qualifier	= 11,
 	TINK_Interface  = 12,
+	TINK_Type		= 13,			// first class 'TYPE' - not really useful or supported until we get compile time code.
 	TINK_ReflectedMax,
 
 	TINK_ForwardDecl= TINK_ReflectedMax,	// Type info added for resolving pointers to self during the type-check phase.
@@ -260,9 +261,10 @@ enum FPARMQ	// Flags for ARGument Qualifiers
 {
 	FPARMQ_ImplicitRef		= 0x1,		// convert LValue argument and pass into procedure's pointer argument
 	FPARMQ_BakedValue		= 0x2,		// baked value parameter, will be dropped during generic specialization.
+	FPARMQ_TypeArgument		= 0x4,		// type only argument, no runtime value - dropped during generic specialization
 
 	FPARMQ_None				= 0x0,
-	FPARMQ_All				= 0x3,
+	FPARMQ_All				= 0x7,
 };
 
 EWC_DEFINE_GRF(GRFPARMQ, FPARMQ, u8);

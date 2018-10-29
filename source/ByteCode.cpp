@@ -544,11 +544,10 @@ void CBuilder::SetupParamBlock(
 			continue;
 
 		CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodParam->m_pStmap);
-		if (pStdecl && pStdecl->m_fIsBakedConstant)
+		if (FIsTrimmedGenericParameter(pStdecl))
 			continue;
 
 		EWC_ASSERT(iParam < pTinproc->m_arypTinParams.C(), "parameter count mismatch");
-
 
 		auto pSym = pStnodParam->PSym();
 		auto strArgName = StrPunyEncode(pSym->m_strName.PCoz());
@@ -3243,6 +3242,9 @@ void ExecuteBytecode(CVirtualMachine * pVm, SProcedure * pProcEntry)
 		CalculateByteSizeAndAlign(pVm->m_pDlay, pTinprocEntry->m_arypTinReturns[ipTin], &cBReturn, &cBAlignReturn);
 
 		SParameter * pParam = &pProcsigEntry->m_aParamRet[ipTin];
+		if (pTinprocEntry->m_arypTinReturns[ipTin]->m_tink == TINK_Void)
+			continue;
+
 		EWC_ASSERT(pParam->m_cB, "return type size mismatch");
 		aiBReturn[ipTin] = S32Coerce(cBReturn);
 		cBReturn += CBAlign(cBReturn, cBAlignReturn);

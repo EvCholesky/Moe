@@ -77,6 +77,7 @@ test DeclareAssign
 		},
 
 		?init(int?errid(2009)) + ?initp("?init") + ?type(int) + ?littype(Int32),	// make sure we can't assign a type as an RVal
+		?init(":s32"?errid(2001)) + ?initp("(typearg s32)") + ?type("s32") + ?littype(Int32),
 
 		?littype(Int8) + ?type(u8|s8)
 		{
@@ -148,6 +149,7 @@ test BasicAssign
 			?lhsType("?rhsType"),
 			?qual(const|inarg) + ?lhsType("?qual ?rhsType"?errid(2009))
 		},
+		?rhsType(int) + ?lvalue(lhs) + ?rvalue(":int"?errid(2030)) + ?lhsType("?rhsType"),
 		?rhsType(int|float|"&int") + ?lhsType("?rhsType") + ?rvalue("?rhsType"?errid(2009)) + ?lvalue(lhs) ,
 		?rhsType(int|float|"&int") + ?lhsType("?rhsType") + ?rvalue(rhs) + ?lvalue(10?errid(2009)|true?errid(2009)|null?errid(2009)),
 	}
@@ -1152,6 +1154,17 @@ test MultipleBakeConstantInstance
 		?argA(22) + ?argB(33) + ?secondInst(" (SomeProc()->int SomeProc (Params) int ({} (int Literal:Int64)))"),
 	}
 
+test GenericTypeArgument 
+	prereq "SomeProc proc ( :$T ?argdef) -> T { x :T; return x } nVal: int"
+	input "n := SomeProc(?args)"
+	parse "(decl n (procCall SomeProc ?pargs))"
+	typecheck "(?type n (?type SomeProc(?argtype)->?type?tcargs)) (SomeProc(?argtype)->?type SomeProc (Params?tc) ?type ({} (?type x ?type) (?type ?type)))"
+	{
+		?argdef("") + ?type(s32|s8|f32|int) + ?args(":?type") + ?pargs("(typearg ?type)") + ?tcargs("") + ?tc("") + ?argtype(""),
+		?argdef("") + ?type(nVal) + ?args("nVal"?errid(2018)) + ?pargs("?type") + ?tcargs("") + ?tc("") + ?argtype(""),
+		?argdef(", n: int") + ?type(s32) + ?args(":?type, 2") + ?pargs("(typearg ?type) 2") + ?tc(" (int n int)") + ?tcargs(" Literal:Int64") + ?argtype("int"),
+	}
+
 // Generic structs
 test StructBakedDef
 	input "SFoo struct ($BAKE: ?type) { ?decl }"
@@ -1171,6 +1184,26 @@ test StructBakedInstance
 		?type(s64) + ?args(22|12345) + ?littype(Int64),
 		?type(u32) + ?args(22|12345) + ?littype(Int32),
 		?type(s16) + ?args(22|12345) + ?littype(Int16)
+	}
+
+test StructTypeArgDefinition
+	input "SFoo struct ( :$T) { m_n :T }"
+	parse "(struct SFoo (params (decl (gendecl T))) ({} (decl m_n T)))"
+	typecheck "(SFoo SFoo (Params ($T ($T T))) ({} (decl m_n T)))"
+	{
+	}
+
+test StructTypeArgInstance
+	prereq "SFoo struct ( :$T) { m_n :T } num: s32"
+	input "foo :SFoo(?decltype)"
+	parse "(decl foo (genstruct SFoo ?ptype))"
+	typecheck "(SFoo foo (SFoo SFoo (type ?tctype))) (SFoo SFoo (Params ($T (?type T))) ({} (?type m_n ?type)))"
+	{
+		?type(int) + ?decltype("num") + ?ptype("num") + ?tctype("?type"?errid(2018)),
+		?type(s8|int|float) + ?decltype(":?type") + ?ptype("(typearg ?type)") + ?tctype("?type"),
+		?baretype(int|float) + ?type("&?baretype") + ?decltype(":?type") + ?ptype("(typearg (ptr ?baretype))") + ?tctype("(?type ?baretype)"),
+		?baretype(int|float) + ?type("&&?baretype") + ?decltype(":?type") + ?ptype("(typearg (ptr (ptr ?baretype)))") + ?tctype("(?type (&?baretype ?baretype))"),
+		?baretype(int|float) + ?type("[2]?baretype") + ?decltype(":?type") + ?ptype("(typearg ([] 2 ?baretype))") + ?tctype("(?type Literal:Int64 ?baretype)"),
 	}
 
 test StructLiteral

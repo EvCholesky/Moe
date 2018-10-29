@@ -32,9 +32,10 @@ enum FPDECL
 	FPDECL_AllowBakedValues		= 0x10,	// allow types to be marked as baked constant values
 	FPDECL_AllowConstants		= 0x20, // allow constant declarations
 	FPDECL_AllowUsing			= 0x40,	// allow 'using' declarations
+	FPDECL_AllowUnnamed			= 0x80,	// allow unnamed declarations (ie foo proc (:$T) )
 
 	FPDECL_None			= 0x0,
-	FPDECL_All			= 0x2F,
+	FPDECL_All			= 0xFF,
 };
 EWC_DEFINE_GRF(GRFPDECL, FPDECL, u32);
 
@@ -104,6 +105,7 @@ const char * PChzFromPark(PARK park)
 		"Argument Label",
 		"Generic Decl",
 		"Struct Arg List",
+		"Type Argument"
 	};
 	EWC_CASSERT(EWC_DIM(s_mpParkPChz) == PARK_Max, "missing PARK string");
 	if (park == PARK_Nil)
@@ -202,6 +204,7 @@ const char * PChzFromTink(TINK tink)
 		"enum",
 		"qualifier",
 		"interface",
+		"type",
 		"forwardDecl",
 		"literal",
 		"generic",
@@ -745,29 +748,46 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 			{
 				SLexerLocation lexloc(pLex);
 
-				CSTNode * pStnodLit = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
-				pStnodLit->m_tok = TOK(pLex->m_tok);
-				pStnodLit->m_park = PARK_CompoundLiteral;
-
-				// We're using a decl here... may need a custom structure
-				auto pStdecl = pStnodLit->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
-
+				CSTNode * pStnodType = nullptr;
 				if (pLex->m_tok == TOK(':'))
 				{
 					// parse type specifier
 					TokNext(pLex); // consume ':'
 					
-					auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "typelit", FPDECL_None);
-					pStdecl->m_iStnodType = pStnodLit->IAppendChild(pStnodType);
+					pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "compound literal", FPDECL_None);
 				}
 
-				FExpect(pParctx, pLex, TOK('{'), "while parsing struct/array literal");
+				if (FConsumeToken(pLex, TOK('{')))
+				{
+					CSTNode * pStnodLit = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+					pStnodLit->m_tok = TOK(pLex->m_tok);
+					pStnodLit->m_park = PARK_CompoundLiteral;
 
-				CSTNode * pStnodValues = PStnodParseExpressionList(pParctx, pLex, FEXP_AllowLiteralMemberLabel);
-				pStdecl->m_iStnodInit = pStnodLit->IAppendChild(pStnodValues);
+					// We're using a decl here... may need a custom structure
+					auto pStdecl = pStnodLit->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 
-				FExpect(pParctx, pLex, TOK('}'), "while parsing struct/array literal");
-				return pStnodLit;
+					pStdecl->m_iStnodType = pStnodLit->IAppendChild(pStnodType);
+
+					CSTNode * pStnodValues = PStnodParseExpressionList(pParctx, pLex, FEXP_AllowLiteralMemberLabel);
+					pStdecl->m_iStnodInit = pStnodLit->IAppendChild(pStnodValues);
+
+					FExpect(pParctx, pLex, TOK('}'), "while parsing struct/array literal");
+					return pStnodLit;
+				}
+
+
+				CSTNode * pStnodArg = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+				pStnodArg->m_tok = TOK(':');
+				pStnodArg->m_park = PARK_TypeArgument;
+				pStnodArg->IAppendChild(pStnodType);
+
+
+				auto pTinType = pParctx->m_pSymtab->PTinBuiltin(CSymbolTable::s_strType);
+				pStnodArg->m_pTin = pTinType;
+				EWC_ASSERT(pStnodType, "expected type spec");
+
+				return pStnodArg;
+
 			} break;
 		case '(':	// ( Expression )
 			{
@@ -1464,6 +1484,7 @@ void CheckTinprocGenerics(CParseContext * pParctx, CSTNode * pStnodProc, STypeIn
 			}
 
 			pTinproc->m_mpIptinGrfparmq[ipStnodParam].AssignFlags(FPARMQ_BakedValue, pStdecl->m_fIsBakedConstant);
+			pTinproc->m_mpIptinGrfparmq[ipStnodParam].AssignFlags(FPARMQ_TypeArgument, pStdecl->m_iStnodIdentifier < 0);
 
 			if (pStnodType)
 			{
@@ -1751,7 +1772,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const
 // parent decls cannot have a type.
 // child decls cannot have initializers - the initializer should come from the parent.
 
-void ValidateDeclaration(CParseContext * pParctx, SLexer * pLex, CSTNode * pStnodDecl)
+void ValidateDeclaration(CParseContext * pParctx, SLexer * pLex, CSTNode * pStnodDecl, GRFPDECL grfpdecl)
 {
 	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
 	if (!EWC_FVERIFY(pStdecl, "bad declaration in ValidateDeclaration"))
@@ -1761,7 +1782,7 @@ void ValidateDeclaration(CParseContext * pParctx, SLexer * pLex, CSTNode * pStno
 	if (pStdecl->m_iStnodChildMin == -1)
 	{
 		fMissingTypeSpecifier = (pStdecl->m_iStnodType == -1);
-		EWC_ASSERT(pStdecl->m_iStnodIdentifier != -1, "declaration missing identifier");
+		EWC_ASSERT(pStdecl->m_iStnodIdentifier != -1 || grfpdecl.FIsSet(FPDECL_AllowUnnamed), "declaration missing identifier");
 	}
 	else // compound decl
 	{
@@ -1887,7 +1908,7 @@ CSTNode * PStnodParseUsingStatement(
 		pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
 	}
 
-	ValidateDeclaration(pParctx, pLex, pStnodDecl);
+	ValidateDeclaration(pParctx, pLex, pStnodDecl, grfpdecl);
 	return pStnodDecl;
 }
 
@@ -1928,6 +1949,7 @@ CSTNode * PStnodParseParameter(
 	bool fAllowCompoundDecl = grfpdecl.FIsSet(FPDECL_AllowCompoundDecl);
 	bool fAllowBakedValues = grfpdecl.FIsSet(FPDECL_AllowBakedValues);
 	bool fAllowConstants = grfpdecl.FIsSet(FPDECL_AllowConstants);
+	bool fIsUnnamed = false;
 
 	SLexer lexPeek = *pLex;
 	int cIdent = 0;
@@ -1939,7 +1961,14 @@ CSTNode * PStnodParseParameter(
 		}
 
 		if (lexPeek.m_tok != TOK_Identifier)
+		{
+			if (lexPeek.m_tok == TOK(':') && grfpdecl.FIsSet(FPDECL_AllowUnnamed))
+			{
+				fIsUnnamed = true;
+				break;
+			}
 			return nullptr;
+		}
 
 		CString strIdent = lexPeek.m_str;
 
@@ -1971,9 +2000,13 @@ CSTNode * PStnodParseParameter(
 		if (pStnodInit)
 			ParseError(pParctx, pLex, "Initializer must come after all comma separated declarations");
 
-		CSTNode * pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
-		if (!EWC_FVERIFY(pStnodIdent, "parse failed during decl peek"))
-			return nullptr;
+		CSTNode * pStnodIdent = nullptr; 
+		if (!fIsUnnamed)
+		{
+			pStnodIdent = PStnodParseIdentifier(pParctx, pLex);
+			if (!EWC_FVERIFY(pStnodIdent, "parse failed during decl peek"))
+				return nullptr;
+		}
 
 		pStnodDecl = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
 		pStnodDecl->m_park = PARK_Decl;
@@ -2003,13 +2036,17 @@ CSTNode * PStnodParseParameter(
 			pStnodReturn = pStnodDecl;
 		}
 
-		// NOTE: May not resolve symbols (symtab is null if this is a procedure reference)
-		if (pSymtab)
+		if (!fIsUnnamed)
 		{
-			pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
+			// NOTE: May not resolve symbols (symtab is null if this is a procedure reference)
+			if (pSymtab)
+			{
+				pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
+			}
+
+			pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
 		}
 
-		pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
 
 		if (RwordLookup(pLex) == RWORD_Immutable)
 		{
@@ -2095,7 +2132,7 @@ CSTNode * PStnodParseParameter(
 	auto pStdeclReturn = PStmapDerivedCast<CSTDecl *>(pStnodReturn->m_pStmap);
 	pStdeclReturn->m_iStnodInit = pStnodReturn->IAppendChild(pStnodInit);
 
-	ValidateDeclaration(pParctx, pLex, pStnodReturn);
+	ValidateDeclaration(pParctx, pLex, pStnodReturn, grfpdecl);
 	return pStnodReturn;
 }
 
@@ -2180,7 +2217,7 @@ CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, C
 		PushSymbolTable(pParctx, pSymtabProc, lexloc);
 	}
 
-	GRFPDECL grfpdecl = FPDECL_AllowVariadic | FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues | FPDECL_AllowUsing;
+	GRFPDECL grfpdecl = FPDECL_AllowVariadic | FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues | FPDECL_AllowUsing | FPDECL_AllowUnnamed;
 	CSTNode * pStnodParam = PStnodParseParameter(pParctx, pLex, pSymtabProc, grfpdecl);
 	CSTNode * pStnodList = nullptr;
 	bool fHasVarArgs = pStnodParam && pStnodParam->m_park == PARK_VariadicArg;
@@ -2931,8 +2968,14 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				if (FConsumeToken(pLex, TOK('(')))
 				{
 					CSTNode * pStnodParams = PStnodParseProcParameterList(pParctx, pLex, pSymtabStruct, false);
+
 					pStstruct->m_iStnodParameterList = pStnodStruct->IAppendChild(pStnodParams);
 					FExpect(pParctx, pLex, TOK(')'));
+
+					if (!pStnodParams)
+					{
+						ParseError(pParctx, pLex, "Structure definition has parameter list, but no parameters.");
+					}
 				}
 
 				FExpect(pParctx, pLex, TOK('{'));
@@ -3890,6 +3933,7 @@ CString CSymbolTable::s_strSsize;
 CString CSymbolTable::s_strUsize;
 CString CSymbolTable::s_strFloat;
 CString CSymbolTable::s_strDouble;
+CString CSymbolTable::s_strType;
 CString CSymbolTable::s_strS8;
 CString CSymbolTable::s_strS16;
 CString CSymbolTable::s_strS32;
@@ -4044,6 +4088,7 @@ void CSymbolTable::StaticStringInit()
 	s_strUsize = CString("uSize");
 	s_strFloat = CString("float");
 	s_strDouble = CString("double");
+	s_strType = CString("type");
 	s_strS8 = CString("s8");
 	s_strS16 = CString("s16");
 	s_strS32 = CString("s32");
@@ -4066,6 +4111,7 @@ void CSymbolTable::StaticStringShutdown()
 	s_strUsize = CString();
 	s_strFloat = CString();
 	s_strDouble = CString();
+	s_strType = CString();
 	s_strS8 = CString();
 	s_strS16 = CString();
 	s_strS32 = CString();
@@ -4084,6 +4130,7 @@ void CSymbolTable::AddBuiltInSymbols(CWorkspace * pWork)
 	AddSimpleBuiltInType(pWork, this, s_strBool.PCoz(), TINK_Bool);
 	AddSimpleBuiltInType(pWork, this, "_flag", TINK_Flag, FSYM_InternalUseOnly);
 	AddSimpleBuiltInType(pWork, this, "void", TINK_Void);
+	AddSimpleBuiltInType(pWork, this, s_strType, TINK_Type);
 
 	AddBuiltInInteger(pWork, this, s_strU8.PCoz(), 8, false);
 	AddBuiltInInteger(pWork, this, s_strU16.PCoz(), 16, false);
@@ -5252,6 +5299,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
     case TINK_Void:			// fall through ...
     case TINK_Null:			// fall through ...
     case TINK_Any:			// fall through ...
+    case TINK_Type:			// fall through ...
 		AppendCoz(pStrbuf, pTin->m_strName.PCoz()); 
 		break;
 	default:
@@ -5387,6 +5435,7 @@ void PrintStnodName(EWC::SStringBuffer * pStrbuf, CSTNode * pStnod)
 	case PARK_ArgumentLabel:		AppendCoz(pStrbuf, "`"); 					return;
 	case PARK_GenericDecl:			AppendCoz(pStrbuf, "gendecl"); 				return;
 	case PARK_GenericStructInst:	AppendCoz(pStrbuf, "genstruct");			return;
+	case PARK_TypeArgument:			AppendCoz(pStrbuf, "typearg");				return;
 	case PARK_Error:
 	default:						AppendCoz(pStrbuf, "error");				return;
 	}

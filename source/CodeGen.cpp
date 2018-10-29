@@ -5039,12 +5039,6 @@ BCode::SValue * BCode::CBuilder::PValGenerateCall(
 		EWC_ASSERT(pSym->m_symdep == SYMDEP_Used, "Calling function thought to be unused %p %s", pSym, pSym->m_strName.PCoz());
 
 		pValProc = PValTryEnsureProc(pWork, this, pSym);
-
-		if (pTinproc->m_arypTinParams.C() != parypValArgs->C())
-		{
-			if (!EWC_FVERIFY(pTinproc->FHasVarArgs(), "unexpected number of arguments"))
-				return nullptr;
-		}
 	}
 	else
 	{
@@ -6091,6 +6085,9 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			for (size_t iStnodChild = 0; iStnodChild < cStnodArgs; ++iStnodChild)
 			{
 				CSTNode * pStnodArg = pStnod->PStnodChild((int)iStnodChild + 1);
+				if (pStnodArg->m_park == PARK_TypeArgument)
+					continue;
+
 				STypeInfo * pTinParam = pStnodArg->m_pTin;
 				if (iStnodChild < pTinproc->m_arypTinParams.C())
 				{
@@ -7104,7 +7101,7 @@ void CBuilderIR::SetupParamBlock(
 			continue;
 
 		CSTDecl * pStdecl = PStmapRtiCast<CSTDecl *>(pStnodParam->m_pStmap);
-		if (pStdecl && pStdecl->m_fIsBakedConstant)
+		if (FIsTrimmedGenericParameter(pStdecl))
 			continue;
 
 		EWC_ASSERT(ipLvalParam < cpLvalParams, "parameter count mismatch");
@@ -7200,7 +7197,7 @@ typename BUILD::Value * PValCodegenPrototype(CWorkspace * pWork, BUILD * pBuild,
 				continue;
 
 			auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDecl->m_pStmap);
-			if (pStdecl && pStdecl->m_fIsBakedConstant)
+			if (FIsTrimmedGenericParameter(pStdecl))
 				continue;
 
 			auto pLtype = pBuild->PLtypeFromPTin(pStnodDecl->m_pTin);
