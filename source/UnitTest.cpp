@@ -38,21 +38,24 @@ extern bool FTestUnicode();
 extern bool FTestUniqueNames(CAlloc * pAlloc);
 
 
+static const int s_cErridOptionMax = 4; //max error ids per option
+
 struct SPermutation;
 struct SOption // tag = opt
 {
 							SOption(CAlloc * pAlloc)
 							:m_pCozOption(nullptr)
-							,m_erridExpected(ERRID_Nil)
+							,m_aryErridExpected()
 							,m_fAllowSubstitution(false)
 								{ ; }
 
 							void FreeAll(CAlloc * pAlloc)
 								{ ; }
 
-	const char *			m_pCozOption;
-	ERRID					m_erridExpected;
-	bool					m_fAllowSubstitution;
+	const char *							m_pCozOption;
+	EWC::CFixAry<ERRID, s_cErridOptionMax> 	m_aryErridExpected;
+	bool									m_fAllowSubstitution;
+
 };
 
 struct SPermutation // tag = perm
@@ -414,6 +417,8 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 	const char * pCozMax = pCozMin;
 	const char * pCozErridMin = nullptr;
 	const char * pCozErridMax = nullptr;
+
+	EWC::CFixAry<ERRID, s_cErridOptionMax> aryErrid;
 	ERRID errid = ERRID_Nil;
 	while (pLex->m_tok != TOK('|') && pLex->m_tok != TOK(')'))
 	{
@@ -431,14 +436,27 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 			
 			if (FExpectToken(pTesctx, pLex, TOK('(')))
 			{
-				if (pLex->m_tok != TOK_Literal)
+				while (1)
 				{
-					ParseError(pTesctx, pLex, "expected ?errid number, encountered '%s'", PCozCurrentToken(pLex));
-				}
-				else
-				{
-					errid = (ERRID)pLex->m_n;
-					TokNext(pLex);
+					if (pLex->m_tok != TOK_Literal)
+					{
+						ParseError(pTesctx, pLex, "expected ?errid number, encountered '%s'", PCozCurrentToken(pLex));
+					}
+					else
+					{
+						if (aryErrid.C() >= aryErrid.CMax())
+						{
+							ParseError(pTesctx, pLex, "too many error ids for this option, limit is %d", aryErrid.CMax());
+						}
+						else
+						{
+							aryErrid.Append((ERRID)pLex->m_n);
+						}
+						TokNext(pLex);
+					}
+
+					if (!FConsumeToken(pLex, TOK(',')))
+						break;
 				}
 				FExpectToken(pTesctx, pLex, TOK(')'));
 			}
@@ -491,7 +509,7 @@ SOption * POptParse(STestContext * pTesctx, SLexer * pLex)
 
 	pOpt->m_pCozOption = pCozOption;
 
-	pOpt->m_erridExpected = errid;
+	pOpt->m_aryErridExpected.Append(aryErrid.A(), aryErrid.C());
 	return pOpt;
 }
 
@@ -1058,9 +1076,13 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 			{
 				//printf("?%s:%s, ", pSubIt->m_strVar.PCoz(), (pSubIt->m_pCozOption) ? pSubIt->m_pCozOption : "null");
 
-				if (pSubIt->m_pOpt->m_erridExpected != ERRID_Nil)
+				if (!pSubIt->m_pOpt->m_aryErridExpected.FIsEmpty())
 				{
-					aryErrcExpected.Append(pSubIt->m_pOpt->m_erridExpected);
+					auto pErridMac = pSubIt->m_pOpt->m_aryErridExpected.PMac();
+					for (auto pErrid = pSubIt->m_pOpt->m_aryErridExpected.A(); pErrid != pErridMac; ++pErrid)
+					{
+						aryErrcExpected.Append(*pErrid);
+					}
 				}
 			}
 

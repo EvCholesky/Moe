@@ -70,6 +70,7 @@ enum ERRID
 	ERRID_NonConstantInLiteral		= 2028,
 	ERRID_UninstantiableType		= 2029,
 	ERRID_OperatorNotDefined		= 2030,
+	ERRID_CannotInferGeneric		= 2031,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

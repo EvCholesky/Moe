@@ -122,6 +122,8 @@ protected:
 #endif
 };
 
+
+
 // reference-counted heap-allocated string class
 
 class CAsciString // tag=str
@@ -275,7 +277,10 @@ inline const void VerifyAscii(const CString & str)
 	(void) PChzVerifyAscii(str.PCoz());
 }
 
-
+inline HV HvExtract(const EWC::CString & str)
+{
+	return str.Hv();
+}
 
 // OID - Is essentially a hashed string, but you can look up the pChz value at runtime
 

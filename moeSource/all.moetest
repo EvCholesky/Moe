@@ -1050,8 +1050,8 @@ test GenericMultiAnchor
 	input "SomeProc proc(?arg) { }"
 	parse "()"
 	{
-		?arg("a: $T, b: $T"?errid(1010)),
-		?arg("a: $T, b: T, c: $T"?errid(1010)),
+		?arg("a: $T, b: $T"?errid(1002,1010,2024)),
+		?arg("a: $T, b: T, c: $T"?errid(1002,1010,2024)),
 	}
 
 test NoGenericReturn

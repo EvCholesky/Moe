@@ -123,24 +123,27 @@ void PrintGenericInstantiateContext(SErrorManager * pErrman)
 		}
 
 		printf("  while instantiating generic '%s': ", pCozName);	
-		EWC::CHash<SSymbol *, SBakeValue>::CIterator iter(&pGenmap->m_mpPSymBakval);
+		EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
 
-		SSymbol ** ppSym;
-		SBakeValue * pBakval;
-		while ((pBakval = iter.Next(&ppSym)))
+		CString * pStr;
+		SAnchor * pAnc;
+		while ((pAnc = iter.Next(&pStr)))
 		{
+			if (pAnc->FIsNull())
+				continue;
+
 			CString str;
-			if (pBakval->m_pTin)
+			if (pAnc->m_pTin)
 			{
-				str = StrFromTypeInfo(pBakval->m_pTin);
+				str = StrFromTypeInfo(pAnc->m_pTin);
 			}
 			else 
 			{
-				EWC_ASSERT(pBakval->m_pStnod, "no bake value for '%s'", (*ppSym)->m_strName.PCoz());
-				str = StrFromSTNode(pBakval->m_pStnod);
+				EWC_ASSERT(pAnc->m_pStnodBaked, "no bake value for '%s'", pStr->PCoz());
+				str = StrFromSTNode(pAnc->m_pStnodBaked);
 			}
 
-			printf("$%s %s, ", (*ppSym)->m_strName.PCoz(), str.PCoz());
+			printf("$%s %s, ", pStr->PCoz(), str.PCoz());
 		}
 		s32 iLine;
 		s32 iCol;
@@ -194,7 +197,10 @@ void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID er
 	SError error(pErrman, errid);
 	PrintErrorLine(&error, "Error:", pLexloc, pCoz, ap);
 
-	PrintGenericInstantiateContext(pErrman);
+	if (error.m_errs != ERRS_Hidden)
+	{
+		PrintGenericInstantiateContext(pErrman);
+	}
 }
 
 void EmitError(SErrorManager * pErrman, const SLexerLocation * pLexloc, ERRID errid, const char * pCoz, ...)

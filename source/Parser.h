@@ -657,30 +657,34 @@ SLexerLocation LexlocFromSym(SSymbol * pSym);
 enum FSHADOW
 {
 	FSHADOW_NoShadowing,
-	FShadow_ShadowingAllowed,
+	FSHADOW_ShadowingAllowed,
 };
 
 
 
-struct SBakeValue		// tag bakval
+struct SAnchor		// tag anc
 {
-					SBakeValue()
-					:m_pStnod(nullptr)
+					SAnchor()
+					:m_pStnodBaked(nullptr)
 					,m_pTin(nullptr)
 						{ ; }
 
-					SBakeValue(CSTNode * pStnod)
-					:m_pStnod(pStnod)
+					SAnchor(CSTNode * pStnod)
+					:m_pStnodBaked(pStnod)
 					,m_pTin(nullptr)
 						{ ; }
 
-					SBakeValue(STypeInfo * pTin)
-					:m_pStnod(nullptr)
+					SAnchor(STypeInfo * pTin)
+					:m_pStnodBaked(nullptr)
 					,m_pTin(pTin)
 						{ ; }
 
 
-	CSTNode *		m_pStnod;
+	bool			FIsNull() const
+						{ return m_pStnodBaked == nullptr && m_pTin == nullptr; }
+
+
+	CSTNode *		m_pStnodBaked;
 	STypeInfo *		m_pTin;
 };
 
@@ -688,7 +692,7 @@ struct SGenericMap // tag = genmap
 {
 							SGenericMap(EWC::CAlloc * pAlloc, SSymbol * pSymDefinition)
 							:m_pSymDefinition(pSymDefinition)	
-							,m_mpPSymBakval(pAlloc, EWC::BK_TypeCheckGenerics)
+							,m_mpStrAnc(pAlloc, EWC::BK_TypeCheckGenerics)
 							,m_aryPStnodManaged(pAlloc, EWC::BK_TypeCheckGenerics)
 							,m_aryLexlocSrc(pAlloc, EWC::BK_TypeCheckGenerics)
 								{ ; }
@@ -714,19 +718,19 @@ struct SGenericMap // tag = genmap
 									m_pSymDefinition = pGenmapOther->m_pSymDefinition;
 									pGenmapOther->m_pSymDefinition = pSymDefinitionTemp;
 
-									m_mpPSymBakval.Swap(&pGenmapOther->m_mpPSymBakval);
+									m_mpStrAnc.Swap(&pGenmapOther->m_mpStrAnc);
 									m_aryPStnodManaged.Swap(&pGenmapOther->m_aryPStnodManaged);
 									m_aryLexlocSrc.Swap(&pGenmapOther->m_aryLexlocSrc);
 								}
 
 	bool					FIsEmpty() const
 								{
-									return m_mpPSymBakval.FIsEmpty();// && m_mpPSymGenericPSymRemapped.FIsEmpty();
+									return m_mpStrAnc.FIsEmpty();
 								}
 
 
 	SSymbol *							m_pSymDefinition; 
-	EWC::CHash<SSymbol *, SBakeValue>	m_mpPSymBakval;			// map from a unbaked symbol to the instance that defines it
+	EWC::CHash<EWC::CString, SAnchor>	m_mpStrAnc;				// map from a string name to the anchor value or type mapped to it
 	EWC::CDynAry<CSTNode *>				m_aryPStnodManaged;		// stnodes for baked constants
 	EWC::CDynAry<SLexerLocation>		m_aryLexlocSrc;			// lexer location where this was instantiated
 
@@ -851,7 +855,7 @@ public:
 								const EWC::CString & strName,
 								CSTNode * pStnodDefinition,
 								GRFSYM grfsym = FSYM_None, 
-	 							FSHADOW fshadow = FShadow_ShadowingAllowed);
+	 							FSHADOW fshadow = FSHADOW_ShadowingAllowed);
 
 	void					AddUsingScope(
 								SErrorManager * pErrman,

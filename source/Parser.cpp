@@ -25,14 +25,15 @@ using namespace EWC;
 
 enum FPDECL
 {
-	FPDECL_AllowCompoundDecl	= 0x1,	// allow comma-separated declaration of multiple variables.
-	FPDECL_AllowVariadic		= 0x2,	// allow the list to end with variadic arguments (..)
-	FPDECL_AllowUninitializer	= 0x4,	// allow decls to specify explicit uninitializers (n:int=---;}
-	FPDECL_AllowBakedTypes		= 0x8, 	// allow unspecified generic types (aka $T)
-	FPDECL_AllowBakedValues		= 0x10,	// allow types to be marked as baked constant values
-	FPDECL_AllowConstants		= 0x20, // allow constant declarations
-	FPDECL_AllowUsing			= 0x40,	// allow 'using' declarations
-	FPDECL_AllowUnnamed			= 0x80,	// allow unnamed declarations (ie foo proc (:$T) )
+	FPDECL_AllowCompoundDecl	= 0x1,		// allow comma-separated declaration of multiple variables.
+	FPDECL_AllowVariadic		= 0x2,		// allow the list to end with variadic arguments (..)
+	FPDECL_AllowUninitializer	= 0x4,		// allow decls to specify explicit uninitializers (n:int=---;}
+	FPDECL_AllowBakedTypes		= 0x8, 		// allow unspecified generic types (aka $T)
+	FPDECL_AllowBakedValues		= 0x10,		// allow types to be marked as baked constant values
+	FPDECL_AllowConstants		= 0x20, 	// allow constant declarations
+	FPDECL_AllowUsing			= 0x40,		// allow 'using' declarations
+	FPDECL_AllowUnnamed			= 0x80,		// allow unnamed declarations (ie foo proc (:$T) )
+	FPDECL_AllowShadowing		= 0x100,	// allow shadowing of variable or generic arg names
 
 	FPDECL_None			= 0x0,
 	FPDECL_All			= 0xFF,
@@ -1584,7 +1585,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 	return nullptr;
 }
 
-CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex, GRFPDECL grfpdecl)
 {
 	if (FConsumeToken(pLex, TOK_Generic))
 	{
@@ -1604,7 +1605,8 @@ CSTNode * PStnodParseGenericDecl(CParseContext * pParctx, SLexer * pLex)
 		auto pSymtab = pParctx->m_pSymtab;
 		if (EWC_FVERIFY(pSymtab, "expected symbol table"))
 		{
-			auto pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnod, FSYM_IsType | FSYM_VisibleWhenNested);
+			FSHADOW fshadow = (grfpdecl.FIsSet(FPDECL_AllowShadowing)) ? FSHADOW_ShadowingAllowed : FSHADOW_NoShadowing;
+			auto pSym = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnod, FSYM_IsType | FSYM_VisibleWhenNested, fshadow);
 			pStnod->m_pSymbase = pSym;
 
 			CString strIdent = StrFromIdentifier(pStnodIdent).PCoz();
@@ -1717,7 +1719,7 @@ CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const
 	if (pStnod)
 		return pStnod;
 
-	pStnod = PStnodParseGenericDecl(pParctx, pLex);
+	pStnod = PStnodParseGenericDecl(pParctx, pLex, grfpdecl);
 	if (pStnod)
 	{
 		if (!grfpdecl.FIsSet(FPDECL_AllowBakedTypes))
@@ -2041,7 +2043,8 @@ CSTNode * PStnodParseParameter(
 			// NOTE: May not resolve symbols (symtab is null if this is a procedure reference)
 			if (pSymtab)
 			{
-				pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl);
+				FSHADOW fshadow = (grfpdecl.FIsSet(FPDECL_AllowShadowing)) ? FSHADOW_ShadowingAllowed : FSHADOW_NoShadowing;
+				pStnodIdent->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDecl, FSYM_None, fshadow);
 			}
 
 			pStdecl->m_iStnodIdentifier = pStnodDecl->IAppendChild(pStnodIdent);
@@ -2140,7 +2143,7 @@ CSTNode * PStnodParseDecl(CParseContext * pParctx, SLexer * pLex)
 {
 	// stand alone declaration statement
 
-	GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl | FPDECL_AllowConstants | FPDECL_AllowUsing;
+	GRFPDECL grfpdecl = FPDECL_AllowUninitializer | FPDECL_AllowCompoundDecl | FPDECL_AllowConstants | FPDECL_AllowUsing | FPDECL_AllowShadowing;
 	auto * pStnod =  PStnodParseParameter(pParctx, pLex, pParctx->m_pSymtab, grfpdecl);
 	if (!pStnod)
 		return nullptr;
@@ -4343,7 +4346,7 @@ SSymbol * CSymbolTable::PSymEnsure(
 			pSymPrev = pSym;
 			pSym = nullptr;
 
-			 if (fshadow != FShadow_ShadowingAllowed)
+			 if (fshadow != FSHADOW_ShadowingAllowed)
 			 {
 				s32 iLine = 0;
 				s32 iCol = 0;

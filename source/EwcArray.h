@@ -154,6 +154,15 @@ public:
 						Construct(retValue);
 						return retValue;
 					}
+
+	void		AppendNew(size_t cNew)
+					{
+						EWC_ASSERT(m_c + cNew <= m_cMax, "fixed array overflow");
+						T * retValue = &m_a[m_c];
+						ConstructN(retValue, cNew);
+						m_c += cNew;
+					}
+
 	void		PopLast()
 					{
 						if (EWC_FVERIFY(m_c > 0, "array underflow"))
@@ -168,6 +177,14 @@ public:
 						T last = Last();
 						PopLast();
 						return last;
+					}
+
+	void		PopToSize(size_t cNew)
+					{
+						while (m_c > cNew)
+						{
+							PopLast();
+						}
 					}
 
 	void		Swap(CAry<T> * paryTOther)
@@ -492,6 +509,14 @@ public:
 						return retValue;
 					}
 
+	void		AppendNew(size_t cNew)
+					{
+						EnsureSize(m_c+cNew);
+						T * retValue = &m_a[m_c];
+						ConstructN(retValue, cNew);
+						m_c += cNew;
+					}
+
 	void		EnsureSize(size_t cSize)
 					{
 						size_t c = cSize;
@@ -662,6 +687,17 @@ public:
 						EWC_ASSERT(m_c < m_cMax, "CFixAry overflow");
 						T * retValue = &m_a[m_c++];
 						CopyConstruct(retValue, t);
+					}
+
+	void		Append(const Type * pTArray, size_t cT)
+					{
+						if (!cT)
+							return;
+
+						EWC_ASSERT(m_c + cT < m_cMax, "CFixAry overflow");
+						T * pTEnd = &m_a[m_c];
+						CopyConstructArray(pTEnd, cT, pTArray);
+						m_c += cT;
 					}
 
 	void		AppendFill(size_t c, const Type t)
