@@ -37,6 +37,7 @@ enum ERRID
 	ERRID_BadUsingSyntax			= 1012,
 	ERRID_ExpectedEndOfLine			= 1013,
 	ERRID_UnexpectedToken			= 1014,
+	ERRID_TypeSpecParseFail			= 1015,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,
@@ -71,6 +72,7 @@ enum ERRID
 	ERRID_UninstantiableType		= 2029,
 	ERRID_OperatorNotDefined		= 2030,
 	ERRID_CannotInferGeneric		= 2031,
+	ERRID_OrderedAfterNamed         = 2032,
 	ERRID_TypeCheckMax				= 3000,
 
 	ERRID_CodeGenMin				= ERRID_TypeCheckMax,

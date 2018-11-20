@@ -1005,6 +1005,10 @@ test GenericArgs
 		// embedded type
 		?args("n: & $T") + ?pdecl("(decl n (ptr (gendecl T)))") + ?tcdecl("(&$T n (&$T ($T T)))") + ?tcargs("&$T"),
 		?args("n: [] $T") + ?pdecl("(decl n ([] (gendecl T)))") + ?tcdecl("([]$T n ([]$T ($T T)))") + ?tcargs("[]$T"),
+
+		//default args
+		?val(true|false) + ?dtype(bool) + ?args("n: $T = ?val") + ?pdecl("(decl n (gendecl T) ?val)") + ?tcdecl("($T n ($T T) Literal:Bool)") + ?tcargs("$T"),
+		?val(123) + ?dtype(int) + ?args("n: $T = ?val") + ?pdecl("(decl n (gendecl T) ?val)") + ?tcdecl("($T n ($T T) Literal:Int)") + ?tcargs("$T"),
 	}
 
 test GenericReturn
@@ -1018,17 +1022,29 @@ test GenericReturn
 	}
 
 test GenericInstantiate
-	prereq "SomeProc proc (x: $T) {}; n: int"
+	prereq "SomeProc proc (x: $T?def) {}; n: int"
 	input "SomeProc(?arg)"
-	parse "(procCall SomeProc ?parg)"
-	typecheck "(void SomeProc(?tctype)->void ?littype) (SomeProc(?tctype)->void SomeProc (Params (?tctype x (?tctype T))) void ({} (void)))"
+	parse "(procCall SomeProc?parg)"
+	typecheck "(void SomeProc(?tctype)->void ?littype) (SomeProc(?tctype)->void SomeProc (Params (?tctype x (?tctype T)?tcdef)) void ({} (void)))"
 	{
-		?arg(2) + ?parg("?arg") + ?tctype(int) + ?littype(Literal:Int64),
-		?arg("\"foo\"") + ?parg("?arg") + ?tctype(&const.u8) + ?littype(Literal:String),
-		?arg(2.2) + ?parg("2.200000") + ?tctype(float) + ?littype(Literal:Float32),
-		?arg(n) + ?parg("?arg") + ?tctype(int) + ?littype(int),
-		?arg(&n) + ?parg("(unary[&] n)") + ?tctype(&int) + ?littype("(&int int)"),
-		?arg(true) + ?parg("?arg") + ?tctype(bool) + ?littype(Literal:Bool8)
+		?arg(2) + ?parg(" ?arg") + ?tctype(int) + ?littype(Literal:Int64) + ?def("") + ?tcdef(""),
+		?arg("\"foo\"") + ?parg(" ?arg") + ?tctype(&const.u8) + ?littype(Literal:String) + ?def("") + ?tcdef(""),
+		?arg(2.2) + ?parg(" 2.200000") + ?tctype(float) + ?littype(Literal:Float32) + ?def("") + ?tcdef(""),
+		?arg(n) + ?parg(" ?arg") + ?tctype(int) + ?littype(int) + ?def("") + ?tcdef(""),
+		?arg(&n) + ?parg(" (unary[&] n)") + ?tctype(&int) + ?littype("(&int int)") + ?def("") + ?tcdef(""),
+		?arg(true) + ?parg(" ?arg") + ?tctype(bool) + ?littype(Literal:Bool8) + ?def("") + ?tcdef(""),
+
+		// default args
+		?def(" = 123") + ?arg("") + ?parg("") + ?tctype(int) + ?littype(Literal:Int64) + ?tcdef(" Literal:Int") ,
+		?def(" = 123") + ?arg(2) + ?parg(" ?arg") + ?tctype(int) + ?littype(Literal:Int64) + ?tcdef(" Literal:Int") ,
+		?def(" = true") + ?arg("") + ?parg("") + ?tctype(bool) + ?littype(Literal:Bool8) + ?tcdef(" Literal:Bool") ,
+
+		// named arg
+		?argtype(s16) + ?arg("2, `T :?argtype") + ?parg(" 2 (` T (typearg ?argtype))") + ?tctype("?argtype") + ?littype(Literal:Int16) + ?def("") + ?tcdef(""),
+		?argtype(s16) + ?arg("2.2, `T :?argtype"?errid(2006)) + ?parg(" 2.200000 (` T (typearg ?argtype))") + ?tctype("?argtype") + ?littype(Literal:Int16) + ?def("") + ?tcdef(""),
+		?argtype(s16) + ?arg("`T :?argtype, 2"?errid(2032)) + ?parg(" (` T (typearg ?argtype)) 2") + ?tctype("?argtype") + ?littype(Literal:Int16) + ?def("") + ?tcdef(""),
+		?argtype(float) + ?arg("2, `T :?argtype") + ?parg(" 2 (` T (typearg ?argtype))") + ?tctype("?argtype") + ?littype(Literal:Float32) + ?def("") + ?tcdef(""),
+		?arg("&n, `T :&int") + ?parg(" (unary[&] n) (` T (typearg (ptr int)))") + ?tctype(&int) + ?littype("(&int int)") + ?def("") + ?tcdef(""),
 	}
 
 test GenericReturnInstantiate
@@ -1165,6 +1181,15 @@ test GenericTypeArgument
 		?argdef(", n: int") + ?type(s32) + ?args(":?type, 2") + ?pargs("(typearg ?type) 2") + ?tc(" (int n int)") + ?tcargs(" Literal:Int64") + ?argtype("int"),
 	}
 
+test GenericReturn 
+	input "SomeProc proc ( :$T) -> ?ret { ?body } SomeProc( :?type)"
+	parse "(func SomeProc (params (decl (gendecl T))) ?pret ({} ?pbody)) (procCall SomeProc (typearg ?type))"
+	typecheck "(SomeProc($T)->?tcrtype SomeProc (Params ($T ($T T))) ?tcret ({} ?tcbody)) (?tctype SomeProc()->?tctype) (SomeProc()->?tctype SomeProc (Params) ?tcinst))"
+	{
+		?ret("T") + ?type(s16|bool|float) + ?body("x: T; return x") + ?pret("T") + ?pbody("(decl x T) (return x)") + ?tcrtype("$T") + ?tcret("$T") + ?tctype("?type") + ?tcbody("(decl x T) (return x)") + ?tcinst("?type ({} (?type x ?type) (?type ?type)"),
+		?ret("& T") + ?type(s16|bool|float) + ?body("x: &T; return x") + ?pret("(ptr T)") + ?pbody("(decl x (ptr T)) (return x)") + ?tcrtype("&$T") + ?tcret("(&$T $T)") + ?tctype("&?type") + ?tcbody("(decl x (unk T)) (return x)") + ?tcinst("(&?type ?type) ({} (&?type x (&?type ?type)) (&?type &?type)"),
+	}
+
 // Generic structs
 test StructBakedDef
 	input "SFoo struct ($BAKE: ?type) { ?decl }"
@@ -1187,23 +1212,30 @@ test StructBakedInstance
 	}
 
 test StructTypeArgDefinition
-	input "SFoo struct ( :$T) { m_n :T }"
-	parse "(struct SFoo (params (decl (gendecl T))) ({} (decl m_n T)))"
-	typecheck "(SFoo SFoo (Params ($T ($T T))) ({} (decl m_n T)))"
+	input "SFoo struct ( :$T ?default) { m_n :T }"
+	parse "(struct SFoo (params (decl (gendecl T)?pdef)) ({} (decl m_n T)))"
+	typecheck "(SFoo SFoo (Params ($T ($T T)?tcdef)) ({} (decl m_n T)))"
 	{
+		?default("") + ?pdef("") + ?tcdef(""),
+		?deftype(s16|float) + ?default(" = :?deftype") + ?pdef(" (typearg ?deftype)") + ?tcdef(" (type ?deftype)")
 	}
 
 test StructTypeArgInstance
 	prereq "SFoo struct ( :$T) { m_n :T } num: s32"
 	input "foo :SFoo(?decltype)"
 	parse "(decl foo (genstruct SFoo ?ptype))"
-	typecheck "(SFoo foo (SFoo SFoo (type ?tctype))) (SFoo SFoo (Params ($T (?type T))) ({} (?type m_n ?type)))"
+	typecheck "(SFoo foo (SFoo SFoo (type ?tctype))) (SFoo SFoo (Params (?type (?type T))) ({} (?type m_n ?type)))"
 	{
 		?type(int) + ?decltype("num") + ?ptype("num") + ?tctype("?type"?errid(2018)),
 		?type(s8|int|float) + ?decltype(":?type") + ?ptype("(typearg ?type)") + ?tctype("?type"),
 		?baretype(int|float) + ?type("&?baretype") + ?decltype(":?type") + ?ptype("(typearg (ptr ?baretype))") + ?tctype("(?type ?baretype)"),
 		?baretype(int|float) + ?type("&&?baretype") + ?decltype(":?type") + ?ptype("(typearg (ptr (ptr ?baretype)))") + ?tctype("(?type (&?baretype ?baretype))"),
 		?baretype(int|float) + ?type("[2]?baretype") + ?decltype(":?type") + ?ptype("(typearg ([] 2 ?baretype))") + ?tctype("(?type Literal:Int64 ?baretype)"),
+
+		// passing struct arguments by type name
+		?type(s8|int|float) + ?decltype("`T :?type") + ?ptype("(` T (typearg ?type))") + ?tctype("T (type ?type)"),
+		?baretype(int|float) + ?type("&?baretype") + ?decltype("`T :?type") + ?ptype("(` T (typearg (ptr ?baretype)))") + ?tctype("T (type (?type ?baretype))"),
+		?baretype(int|float) + ?type("[2]?baretype") + ?decltype("`T :?type") + ?ptype("(` T (typearg ([] 2 ?baretype)))") + ?tctype("T (type (?type Literal:Int64 ?baretype))"),
 	}
 
 test StructLiteral

@@ -756,6 +756,12 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 					TokNext(pLex); // consume ':'
 					
 					pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "compound literal", FPDECL_None);
+
+					if (!pStnodType)
+					{
+						ParseError(pParctx, &lexloc, ERRID_TypeSpecParseFail, "expected type specification following ':'");
+						return nullptr;
+					}
 				}
 
 				if (FConsumeToken(pLex, TOK('{')))
@@ -828,6 +834,11 @@ void ParseArgumentList(CParseContext * pParctx, SLexer * pLex, CSTNode * pStnodA
 				pCozLabel = StrFromIdentifier(pStnodIdent).PCoz();
 				pStnodLabel->IAppendChild(pStnodIdent);
 			}
+		}
+
+		if (FConsumeToken(pLex, TOK('=')))
+		{
+			ParseError(pParctx, pLex, "Labeled arguments do not require an assignment operator");
 		}
 
 		CSTNode * pStnodArg = PStnodParseLogicalOrExpression(pParctx, pLex);
