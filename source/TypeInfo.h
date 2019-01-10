@@ -96,7 +96,7 @@ enum FTIN
 {
 	FTIN_IsUnique	= 0x1,
 
-	FTIN_None,
+	FTIN_None		= 0x0,
 	FTIN_All		= 0x1
 };
 

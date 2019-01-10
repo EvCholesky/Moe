@@ -143,21 +143,9 @@ struct SUnitTest // tag = utest
 	char *					m_pCozValues;
 	char *					m_pCozBytecode;
 	UTESTK					m_utestk;
-
 	CDynAry<SPermutation *>	m_arypPerm;
 };
 
-
-
-enum FUNT	// Flag UNit Tests
-{
-	FUNT_First		= 0x1,
-
-	FUNT_None		= 0x0,
-	FUNT_All		= 0x1,
-};
-
-EWC_DEFINE_GRF(GRFUNT, FUNT, u32)
 
 
 struct SSubstitution // tag = sub
@@ -819,6 +807,7 @@ TESTRES TestresRunUnitTest(
 
 	SErrorManager errmanTest(pWorkParent->m_pErrman->m_aryErrid.m_pAlloc);
 	CWorkspace work(pWorkParent->m_pAlloc, &errmanTest);
+	work.m_grfunt = pWorkParent->m_grfunt;
 	errmanTest.m_paryErrcExpected = paryErrcExpected;
 	work.CopyUnitTestFiles(pWorkParent);
 
@@ -835,8 +824,6 @@ TESTRES TestresRunUnitTest(
 	SStringEditBuffer sebFilename(work.m_pAlloc);
 	SStringEditBuffer sebInput(work.m_pAlloc);
 	CWorkspace::SFile * pFile = nullptr;
-
-	work.m_globmod = GLOBMOD_UnitTest;
 
 	sebFilename.AppendCoz(pUtest->m_strName.PCoz());
 	pFile = work.PFileEnsure(sebFilename.PCoz(), CWorkspace::FILEK_Source);
@@ -861,7 +848,7 @@ TESTRES TestresRunUnitTest(
 	work.m_pErrman->Clear();
 
 	// Parse
-	ParseGlobalScope(&work, &lex, true);
+	ParseGlobalScope(&work, &lex, work.m_grfunt);
 	EndParse(&work, &lex);
 
 	HideDebugStringForEntries(&work, cbPrereq);
@@ -899,7 +886,7 @@ TESTRES TestresRunUnitTest(
 	if (testres == TESTRES_Success && !work.m_pErrman->FHasHiddenErrors())
 	{
 		// Type Check
-		PerformTypeCheck(work.m_pAlloc, work.m_pErrman, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, work.m_globmod);
+		PerformTypeCheck(work.m_pAlloc, work.m_pErrman, work.m_pSymtab, &work.m_blistEntry, &work.m_arypEntryChecked, work.m_grfunt);
 		if (work.m_pErrman->FHasErrors())
 		{
 			printf("Unexpected error during type check test %s\n", pUtest->m_strName.PCoz());
@@ -1044,11 +1031,38 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 	pSub->m_strVar = pPerm->m_strVar;
 	pSub->m_pCozOption = nullptr;
 
+	static const char * s_pChzTestFlags = "testflags";
+	static const char * s_pChzGlobalFlag = "global";
+	static const char * s_pChzLocalFlag = "local";
+	bool fIsFlagPermutation = (pPerm->m_strVar == s_pChzTestFlags);
+
 	char * pCozSub = nullptr;
 	auto ppOptMax = pPerm->m_arypOpt.PMac();
+	GRFUNT grfuntPrev = pTesctx->m_pWork->m_grfunt;
 	for (auto ppOpt = pPerm->m_arypOpt.A(); ppOpt != ppOptMax; ++ppOpt)
 	{
 		pSub->m_pOpt = *ppOpt;
+		if (fIsFlagPermutation)
+		{
+			// BB - need parsing for handling flag combinations
+			GRFUNT grfunt(grfuntPrev);
+			if (FAreCozEqual(pSub->m_pOpt->m_pCozOption, s_pChzGlobalFlag))
+			{
+				grfunt.Clear(FUNT_ImplicitProc);
+			}
+			else if (FAreCozEqual(pSub->m_pOpt->m_pCozOption, s_pChzLocalFlag))
+			{
+				grfunt.AddFlags(FUNT_ImplicitProc);
+			}
+			else
+			{
+				printf("unhandled permutation '%s' in '%s' \n", pSub->m_pOpt->m_pCozOption, s_pChzTestFlags);
+				++pTesctx->m_mpTestresCResults[TESTRES_SourceError];
+				continue;
+			}
+			pTesctx->m_pWork->m_grfunt = grfunt;
+		}
+
 		if (pSub->m_pOpt->m_fAllowSubstitution)
 		{
 			pCozSub = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pSub->m_pOpt->m_pCozOption, pTesctx->m_arySubStack, pSub);
@@ -1088,8 +1102,6 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 
 			//printf("\n");
 
-
-			// error testing is not in yet.
 			{
 				auto pCozPrereq = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozPrereq, pTesctx->m_arySubStack);
 				auto pCozInput = PCozAllocateSubstitution(pTesctx, &pPerm->m_lexloc, pUtest->m_pCozInput, pTesctx->m_arySubStack);
@@ -1138,6 +1150,7 @@ void TestPermutation(STestContext * pTesctx, SPermutation * pPerm, SUnitTest * p
 	}
 
 	EWC_ASSERT(pTesctx->m_arySubStack.PLast() == pSub, "bad push/pop");
+	pTesctx->m_pWork->m_grfunt = grfuntPrev;
 	pTesctx->m_arySubStack.PopLast();
 }
 
@@ -1267,6 +1280,7 @@ bool FRunBuiltinTest(const CString & strName, CAlloc * pAlloc)
 void ParseAndTestMoetestFile(EWC::CAlloc * pAlloc, SErrorManager * pErrman, SLexer * pLex, GRFCOMPILE grfcompile)
 {
 	STestContext tesctx(pAlloc, pErrman, pErrman->m_pWork, grfcompile);
+	pErrman->m_pWork->m_grfunt = GRFUNT_DefaultTest;
 	CDynAry<SUnitTest *> arypUtest(pAlloc, BK_UnitTest);
 
 	ParseMoetestFile(&tesctx, pLex, &arypUtest);

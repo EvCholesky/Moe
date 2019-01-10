@@ -1470,12 +1470,13 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 
 				if (EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Compound, "non-compound literal types should be finalized away by here"))
 				{
-					TINK tinkSource = pTinlit->m_pTinSource->m_tink;
+					auto pTinSource = PTinStripQualifiers(pTinlit->m_pTinSource);
+					TINK tinkSource = pTinSource->m_tink;
 					switch (tinkSource)
 					{
 						case TINK_Array:
 						{
-							auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+							auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinSource);
 							EWC_ASSERT(pTinary, "expected array type");
 							pTin = pTinary->m_pTin;
 
@@ -1484,7 +1485,7 @@ CBuilder::Instruction * CBuilder::PInstCreateGEP(SValue * pValLhs, SValue ** apL
 						} break;
 						case TINK_Struct:
 						{
-							pTinstruct = (STypeInfoStruct *)pTinlit->m_pTinSource;
+							pTinstruct = (STypeInfoStruct *)pTinSource;
 
 						} break;
 						default:
@@ -2476,6 +2477,30 @@ SInstructionValue * CBuilder::PInstCreateError()
 	return pInstval;
 }
 
+SValue * CBuilder::PLvalConstCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst)
+{
+	/*
+	auto pLtypeDst = PLtypeFromPTin(pTinDst);
+
+	switch (irop)
+	{
+	case IROP_NTrunc:		return LLVMConstTrunc(pValLhs->m_pLval, pLtypeDst);		break;
+	case IROP_SignExt:		return LLVMConstSExt(pValLhs->m_pLval, pLtypeDst);		break;
+	case IROP_ZeroExt:		return LLVMConstZExt(pValLhs->m_pLval, pLtypeDst);		break;
+	case IROP_GToS:			return LLVMConstFPToSI(pValLhs->m_pLval, pLtypeDst);	break;
+	case IROP_GToU:			return LLVMConstFPToUI(pValLhs->m_pLval, pLtypeDst);	break;
+	case IROP_SToG:			return LLVMConstSIToFP(pValLhs->m_pLval, pLtypeDst);	break;
+	case IROP_UToG:			return LLVMConstUIToFP(pValLhs->m_pLval, pLtypeDst);	break;
+	case IROP_GTrunc:		return LLVMConstFPTrunc(pValLhs->m_pLval, pLtypeDst);	break;
+	case IROP_GExtend:		return LLVMConstFPExt(pValLhs->m_pLval, pLtypeDst);		break;
+	case IROP_Bitcast:		return LLVMConstBitCast(pValLhs->m_pLval, pLtypeDst);	break;
+	default: EWC_ASSERT(false, "IROP not supported by PLvalCreateConstCast");		break;
+	}
+	*/
+	EWC_ASSERT(false, "TBD - Bytecode");
+
+	return nullptr;
+}
 SInstructionValue * CBuilder::PInstCreateCast(IROP irop, SValue * pValSrc, STypeInfo * pTinDst, const char * pChzName)
 {
 	u64 cBDst;
@@ -2751,6 +2776,55 @@ bool FEvaluateGCmp(GPRED gpred, SWord & wordLhs, SWord & wordRhs)
 	EWC_ASSERT(false, "unhandled predicate type");
 	return false;
 }
+
+SValue * CBuilder::PLvalConstNCmp(NPRED npred, STypeInfo * pTin, LValue * pLvalLhs, LValue * pLvalRhs)
+{
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+
+	SWord * pWordLhs = (pLvalLhs->m_valk == VALK_Constant) ? &((SConstant *)pLvalLhs)->m_word : nullptr;
+	SWord * pWordRhs = (pLvalRhs->m_valk == VALK_Constant) ? &((SConstant *)pLvalRhs)->m_word : nullptr;
+	u64 nValue = 0;
+
+	if (EWC_FVERIFY(pWordLhs && pWordRhs, "expected globals or constants in PLvalNConstCmp"))
+	{
+		switch (cB)
+		{
+		case 1: nValue = FEvaluateNCmp<1>(npred, *pWordLhs, *pWordRhs);	break;
+		case 2: nValue = FEvaluateNCmp<2>(npred, *pWordLhs, *pWordRhs);	break;
+		case 4: nValue = FEvaluateNCmp<4>(npred, *pWordLhs, *pWordRhs);	break;
+		case 8: nValue = FEvaluateNCmp<8>(npred, *pWordLhs, *pWordRhs);	break;
+		default: 
+			EWC_ASSERT(false, "unhandled byte count (%d) in PLvalConstNCmp", cB);
+		}
+	}
+	return PLvalConstantInt(nValue, 1, false);
+}
+
+SValue * CBuilder::PLvalConstGCmp(GPRED gpred, STypeInfo * pTin, LValue * pLvalLhs, LValue * pLvalRhs)
+{
+	u64 cB;
+	u64 cBAlign;
+	CalculateByteSizeAndAlign(m_pDlay, pTin, &cB, &cBAlign);
+
+	SWord * pWordLhs = (pLvalLhs->m_valk == VALK_Constant) ? &((SConstant *)pLvalLhs)->m_word : nullptr;
+	SWord * pWordRhs = (pLvalRhs->m_valk == VALK_Constant) ? &((SConstant *)pLvalRhs)->m_word : nullptr;
+	u64 nValue = 0;
+
+	if (EWC_FVERIFY(pWordLhs && pWordRhs, "expected globals or constants in PLvalNConstCmp"))
+	{
+		switch (cB)
+		{
+		case 4: nValue = FEvaluateGCmp<4>(gpred, *pWordLhs, *pWordRhs);	break;
+		case 8: nValue = FEvaluateGCmp<8>(gpred, *pWordLhs, *pWordRhs);	break;
+		default: 
+			EWC_ASSERT(false, "unhandled byte count (%d) in PLvalConstGCmp", cB);
+		}
+	}
+	return PLvalConstantInt(nValue, 1, false);
+}
+
 
 void PrintInstance(CVirtualMachine * pVm, STypeInfo * pTin, u8 * pData)
 {

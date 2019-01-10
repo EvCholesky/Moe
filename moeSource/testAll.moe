@@ -194,7 +194,7 @@ TestInitializers proc ()
 	assert(aNRef.data == null && aNRef.count == 0, "bad array ref init", #file, #line)
 	aNRef : [] int = aNCopy
 
-	aNRef2: [] int = {2,4,6,8,10}
+	aNRef2: [] const int = {2,4,6,8,10}
 	assert(aNRef2[0] == 2 && aNRef2[1] == 4 && aNRef2[2] == 6 && aNRef2[3] == 8 && aNRef2[4] == 10, "bad init", #file, #line)
 
 	// local struct instance 
@@ -398,7 +398,7 @@ PrintStringArray proc (pChzLabel : & u8, aPchz : [] & u8)
 	printf("}\n")
 }
 
-CopyIntArray proc (aN : [] int, ppN: && int)
+CopyIntArray proc (aN : [] const int, ppN: && int)
 {
 	for iN := 0; iN < aN.count; ++iN
 	{
@@ -480,13 +480,13 @@ TestArrays proc ()
 		ConstAry[iN] == iN + 1
 	}
 
-	aNExplicit : [] int = {2, 4, 5}
+	aNExplicit : [] const int = {2, 4, 5}
 	for iN := 0; iN < aNExplicit.count; ++iN
 	{
 		aNExplicit[iN] == iN + 2
 	}
 
-	aNInferred : [] int = {2, 4, 5}
+	aNInferred : [] const int = {2, 4, 5}
 	for iN := 0; iN < aNInferred.count; ++iN
 	{
 		aNInferred[iN] == iN + 2
@@ -510,13 +510,13 @@ TestArrays proc ()
 	kN immutable := {1, 2, 3, 4}
 
 	aN1: [4] int = {1, 2, 3, 4}
-	aN2: [] int = {1, 2, 3, 4}
+	aN2: [] const int = {1, 2, 3, 4}
 	aN3 := {1, 2, 3, 4}
 	aN4 := :[]int { 1, 2, 3, 4}
 	aN5 := kN
 
 	aN6 : [] int
-	aN7 : [] int
+	aN7 : [] const int
 	aN8 : [] int
 	aN9 : [] int
 	aN6 = aN1
@@ -525,10 +525,10 @@ TestArrays proc ()
 	aN9 = kN
 
 	pN1: & int = aN1
-	pN2: & int = aN2
-	pN3: & int = {1, 2, 3, 4}
-	pN4: & int = kN
-	pN5: & int = aN5
+	pN2: & const int = aN2
+	pN3: & const int = {1, 2, 3, 4}
+	pN4: & const int = kN
+	pN5: & const int = aN5
 
 	for iN := 0; iN < aN1.count; ++iN
 	{
@@ -956,7 +956,7 @@ TestBreakContinue proc ()
 
 TestSwitch proc ()
 {
-	VerifyArray proc (aNExpected: [] int, aNValue: [] int)
+	VerifyArray proc (aNExpected: [] const int, aNValue: [] const int)
 	{
 		for iN := 0; iN < aNExpected.count; ++iN
 		{
@@ -1032,6 +1032,8 @@ main proc () -> int
 	TestLoops()
 	TestBreakContinue()
 	TestSwitch()
+
+	printf("-- tests complete --\n")
 
 	return 1
 }

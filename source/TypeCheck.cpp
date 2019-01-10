@@ -223,6 +223,13 @@ STypeInfo * PTinPromoteUntypedDefault(
 bool FDoesOperatorReturnBool(PARK park);
 void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfo * pTinDst, CSTNode * pStnodLit);
 bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst);
+bool FCanCastForInit(STypeCheckWorkspace * pTcwork, SLexerLocation * pLexloc, CSymbolTable * pSymtab, STypeInfo * pTinSrc, STypeInfo * pTinDst);
+
+inline STypeInfo * PTinPromoteUntypedRvalueTightest(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodLit,	
+	STypeInfo * pTinDst);
 
 STypeInfo * PTinPromoteUntypedTightest(
 	STypeCheckWorkspace * pTcwork,
@@ -480,44 +487,143 @@ static inline bool FMatchString(const char * pCozRef, const char ** ppCoz)
 	return true;
 }
 
-STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab)
+STypeInfoArray * PTinaryCopy(CSymbolTable * pSymtab, STypeInfoArray * pTinarySrc)
 {
-	if (pTin->m_tink != TINK_Qualifier)
-		return pTin;
-	
-	auto pTinqual = (STypeInfoQualifier *)pTin;
-	if (!pTinqual->m_grfqualk.FIsSet(FQUALK_Const))
-	{
-		// just strip inArg
+	auto pTinaryNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+	pSymtab->AddManagedTin(pTinaryNew);
 
-		return pTinqual->m_pTin;
+	*pTinaryNew = *pTinarySrc;	
+
+	// cleanup fields set when made unique
+	pTinaryNew->m_grftin.Clear(FTIN_IsUnique);
+	pTinaryNew->m_strDesc = CString();
+
+	return pTinaryNew;
+}
+
+STypeInfoLiteral * PTinlitCopy(CSymbolTable * pSymtab, STypeInfoLiteral * pTinlitSrc)
+{
+	auto pTinlitNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoLiteral) STypeInfoLiteral();
+	pSymtab->AddManagedTin(pTinlitNew);
+
+	*pTinlitNew = *pTinlitSrc;
+
+	// cleanup fields set when made unique
+	pTinlitNew->m_grftin.Clear(FTIN_IsUnique);
+	pTinlitNew->m_strDesc = CString();
+
+	return pTinlitNew;
+}
+
+// --- Notes on const and literals in Moe ---
+
+// Const is used to prevent modifying read-only data, it exists solely for guarding literal data
+//   We cannot reserve it only for data that won't be modified elsewhere or we're unable to write a
+//   routine that can take read-only data that is either const or non-const. It IS legal to cast non-const
+//   data to const.
+//
+//   Const is transitive - any data pointed to by a const pointer is also const. Assignment operations remove the 
+//   top layer of const as that is being copied by value. (ie. it's legal to copy a const int to a regular int, or 
+//   set a non-const reference to const ints because the pointer is copied by value (not the elements pointed to))
+
+// Literal data is const. STypeInfoLiteral should behave as if there is an implicit STypeInfoQualifier(FQUALK_Const)
+//   above pTinlit->m_pTinSource. If it is the RHS of an assignment the child type needs to be wrapped in a const qualifier.
+
+
+STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab, STypeInfo * pTinDst)
+{
+	bool fIsConst = false;
+	STypeInfo * pTinUnqual = nullptr;
+	if (pTin->m_tink == TINK_Qualifier)
+	{
+		auto pTinqual = (STypeInfoQualifier *)pTin;
+		fIsConst = pTinqual->m_grfqualk.FIsSet(FQUALK_Const);
+		if (!fIsConst)
+		{
+			// just strip inArg
+
+			return pTinqual->m_pTin;
+		}
+
+		pTinUnqual = pTinqual->m_pTin;
 	}
+	else if(pTin->m_tink == TINK_Literal)
+	{
+		auto pTinlit = (STypeInfoLiteral *)pTin;
+		pTinUnqual = pTinlit->m_pTinSource;
+		fIsConst = true;
+	}
+
+	if (!fIsConst)
+		return pTin;
 
 	// strip off the top level const, but make sure there's a const qualifier one level below
 
-	STypeInfo * pTinRef = pTinqual->m_pTin;
-	switch (pTinRef->m_tink)
+	switch (pTinUnqual->m_tink)
 	{
 	case TINK_Pointer:
 		{
-			auto pTinptr = (STypeInfoPointer *)pTinRef;
-			auto pTinqualChild = pSymtab->PTinqualEnsure(pTinptr->m_pTinPointedTo, pTinqual->m_grfqualk);
-			pTinptr->m_pTinPointedTo = pTinqualChild;
+			auto pTinptr = (STypeInfoPointer *)pTinUnqual;
+			STypeInfoQualifier * pTinqualChild = (STypeInfoQualifier*)pTinptr->m_pTinPointedTo;
+			if (pTinqualChild->m_tink != TINK_Qualifier || pTinqualChild->m_grftin.FIsSet(FTIN_IsUnique))
+			{
+				pTinqualChild = pSymtab->PTinqualEnsure(pTinptr->m_pTinPointedTo, FQUALK_Const);
+			}
+
+			pTinqualChild->m_grfqualk.AddFlags(FQUALK_Const);
+			if (pTinptr->m_grftin.FIsSet(FTIN_IsUnique))
+			{
+				pTinptr = pSymtab->PTinptrAllocate(pTinqualChild);
+				pTinUnqual = pTinptr;
+			}
+			else
+			{
+				pTinptr->m_pTinPointedTo = pTinqualChild;
+			}
 		}break;
 	case TINK_Array:
 		{
-			auto pTinary = (STypeInfoArray *)pTinRef;
-			auto pTinqualChild = pSymtab->PTinqualEnsure(pTinary->m_pTin, pTinqual->m_grfqualk);
+			auto pTinary = (STypeInfoArray *)pTinUnqual;
+			auto pTinaryDst = PTinRtiCast<STypeInfoArray *>(PTinStripQualifiers(pTinDst));
+			if (pTinaryDst && pTinaryDst->m_aryk == ARYK_Fixed)
+			{
+				// fixed arrays copy members by value, treat this like a member rvalue assignment
+				auto pTinElement = PTinQualifyAfterAssignment(pTinary->m_pTin, pSymtab, pTinaryDst->m_pTin);
+				if (FTypesAreSame(pTinElement, pTinary->m_pTin))
+					return pTinary;
+
+				pTinary = PTinaryCopy(pSymtab, pTinary);
+				pTinary->m_pTin = pTinElement;
+				return pTinary;
+			}
+
+			STypeInfoQualifier * pTinqualChild = (STypeInfoQualifier*)pTinary->m_pTin;
+			if (pTinqualChild->m_tink != TINK_Qualifier || pTinqualChild->m_grftin.FIsSet(FTIN_IsUnique))
+			{
+				pTinqualChild = pSymtab->PTinqualEnsure(pTinary->m_pTin, FQUALK_Const);
+			}
+
+			pTinqualChild->m_grfqualk.AddFlags(FQUALK_Const);
+			if (pTinary->m_grftin.FIsSet(FTIN_IsUnique))
+			{
+
+				pTinary = PTinaryCopy(pSymtab, pTinary);
+				pTinUnqual = pTinary;
+			}
+
 			pTinary->m_pTin = pTinqualChild;
 		}break;
 	default: break;
 	}
 
-	return pTinRef;
+	return pTinUnqual;
 }
 
-STypeInfo * PTinAfterRValueAssignment(STypeCheckWorkspace * pTcwork, SLexerLocation * pLexloc, STypeInfo * pTin, CSymbolTable * pSymtab)
+STypeInfo * PTinAfterRValueAssignment(STypeCheckWorkspace * pTcwork, SLexerLocation * pLexloc, STypeInfo * pTin, CSymbolTable * pSymtab, STypeInfo * pTinDst)
 {
+	if (!pTin)
+		return nullptr;
+
 	if (pTin->m_tink == TINK_Flag)
 	{
 		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
@@ -533,9 +639,22 @@ STypeInfo * PTinAfterRValueAssignment(STypeCheckWorkspace * pTcwork, SLexerLocat
 		}
 	}
 
-	return PTinQualifyAfterAssignment(pTin, pSymtab);
+	return PTinQualifyAfterAssignment(pTin, pSymtab, pTinDst);
 }
 
+
+STypeInfo * PTinStripQualifiers(STypeInfo * pTin, GRFQUALK * pGrfqualk)
+{
+	int cQualifiers = 0;
+	while (pTin->m_tink == TINK_Qualifier)
+	{
+		auto pTinqual = (STypeInfoQualifier *)pTin;
+		*pGrfqualk = pTinqual->m_grfqualk;
+		pTin = pTinqual->m_pTin;
+		EWC_ASSERT(++cQualifiers < 2, "STypeInfoQualifiers should not be directly nested");
+	}
+	return pTin;
+}
 
 STypeInfo * PTinStripQualifiers(STypeInfo * pTin)
 {
@@ -547,6 +666,14 @@ STypeInfo * PTinStripQualifiers(STypeInfo * pTin)
 		EWC_ASSERT(++cQualifiers < 2, "STypeInfoQualifiers should not be directly nested");
 	}
 	return pTin;
+}
+
+STypeInfo * PTinStripEnumToLoose(STypeInfo * pTin)
+{
+	if (pTin->m_tink != TINK_Enum)
+		return pTin;
+
+	return ((STypeInfoEnum *)pTin)->m_pTinLoose;
 }
 
 STypeInfo * PTinStripQualifiersAndPointers(STypeInfo * pTin)
@@ -648,15 +775,6 @@ STypeInfoProcedure * PTinprocCopy(CSymbolTable * pSymtab, STypeInfoProcedure * p
 	pTinprocNew->m_mpIptinGrfparmq.Clear();
 	pTinprocNew->m_mpIptinGrfparmq.Append(pTinprocSrc->m_mpIptinGrfparmq.A(), pTinprocSrc->m_mpIptinGrfparmq.C());
 	return pTinprocNew;
-}
-
-STypeInfoArray * PTinaryCopy(CSymbolTable * pSymtab, STypeInfoArray * pTinarySrc)
-{
-	auto pTinaryNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-	pSymtab->AddManagedTin(pTinaryNew);
-
-	*pTinaryNew = *pTinarySrc;	
-	return pTinaryNew;
 }
 
 STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
@@ -1486,9 +1604,16 @@ inline bool FComputeBinaryOpOnLiterals(
 	}
 }
 
-void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, STypeInfoLiteral * pTinlit, CSTNode * pStnodLit)
+void FinalizeCompoundLiteralType(
+STypeCheckWorkspace * pTcwork,
+CSymbolTable * pSymtab,
+STypeInfoLiteral * pTinlit,
+STypeInfo * pTinDst,
+CSTNode * pStnodLit)
 {
-	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Compound, "finalizing array with non-array literal"))
+	EWC_ASSERT(pStnodLit->m_pTin == pTinlit, "expected literal to be set");
+	if (!EWC_FVERIFY(pTinlit->m_litty.m_litk == LITK_Compound, "finalizing array with non-array literal") ||
+		!EWC_FVERIFY(pTinlit->m_fIsFinalized == false, "expected non-finalized literal"))
 		return;
 
 	CSTNode * pStnodDef = pStnodLit;
@@ -1496,6 +1621,27 @@ void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * p
 	{
 		pStnodDef = pTinlit->m_pStnodDefinition;
 		EWC_ASSERT(pStnodDef->m_strees == STREES_TypeChecked, "expected type checked by now");
+	}
+
+	if (pStnodDef != pStnodLit)
+	{
+		// if this literal is being referred to via an immutable definition we should
+		//  make a copy before we finalize it so it won't affect other references 
+
+		// BB - We should be checking to see if this pTinLit has been finalized to this pTin elsewhere
+		//  to avoid a bunch of duplicate array copies (could check the stnods tacked onto the origional pStnodDef?)
+		auto pTinlitNew = PTinlitCopy(pSymtab, pTinlit);
+
+		pStnodLit->m_pTin = pTinlitNew;
+		pTinlit = pTinlitNew;
+
+		// setup pTinlit->pStnodSource
+		auto pStnodDefCopy = PStnodCopy(pTcwork->m_pAlloc, pStnodDef);
+		pTinlitNew->m_pStnodDefinition = pStnodDefCopy;
+
+		// just tack the new value copy on the end of the literal so it gets cleaned up
+		pStnodDef->IAppendChild(pStnodDefCopy);
+		pStnodDef = pStnodDefCopy;
 	}
 
 	auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDef->m_pStmap);
@@ -1506,12 +1652,24 @@ void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * p
 	if (!pStnodList)
 		return;
 
-	switch (pTinlit->m_pTinSource->m_tink)
+	EWC_ASSERT(pTinDst->m_tink != TINK_Qualifier, "literal const qualifier should be implicit");
+	switch (pTinDst->m_tink)
 	{
 	case TINK_Array:
 		{
-			auto pTinary = (STypeInfoArray *)pTinlit->m_pTinSource;
+			auto pTinary = (STypeInfoArray *)pTinDst;
+			pTinlit->m_pTinSource = pTinary;
+
 			pTinlit->m_c = pStnodList->CStnodChild();
+			pTinlit->m_fIsFinalized = true;
+
+			if (pTinlit->m_c < pTinary->m_c)
+			{
+				EmitError(pTcwork, pStnodDef, ERRID_InitTypeMismatch,
+					"too few elements in array literal definition '%s'",
+					StrFromTypeInfo(pTinlit).PCoz());
+				break;
+			}
 
 			for (int iStnod = 0; iStnod < pStnodList->CStnodChild(); ++iStnod)
 			{
@@ -1526,14 +1684,15 @@ void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * p
 				if (!pTinInit || pTinInit->m_tink != TINK_Literal)
 				{
 					EmitError(pTcwork, pStnodIt, ERRID_NonConstantInLiteral,
-						"array element %d cannot be initialize with a non-literal type '%s'",
+						"array element %d cannot be initialized with a non-literal type '%s'",
 						iStnod,
 						StrFromTypeInfo(pTinInit).PCoz());
 					continue;
 				}
 
 				auto pTinElement = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodIt, pTinary->m_pTin);
-				if (FCanImplicitCast(pTinElement, pTinary->m_pTin))
+
+				if (FCanCastForInit(pTcwork, &pStnodIt->m_lexloc, pSymtab, pTinElement, pTinary->m_pTin))
 				{
 					FinalizeLiteralType(pTcwork, pSymtab, pTinary->m_pTin, pStnodIt);
 				}
@@ -1549,7 +1708,8 @@ void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * p
 		} break;
 	case TINK_Struct:
 		{
-			auto pTinstruct = (STypeInfoStruct *)pTinlit->m_pTinSource;
+			auto pTinstruct = (STypeInfoStruct *)pTinDst;
+			pTinlit->m_pTinSource = pTinstruct;
 
 			int cTypememb = int(pTinstruct->m_aryTypemembField.C());
 	        CDynAry<CSTNode *> arypStnodInit(pTcwork->m_pAlloc, BK_CodeGen, cTypememb);
@@ -1620,7 +1780,11 @@ void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * p
 					}
 
 					pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodIt, pTypememb->m_pTin);
-					if (FCanImplicitCast(pTinInit, pTypememb->m_pTin))
+
+					// the top level literal is implicitly const so it's members are too
+
+					auto pTinqualMember = pSymtab->PTinqualWrap(pTypememb->m_pTin, FQUALK_Const);
+					if (FCanCastForInit(pTcwork, &pStnodIt->m_lexloc, pSymtab, pTinInit, pTinqualMember))
 					{
 						FinalizeLiteralType(pTcwork, pSymtab, pTypememb->m_pTin, pStnodIt);
 					}
@@ -1629,7 +1793,7 @@ void FinalizeCompoundLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * p
 						EmitError(pTcwork, pStnodIt, ERRID_InitTypeMismatch,
 							"struct member '%s' is type '%s', cannot initialize with type '%s'",
 							pTypememb->m_strName.PCoz(),
-							StrFromTypeInfo(pTypememb->m_pTin).PCoz(),
+							StrFromTypeInfo(pTinqualMember).PCoz(),
 							StrFromTypeInfo(pStnodIt->m_pTin).PCoz());
 					}
 				}
@@ -1646,10 +1810,14 @@ void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, 
 	if (!pStnodLit->m_pTin || pStnodLit->m_pTin->m_tink != TINK_Literal)
 		return;
 
-	pTinDst = PTinStripQualifiers(pTinDst);
+	if (pTinDst->m_tink == TINK_Qualifier)
+	{
+		auto pTinqual = (STypeInfoQualifier *)pTinDst;
+		pTinDst = pTinqual->m_pTin;
+	}
 
 	// we've found the place the literal will become 'typed' - flush that type back down into the literal
-	// Note: we may re-finalize finalized literals here when using a typed constant (ie "SomeConst : s8 : 2;" )
+	// Note: we may re-finalize finalized literals here when using a typed constant (ie "SomeConst immutable : s8 = 2;" )
 
 	EWC_ASSERT(pTinDst->m_tink != TINK_Literal, "cannot finalize literal with literal");
 	switch (pTinDst->m_tink)
@@ -1717,7 +1885,12 @@ void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, 
 				} break;
 			case LITK_Compound:
 				{
-					FinalizeCompoundLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
+					auto pTinPromoted = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit, pTinDst);
+
+					// strip const here, as it is under a literal, so it's implicitly const
+
+					auto pTinDst = PTinStripQualifiers(pTinPromoted);
+					FinalizeCompoundLiteralType(pTcwork, pSymtab, pTinlitPrev, pTinDst, pStnodLit);
 				} break;
 			default: EWC_ASSERT(false, "unexpected literal type");
 			}
@@ -1743,7 +1916,8 @@ void FinalizeLiteralType(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, 
 			STypeInfoLiteral * pTinlitPrev = PTinDerivedCast<STypeInfoLiteral *>(pStnodLit->m_pTin);
 			if (pTinlitPrev && pTinlitPrev->m_litty.m_litk == LITK_Compound)
 			{
-				FinalizeCompoundLiteralType(pTcwork, pSymtab, pTinlitPrev, pStnodLit);
+				pTinlitPrev->m_pTinSource = pTinDst;
+				FinalizeCompoundLiteralType(pTcwork, pSymtab, pTinlitPrev, pTinDst, pStnodLit);
 			}
 			else
 			{
@@ -1873,7 +2047,8 @@ static inline STypeInfo * PTinPromoteUntypedCommon(
 	CSymbolTable * pSymtab,
 	bool * pFWasHandled,
 	CSTNode * pStnodLit,
-	STypeInfo * pTinExpected)
+	STypeInfo * pTinExpected,
+	ERREP errep)
 {
 	*pFWasHandled = true;
 	STypeInfoLiteral * pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
@@ -1899,21 +2074,37 @@ static inline STypeInfo * PTinPromoteUntypedCommon(
 		auto pTinSource = pTinlit->m_pTinSource;
 		if (!pTinSource)
 		{
+			STypeInfo * pTinElement = nullptr;
 			if (pTinExpected)
 			{
-				if (EWC_FVERIFY(pTinExpected->m_tink == TINK_Array || pTinExpected->m_tink == TINK_Struct, ""))
+				if (pTinExpected->m_tink == TINK_Pointer)
 				{
-					pTinSource = pTinExpected;
+					auto pTinptrExpected = (STypeInfoPointer *)pTinExpected;
+					pTinElement = pTinptrExpected->m_pTinPointedTo;
+				}
+				else
+				{
+					auto pTinUnqualExpected = PTinStripQualifiers(pTinExpected);
+					if (EWC_FVERIFY(
+						pTinUnqualExpected->m_tink == TINK_Array ||
+						pTinUnqualExpected->m_tink == TINK_Struct,
+						"Unexpected compound literal subtype (%s)", PChzFromTink(pTinUnqualExpected->m_tink)))
+					{
+						pTinSource = pTinExpected;
+					}
 				}
 			}
 
 			if (!pTinSource)
 			{
-				auto pTinElement = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodInit->PStnodChild(0));
+				if (!pTinElement)
+				{
+					pTinElement = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodInit->PStnodChild(0));
+				}
 
 				STypeInfoArray * pTinary = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
 				pTinary->m_pTin = pTinElement;
-				pTinary->m_c = pTinlit->m_c;
+				pTinary->m_c = (pTinlit->m_c >= 0) ? pTinlit->m_c : pStnodInit->CStnodChild();
 				pTinary->m_aryk = ARYK_Fixed;
 				pSymtab->AddManagedTin(pTinary);
 				pTinary = pSymtab->PTinMakeUnique(pTinary);
@@ -1922,9 +2113,10 @@ static inline STypeInfo * PTinPromoteUntypedCommon(
 			}
 		}
 
-		pTinlit->m_pTinSource = pTinSource;
 		if (pTinSource && pStnodInit && EWC_FVERIFY(pStnodInit->m_park == PARK_ExpressionList, "expression list expected"))
 		{
+			pTinSource = PTinStripQualifiers(pTinSource);
+
 			bool fWasHandled;
 			auto pStnodInit = pStnodLit->PStnodChildSafe(pStdecl->m_iStnodInit);
 			switch(pTinSource->m_tink)
@@ -1932,16 +2124,49 @@ static inline STypeInfo * PTinPromoteUntypedCommon(
 			case TINK_Array:
 				{
 					auto pTinary = (STypeInfoArray *)pTinSource;
-					pTinary->m_c = pStnodInit->CStnodChild();
-					pTinlit->m_c = pTinary->m_c;
+					if (pTinary->m_grftin.FIsSet(FTIN_IsUnique))
+					{
+						pTinary = PTinaryCopy(pSymtab, pTinary);
+					}
+
+					EWC_ASSERT(!pTinary->m_grftin.FIsSet(FTIN_IsUnique), "modifying unique pTinAry");
+					pTinary = pSymtab->PTinMakeUnique(pTinary);
+
+					if (errep == ERREP_ReportErrors)
+					{
+						auto cElementLit = pTinlit->m_c;
+						auto pStnodDef = pTinlit->m_pStnodDefinition;
+						if (cElementLit < 0 && pStnodDef)
+						{
+							auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDef->m_pStmap);
+							CSTNode * pStnodList = (pStdecl) ? pStnodDef->PStnodChildSafe(pStdecl->m_iStnodInit) : nullptr;
+
+							if (pStnodList)
+							{
+								cElementLit = pStnodList->CStnodChild();
+							}
+						}
+
+						if (pTinary->m_c > cElementLit)
+						{
+							auto strAry = StrFromTypeInfo(pTinary);
+							auto strLit = StrFromTypeInfo(pTinlit);
+
+							// BB - We should generate a new literal that pads out the array values rather than error here
+							EmitError(pTcwork, pStnodLit, 
+								"cannot cast literal to different element count %s ->%s.  (should be fixed later)",
+								strLit.PCoz(),
+								strAry.PCoz());
+						}
+					}
+
 					for (int ipStnod = 0; ipStnod < pStnodInit->CStnodChild(); ++ipStnod)
 					{
 						auto pStnodIt = pStnodInit->PStnodChild(ipStnod);
 						if (!pStnodIt->m_pTin || pStnodIt->m_pTin->m_tink != TINK_Literal)
 							continue;
 
-						auto pTinIt = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodIt, pTinary->m_pTin);
-						//pStnodIt->m_pTin = pTinIt;
+						(void) PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodIt, pTinary->m_pTin, errep);
 					}
 				} break;
 			case TINK_Struct:
@@ -1966,15 +2191,15 @@ static inline STypeInfo * PTinPromoteUntypedCommon(
 						}
 						else
 						{
-							//pStnodValue = pStnodIt->PStnodChildSafe(ipStnod);
 							pStnodValue = pStnodIt;
 						}
+
 						if (iTypememb < 0 || iTypememb >= pTinstruct->m_aryTypemembField.C())
 							continue;
 
 						auto pTypememb  = &pTinstruct->m_aryTypemembField[iTypememb];
 
-						auto pTinIt = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodValue, pTypememb->m_pTin);
+						auto pTinIt = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodValue, pTypememb->m_pTin, errep);
 					}
 				} break;
 			default:
@@ -1982,11 +2207,14 @@ static inline STypeInfo * PTinPromoteUntypedCommon(
 				break;
 			}
 		}
-		return pTinSource;
+		return pSymtab->PTinqualWrap(pTinSource, FQUALK_Const);
 	}
 
 	if (pTinlit->m_fIsFinalized)
-		return PTinFromLiteralFinalized(pTcwork, pSymtab, pTinlit);
+	{
+		auto pTinFinalized = PTinFromLiteralFinalized(pTcwork, pSymtab, pTinlit);
+		return pSymtab->PTinqualWrap(pTinFinalized, FQUALK_Const);
+	}
 
 	const CSTValue * pStval = pStnodLit->m_pStval;
 	if (!EWC_FVERIFY(pStval, "literal without value"))
@@ -1995,7 +2223,6 @@ static inline STypeInfo * PTinPromoteUntypedCommon(
 	*pFWasHandled = false;
 	return nullptr;
 }
-
 
 STypeInfo * PTinPromoteUntypedDefault(
 	STypeCheckWorkspace * pTcwork,
@@ -2019,7 +2246,7 @@ STypeInfo * PTinPromoteUntypedDefault(
 	}
 
 	bool fWasHandled;
-	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit, pTinExpected);
+	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit, pTinExpected, errep);
 	if (fWasHandled)
 		return pTinReturn;
 
@@ -2037,18 +2264,18 @@ STypeInfo * PTinPromoteUntypedDefault(
 				s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
 				fIsSigned = (nUnsigned < LLONG_MAX);
 			}
-			return pSymtab->PTinBuiltin((fIsSigned) ? CSymbolTable::s_strInt : CSymbolTable::s_strUint);
+			return pSymtab->PTinqualBuiltinConst((fIsSigned) ? CSymbolTable::s_strInt : CSymbolTable::s_strUint);
 		}
-	case LITK_Float:	return pSymtab->PTinBuiltin(CSymbolTable::s_strFloat);
-	case LITK_Char:		return pSymtab->PTinBuiltin(CSymbolTable::s_strChar);
+	case LITK_Float:	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strFloat);
+	case LITK_Char:		return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strChar);
 	case LITK_String:
 	{
 		// right now string literals just promote to *u8, but will eventually promote to string
 		auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
 		auto pTinqual = pSymtab->PTinqualEnsure(pTinU8, FQUALK_Const);
-		return pSymtab->PTinptrAllocate(pTinqual);
+		return pSymtab->PTinqualWrap(pSymtab->PTinptrAllocate(pTinqual), FQUALK_Const);
 	}
-	case LITK_Bool:		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
+	case LITK_Bool:		return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strBool);
 	case LITK_Null:
 		{
 			auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strVoid);
@@ -2058,7 +2285,7 @@ STypeInfo * PTinPromoteUntypedDefault(
 		{
 			auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinlit->m_pTinSource);
 			EWC_ASSERT(pTinenum, "Failed to infer type for enum literal");
-			return pTinenum;
+			return pSymtab->PTinqualWrap(pTinenum, FQUALK_Const);
 		}
 	case LITK_Nil: 
 		EWC_ASSERT(false, "Cannot infer type for LITK_Nil");
@@ -2068,6 +2295,28 @@ STypeInfo * PTinPromoteUntypedDefault(
 	}
 	return nullptr;
 }
+
+STypeInfo * PTinPromoteUntypedDefault_Shim(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodLit,
+	STypeInfo * pTinExpected,
+	ERREP errep)
+{
+	bool fWasLiteral = pStnodLit->m_pTin && pStnodLit->m_pTin->m_tink == TINK_Literal;
+	auto pTinRet = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLit, pTinExpected, errep);
+
+	if (fWasLiteral)
+	{
+		auto pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
+		if (pTinlit->m_litty.m_litk != LITK_Null)
+		{
+			return pSymtab->PTinqualWrap(pTinRet, FQUALK_Const);
+		}
+	}
+	return pTinRet;
+}
+
 
 STypeInfo * PTinPromoteUntypedArgument(
 	STypeCheckWorkspace * pTcwork,
@@ -2129,7 +2378,7 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 	pTinDst = PTinStripQualifiers(pTinDst); 
 
 	bool fWasHandled;
-	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit, pTinDst);
+	STypeInfo * pTinReturn = PTinPromoteUntypedCommon(pTcwork, pSymtab, &fWasHandled, pStnodLit, pTinDst, errep);
 	if (fWasHandled)
 		return pTinReturn;
 
@@ -2145,27 +2394,14 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 
 			if (pTinDst->m_tink == TINK_Enum)
 			{
-					return pTinenum;
+				return pSymtab->PTinqualWrap(pTinenum, FQUALK_Const);
 			}
 
 			if (EWC_FVERIFY(pTinenum->m_pTinLoose, "expected loose type"))
 			{
-				return pTinenum->m_pTinLoose;
+				return pSymtab->PTinqualWrap(pTinenum->m_pTinLoose, FQUALK_Const);
 			}
 			return nullptr;
-
-			/*
-			auto pTinenum = PTinDerivedCast<STypeInfoEnum *>(pStnod->m_pTin);
-			if (pStenum->m_iStnodType >= 0
-
-			
-			SBigInt bintEnum = BintFromStval(pStnodLit->m_pStval);
-
-			bool fDestIsSigned = pTinDst->m_tink != TINK_Integer || ((STypeInfoInteger*)pTinDst)->m_fIsSigned;
-			bintEnum.m_fIsNegative |= fDestIsSigned;
-
-			return PTinFromBint(pTcwork, pSymtab, bintEnum);
-			*/
 		}
 	case LITK_Integer:
 		{
@@ -2174,7 +2410,7 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 			if (pTinDst->m_tink == TINK_Float)
 			{
 				// integer literals can be used to initialize floating point numbers
-				return pSymtab->PTinBuiltin(CSymbolTable::s_strF32);
+				return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strF32);
 			}
 
 			const CSTValue * pStval = pStnodLit->m_pStval;
@@ -2184,30 +2420,30 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 			if (fDestIsSigned == false && fIsValNegative == false)
 			{
 				s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
-				if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
-				if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU16);
-				if (nUnsigned <= UINT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU32);
-				return pSymtab->PTinBuiltin(CSymbolTable::s_strU64);
+				if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU8);
+				if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU16);
+				if (nUnsigned <= UINT_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU32);
+				return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU64);
 			}
 
 			s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
 			if (fIsValNegative)
 			{
-				if (nSigned >= SCHAR_MIN)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
-				if (nSigned >= SHRT_MIN)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
-				if (nSigned >= INT_MIN)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
-				return pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
+				if (nSigned >= SCHAR_MIN)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS8);
+				if (nSigned >= SHRT_MIN)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS16);
+				if (nSigned >= INT_MIN)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS32);
+				return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS64);
 			}
 
 			// NOTE - if this value isn't explicitly negative, allow code to initialize it with 
 			//  values large enough to cause it to be negative. ie. n:s32=0xFFFFFFFF;
 
-			if (nSigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
-			if (nSigned <= USHRT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
-			if (nSigned <= UINT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
-			return pSymtab->PTinBuiltin(CSymbolTable::s_strS64);
+			if (nSigned <= UCHAR_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS8);
+			if (nSigned <= USHRT_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS16);
+			if (nSigned <= UINT_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS32);
+			return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS64);
 		}
-	case LITK_Float:	return pSymtab->PTinBuiltin(CSymbolTable::s_strFloat);
+	case LITK_Float:	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strFloat);
 	case LITK_Char:
 		{
 			const CSTValue * pStval = pStnodLit->m_pStval;
@@ -2215,24 +2451,24 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 			if (fDestIsSigned)
 			{
 				s64 nSigned = NSignedLiteralCast(pTcwork, pStnodLit, pStval);
-				if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinBuiltin(CSymbolTable::s_strS8);
-				if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinBuiltin(CSymbolTable::s_strS16);
-				return pSymtab->PTinBuiltin(CSymbolTable::s_strS32);
+				if ((nSigned <= SCHAR_MAX) & (nSigned > SCHAR_MIN))	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS8);
+				if ((nSigned <= SHRT_MAX) & (nSigned > SHRT_MIN))	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS16);
+				return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strS32);
 			}
 
 			s64 nUnsigned = NUnsignedLiteralCast(pTcwork, pStnodLit, pStval);
-			if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
-			if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinBuiltin(CSymbolTable::s_strU16);
-			return pSymtab->PTinBuiltin(CSymbolTable::s_strU32);
+			if (nUnsigned <= UCHAR_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU8);
+			if (nUnsigned <= USHRT_MAX)	return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU16);
+			return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU32);
 		}
 	case LITK_String:
 	{
 		// right now string literals just promote to *u8, but will eventually promote to string
-		auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
+		auto pTinU8 = pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strU8);
 		auto pTinqual = pSymtab->PTinqualEnsure(pTinU8, FQUALK_Const);
 		return pSymtab->PTinptrAllocate(pTinqual);
 	}
-	case LITK_Bool:		return pSymtab->PTinBuiltin(CSymbolTable::s_strBool);
+	case LITK_Bool:		return pSymtab->PTinqualBuiltinConst(CSymbolTable::s_strBool);
 	case LITK_Null:		
 		{
 			if (pTinDst && (pTinDst->m_tink == TINK_Pointer || pTinDst->m_tink == TINK_Procedure))
@@ -2250,15 +2486,39 @@ inline STypeInfo * PTinPromoteUntypedTightest(
 	return nullptr;
 }
 
+inline STypeInfo * PTinPromoteUntypedTightest_Shim(
+	STypeCheckWorkspace * pTcwork,
+	CSymbolTable * pSymtab,
+	CSTNode * pStnodLit,	
+	STypeInfo * pTinDst,
+	ERREP errep)
+{
+	//bool fWasLiteral = pTinDst && pTinDst->m_tink == TINK_Qualifier && ((STypeInfoQualifier*)pTinDst)->m_grfqualk.FIsSet(FQUALK_Const);
+	bool fWasLiteral = pStnodLit->m_pTin && pStnodLit->m_pTin->m_tink == TINK_Literal;
+	auto pTinRet = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodLit, pTinDst, errep);
+
+	if (fWasLiteral)
+	{
+		auto pTinlit = (STypeInfoLiteral *)pStnodLit->m_pTin;
+		if (pTinlit->m_litty.m_litk != LITK_Null)
+		{
+			return pSymtab->PTinqualWrap(pTinRet, FQUALK_Const);
+		}
+	}
+	return pTinRet;
+}
+
 inline STypeInfo * PTinPromoteUntypedRvalueTightest(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	CSTNode * pStnodLit,	
 	STypeInfo * pTinDst)
 {
+	// PromoteUntypedTightest may add a constant qualifier that  PTinAfterRValueAssignment will strip
+	//  it would be nice to optimize that out 
 	auto pTinPromoted = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodLit, pTinDst);
 
-	return PTinAfterRValueAssignment(pTcwork, &pStnodLit->m_lexloc, pTinPromoted, pSymtab);
+	return PTinAfterRValueAssignment(pTcwork, &pStnodLit->m_lexloc, pTinPromoted, pSymtab, pTinDst);
 }
 
 bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
@@ -2451,7 +2711,7 @@ SOpTypes OptypeFromPark(
 				if (tinkMin != TINK_Pointer && !fLhsIsArrayRef) // no operand for array & array
 					return SOpTypes();
 
-				pTinRefMax = ((STypeInfoArray *)pTinMax)->m_pTin;
+				pTinRefMax = PTinStripQualifiers(((STypeInfoArray *)pTinMax)->m_pTin);
 			}
 			else if (EWC_FVERIFY(tinkMax == TINK_Pointer, "unexpected reference type info"))
 			{
@@ -2461,12 +2721,13 @@ SOpTypes OptypeFromPark(
 
 			auto pTinRefMin = ((STypeInfoPointer*)pTinMin)->m_pTinPointedTo;
 			pTinRefMin = PTinStripQualifiers(pTinRefMin);
-			bool fAreRefTypesSame = FTypesAreSame(pTinRefMin, pTinRefMax);
 
 			if (parkOperator == PARK_AssignmentOp)
 			{
 				if (tok == TOK('='))
 				{
+					bool fAreRefTypesSame = FTypesAreSame(pTinRefMin, pTinRefMax);
+
 					if (pTinLhs->m_tink == TINK_Array && !fLhsIsArrayRef)
 						return SOpTypes();
 
@@ -2478,6 +2739,7 @@ SOpTypes OptypeFromPark(
 				}
 			}
 
+			bool fAreRefTypesSame = FTypesAreSame(pTinRefMin, pTinRefMax);
 			bool fIsOneTypeVoid = (pTinRefMin->m_tink == TINK_Void) | (pTinRefMax->m_tink == TINK_Void);
 			if (parkOperator == PARK_RelationalOp && (fAreRefTypesSame | fIsOneTypeVoid))
 			{
@@ -2635,12 +2897,20 @@ inline bool FIsNumericTink(TINK tink)
 	}
 }
 
-inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
+static bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 {
 	if (!pTinSrc)
 		return false;	 // NOTE: this can happen after an error has occurred, don't assert - just return.
 
 	EWC_ASSERT(pTinSrc->m_tink != TINK_Literal, "literals should be promoted before calling FCanImplicitCast()");
+
+	if (pTinDst->m_tink == TINK_Qualifier)
+	{
+		STypeInfo * pTinSrcAdj = (pTinSrc->m_tink == TINK_Qualifier) ? ((STypeInfoQualifier *)pTinSrc)->m_pTin : pTinSrc;
+		auto pTinqualDst = (STypeInfoQualifier *)pTinDst;
+
+		return FCanImplicitCast(pTinSrcAdj, pTinqualDst->m_pTin);
+	}
 
 	if (pTinSrc->m_tink == pTinDst->m_tink)
 	{
@@ -2699,11 +2969,35 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 		case TINK_Array:
 			{
 				auto pTinaryDst = (STypeInfoArray *)pTinDst;
+				auto pTinarySrc = (STypeInfoArray *)pTinSrc;
+
+				STypeInfo * pTinChildSrc = pTinarySrc->m_pTin;
+				STypeInfo * pTinChildDst = pTinaryDst->m_pTin;
+				GRFQUALK grfqualkSrc;
+				GRFQUALK grfqualkDst;
+				if (pTinChildSrc->m_tink == TINK_Qualifier)
+				{
+					auto pTinqualSrc = (STypeInfoQualifier *)pTinChildSrc;
+					grfqualkSrc = pTinqualSrc->m_grfqualk;
+					pTinChildSrc = pTinqualSrc->m_pTin;
+				}
+				if (pTinChildDst->m_tink == TINK_Qualifier)
+				{
+					auto pTinqualDst = (STypeInfoQualifier *)pTinChildDst;
+					grfqualkDst = pTinqualDst->m_grfqualk;
+					pTinChildDst = pTinqualDst->m_pTin;
+				}
+
+				// can upcast to const/inarg, but not downcast
+				grfqualkSrc.AddFlags(grfqualkDst);
+				if (grfqualkDst != grfqualkSrc)
+					return false;
+
 				if (pTinaryDst->m_aryk == ARYK_Reference)
 				{
-					auto pTinarySrc = (STypeInfoArray *)pTinSrc;
-					return FTypesAreSame(pTinarySrc->m_pTin, pTinaryDst->m_pTin);
+					return FTypesAreSame(pTinChildSrc, pTinChildDst);
 				}
+
 				return FTypesAreSame(pTinSrc, pTinDst);
 			} 
 		case TINK_Enum: 
@@ -2720,10 +3014,10 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 	{
 		auto pTinarySrc = (STypeInfoArray *)pTinSrc;
 		auto pTinptrDst = (STypeInfoPointer *)pTinDst;
-		auto pTinPointedTo = PTinStripQualifiers(pTinptrDst->m_pTinPointedTo);
+		auto pTinPointedTo = pTinptrDst->m_pTinPointedTo;
 		if (pTinPointedTo->m_tink == TINK_Void)
 			return true;
-		return FTypesAreSame(pTinarySrc->m_pTin, pTinPointedTo);	
+		return FCanImplicitCast(pTinarySrc->m_pTin, pTinPointedTo);	
 	}
 
 	if (pTinSrc->m_tink == TINK_Enum && ((pTinDst->m_tink == TINK_Integer) | (pTinDst->m_tink == TINK_Float)))
@@ -2751,6 +3045,41 @@ inline bool FCanImplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst)
 	}
 	return false;
 }
+
+GRFQUALK GrfqualkCompute(STypeInfo * pTin, STypeInfo ** ppTinChild)
+{
+	switch (pTin->m_tink)
+	{
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			*ppTinChild = pTinqual->m_pTin;
+			return pTinqual->m_grfqualk;
+		}
+	case TINK_Literal:
+		{
+			auto pTinlit = (STypeInfoLiteral *)pTin;
+			*ppTinChild = pTinlit->m_pTinSource;
+			return FQUALK_Const;
+		}
+	default:
+		{
+			return FQUALK_None;
+		}
+	}
+}
+
+inline bool FCanCastForInit(STypeCheckWorkspace * pTcwork, SLexerLocation * pLexloc, CSymbolTable * pSymtab, STypeInfo * pTinSrc, STypeInfo * pTinDst)
+{
+	// Only require a const destination if the source is const, otherwise we'll strip it because it's ok to
+	//  initialize a const value (just not to assign to it)
+
+	auto pTinSrcAdj = PTinAfterRValueAssignment(pTcwork, pLexloc, pTinSrc, pSymtab, pTinDst);
+	auto pTinDstAdj = PTinAfterRValueAssignment(pTcwork, pLexloc, pTinDst, pSymtab, pTinDst);
+
+	return FCanImplicitCast(pTinSrcAdj, pTinDstAdj);
+}
+
 
 static inline bool FIsMutableType(STypeInfo * pTin)
 {
@@ -2795,7 +3124,7 @@ inline bool FCanExplicitCast(STypeInfo * pTinSrc, STypeInfo * pTinDst, CSymbolTa
 #endif
 
 	// Result of this cast is an RValue, we can step the const down a level
-	pTinSrc = PTinQualifyAfterAssignment(pTinSrc, pSymtab);
+	pTinSrc = PTinQualifyAfterAssignment(pTinSrc, pSymtab, pTinDst);
 
 	if (FIsNumericTink(pTinSrc->m_tink))
 	{
@@ -3138,7 +3467,7 @@ inline bool FUnpackArgumentList(
 					pStnodInit = pStnodChild;
 				}
 			}
-			else if (pStnodInit && pStnodInit->m_pTin->m_tink == TINK_Type)
+			else if (pStnodInit && pStnodInit->m_pTin && pStnodInit->m_pTin->m_tink == TINK_Type)
 			{
 				// type passed into arg that is not a typearg
 				if (errep == ERREP_ReportErrors)
@@ -3177,7 +3506,6 @@ inline bool FUnpackArgumentList(
 			if (pStdecl->m_iStnodType >= 0)
 			{
 				auto pStnodType = pStnodParamDef->PStnodChildSafe(pStdecl->m_iStnodType);
-
 				auto pTinParam = pStnodType->m_pTin; //pTinproc->m_arypTinParams[iStnodArg];
 
 				if (pArgunp->m_grfarg.FIsSet(FARG_NamedLabelChild))
@@ -3187,6 +3515,7 @@ inline bool FUnpackArgumentList(
 				}
 
 				STypeInfo * pTinInitDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodInit, pTinParam, errep);
+				pTinInitDefault = PTinAfterRValueAssignment(pTcwork, &pStnodInit->m_lexloc, pTinInitDefault, pSymtab, pTinParam);
 				ErridComputeDefinedGenerics(pTcwork, errep, pTinInitDefault, pStnodType, pGenmap);
 			}
 		}
@@ -3315,7 +3644,7 @@ STypeInfo * PTinSubstituteGenerics(
 		    {
 		    	auto pTinqual = (STypeInfoQualifier *)pTinUnsub;
 		    	auto pTinTarget = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinqual->m_pTin, pGenmap, errep);
-				return pSymtab->PTinqualEnsure(pTinTarget, pTinqual->m_grfqualk);
+				return pSymtab->PTinqualWrap(pTinTarget, pTinqual->m_grfqualk);
 		    }
 		default:
 			EWC_ASSERT(false, "unhandled type info.");
@@ -3535,7 +3864,7 @@ struct SMatchTypeInfo // tag = mtin
 					,m_pStnodRawArg(nullptr)
 						{ ; }
 
-	STypeInfo *		m_pTinCall;				// argument type, if literal promoted tighteset
+	STypeInfo *		m_pTinCall;				// argument type, if literal promoted tightest
 	STypeInfo *		m_pTinCallDefault;		// argument type, if literal promoted to fit argument
 	STypeInfo *		m_pTinParam;
 	CSTNode *		m_pStnodArg;
@@ -3591,9 +3920,11 @@ struct SMatchTypeInfo // tag = mtin
 		}
 
 		pTinCall = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodArg, pTinParam, errep);
+		pTinCall = PTinAfterRValueAssignment(pTcwork, &pStnodArg->m_lexloc, pTinCall, pSymtab, pTinParam);
 	}
 
 	STypeInfo * pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodArg, pTinParam, errep);
+	pTinCallDefault = PTinAfterRValueAssignment(pTcwork, &pStnodArg->m_lexloc, pTinCallDefault, pSymtab, pTinParam);
 
 	pMtin->m_pTinCall = pTinCall;
 	pMtin->m_pTinCallDefault = pTinCallDefault;
@@ -3693,6 +4024,9 @@ PROCMATCH ProcmatchCheckStructArguments(
 			{
 				pMtin->m_pTinCall = PTinPromoteUntypedTightest(pTcwork, pSymtab, pMtin->m_pStnodArg, pMtin->m_pTinParam);
 				pMtin->m_pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pMtin->m_pStnodArg, pMtin->m_pTinParam, errep);
+
+				pMtin->m_pTinCall = PTinAfterRValueAssignment(pTcwork, &pMtin->m_pStnodArg->m_lexloc, pMtin->m_pTinCall, pSymtab, pMtin->m_pTinParam);
+				pMtin->m_pTinCallDefault = PTinAfterRValueAssignment(pTcwork, &pMtin->m_pStnodArg->m_lexloc, pMtin->m_pTinCallDefault, pSymtab, pMtin->m_pTinParam);
 			}
 			else
 			{
@@ -3867,6 +4201,7 @@ STypeInfo * PTinFromTypeSpecification(
 	bool fAllowForwardDecl = false;
 	PushTinSpecStack(&aryTinse, pStnod, pSymtabRoot);
 	STypeInfo * pTinReturn = nullptr;
+	*pFIsValidTypeSpec = true;
 
 	while (!aryTinse.FIsEmpty())
 	{
@@ -3977,6 +4312,8 @@ STypeInfo * PTinFromTypeSpecification(
 						{
 							STypeInfo * pTinCount = pTinse->m_pSymtab->PTinBuiltin(CSymbolTable::s_strInt);
 							STypeInfo * pTinPromoted = PTinPromoteUntypedTightest(pTcwork, pTinse->m_pSymtab, pStnodDim, pTinCount);
+							pTinPromoted = PTinAfterRValueAssignment(pTcwork, &pStnodDim->m_lexloc, pTinPromoted, pTinse->m_pSymtab, pTinCount);
+
 							if (!FCanImplicitCast(pTinPromoted, pTinCount))
 							{
 								EmitError(pTcwork, pStnod, "static integer array size expected");
@@ -4386,6 +4723,7 @@ void SpoofLiteralArray(STypeCheckWorkspace * pTcwork, CSymbolTable * pSymtab, CS
 	pTinlit->m_litty.m_litk = LITK_Compound;
 	pTinlit->m_pTinSource = pTinary;
 	pTinlit->m_pStnodDefinition = pStnodArray;
+
 	pStnodArray->m_pTin = pTinlit;
 	pSym->m_pTin = pTinlit;
 
@@ -4570,6 +4908,26 @@ void FindGenericAnchors(
 					EWC_ASSERT(pStnodCur->CStnodChild() == 1, "expected one child");
 					pStnodIt = pStnodCur->PStnodChildSafe(0);
 				} break;
+			case PARK_GenericStructInst:
+				{
+					auto pSymInst = pStnodCur->PSym();
+					EWC_ASSERT(pSymInst && pStnodCur->m_strees >= STREES_TypeChecked, "expected to be type checked");
+					auto pStnodDef = pSymInst->m_pStnodDefinition;
+
+					auto pTinstructGen = PTinRtiCast<STypeInfoStruct *>(pStnodCur->m_pTin);
+					auto pStstruct = PStmapRtiCast<CSTStruct *>(pStnodDef->m_pStmap);
+					if (EWC_FVERIFY(pStstruct && pTinstructGen, "bad PARK_GenericStructInst") &&
+						pTinstructGen->m_arypTinGenericParam.C() &&
+  						pStstruct->m_iStnodParameterList >= 0)
+					{
+						CSTNode * pStnodParameterList = pStnodCur->PStnodChild(pStstruct->m_iStnodParameterList);
+						for (int ipStnod = 0; ipStnod < pStnodParameterList->CStnodChild(); ++ipStnod)
+						{
+							CSTNode * pStnodParam = pStnodParameterList->PStnodChild(ipStnod);
+							arypStnod.Append(pStnodParam);
+						}
+					}
+				} break;
 			case PARK_ProcedureReferenceDecl:
 				{
 					auto pTinprocGen = PTinRtiCast<STypeInfoProcedure *>(pStnodCur->m_pTin);
@@ -4600,13 +4958,12 @@ void FindGenericAnchors(
 ERRID ErridComputeDefinedGenerics(
 	STypeCheckWorkspace * pTcwork,
 	ERREP errep,
-	STypeInfo * pTinRef,
-	CSTNode * pStnodDef,
+	STypeInfo * pTinRefEntry,
+	CSTNode * pStnodDefEntry,
 	SGenericMap * pGenmap)
 {
 	// given a reference type and a generic type specification compute the anchored generic types
 	//   ie. given '[2] &int' and  '[2] $T' compute that $T == &int
-	// This function can also be called with a null pTinRef to find any type symbols
 
 	struct SGenericFrame // tag = genfram
 	{
@@ -4618,8 +4975,8 @@ ERRID ErridComputeDefinedGenerics(
 
 	{
 		auto pGenfram = aryGenfram.AppendNew();
-		pGenfram->m_pStnod = pStnodDef;
-		pGenfram->m_pTinRef = pTinRef;
+		pGenfram->m_pStnod = pStnodDefEntry;
+		pGenfram->m_pTinRef = pTinRefEntry;
 	}
 
 	ERRID erridReturn = ERRID_Nil;
@@ -4707,7 +5064,7 @@ ERRID ErridComputeDefinedGenerics(
 						genfram.m_pTinRef = pTinaryRef->m_pTin;
 					}
 
-					if (pTinaryRef || pTinRef == nullptr)
+					if (pTinaryRef)
 					{
 						// array decl's children are [type] or [m_c, type]
 						pStnodIt = pStnodCur->PStnodChildSafe(pStnodCur->CStnodChild()-1);
@@ -4722,7 +5079,7 @@ ERRID ErridComputeDefinedGenerics(
 						genfram.m_pTinRef = pTinqualRef->m_pTin;
 					}
 
-					if (pTinqualRef || pTinRef == nullptr)
+					if (pTinqualRef)
 					{
 						EWC_ASSERT(pStnodCur->CStnodChild() == 1, "expected one child");
 						pStnodIt = pStnodCur->PStnodChildSafe(0);
@@ -4736,15 +5093,46 @@ ERRID ErridComputeDefinedGenerics(
 						genfram.m_pTinRef = pTinptrRef->m_pTinPointedTo;
 					}
 
-					if (pTinptrRef || pTinRef == nullptr)
+					if (pTinptrRef)
 					{
 						EWC_ASSERT(pStnodCur->CStnodChild() == 1, "expected one child");
 						pStnodIt = pStnodCur->PStnodChildSafe(0);
 					}
 				} break;
+			case PARK_GenericStructInst:
+				{
+					auto pTinstructRef = PTinRtiCast<STypeInfoStruct *>(genfram.m_pTinRef);
+
+					auto pSymInst = pStnodCur->PSym();
+					EWC_ASSERT(pSymInst && pStnodCur->m_strees >= STREES_TypeChecked, "expected to be type checked");
+
+					auto pStnodDef = pSymInst->m_pStnodDefinition;
+					if (!EWC_FVERIFY(pStnodDef, "expected definition"))
+						break;
+
+					auto pStstruct = PStmapRtiCast<CSTStruct *>(pStnodDef->m_pStmap);
+					auto pTinstructDef = PTinRtiCast<STypeInfoStruct *>(pStnodDef->m_pTin);
+					if (EWC_FVERIFY(pTinstructDef, "expected struct") && 
+						pTinstructDef->m_arypTinGenericParam.C() == pTinstructRef->m_arypTinGenericParam.C() &&
+						EWC_FVERIFY(pStstruct && pStstruct->m_iStnodParameterList >= 0, "expected struct definition"))
+					{
+						CSTNode * pStnodParameterList = pStnodDef->PStnodChild(pStstruct->m_iStnodParameterList);
+						for (int ipStnod = 0; ipStnod < pStnodParameterList->CStnodChild(); ++ipStnod)
+						{
+							CSTNode * pStnodParam = pStnodParameterList->PStnodChild(ipStnod);
+							if (ipStnod >= pTinstructRef->m_arypTinGenericParam.C())
+								break;
+
+							auto pGenfram = aryGenfram.AppendNew();
+							pGenfram->m_pStnod = pStnodParam;
+							pGenfram->m_pTinRef = pTinstructRef->m_arypTinGenericParam[ipStnod]; 
+						}
+					}
+
+				} break;
 			case PARK_ProcedureReferenceDecl:
 				{
-					auto pTinprocRef = PTinRtiCast<STypeInfoProcedure *>(pTinRef);
+					auto pTinprocRef = PTinRtiCast<STypeInfoProcedure *>(genfram.m_pTinRef);
 					auto pTinprocGen = PTinRtiCast<STypeInfoProcedure *>(pStnodCur->m_pTin);
 
 					if (pTinprocRef && pTinprocRef->FHasGenericArgs())
@@ -4764,7 +5152,7 @@ ERRID ErridComputeDefinedGenerics(
 						pTinprocGen->FHasGenericArgs() &&
   						pStproc->m_iStnodParameterList >= 0)
 					{
-						bool fReferenceProcMatches = pTinRef == nullptr;
+						bool fReferenceProcMatches = genfram.m_pTinRef == nullptr;
 						if (pTinprocRef)
 						{
 							fReferenceProcMatches = 
@@ -4941,6 +5329,9 @@ PROCMATCH ProcmatchCheckArguments(
 			{
 				pMtin->m_pTinCall = PTinPromoteUntypedTightest(pTcwork, pSymtab, pMtin->m_pStnodArg, pMtin->m_pTinParam);
 				pMtin->m_pTinCallDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pMtin->m_pStnodArg, pMtin->m_pTinParam, errep);
+
+				pMtin->m_pTinCall = PTinAfterRValueAssignment(pTcwork, &pMtin->m_pStnodArg->m_lexloc, pMtin->m_pTinCall, pSymtab, pMtin->m_pTinParam);
+				pMtin->m_pTinCallDefault = PTinAfterRValueAssignment(pTcwork, &pMtin->m_pStnodArg->m_lexloc, pMtin->m_pTinCallDefault, pSymtab, pMtin->m_pTinParam);
 			}
 			else
 			{
@@ -6907,7 +7298,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					STypeInfoLiteral * pTinlitName = pSymtab->PTinlitFromLitk(LITK_String);
 
 					auto pTinU8 = pSymtab->PTinBuiltin(CSymbolTable::s_strU8);
-					STypeInfo * pTinString = pSymtab->PTinptrAllocate(pTinU8);
+					STypeInfo * pTinString = pSymtab->PTinptrAllocate(pSymtab->PTinqualWrap(pTinU8, FQUALK_Const));
 
 					SpoofLiteralArray(pTcwork, pSymtab, pStnodNames, cStnodChild - cStnodChildImplicit, pTinString);
 					auto pStdeclNames = PStmapDerivedCast<CSTDecl *>(pStnodNames->m_pStmap);
@@ -7418,6 +7809,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					// just make sure the init type fits the specified one
 					STypeInfo * pTinInit = pStnodInit->m_pTin;
 					pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodInit, pTinType);
+					pTinInit = PTinAfterRValueAssignment(pTcwork, &pStnodInit->m_lexloc, pTinInit, pSymtab, pTinType);
 					if (FCanImplicitCast(pTinInit, pTinType))
 					{
 						FinalizeLiteralType(pTcwork, pSymtab, pTinType, pStnodInit);
@@ -7618,6 +8010,32 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				pStnod->m_strees = STREES_TypeChecked;
 				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
+			case PARK_GenericTypeSpec:
+			{
+				if (pTcsentTop->m_nState < pStnod->CStnodChild())
+				{
+					// the first child should be the proc/struct identifier
+					if (pTcsentTop->m_nState == 0)
+					{
+						auto pStnodIdent = pStnod->PStnodChild(pTcsentTop->m_nState);
+						EWC_ASSERT(pStnodIdent->m_park == PARK_Identifier, "expected identifier in generic types spec");
+						++pTcsentTop->m_nState;
+
+						if (pTcsentTop->m_nState >= pStnod->CStnodChild())
+							break;
+					}
+
+					auto pTcsentPushed = PTcsentPush(pTcfram, &pTcsentTop, pStnod->PStnodChild(pTcsentTop->m_nState));
+					if (pTcsentPushed)
+					{
+						pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
+					}
+
+					++pTcsentTop->m_nState;
+					break;
+				}
+
+			} break;
 			case PARK_Decl:
 			{
 				auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnod->m_pStmap);
@@ -7749,7 +8167,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							// BB - This won't allow an override of operator:= to return a different type
 							// I'm planning on coming back to it when I handle return types values as regular LValues
 							pTinInitDefault = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodInit);
-							pTinInitDefault = PTinAfterRValueAssignment(pTcwork, &pStnodInit->m_lexloc, pTinInitDefault, pTcsentTop->m_pSymtab);
+
+							// pass pTin as pTinDst - we aren't assigning it to a different type
+							pTinInitDefault = PTinAfterRValueAssignment(pTcwork, &pStnodInit->m_lexloc, pTinInitDefault, pTcsentTop->m_pSymtab, pTinInitDefault);
 
 							EWC_ASSERT(pTinInitDefault, "failed to compute default init type");
 						}
@@ -7762,7 +8182,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							pStnodOpLhs = pStnod->PStnodChildSafe(pStdecl->m_iStnodChildMin);
 						}
 
-						if (pTinInitDefault && pStnodOpLhs)
+						if (pTinInitDefault && pStnodOpLhs && pStnodInit->m_park != PARK_Uninitializer)
 						{
 							EWC_ASSERT(pStnodOpLhs && pStnodOpLhs->m_pTin == nullptr, "expected null identifier type");
 							pStnodOpLhs->m_pTin = pTinInitDefault;
@@ -7814,12 +8234,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							{
 								// just make sure the init type fits the specified one
 								STypeInfo * pTinInit = pStnodInit->m_pTin;
-								pTinInit = PTinPromoteUntypedRvalueTightest(pTcwork, pSymtab, pStnodInit, pStnod->m_pTin);
+								pTinInit = PTinPromoteUntypedTightest(pTcwork, pSymtab, pStnodInit, pStnod->m_pTin);
 
 								// Strip the top level const, as we're declaring a new instance
-								//auto pTinInstance = PTinQualifyAfterAssignment(pStnod->m_pTin, pSymtab);
-								auto pTinInstance = PTinAfterRValueAssignment(pTcwork, &pStnod->m_lexloc, pStnod->m_pTin, pSymtab);
-								if (pTinInstance->m_tink == TINK_Generic || FCanImplicitCast(pTinInit, pTinInstance))
+								if (pStnod->m_pTin->m_tink == TINK_Generic || FCanCastForInit(pTcwork, &pStnod->m_lexloc, pSymtab, pTinInit, pStnod->m_pTin))
 								{
 									if (fAllowFinalizing)
 									{
@@ -7975,17 +8393,25 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 							}
 
 							auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinType);
-							if (pTinary && pTinary->m_aryk == ARYK_Reference)
+							if (pTinary)
 							{
-								// even if this is being assigned to an array reference, the literal is a fixed array
+								if (pTinary->m_aryk == ARYK_Fixed)
+								{
+									cElement = pTinary->m_c;
+								}
+								else if (pTinary->m_aryk == ARYK_Reference)
+								{
+									// even if this is being assigned to an array reference, the literal is a fixed array
 
-								STypeInfoArray * pTinaryCopy = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
-								pTinaryCopy->m_pTin = pTinary->m_pTin;
+									STypeInfoArray * pTinaryCopy = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
 
-								pTinaryCopy->m_aryk = ARYK_Fixed;
-								pTinaryCopy->m_c = cElement;
-								pSymtab->AddManagedTin(pTinaryCopy);
-								pTinType = pSymtab->PTinMakeUnique(pTinaryCopy);
+									pTinaryCopy->m_pTin = pTinary->m_pTin;
+
+									pTinaryCopy->m_aryk = ARYK_Fixed;
+									pTinaryCopy->m_c = cElement;
+									pSymtab->AddManagedTin(pTinaryCopy);
+									pTinType = pSymtab->PTinMakeUnique(pTinaryCopy);
+								}
 							}
 						}
 						else if (pTinType->m_tink == TINK_Struct)
@@ -8156,12 +8582,12 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto pTinLhs = pStnodLhs->m_pTin;
 				if (pTinLhs)
 				{
-					if (pTinLhs->m_tink == TINK_Pointer)
+					while (1)
 					{
-						pTinLhs = ((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo;
-					}
-					else if (pTinLhs->m_tink == TINK_Literal)
-					{
+						pTinLhs = PTinStripQualifiersAndPointers(pTinLhs);
+						if (pTinLhs->m_tink != TINK_Literal)
+							break;
+
 						pTinLhs = PTinPromoteUntypedDefault(pTcwork, pTcsentTop->m_pSymtab, pStnodLhs);
 						FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
 					}
@@ -8369,6 +8795,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				auto pStnodLhs = pStnod->PStnodChild(0);
 
 				auto pTinLhs = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodLhs);
+
+				pTinLhs = PTinAfterRValueAssignment(pTcwork, &pStnodLhs->m_lexloc, pTinLhs, pTcsentTop->m_pSymtab, pTinLhs);
 				FinalizeLiteralType(pTcwork, pTcsentTop->m_pSymtab, pTinLhs, pStnodLhs);
 
 				CSTNode * pStnodIndex = pStnod->PStnodChild(1);
@@ -8395,6 +8823,9 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 
 				auto pTinIndex = PTinPromoteUntypedDefault(pTcwork, pSymtab, pStnodIndex);
+
+				// pass pTin as pTinDst - we aren't assigning it to a different type
+				pTinIndex = PTinAfterRValueAssignment(pTcwork, &pStnodIndex->m_lexloc, pTinIndex, pSymtab, pTinIndex);
 				if (pTinIndex->m_tink == TINK_Enum)
 				{
 					auto pTinenum = PTinRtiCast<STypeInfoEnum *>(pTinIndex);
@@ -8727,6 +9158,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 																	pTcsentTop->m_pSymtab,
 																	pStnodLit,
 																	pTinExpPromoted);
+										pTinCase = PTinAfterRValueAssignment(pTcwork, &pStnodLit->m_lexloc, pTinCase, pTcsentTop->m_pSymtab, pTinExpPromoted);
 
 										if (!FCanImplicitCast(pTinCase, pTinExpPromoted))
 										{
@@ -8814,6 +9246,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 															pTcsentTop->m_pSymtab,
 															pStnodPred,
 															pTinBool);
+
 							if (!FCanImplicitCast(pTinPredPromoted, pTinBool))
 							{
 								CString strTinPred = StrFromTypeInfo(pTinPredPromoted);
@@ -8878,7 +9311,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 																	pTinReturn);
 
 									// Strip the top level const, as we're declaring a new instance
-									auto pTinInstance = PTinAfterRValueAssignment(pTcwork, &pStnodRhs->m_lexloc, pTinReturn, pTcsentTop->m_pSymtab);
+									auto pTinInstance = PTinAfterRValueAssignment(pTcwork, &pStnodRhs->m_lexloc, pTinReturn, pTcsentTop->m_pSymtab, pTinReturn);
 									if (FCanImplicitCast(pTinRhsPromoted, pTinInstance))
 									{
 										pStnod->m_pTin = pTinReturn;
@@ -9532,13 +9965,13 @@ void PerformTypeCheck(
 	CSymbolTable * pSymtabTop,
 	BlockListEntry * pblistEntry,
 	CDynAry<SWorkspaceEntry *> * parypEntryChecked, 
-	GLOBMOD globmod)
+	GRFUNT grfunt)
 {
 	auto pTcwork = EWC_NEW(pAlloc, STypeCheckWorkspace) STypeCheckWorkspace(pAlloc, pErrman, pblistEntry);
 
 	SSymbol * pSymRoot = nullptr;
 	// if we're in a unit test we spoof a top level implicit function symbol
-	if (globmod == GLOBMOD_UnitTest)
+	if (grfunt.FIsSet(FUNT_ImplicitProc))
 	{
 		pSymRoot = pSymtabTop->PSymEnsure(pErrman, "__ImplicitMethod", nullptr);
 	}
@@ -9579,6 +10012,24 @@ void PerformTypeCheck(
 			// make sure we've reported at least one error.
 			if (!pErrman->FHasErrors() && !pErrman->FHasHiddenErrors())
 			{
+				
+				printf("error stack:\n");
+				CDynAry<STypeCheckStackEntry> * paryTcsent = &pTcfram->m_aryTcsent;
+				for (size_t iTcsent = 0; iTcsent < paryTcsent->C(); ++iTcsent)
+				{
+					const STypeCheckStackEntry & tcsent = (*paryTcsent)[iTcsent];
+
+					SLexerLocation * pLexloc = &tcsent.m_pStnod->m_lexloc;
+					s32 iLine;
+					s32 iCol;
+					CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
+
+					printf("%p: PARK_%s      %s (%d, %d)\n", 
+						tcsent.m_pStnod,
+						PChzFromPark(tcsent.m_pStnod->m_park), 
+						pLexloc->m_strFilename.PCoz(), iLine, iCol);
+				}
+
 				SLexerLocation lexloc;
 				EmitError(pErrman, &lexloc, ERRID_UnknownError, "Unknown error in type checker, quitting.");
 			}
@@ -9691,7 +10142,7 @@ void PerformTypeCheck(
 		}
 	}
 	
-	if (globmod == GLOBMOD_UnitTest)
+	if (grfunt.FIsSet(FUNT_ResolveAllSymbols))
 	{
 		CSymbolTable * pSymtabIt = pSymtabTop;
 		while(pSymtabIt)

@@ -93,6 +93,7 @@ namespace BCode
 							{ ; }
 
 		STypeInfo *		m_pTin;
+
 		OPK				m_opk;
 		SLiteralType	m_litty;
 
@@ -380,6 +381,9 @@ namespace BCode
 		Instruction *		PInstCreateStore(SValue * pValPT, SValue * pValT);
 		Instruction *		PInstCreateStoreToIdx(SValue * pValPT, SValue * pValT, const char * pChzName = "");
 		SInstructionValue * PInstCreateStoreToReg(s32 dstIdx, SValue * pValSrc, const char * pChzName = "");
+		SValue *			PLvalConstCast(IROP irop, SValue * pValLhs, STypeInfo * pTinDst);
+		LValue *			PLvalConstNCmp(NPRED npred, STypeInfo * pTin, LValue * pLvalLhs, LValue * pLvalRhs);
+		LValue *			PLvalConstGCmp(GPRED gpred, STypeInfo * pTin, LValue * pLvalLhs, LValue * pLvalRhs);
 
 		SValue *			PValCreateAlloca(LType * pLtype, const char * pChzName = "");
 		Instruction *		PInstCreateMemset(SValue * pValLhs, s64 cBSize, s32 cBAlign, u8 bFill);

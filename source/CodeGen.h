@@ -515,6 +515,8 @@ public:
 
 	CIRInstruction *	PInstCreateNCmp(NPRED npred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
 	CIRInstruction *	PInstCreateGCmp(GPRED gpred, CIRValue * pValLhs, CIRValue * pValRhs, const char * pChzName);
+	LValue *			PLvalConstNCmp(NPRED npred, STypeInfo * pTin, LValue * pValLhs, LValue * pValRhs);
+	LValue *			PLvalConstGCmp(GPRED gpred, STypeInfo * pTin, LValue * pValLhs, LValue * pValRhs);
 
 	CIRInstruction *	PInstCreateCondBranch(CIRValue * pValPred, CIRBlock * pBlockTrue, CIRBlock * pBlockFalse);
 	void				CreateBranch(CIRBlock * pBlock);
@@ -545,6 +547,7 @@ public:
 	CIRInstruction *	PInstCreateCast(IROP irop, CIRValue * pValLhs, STypeInfo * pTinDst, const char * pChzName);
 	CIRInstruction *	PInstCreatePtrToInt(CIRValue * pValOperand, STypeInfoInteger * pTinint, const char * pChzName);
 	CIRInstruction *	PInstCreateStore(CIRValue * pValPT, CIRValue * pValT);
+	LValue *			PLvalConstCast(IROP irop, LValue * pLvalLhs, STypeInfo * pTinDst);
 
 	CIRValue *			PValFromSymbol(SSymbol * pSym);
 	void				SetSymbolValue(SSymbol * pSym, CIRValue * pVal);

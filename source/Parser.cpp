@@ -88,6 +88,7 @@ const char * PChzFromPark(PARK park)
 		"List",
 		"Parameter List",
 		"Expression List",
+		"Generic Type Spec",
 		"If",
 		"Else",
 		"Array Decl",
@@ -632,7 +633,29 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 		case TOK_Identifier:
 			{
 				CSTNode * pStnod = PStnodParseIdentifier(pParctx, pLex);
-				return pStnod;
+
+				if (FConsumeToken(pLex, TOK_ColonColon))
+				{
+#if 1
+					EWC_ASSERT(false, "Generic typespec shorthand is WIP");
+#else
+					SLexerLocation lexloc(pLex);
+					CSTNode * pStnodSpec = EWC_NEW(pParctx->m_pAlloc, CSTNode) CSTNode(pParctx->m_pAlloc, lexloc);
+
+					pStnodSpec->m_tok = TOK_ColonColon;
+					pStnodSpec->m_park = PARK_GenericTypeSpec;
+
+					pStnodSpec->IAppendChild(pStnod);
+					do
+					{
+						auto pStnodTin = PStnodParseTypeSpecifier(pParctx, pLex, "generic specifier", FPDECL_None);
+						pStnodSpec->IAppendChild(pStnodTin);
+					} while (FConsumeToken(pLex, TOK(',')));
+
+					return pStnodSpec;
+#endif
+				}
+					return pStnod;
 			}
 		case TOK_ReservedWord:
 			{
@@ -3770,7 +3793,7 @@ bool FParseImportDirectives(CWorkspace * pWork, SLexer * pLex)
 	return false;
 }
 
-void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntries)
+void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, GRFUNT grfunt)
 {
 	CParseContext * pParctx = pWork->m_pParctx;
 
@@ -3791,13 +3814,16 @@ void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntri
 		}
 
 		pWork->AppendEntry(pStnod, pParctx->m_pSymtab);
-		if (!fAllowIllegalEntries)
+		if (!grfunt.FIsSet(FUNT_ImplicitProc))
 		{
-			bool fIsDecl = pStnod->m_park == PARK_Decl;
-			bool fIsDefinition = (pStnod->m_park ==PARK_ProcedureDefinition) | 
-								(pStnod->m_park == PARK_EnumDefinition) | 
-								(pStnod->m_park == PARK_StructDefinition);
-			if (!fIsDecl | fIsDefinition)
+			bool fIsLegalGlobal =	(pStnod->m_park == PARK_Decl) | 
+									(pStnod->m_park == PARK_ConstantDecl) |
+									(pStnod->m_park == PARK_Typedef) |
+									(pStnod->m_park == PARK_ProcedureDefinition) | 
+									(pStnod->m_park == PARK_EnumDefinition) | 
+									(pStnod->m_park == PARK_StructDefinition) | 
+									(pStnod->m_park == PARK_Nop);
+			if (!fIsLegalGlobal)
 			{
 				ParseError(
 					pParctx,
@@ -4676,6 +4702,13 @@ STypeInfoQualifier * CSymbolTable::PTinqualEnsure(STypeInfo * pTinTarget, GRFQUA
 	return pTinqual;
 }
 
+STypeInfoQualifier * CSymbolTable::PTinqualWrap(STypeInfo * pTinTarget, GRFQUALK grfqualk)
+{
+	if (!pTinTarget)	
+		return nullptr;
+
+	return PTinqualEnsure(pTinTarget, grfqualk);
+}
 
 STypeInfoPointer * CSymbolTable::PTinptrAllocate(STypeInfo * pTinPointedTo)
 {
@@ -5215,6 +5248,13 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			{
 				AppendCoz(pStrbuf, PChzFromLitk(pTinlit->m_litty.m_litk));
 				AppendCoz(pStrbuf, " ");
+
+				if (pTinlit->m_litty.m_litk == LITK_Compound && pTinlit->m_pTinSource)
+				{
+					AppendCoz(pStrbuf, "(");
+					PrintTypeInfo(pStrbuf, pTinlit->m_pTinSource, PARK_Nil, grfdbgstr);
+					AppendCoz(pStrbuf, ")");
+				}
 			}
 			
 			AppendCoz(pStrbuf, "Literal");

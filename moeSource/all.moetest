@@ -112,7 +112,7 @@ test DeclareAssignString
 	typecheck "(?tctype v (?tctype (?tcinit u8)) Literal:String)"
 	{
 		?type(&const u8) + ?ptype("(ptr (const u8))") + ?tctype("&const.u8") + ?tcinit(const.u8),
-		?type(const&u8) + ?ptype("(const (ptr u8))") + ?tctype("const.&const.u8") + ?tcinit(&const.u8),
+		?type(const&u8) + ?ptype("(const (ptr u8))") + ?tctype("const.&u8") + ?tcinit(&u8),
 	}
 
 
@@ -442,9 +442,9 @@ test EnumImplicitMembers
 		{
 			?memb(names)
 			{
-				?extra("") + ?tctype("[3]&u8") + ?pmemb("ENUMK ?memb") + ?lit(Compound) + ?tcinit("Literal:?lit ENUMK_enum ?memb"),
+				?extra("") + ?tctype("[3]&const.u8") + ?pmemb("ENUMK ?memb") + ?lit(Compound) + ?tcinit("Literal:?lit ENUMK_enum ?memb"),
 				?extra(".count") + ?tctype("int") + ?pmemb("(member ENUMK ?memb) count") + ?tcinit("Literal:Int64 (Literal:Compound ENUMK_enum ?memb) count"),
-				?extra(".data") + ?tctype("&&u8") + ?pmemb("(member ENUMK ?memb) data") + ?tcinit("?tctype (Literal:Compound ENUMK_enum ?memb) data"),
+				?extra(".data") + ?tctype("&&const.u8") + ?pmemb("(member ENUMK ?memb) data") + ?tcinit("?tctype (Literal:Compound ENUMK_enum ?memb) data"),
 			},
 			?memb(values)
 			{
@@ -635,26 +635,26 @@ test ArrayToPointer
 test ArrayLit
 	prereq "SFoo struct {?memb}; n: int"
 	input "aN ?decl {?init}"
-	parse "(decl aN ([] ?type) (compLit ({} ?pinit)))"
-	typecheck "([]?type aN ([]?type ?type) (Literal:Compound ({} ?tcinit)))"
+	parse "(decl aN ([] (const ?type)) (compLit ({} ?pinit)))"
+	typecheck "([]const.?type aN ([]const.?type (const.?type ?type)) (Literal:Compound ({} ?tcinit)))"
 	{
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?pinit("1 2") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, n"?errid(2028)) + ?pinit("1 n") + ?decl(": []?type = ") + ?tcinit("Literal:?littype int"),
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2.2"?errid(2001)) + ?pinit("1 2.200000") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
-		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?pinit("1 2") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
-		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?pinit("1 2") + ?decl(": []?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
-		?memb("m_a, m_b: int") + ?type(SFoo) + ?littype(Compound) + ?init("{1, 2}, {3, 4}") + ?pinit("(compLit ({} 1 2)) (compLit ({} 3 4))") + ?decl(": []?type = ") + ?tcinit("(Literal:Compound ({} Literal:Int64 Literal:Int64)) (Literal:Compound ({} Literal:Int64 Literal:Int64))"),
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, n"?errid(2028)) + ?pinit("1 n") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype int"),
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2.2"?errid(2001)) + ?pinit("1 2.200000") + ?decl(": []const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("m_a, m_b: int") + ?type(SFoo) + ?littype(Compound) + ?init("{1, 2}, {3, 4}") + ?pinit("(compLit ({} 1 2)) (compLit ({} 3 4))") + ?decl(": [] const ?type = ") + ?tcinit("(Literal:Compound ({} Literal:Int64 Literal:Int64)) (Literal:Compound ({} Literal:Int64 Literal:Int64))"),
 	}
 
 test ArrayLitCast
 	prereq "SFoo struct {?memb}"
 	input "aN ?decl {?init}"
-	parse "(decl aN (compLit ([] 3 ?type) ({} 1 2)))"
+	parse "(decl aN (compLit ([] 2 ?type) ({} 1 2)))"
 	typecheck "([2]?type aN (Literal:Compound ([2]?type Literal:Int64 ?type) ({} Literal:?littype Literal:?littype)))"
 	{
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?decl(":= :[3]?type "),
-		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?decl(":= :[3]?type "),
-		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?decl(":= :[3]?type "),
+		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?decl(":= :[2]?type "),
+		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?decl(":= :[2]?type "),
+		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?decl(":= :[2]?type "),
 	}
 
 test ArrayLiteralConst
@@ -668,6 +668,16 @@ test ArrayLiteralConst
 			?decl("") + ?parsedecl("") + ?valdecl("") + ?tcdecl("[3]int") + ?tcdetail(""),
 			?decl(":[] ?type") + ?parsedecl("([] ?type) ") + ?valdecl("(_ ?type) ") + ?tcdecl("[]?type") + ?tcdetail("(?tcdecl ?type) ")
 		},
+	}
+
+test PointerToArrayLit
+	input "g_pN: ?type = {1, 2}"
+	{
+		?testflags(local) + ?type("& const int"),
+		?testflags(local) + ?type("&int"?errid(2001)),
+		// BB - global pointer to const is having codegen problems
+		//?testflags(global) + ?type("& const int"),
+		?testflags(global) + ?type("&int"?errid(2001)),
 	}
 
 // Casting:

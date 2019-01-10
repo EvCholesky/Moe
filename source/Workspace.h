@@ -179,11 +179,21 @@ enum TARGETOS
 	TARGETOS_Windows,
 };
 
-enum GLOBMOD
+enum FUNT	// Flag UNit Tests
 {
-	GLOBMOD_UnitTest,	// Global statements are placed in an implicit method for unit testing convenience.
-	GLOBMOD_Normal,		// Globals declarations become global variables, global statements are errors.
+	FUNT_ImplicitProc		= 0x1,		// wrap the code in an implicit procedure for testing
+										//   if this is not set it will test as a global
+	FUNT_ResolveAllSymbols	= 0x2,		// mark all symbols as in use, don't search for main()
+
+	FUNT_None				= 0x0,
+	FUNT_All				= 0x3,
+
+	GRFUNT_Default			= FUNT_ResolveAllSymbols,
+	GRFUNT_DefaultTest      = FUNT_ImplicitProc | FUNT_ResolveAllSymbols,
 };
+
+EWC_DEFINE_GRF(GRFUNT, FUNT, u32)
+
 
 
 struct SUniqueNameSet // tag = unset
@@ -305,7 +315,7 @@ public:
 
 	TARGETOS						m_targetos;
 	OPTLEVEL						m_optlevel;
-	GLOBMOD							m_globmod;
+	GRFUNT							m_grfunt;
 };
 
 
@@ -351,7 +361,7 @@ void PerformTypeCheck(
 	CSymbolTable * pSymtabTop,
 	BlockListEntry * pblistEntry,
 	EWC::CDynAry<SWorkspaceEntry *> * parypEntryChecked,
-	GLOBMOD globmod);
+	GRFUNT grfunt);
 
 
 void SwapDoubleHashForPlatformBits(const char * pChInput, char * aChOut, size_t cB);

@@ -28,6 +28,7 @@ class CParseContext;
 class CSTNode;
 class CSymbolTable;
 class CWorkspace;
+struct GRFUNT;
 struct SErrorManager;
 struct SOpTypes;
 struct SSymbol;
@@ -134,6 +135,7 @@ enum PARK : s16 // PARse Kind
 	PARK_List,				// declarations used by structs
 	PARK_ParameterList,		// comma separated declarations used by argument lists
 	PARK_ExpressionList,	// list of expressions, used by compound literals - doesn't error on rhs only values.
+	PARK_GenericTypeSpec,	// list of types to specify a generic procedure/struct instantiation
 	PARK_If,
 	PARK_Else,
 
@@ -464,7 +466,7 @@ EWC_ASSERT(pStmap && pStmap->m_stmapk == EWC::SStripPointer<T>::Type::s_stmapk, 
 inline SSyntaxTreeMap * PStmapCopy(EWC::CAlloc * pAlloc, SSyntaxTreeMap * pStmapSrc)
 {
 #define ALLOC_COPY_AND_RETURN(TYPE, PALLOC, SRC)	{auto pStmapDst = EWC_NEW(PALLOC, TYPE) TYPE(); \
-													*pStmapDst = *(TYPE *)pStmapSrc; \
+													*pStmapDst = *(TYPE *)SRC; \
 													return pStmapDst; }
 
 	switch (pStmapSrc->m_stmapk)
@@ -873,10 +875,16 @@ public:
 								CSymbolTable ** ppSymtabOut = nullptr);
 
 	STypeInfo *				PTinBuiltin(const EWC::CString & str);
+	STypeInfoQualifier *	PTinqualBuiltinConst(const EWC::CString & str)
+								{
+									return PTinqualWrap(PTinBuiltin(str), FQUALK_Const);
+								}
+
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
 	STypeInfoPointer *		PTinptrAllocate(STypeInfo * pTinPointedTo);
 	STypeInfoQualifier *	PTinqualEnsure(STypeInfo * pTinTarget, GRFQUALK grfqualk);
+	STypeInfoQualifier *	PTinqualWrap(STypeInfo * pTinTarget, GRFQUALK grfqualk);
 
 	template <typename T>
 	T *						PTinMakeUnique(T * pTin)
@@ -945,15 +953,17 @@ CSymbolTable *	PSymtabPop(CParseContext * pParctx);
 STypeInfoStruct * PTinstructAlloc(CSymbolTable * pSymtab, EWC::CString strIdent, size_t cField, size_t cGenericParam);
 STypeInfoProcedure * PTinprocAlloc(CSymbolTable * pSymtab, size_t cParam, size_t cReturn, const char * pCozName);
 
-STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab);
+STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab, STypeInfo * pTinDst);
 STypeInfo * PTinStripQualifiers(STypeInfo * pTin);
+STypeInfo * PTinStripQualifiers(STypeInfo * pTin, GRFQUALK & pGrfqualk);
 STypeInfo * PTinStripQualifiersAndPointers(STypeInfo * pTin);
+STypeInfo * PTinStripEnumToLoose(STypeInfo * pTin);
 
 const char * PCozOverloadNameFromTok(TOK tok);
 ERRID ErridCheckOverloadSignature(TOK tok, STypeInfoProcedure * pTinproc, SErrorManager * pErrman, SLexerLocation * pLexloc);
 bool FAllowsCommutative(PARK park);
 
-void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, bool fAllowIllegalEntries = false);
+void ParseGlobalScope(CWorkspace * pWork, SLexer * pLex, GRFUNT grfunt);
 CSTNode * PStnodAllocateIdentifier(EWC::CAlloc * pAlloc, const SLexerLocation & lexloc, const EWC::CString & strIdent);
 
 

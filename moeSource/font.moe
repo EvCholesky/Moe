@@ -14,7 +14,7 @@ SDrawContext struct // tag=drac
 	m_pFontman: & SFontManager
 	m_pDras: & SDrawState
 	m_pDrasstk: & SDrawStateStack
-};
+}
 
 g_drac : SDrawContext
 g_drasstk: SDrawStateStack

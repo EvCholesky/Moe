@@ -108,26 +108,6 @@ pN3 = pN + 3  // offsets by 3 * the size of the type being pointed to, ala C.
 
 
 
-## Compound literals
-Compound literals are expressed by an optional type specification followed by a comma separated list of values inside curly braces. Compound literals that don't specify a type are inferred to be fixed sized array. The type of each element is inferred from the first value listed.
-```
-aN1 := :[3] s16 {1, 2, 3}    // typeof(aN1) is [3] s16
-aN2 := {1, 2, 3, 4}          // typeof(aN2) is [4] int
-```
-
-Structure literals can also be expressed with this syntax.
-```
-SPoint struct
-{
-  m_x, m_y, m_z: int
-}
-
-Pos1 := :SPoint {1, 2, 3}    // m_x = 1, m_y = 2, m_z = 3
-Pos1 := :SPoint {`m_z 3 }    // m_x = 0, m_y = 0, m_z = 3
-```
-
-
-
 ## Typedef
 You can create a type alias and refer to a type with a different name using the typedef keyword:
 ```
@@ -454,6 +434,29 @@ struct SMulti ( :$K, $V = :bool)
 
 multi :SMulti(`K :s32) 
 ```
+
+
+
+## Compound literals
+Compound literals are expressed by an optional type specification followed by a comma separated list of values inside curly braces. Compound literals that don't specify a type are inferred to be fixed sized array. The type of each element is inferred from the first value listed.
+```
+aN1 := :[3] s16 {1, 2, 3}    // typeof(aN1) is [3] s16
+aN2 := {1, 2, 3, 4}          // typeof(aN2) is [4] int
+```
+
+Structure literals can also be expressed with this syntax.
+```
+SPoint struct
+{
+  m_x, m_y, m_z: int
+}
+
+Pos1 := :SPoint {1, 2, 3}    // m_x = 1, m_y = 2, m_z = 3
+Pos1 := :SPoint {`m_z 3 }    // m_x = 0, m_y = 0, m_z = 3
+```
+
+
+
 
 ## Interfaces
 

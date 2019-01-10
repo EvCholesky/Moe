@@ -101,6 +101,14 @@ LLVMOpaqueValue * PLvalEnsureReflectStruct(
 	SReflectGlobalTable * pReftab);
 
 
+template <typename BUILD>
+static inline typename BUILD::LValue * PLvalGenerateConstCast(
+	CWorkspace * pWork,
+	BUILD * pBuild,
+	VALGENK valgenk,
+	typename BUILD::LValue * pLvalRhs,
+	CSTNode * pStnodRhs,
+	STypeInfo * pTinOut);
 
 template <typename BUILD>
 static inline typename BUILD::Value * PValGenerateCast(
@@ -410,6 +418,26 @@ static inline BCode::SValue * PLvalFromPVal(BCode::SValue * pVal)
 
 void CBuilderIR::SetInitializer(CIRGlobal * pGlob, LLVMValueRef pLconst)
 {
+	auto pLtypeInit = LLVMTypeOf(pLconst);
+	auto pLtypeGlob = LLVMTypeOf(pGlob->m_pLval);
+
+	bool fIsPointerKind = LLVMGetTypeKind(pLtypeGlob) == LLVMPointerTypeKind;
+	bool fTypesMatch = false;
+	if (fIsPointerKind)
+	{
+		auto pLtypeElem = LLVMGetElementType(pLtypeGlob);
+		fTypesMatch = pLtypeElem == pLtypeInit;
+	}
+	if (!fIsPointerKind || !fTypesMatch)
+	{
+#if LLVM_ENABLE_DUMP
+		printf("(src) pInit :"); LLVMDumpType(pLtypeInit);
+		printf("(dst) pGlob:)"); LLVMDumpType(pLtypeGlob);
+#endif
+		EmitError(m_pBerrctx->m_pErrman, m_pBerrctx->m_pLexloc, ERRID_BadStore, "bad global initializer\n");
+		return;
+	}
+
 	LLVMSetInitializer(pGlob->m_pLval, pLconst);
 }
 
@@ -681,6 +709,8 @@ LLVMOpaqueType * CBuilderIR::PLtypeFromPTin(STypeInfo * pTin)
 				auto pTinSource = pTinlit->m_pTinSource;
 				if (!pTinSource)
 					return nullptr;
+
+				pTinSource = PTinStripQualifiers(pTinSource);
 
 				if (pTinSource->m_tink == TINK_Array)
 				{
@@ -1754,13 +1784,6 @@ CIRInstruction * CBuilderIR::PInstCreateCondBranch(
 	pInst->m_pLval = LLVMBuildCondBr(m_pLbuild, pValPred->m_pLval, pBlockTrue->m_pLblock, pLblockFalse);
 	return pInst;
 }
-
-CIRInstruction * CBuilderIR::PInstCreateNCmp(
-	NPRED npred,
-	CIRValue * pValLhs,
-	CIRValue * pValRhs,
-	const char * pChzName)
-{
 #define MOE_PRED(X) 
 #define LLVM_PRED(X) X,
 	static const LLVMIntPredicate s_mpNcmpredLpredicate[] =
@@ -1770,8 +1793,15 @@ CIRInstruction * CBuilderIR::PInstCreateNCmp(
 #undef MOE_PRED
 #undef LLVM_PRED
 	EWC_CASSERT(EWC_DIM(s_mpNcmpredLpredicate) == NPRED_Max, "missing elements in int predicate map");
-	auto lpredicate = s_mpNcmpredLpredicate[npred];
 
+CIRInstruction * CBuilderIR::PInstCreateNCmp(
+	NPRED npred,
+	CIRValue * pValLhs,
+	CIRValue * pValRhs,
+	const char * pChzName)
+{
+
+	auto lpredicate = s_mpNcmpredLpredicate[npred];
 	CIRInstruction * pInst = PInstCreateRaw(IROP_NCmp, pValLhs, pValRhs, pChzName);
 	if (FIsError(pInst))
 		return pInst;
@@ -1780,12 +1810,16 @@ CIRInstruction * CBuilderIR::PInstCreateNCmp(
 	return pInst;
 }
 
-CIRInstruction * CBuilderIR::PInstCreateGCmp(
-	GPRED gpred,
-	CIRValue * pValLhs,
-	CIRValue * pValRhs,
-	const char * pChzName)
+CBuilderIR::LValue * CBuilderIR::PLvalConstNCmp(
+	NPRED npred,
+	STypeInfo * pTin,
+	CBuilderIR::LValue * pLvalLhs,
+	CBuilderIR::LValue * pLvalRhs)
 {
+	auto lpredicate = s_mpNcmpredLpredicate[npred];
+	return LLVMConstICmp(lpredicate, pLvalLhs, pLvalRhs);
+}
+
 #define MOE_PRED(X) 
 #define LLVM_PRED(X) X,
 	static const LLVMRealPredicate s_mpGcmpredLpredicate[] =
@@ -1795,6 +1829,13 @@ CIRInstruction * CBuilderIR::PInstCreateGCmp(
 #undef MOE_PRED
 #undef LLVM_PRED
 	EWC_CASSERT(EWC_DIM(s_mpGcmpredLpredicate) == GPRED_Max, "missing elements in int predicate map");
+
+CIRInstruction * CBuilderIR::PInstCreateGCmp(
+	GPRED gpred,
+	CIRValue * pValLhs,
+	CIRValue * pValRhs,
+	const char * pChzName)
+{
 	auto lpredicate = s_mpGcmpredLpredicate[gpred];
 
 	CIRInstruction * pInst = PInstCreateRaw(IROP_GCmp, pValLhs, pValRhs, pChzName);
@@ -1803,6 +1844,16 @@ CIRInstruction * CBuilderIR::PInstCreateGCmp(
 
 	pInst->m_pLval = LLVMBuildFCmp(m_pLbuild, lpredicate, pValLhs->m_pLval, pValRhs->m_pLval, OPNAME(pChzName));
 	return pInst;
+}
+
+CBuilderIR::LValue * CBuilderIR::PLvalConstGCmp(
+	GPRED gpred,
+	STypeInfo * pTin,
+	CBuilderIR::LValue * pLvalLhs,
+	CBuilderIR::LValue * pLvalRhs)
+{
+	auto lpredicate = s_mpGcmpredLpredicate[gpred];
+	return LLVMConstFCmp(lpredicate, pLvalLhs, pLvalRhs);
 }
 
 void CBuilderIR::CreateBranch(CIRBlock * pBlock)
@@ -2907,7 +2958,14 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 		} break;
 	case LITK_Compound:
 		{
-			TINK tink = (pTinlit->m_pTinSource) ? pTinlit->m_pTinSource->m_tink : TINK_Nil;
+			TINK tink = TINK_Nil;
+			STypeInfo * pTinSource  = pTinlit->m_pTinSource;
+			if (pTinSource)
+			{
+				pTinSource = PTinStripQualifiers(pTinSource);
+				tink = pTinSource->m_tink;
+			}
+
 			switch (tink)
 			{
 			case TINK_Array:
@@ -2925,30 +2983,38 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 						pStnodList = pStnodLit->PStnodChild(pStdecl->m_iStnodInit);
 					}
 
-					if (!pStnodList || !EWC_FVERIFY(pStnodList->CStnodChild() == pTinlit->m_c, "missing values for array literal"))
+					if (!EWC_FVERIFY(pStnodList, "missing values for array literal"))
 						return nullptr;
 
 					size_t cB = sizeof(BUILD::LValue *) * (size_t)pTinlit->m_c;
 					auto apLval = (BUILD::LValue **)(alloca(cB));
 
-					for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
-					{
-						auto pStnodChild = pStnodList->PStnodChild(iStnod);
-						STypeInfoLiteral * pTinlitChild = (STypeInfoLiteral *)pStnodChild->m_pTin;
-						EWC_ASSERT(pTinlitChild->m_tink == TINK_Literal, "Bad array literal element");
-
-						apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlitChild, pStnodChild);
-					}
-
-					auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+					auto pTinary = PTinRtiCast<STypeInfoArray *>(pTinSource);
 					if (!EWC_FVERIFY(pTinary, "expected array type for array literal"))
 						return nullptr;
+
+					for (int iStnod = 0; iStnod < pTinlit->m_c; ++iStnod)
+					{
+						auto pStnodChild = pStnodList->PStnodChildSafe(iStnod);
+						if (pStnodChild)
+						{
+							STypeInfoLiteral * pTinlitChild = (STypeInfoLiteral *)pStnodChild->m_pTin;
+							EWC_ASSERT(pTinlitChild->m_tink == TINK_Literal, "Bad array literal element");
+
+							apLval[iStnod] = PLvalFromLiteral(pBuild, pTinlitChild, pStnodChild);
+						}
+						else
+						{
+							apLval[iStnod] = PLvalZeroInType(pBuild, pTinary->m_pTin);
+						}
+					}
+
 					auto pLtypeElement = pBuild->PLtypeFromPTin(pTinary->m_pTin);
 					return pBuild->PLvalConstantArray(pLtypeElement, apLval, u32(pTinlit->m_c));
 				}
 			case TINK_Struct:
 				{
-					auto pTinstruct = (STypeInfoStruct *)pTinlit->m_pTinSource;
+					auto pTinstruct = (STypeInfoStruct *)pTinSource;
 					auto cginitk = CginitkCompute(pTinstruct, nullptr);
 					switch (cginitk)
 					{
@@ -2969,7 +3035,7 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 					}
 				} break;
 			default:
-				EWC_ASSERT("compound literal should be array or struct is %s", PChzFromTink(tink));
+				EWC_ASSERT(false, "compound literal should be array or struct is %s", PChzFromTink(tink));
 				break;	
 			}
 		} break;
@@ -2979,6 +3045,177 @@ typename BUILD::LValue * PLvalFromLiteral(BUILD * pBuild, STypeInfoLiteral * pTi
 
 	EWC_ASSERT(pLval, "unknown LITK in PLValueFromLiteral");
 	return pLval;
+}
+
+template <typename BUILD>
+typename BUILD::LValue * PLvalCreateConstCast(
+	CWorkspace * pWork,
+	BUILD * pBuild,
+	typename BUILD::LValue * pLvalSrc,
+	STypeInfo * pTinSrc,
+	STypeInfo * pTinDst)
+{
+	pTinSrc = PTinStripQualifiers(pTinSrc);
+	pTinDst = PTinStripQualifiers(pTinDst);
+
+	u32 cBitSrc = 0;
+	u32 cBitDst;
+	bool fSignedSrc = false;
+	bool fSignedDst;
+	if (FTypesAreSame(pTinSrc, pTinDst))
+		return pLvalSrc;
+
+	if (pTinSrc->m_tink == TINK_Literal)
+	{
+		// BB - should we finalize array literals as references to avoid this?
+
+		auto pTinlitSrc = (STypeInfoLiteral *)pTinSrc;
+		auto pTinaryDst = PTinRtiCast<STypeInfoArray *>(pTinDst);
+		if (pTinlitSrc->m_litty.m_litk == LITK_Compound && pTinaryDst && pTinaryDst->m_aryk == ARYK_Reference)
+		{
+#if LATER	// handle casting global array reference to array literal
+
+			// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
+			//  array that happens to be static and isn't read-only.
+				
+			auto pLtype = pBuild->PLtypeFromPTin(pTinlitSrc);
+			if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
+				return nullptr;
+
+			auto pValAllocaLit = pBuild->PValCreateAlloca(pLtype, "aryLit");
+
+			// copy the literal into memory
+
+			pBuild->PInstCreateMemcpy(pTinDst, pValAllocaLit, pLvalSrc);
+
+			auto pLtypeDst = pBuild->PLtypeFromPTin(pTinDst);
+			auto pValAllocaDst = pBuild->PValCreateAlloca(pLtypeDst, "aryDst");
+
+			// copy the fixed array into the array reference
+			STypeInfoArray tinaryFixed;
+			tinaryFixed.m_aryk = ARYK_Fixed;
+			tinaryFixed.m_c = pTinlitSrc->m_c;
+			tinaryFixed.m_pTin = pTinlitSrc->m_pTinSource;
+
+			(void)PInstGenerateAssignmentFromRef(pWork, pBuild, pTinaryDst, &tinaryFixed, pValAllocaDst, pValAllocaLit);
+			return pBuild->PInstCreate(IROP_Load, pValAllocaDst, "aryRefLoad");
+#endif
+		}
+
+		return pLvalSrc;
+	}
+
+	pTinSrc = PTinStripEnumToLoose(pTinSrc);
+	pTinDst = PTinStripEnumToLoose(pTinDst);
+
+	if (pTinSrc->m_tink == TINK_Pointer || pTinSrc->m_tink == TINK_Procedure)
+	{
+		if (pTinDst->m_tink != TINK_Bool)
+		{
+			if (EWC_FVERIFY(pTinDst->m_tink == pTinSrc->m_tink, "trying to cast pointer to non-pointer. (not supported yet)"))
+			{
+				return pBuild->PLvalConstCast(IROP_Bitcast, pLvalSrc, pTinDst);
+			}
+			return pLvalSrc;
+		}
+	}
+	else
+	{
+		if (!FExtractNumericInfo(pTinSrc, &cBitSrc, &fSignedSrc))
+			return nullptr;
+	}
+
+	if (!FExtractNumericInfo(pTinDst, &cBitDst, &fSignedDst))
+		return nullptr;
+
+
+	switch (pTinDst->m_tink)
+	{
+	case TINK_Integer:
+		{
+			switch (pTinSrc->m_tink)
+			{
+			case TINK_Integer: // fall through
+			case TINK_Bool:
+				{
+					if (cBitDst < cBitSrc)				{ return pBuild->PLvalConstCast(IROP_NTrunc, pLvalSrc, pTinDst); }
+					else if (fSignedSrc & fSignedDst)	{ return pBuild->PLvalConstCast(IROP_SignExt, pLvalSrc, pTinDst); }
+					else								{ return pBuild->PLvalConstCast(IROP_ZeroExt, pLvalSrc, pTinDst); }
+				} break;
+			case TINK_Float:
+				{
+					if (fSignedSrc) { return pBuild->PLvalConstCast(IROP_GToS, pLvalSrc, pTinDst); }
+					else			{ return pBuild->PLvalConstCast(IROP_GToU, pLvalSrc, pTinDst); }
+				} break;
+			case TINK_Literal:
+				{
+					return pLvalSrc;
+				} break;
+			default:
+				EWC_ASSERT(false, "unexpected type info kind in integer cast");
+				break;
+			}
+		} break;
+	case TINK_Float:
+		{
+			switch (pTinSrc->m_tink)
+			{
+			case TINK_Integer: // fall through
+			case TINK_Bool:
+				{
+					if (fSignedSrc) { return pBuild->PLvalConstCast(IROP_SToG, pLvalSrc, pTinDst); }
+					else			{ return pBuild->PLvalConstCast(IROP_UToG, pLvalSrc, pTinDst); }
+				}
+			case TINK_Float:
+					if (cBitDst > cBitSrc)	{ return pBuild->PLvalConstCast(IROP_GExtend, pLvalSrc, pTinDst); }
+					else					{ return pBuild->PLvalConstCast(IROP_GTrunc, pLvalSrc, pTinDst); }
+			case TINK_Literal:
+				{
+					return pLvalSrc;
+				} break;
+			default:
+				EWC_ASSERT(false, "unexpected type info kind in float cast");
+				break;
+			}
+
+		}break;
+	case TINK_Bool:
+			switch (pTinSrc->m_tink)
+			{
+			case TINK_Bool:	
+			case TINK_Flag:	
+				return pLvalSrc;
+			case TINK_Integer:
+				{
+					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
+					return pBuild->PLvalConstNCmp(NPRED_NE, pTinSrc, pLvalSrc, pLvalZero);
+				} 
+			case TINK_Float:
+				{
+					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
+					return pBuild->PLvalConstGCmp(GPRED_LE, pTinSrc, pLvalSrc, pLvalZero);
+				}
+			case TINK_Pointer:
+				{
+					auto pLvalZero = PLvalZeroInType(pBuild, pTinSrc);
+					return pBuild->PLvalConstNCmp(NPRED_NE, pTinSrc, pLvalSrc, pLvalZero);
+				}
+			case TINK_Literal:
+				{
+					return pLvalSrc;
+				} break;
+			default:
+				EWC_ASSERT(false, "unexpected type info kind in boo cast");
+				break;
+			} break;
+	case TINK_Literal:
+		EWC_ASSERT(false, "can't cast to literal");
+		return nullptr;
+	default:
+		EWC_ASSERT(false, "unsupported cast destination type in PValCreateCast");
+	}
+
+	return pLvalSrc;
 }
 
 template <typename BUILD>
@@ -3035,16 +3272,8 @@ typename BUILD::Value * PValCreateCast(
 		return pValSrc;
 	}
 
-	if (pTinSrc->m_tink == TINK_Enum)
-	{
-		auto pTinenum = (STypeInfoEnum *)pTinSrc;
-		pTinSrc = pTinenum->m_pTinLoose;
-	}
-	if (pTinDst->m_tink == TINK_Enum)
-	{
-		auto pTinenum = (STypeInfoEnum *)pTinDst;
-		pTinDst = pTinenum->m_pTinLoose;
-	}
+	pTinSrc = PTinStripEnumToLoose(pTinSrc);
+	pTinDst = PTinStripEnumToLoose(pTinDst);
 
 	if (pTinSrc->m_tink == TINK_Pointer || pTinSrc->m_tink == TINK_Procedure)
 	{
@@ -3132,7 +3361,7 @@ typename BUILD::Value * PValCreateCast(
 			case TINK_Float:
 				{
 					auto pConstZero = PConstZeroInType(pBuild, pTinSrc);
-					pBuild->PInstCreateGCmp(GPRED_LE, pValSrc, pConstZero, "GToBool");
+					pInst = pBuild->PInstCreateGCmp(GPRED_LE, pValSrc, pConstZero, "GToBool");
 					return pInst;
 				}
 			case TINK_Pointer:
@@ -3570,6 +3799,7 @@ static inline typename BUILD::Value * PValInitialize(
 
 					auto pGlob = pBuild->PGlobCreate(pLtype, strPunyName.PCoz());
 					pBuild->SetInitializer(pGlob, pLvalInit);
+					pLvalInit = PLvalBuildConstantInitializer(pBuild, pTin, pStnodInit);
 					pValInit = pGlob;
 				}
 				else
@@ -3681,6 +3911,90 @@ typename BUILD::Value * PValFromArrayMember(
 	return pBuild->PInstCreate(IROP_Load, pValRef, "arymembLoad");
 }
 
+CBuilderIR::LValue * CBuilderIR::PLvalConstCast(IROP irop, LValue * pLvalLhs, STypeInfo * pTinDst)
+{
+	auto pLtypeDst = PLtypeFromPTin(pTinDst);
+
+	switch (irop)
+	{
+	case IROP_NTrunc:		return LLVMConstTrunc(pLvalLhs, pLtypeDst);		break;
+	case IROP_SignExt:		return LLVMConstSExt(pLvalLhs, pLtypeDst);		break;
+	case IROP_ZeroExt:		return LLVMConstZExt(pLvalLhs, pLtypeDst);		break;
+	case IROP_GToS:			return LLVMConstFPToSI(pLvalLhs, pLtypeDst);	break;
+	case IROP_GToU:			return LLVMConstFPToUI(pLvalLhs, pLtypeDst);	break;
+	case IROP_SToG:			return LLVMConstSIToFP(pLvalLhs, pLtypeDst);	break;
+	case IROP_UToG:			return LLVMConstUIToFP(pLvalLhs, pLtypeDst);	break;
+	case IROP_GTrunc:		return LLVMConstFPTrunc(pLvalLhs, pLtypeDst);	break;
+	case IROP_GExtend:		return LLVMConstFPExt(pLvalLhs, pLtypeDst);		break;
+	case IROP_Bitcast:		return LLVMConstBitCast(pLvalLhs, pLtypeDst);	break;
+	default: EWC_ASSERT(false, "IROP not supported by PLvalCreateConstCast");		break;
+	}
+
+	return nullptr;
+}
+
+template <typename BUILD>
+static inline typename BUILD::LValue * PLvalGenerateConstCast(
+	CWorkspace * pWork,
+	BUILD * pBuild,
+	VALGENK valgenk,
+	typename BUILD::LValue * pLvalRhs,
+	CSTNode * pStnodRhs,
+	STypeInfo * pTinOut)
+{
+
+	STypeInfo * pTinRhs = pStnodRhs->m_pTin;
+	pTinOut = PTinStripQualifiers(pTinOut);
+
+	bool rhsIsArray = false;
+	if (pTinRhs)
+	{
+		rhsIsArray = pTinRhs->m_tink == TINK_Array;
+		if (auto pTinRhsLit = PTinRtiCast<STypeInfoLiteral *>(pTinRhs))
+		{
+			rhsIsArray = FIsArrayLiteral(pTinRhsLit);
+		}
+	}
+
+	if (rhsIsArray)
+	{
+		if (pTinOut->m_tink == TINK_Pointer)
+		{
+			auto pLvalData = pLvalRhs;
+			auto pTinptr = (STypeInfoPointer *)pTinOut;
+			if (pTinRhs->m_tink == TINK_Array )
+			{
+				auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
+				if (pTinaryRhs->m_aryk == ARYK_Fixed)
+				{
+					//pLvalData = PValFromArrayMember(pWork, pBuild, pValRhsRef, pTinaryRhs, ARYMEMB_Data, VALGENK_Instance);
+					return pBuild->PLvalConstCast(IROP_Bitcast, pLvalData, pTinptr);
+				}
+				else
+				{
+					EWC_ASSERT(false, "unhandled constant array cast.");
+				}
+			}
+
+			// try this when returning to this code:
+			//	auto pVal = PValGenerateArrayLiteralReference(pWork, pBuild, pStnod);
+			//  pLvalData = LLVMConstInBoundsGEP(LLVMValueRef ConstantVal, LLVMValueRef *ConstantIndices, unsigned NumIndices);
+
+			// else is array literal
+			pLvalData = pBuild->PLvalConstCast(IROP_Bitcast, pLvalData, pTinptr);
+
+			return pLvalData;
+		}
+	}
+
+	auto pLval = PLvalCreateConstCast(pWork, pBuild, pLvalRhs, pTinRhs, pTinOut);
+	if (!pLval)
+	{
+		EmitError(pWork, &pStnodRhs->m_lexloc, ERRID_BadCastGen, "INTERNAL ERROR: trying to codegen unsupported numeric constant cast.");
+	}
+	return pLval;
+}
+
 template <typename BUILD>
 static inline typename BUILD::Value * PValGenerateCast(
 	CWorkspace * pWork,
@@ -3702,6 +4016,7 @@ static inline typename BUILD::Value * PValGenerateCast(
 		}
 	}
 
+	BUILD::Value * pValRhs = nullptr;
 	if (rhsIsArray)
 	{
 		auto pValRhsRef = PValGenerate(pWork, pBuild, pStnodRhs, VALGENK_Reference);
@@ -3716,10 +4031,6 @@ static inline typename BUILD::Value * PValGenerateCast(
 				auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
 				pValData = PValFromArrayMember(pWork, pBuild, pValRhsRef, pTinaryRhs, ARYMEMB_Data, VALGENK_Instance);
 				return pBuild->PInstCreateCast(IROP_Bitcast, pValData, pTinptr, "Bitcast");
-
-				if (FTypesAreSame(pTinaryRhs->m_pTin, pTinptr->m_pTinPointedTo))
-					return pValData;
-
 			}
 
 			// else is array literal
@@ -3765,7 +4076,7 @@ static inline typename BUILD::Value * PValGenerateCast(
 				{
 					// BB - Allocating this on the stack feels a little dicey, but so does returning a reference to an
 					//  array that happens to be static and isn't read-only.
-						
+
 					auto pLtype = pBuild->PLtypeFromPTin(pTinlitRhs);
 					if (!EWC_FVERIFY(pLtype, "couldn't find llvm type for declaration"))
 						return nullptr;
@@ -3795,22 +4106,17 @@ static inline typename BUILD::Value * PValGenerateCast(
 		}
 
 		ASSERT_STNOD(pWork, pStnodRhs, valgenk != VALGENK_Reference, "only pointers can be lValues after a cast");
-
-		auto pValSrc = pBuild->PInstCreate(IROP_Load, pValRhsRef, "castLoad");
-		auto pVal = PValCreateCast(pWork, pBuild, pValSrc, pTinRhs, pTinOut);
-		if (!pVal)
-		{
-			EmitError(pWork, &pStnodRhs->m_lexloc, ERRID_BadCastGen, "INTERNAL ERROR: trying to codegen unsupported numeric cast.");
-		}
-		return pVal;
+		pValRhs = pBuild->PInstCreate(IROP_Load, pValRhsRef, "castLoad");
 	}
-
-	ASSERT_STNOD(pWork, pStnodRhs, (valgenk != VALGENK_Reference) || (pTinRhs->m_tink == TINK_Pointer), "only pointers can be LValues after a cast");
-
-	auto pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, valgenk);
-	if (pTinOut->m_tink == TINK_Bool && pTinRhs->m_tink == TINK_Flag)
+	else
 	{
-		return pValRhs;
+		ASSERT_STNOD(pWork, pStnodRhs, (valgenk != VALGENK_Reference) || (pTinRhs->m_tink == TINK_Pointer), "only pointers can be LValues after a cast");
+
+		pValRhs = PValGenerate(pWork, pBuild, pStnodRhs, valgenk);
+		if (pTinOut->m_tink == TINK_Bool && pTinRhs->m_tink == TINK_Flag)
+		{
+			return pValRhs;
+		}
 	}
 
 	auto pVal = PValCreateCast(pWork, pBuild, pValRhs, pTinRhs, pTinOut);
@@ -4724,7 +5030,10 @@ typename BUILD::Value * PValGenerateDecl(
 			auto pTinlit = PTinRtiCast<STypeInfoLiteral *>(pStnodInit->m_pTin);
 			if (pTinlit && pStnodInit->m_park != PARK_Uninitializer)
 			{
-				pBuild->SetGlobalInitializer(pWork, pGlob, pStnod->m_pTin, pTinlit, pStnodInit);
+				pLvalInit = PLvalBuildConstantInitializer(pBuild, pStnod->m_pTin, pStnodInit);
+				auto pLvalCast = PLvalGenerateConstCast(pWork, pBuild, valgenk, pLvalInit, pStnodInit, pStnod->m_pTin);
+
+				pBuild->SetInitializer(pGlob, pLvalCast);
 				return pGlob;
 
 			}
@@ -5556,7 +5865,12 @@ static bool FIsArrayLiteral(STypeInfoLiteral * pTinlit)
 	if (pTinlit->m_litty.m_litk != LITK_Compound)
 		return false;
 
-	return pTinlit->m_pTinSource && pTinlit->m_pTinSource->m_tink == TINK_Array;
+	auto pTinSource = pTinlit->m_pTinSource;
+	if (!pTinSource)
+		return false;
+
+	pTinSource = PTinStripQualifiers(pTinSource);
+	return pTinSource && pTinSource->m_tink == TINK_Array;
 }
 
 template <typename BUILD>
@@ -6242,7 +6556,7 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 
 						// the type of aN.data is &N so a reference would need to be a &&N which we don't have
 						EWC_ASSERT(arymemb == ARYMEMB_Data, "unexpected array member '%s'", PChzFromArymemb(arymemb));
-						auto pTinary = PTinDerivedCast<STypeInfoArray *>(pTinlit->m_pTinSource);
+						auto pTinary = PTinDerivedCast<STypeInfoArray *>(PTinStripQualifiers(pTinlit->m_pTinSource));
 						auto pTinptr = pWork->m_pSymtab->PTinptrAllocate(pTinary->m_pTin);
 
 						return pBuild->PInstCreateCast(IROP_Bitcast, pGlobLit, pTinptr, "Bitcast");
@@ -6544,17 +6858,8 @@ typename BUILD::Value * PValGenerate(CWorkspace * pWork, BUILD * pBuild, CSTNode
 			STypeInfo * pTinOutput = PTinStripQualifiers(pStnod->m_pOptype->m_pTinResult);
 			STypeInfo * pTinOperand = PTinStripQualifiers(pStnodOperand->m_pTin);
 
-			if (pTinOutput->m_tink == TINK_Enum)
-			{
-				auto pTinenum = (STypeInfoEnum *)pTinOutput;
-				pTinOutput = pTinenum->m_pTinLoose;
-			}
-
-			if (pTinOperand->m_tink == TINK_Enum)
-			{
-				auto pTinenum = (STypeInfoEnum *)pTinOperand;
-				pTinOperand = pTinenum->m_pTinLoose;
-			}
+			pTinOutput = PTinStripEnumToLoose(pTinOutput);
+			pTinOperand = PTinStripEnumToLoose(pTinOperand);
 
 			if (!EWC_FVERIFY((pTinOutput != nullptr) & (pTinOperand != nullptr), "bad cast"))
 				return nullptr;
@@ -7273,7 +7578,7 @@ CGEPK CgepkCompute(CWorkspace * pWork, CSTNode * pStnod)
 
 	bool fGlobalTypeDeclaration = false;
 
-	bool fImplicitFunction = (pWork->m_globmod == GLOBMOD_UnitTest);
+	bool fImplicitFunction = pWork->m_grfunt.FIsSet(FUNT_ImplicitProc);
 	switch (pStnod->m_park)
 	{
 	case PARK_StructDefinition:		fGlobalTypeDeclaration = true;	break;
@@ -7663,7 +7968,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 		BeginParse(pWork, &lex, (char *)pCozFileBody);
 		lex.m_pCozFilename = pFile->m_strFilename.PCoz();
 
-		ParseGlobalScope(pWork, &lex, true);
+		ParseGlobalScope(pWork, &lex, pWork->m_grfunt);
 
 		EndParse(pWork, &lex);
 
@@ -7678,7 +7983,7 @@ bool FCompileModule(CWorkspace * pWork, GRFCOMPILE grfcompile, const char * pChz
 			pWork->m_pSymtab,
 			&pWork->m_blistEntry,
 			&pWork->m_arypEntryChecked,
-			pWork->m_globmod);
+			pWork->m_grfunt);
 
 		if (!pWork->m_pErrman->FHasErrors())
 		{
