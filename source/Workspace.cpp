@@ -115,44 +115,54 @@ void PrintGenericInstantiateContext(SErrorManager * pErrman)
 {
 	for (SGenericMap ** ppGenmap = pErrman->m_arypGenmapContext.A(); ppGenmap != pErrman->m_arypGenmapContext.PMac(); ++ppGenmap)
 	{
-		const char * pCozName = "unknown";
 		auto pGenmap = *ppGenmap;
-		if (pGenmap->m_pSymDefinition)
+		printf("  while instantiating generic ");	
+		PrintGenmap(pErrman->m_pWork, *ppGenmap);
+	}
+}
+
+void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap)
+{
+	const char * pCozName = "unknown";
+	if (pGenmap->m_pSymDefinition)
+	{
+		pCozName = pGenmap->m_pSymDefinition->m_strName.PCoz();
+	}
+	printf("%s( ", pCozName);	
+
+	EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
+
+	CString * pStrAnchor;
+	SAnchor * pAnc;
+	while ((pAnc = iter.Next(&pStrAnchor)))
+	{
+		if (pAnc->FIsNull())
+			continue;
+
+		CString strName("");
+		CString strType;
+		if (pAnc->m_pTin)
 		{
-			pCozName = pGenmap->m_pSymDefinition->m_strName.PCoz();
+			strType = StrFromTypeInfo(pAnc->m_pTin);
+		}
+		else 
+		{
+			EWC_ASSERT(pAnc->m_pStnodBaked, "no bake value for '%s'", pStrAnchor->PCoz());
+			strName = StrFromSTNode(pAnc->m_pStnodBaked);
+			strType = StrFromTypeInfo(pAnc->m_pStnodBaked->m_pTin);
 		}
 
-		printf("  while instantiating generic '%s': ", pCozName);	
-		EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
+		printf("`$%s %s :%s, ", pStrAnchor->PCoz(), strName.PCoz(), strType.PCoz());
+	}
+	printf(")");
 
-		CString * pStr;
-		SAnchor * pAnc;
-		while ((pAnc = iter.Next(&pStr)))
-		{
-			if (pAnc->FIsNull())
-				continue;
+	s32 iLine;
+	s32 iCol;
+	for (SLexerLocation * pLexloc = pGenmap->m_aryLexlocSrc.A(); pLexloc != pGenmap->m_aryLexlocSrc.PMac(); ++pLexloc)
+	{
+		CalculateLinePosition(pWork, pLexloc, &iLine, &iCol);
 
-			CString str;
-			if (pAnc->m_pTin)
-			{
-				str = StrFromTypeInfo(pAnc->m_pTin);
-			}
-			else 
-			{
-				EWC_ASSERT(pAnc->m_pStnodBaked, "no bake value for '%s'", pStr->PCoz());
-				str = StrFromSTNode(pAnc->m_pStnodBaked);
-			}
-
-			printf("$%s %s, ", pStr->PCoz(), str.PCoz());
-		}
-		s32 iLine;
-		s32 iCol;
-		for (SLexerLocation * pLexloc = pGenmap->m_aryLexlocSrc.A(); pLexloc != pGenmap->m_aryLexlocSrc.PMac(); ++pLexloc)
-		{
-			CalculateLinePosition(pErrman->m_pWork, pLexloc, &iLine, &iCol);
-
-			printf("\n  at %s(%d, %d)\n", pLexloc->m_strFilename.PCoz(), iLine, iCol);
-		}
+		printf("\n  at %s(%d, %d)\n", pLexloc->m_strFilename.PCoz(), iLine, iCol);
 	}
 }
 
@@ -336,6 +346,18 @@ void CalculateLinePosition(CWorkspace * pWork, const SLexerLocation * pLexloc, s
 
 	*piLine = iLine + 1;	// 1 relative
 	*piCol = iCol + 1;		// 1 relative
+}
+
+CLexerLookup::CLexerLookup(CWorkspace * pWork, const SLexerLocation * pLexloc)
+{
+	m_strFilename = pLexloc->m_strFilename;
+	CalculateLinePosition(pWork, pLexloc, &m_iLine, &m_iCodepoint);
+}
+
+CLexerLookup::CLexerLookup(CWorkspace * pWork, CSTNode * pStnod)
+{
+	m_strFilename = pStnod->m_lexloc.m_strFilename;
+	CalculateLinePosition(pWork, &pStnod->m_lexloc, &m_iLine, &m_iCodepoint);
 }
 
 const char * CWorkspace::s_pCozSourceExtension = ".moe";

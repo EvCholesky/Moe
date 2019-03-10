@@ -156,7 +156,7 @@ enum PARK : s16 // PARse Kind
 	PARK_CompoundLiteral,	// array/struct literal
 	PARK_ArgumentLabel,
 	PARK_GenericDecl,
-	PARK_GenericStructInst,		// 
+	PARK_GenericStructSpec,		// 
 	PARK_TypeArgument,			// raw type, specified to a generic instantiation SFoo(:int)
 	
 	EWC_MAX_MIN_NIL(PARK)
@@ -663,31 +663,50 @@ enum FSHADOW
 };
 
 
+enum GENK	// GENeric Kind
+{
+	GENK_Value,			// baked value (think integer array size)	($C: int)
+	GENK_Type,			// generic type								(t: $T)
+	EWC_MAX_MIN_NIL(GENK)
+};
 
 struct SAnchor		// tag anc
 {
 					SAnchor()
 					:m_pStnodBaked(nullptr)
 					,m_pTin(nullptr)
+					,m_genk(GENK_Nil)
 						{ ; }
 
 					SAnchor(CSTNode * pStnod)
 					:m_pStnodBaked(pStnod)
 					,m_pTin(nullptr)
+					,m_genk(GENK_Value)
 						{ ; }
 
 					SAnchor(STypeInfo * pTin)
 					:m_pStnodBaked(nullptr)
 					,m_pTin(pTin)
+					,m_genk(GENK_Type)
 						{ ; }
 
 
 	bool			FIsNull() const
 						{ return m_pStnodBaked == nullptr && m_pTin == nullptr; }
+	void			AssertIsValid() const
+						{
+							switch (m_genk)
+							{
+							case GENK_Nil:		EWC_ASSERT(FIsNull(), "should be null"); break;
+							case GENK_Value:	EWC_ASSERT(m_pTin == nullptr, "unexpected type anchor"); break;
+							case GENK_Type:		EWC_ASSERT(m_pStnodBaked == nullptr, "unexpected baked value"); break;
+							}
+						}
 
 
 	CSTNode *		m_pStnodBaked;
 	STypeInfo *		m_pTin;
+	GENK			m_genk;
 };
 
 struct SGenericMap // tag = genmap
@@ -737,6 +756,10 @@ struct SGenericMap // tag = genmap
 	EWC::CDynAry<SLexerLocation>		m_aryLexlocSrc;			// lexer location where this was instantiated
 
 };
+
+void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap);
+
+
 
 class CUniqueTypeRegistry // tag untyper
 {

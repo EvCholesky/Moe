@@ -269,19 +269,29 @@ enum FPARMQ	// Flags for ARGument Qualifiers
 
 EWC_DEFINE_GRF(GRFPARMQ, FPARMQ, u8);
 
+
+enum FTINGEN // flags for generic procedures and structures
+{
+
+	FTINGEN_HasBakedTypeArgs		= 0x1,
+	FTINGEN_HasBakedValueArgs		= 0x2,
+
+	FTINGEN_None					= 0x0,
+	FTINGEN_All						= 0x3,
+	FTINGEN_HasGenericArgs			= FTINGEN_HasBakedTypeArgs | FTINGEN_HasBakedValueArgs,
+};
+EWC_DEFINE_GRF(GRFTINGEN, FTINGEN, u8);
+
 enum FTINPROC
 {
 	FTINPROC_HasVarArgs			= 0x1,
-	FTINPROC_HasBakedTypeArgs	= 0x2,
-	FTINPROC_HasBakedValueArgs	= 0x4,
-	FTINPROC_IsCommutative		= 0x8,
-	FTINPROC_Initializer		= 0x10,
-	FTINPROC_IsForeign			= 0x20,		// foreign procedures are part of a function signature, so bytecode functions 
+	FTINPROC_IsCommutative		= 0x2,
+	FTINPROC_Initializer		= 0x4,
+	FTINPROC_IsForeign			= 0x8,		// foreign procedures are part of a function signature, so bytecode functions 
 											//  can return a pointer to a native routine.
 
 	FTINPROC_None				= 0x0,
-	FTINPROC_All				= 0x3F,
-	FTINPROC_HasGenericArgs		= FTINPROC_HasBakedTypeArgs | FTINPROC_HasBakedValueArgs,
+	FTINPROC_All				= 0xF,
 };
 EWC_DEFINE_GRF(GRFTINPROC, FTINPROC, u8);
 
@@ -293,9 +303,11 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 						:STypeInfo(strName, scopid, s_tink)
 						,m_strMangled()
 						,m_pStnodDefinition(nullptr)
+						,m_pTinprocGenericBase(nullptr)
 						,m_arypTinParams()
 						,m_arypTinReturns()
 						,m_mpIptinGrfparmq()
+						,m_grftingen(FTINGEN_None)
 						,m_grftinproc(FTINPROC_None)
 						,m_inlinek(INLINEK_Nil)
 						,m_callconv(CALLCONV_Nil)
@@ -306,14 +318,16 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 	bool				FIsForeign() const
 							{ return m_grftinproc.FIsSet(FTINPROC_IsForeign); }
 	bool				FHasGenericArgs() const
-							{ return m_grftinproc.FIsAnySet(FTINPROC_HasGenericArgs); }
+							{ return m_grftingen.FIsAnySet(FTINGEN_HasGenericArgs); }
 
 	EWC::CString				m_strMangled;
 	CSTNode *					m_pStnodDefinition;
+	STypeInfoProcedure *		m_pTinprocGenericBase;
 	EWC::CAllocAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAllocAry<STypeInfo *>	m_arypTinReturns;
 	EWC::CAllocAry<GRFPARMQ>	m_mpIptinGrfparmq;
 
+	GRFTINGEN					m_grftingen;
 	GRFTINPROC					m_grftinproc;
 	INLINEK						m_inlinek;
 	CALLCONV					m_callconv;
@@ -388,21 +402,28 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 										STypeInfoStruct(const EWC::CString & strName, SCOPID scopid)
 										:STypeInfo(strName, scopid, s_tink)
 										,m_pStnodStruct(nullptr)
+										,m_pTinstructGeneric(nullptr)
 										,m_aryTypemembField()
-										,m_arypTinGenericParam()
+										,m_arypTinParam()
 										,m_pTinprocInit(nullptr)
+										,m_grftingen(FTINGEN_None)
 										,m_cB(-1)
 										,m_cBAlign(-1)
 											{ ; }
 	
 	bool								FHasGenericParams() const
-											{ return m_arypTinGenericParam.C() > 0; }
+											{ return m_grftingen.FIsAnySet(FTINGEN_HasGenericArgs); }
 
-	CSTNode *							m_pStnodStruct;
+	CSTNode *							m_pStnodStruct;			// node that defined this struct (or struct instantiation)
+	STypeInfoStruct *					m_pTinstructGeneric;	// generic base that this struct was instantated from
+																// BB - maybe this should be an insreq?
 	EWC::CAllocAry<STypeStructMember>	m_aryTypemembField;
-	EWC::CAllocAry<STypeInfo *>			m_arypTinGenericParam;
+	EWC::CAllocAry<STypeInfo *>			m_arypTinParam;			// type of structure arguments, may not be generic if partially instantiated
+																// NOT the number of named anchors
+																//   ie. CTest struct ( :CPair( :$A, :$B)) has one argument, but two anchors
 	STypeInfoProcedure *				m_pTinprocInit;			// procedure used when cginitk == CGINITK_InitializerProc
 
+	GRFTINGEN							m_grftingen;
 	s64									m_cB;
 	s64									m_cBAlign;
 };
