@@ -154,7 +154,7 @@ void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap)
 
 		printf("`$%s %s :%s, ", pStrAnchor->PCoz(), strName.PCoz(), strType.PCoz());
 	}
-	printf(")");
+	printf(")\n");
 
 	s32 iLine;
 	s32 iCol;

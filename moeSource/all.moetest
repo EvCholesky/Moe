@@ -638,23 +638,23 @@ test ArrayLit
 	parse "(decl aN ([] (const ?type)) (compLit ({} ?pinit)))"
 	typecheck "([]const.?type aN ([]const.?type (const.?type ?type)) (Literal:Compound ({} ?tcinit)))"
 	{
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, n"?errid(2028)) + ?pinit("1 n") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype int"),
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2.2"?errid(2001)) + ?pinit("1 2.200000") + ?decl(": []const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
-		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
-		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("m_n:int") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("m_n:int") + ?type(s8) + ?littype(Int8) + ?init("1, n"?errid(2028)) + ?pinit("1 n") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype int"),
+		?memb("m_n:int") + ?type(s8) + ?littype(Int8) + ?init("1, 2.2"?errid(2001)) + ?pinit("1 2.200000") + ?decl(": []const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("m_n:int") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
+		?memb("m_n:int") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?pinit("1 2") + ?decl(": [] const ?type = ") + ?tcinit("Literal:?littype Literal:?littype"),
 		?memb("m_a, m_b: int") + ?type(SFoo) + ?littype(Compound) + ?init("{1, 2}, {3, 4}") + ?pinit("(compLit ({} 1 2)) (compLit ({} 3 4))") + ?decl(": [] const ?type = ") + ?tcinit("(Literal:Compound ({} Literal:Int64 Literal:Int64)) (Literal:Compound ({} Literal:Int64 Literal:Int64))"),
 	}
 
 test ArrayLitCast
-	prereq "SFoo struct {?memb}"
+	prereq "SFoo struct { m_n:int}"
 	input "aN ?decl {?init}"
 	parse "(decl aN (compLit ([] 2 ?type) ({} 1 2)))"
 	typecheck "([2]?type aN (Literal:Compound ([2]?type Literal:Int64 ?type) ({} Literal:?littype Literal:?littype)))"
 	{
-		?memb("") + ?type(s8) + ?littype(Int8) + ?init("1, 2") + ?decl(":= :[2]?type "),
-		?memb("") + ?type(int) + ?littype(Int64) + ?init("1, 2") + ?decl(":= :[2]?type "),
-		?memb("") + ?type(float) + ?littype(Float32) + ?init("1, 2") + ?decl(":= :[2]?type "),
+		?type(s8) + ?littype(Int8) + ?init("1, 2") + ?decl(":= :[2]?type "),
+		?type(int) + ?littype(Int64) + ?init("1, 2") + ?decl(":= :[2]?type "),
+		?type(float) + ?littype(Float32) + ?init("1, 2") + ?decl(":= :[2]?type "),
 	}
 
 test ArrayLiteralConst
@@ -1200,6 +1200,36 @@ test GenericReturn
 		?ret("& T") + ?type(s16|bool|float) + ?body("x: &T; return x") + ?pret("(ptr T)") + ?pbody("(decl x (ptr T)) (return x)") + ?tcrtype("&$T") + ?tcret("(&$T $T)") + ?tctype("&?type") + ?tcbody("(decl x (unk T)) (return x)") + ?tcinst("(&?type ?type) ({} (&?type x (&?type ?type)) (&?type &?type)"),
 	}
 
+// contrived test to make sure we can use baked values in other arguments
+test StructBakedCountArg
+	input "SFoo struct($C: int,  :&[C] $T) { m_aN :[C] int} foo: SFoo(?baked, :&[2] int)"
+	{
+		?baked("2"),
+		?baked("3"?errid(2006)),
+	}
+
+test ProcBakedCountArg
+	input "CrossArg proc($C: int, pN :&[C] int) {} aN :[2]int;  CrossArg(?baked, &aN)"
+	{
+		?baked("2"),
+		?baked("3"?errid(2006)),
+	}
+
+test NonGenericStructArg
+	input "Foo struct (n: ?type) { m_n:int}"
+	{
+		?type("int"?errid(1016)),
+		?type("float"?errid(1016)),
+		?type("&int"?errid(1016)),
+	}
+
+test EmptyStruct
+	input "SEmpty struct { ?members }"
+	{
+		?members(""?errid(1017)),
+		?members("m_n: int")
+	}
+
 // Generic structs
 test StructBakedDef
 	input "SFoo struct ($BAKE: ?type) { ?decl }"
@@ -1478,10 +1508,10 @@ test StructUsingCollision
 test StructUsingCollisionCycle
 	input "SA struct {?abody} SB struct {?bbody} SC struct {?cbody} SD struct {?dbody}"
 	{
-		?abody("using m_b: SB; using m_c: SC") + ?bbody("using m_d1: SD") + ?cbody("using m_d2: SD") + ?dbody(""?errid(2023)),
-		?abody("") + ?bbody("using m_a1: SA") + ?cbody("using m_a2: SA") + ?dbody("using m_b1: SB; using m_c1: SC"?errid(2023)),
-		?abody("using m_b: SB; using m_d: SD") + ?bbody("using m_c: SC") + ?cbody("using m_d2: SD") + ?dbody(""?errid(2023)),
-		?abody("using m_d: SD") + ?bbody("using m_c: SC; using m_a: SC") + ?cbody("using m_d2: SD") + ?dbody(""?errid(2023)),
+		?abody("using m_b: SB; using m_c: SC") + ?bbody("using m_d1: SD") + ?cbody("using m_d2: SD") + ?dbody("m_n:s16"?errid(2023)),
+		?abody("m_n:s16") + ?bbody("using m_a1: SA") + ?cbody("using m_a2: SA") + ?dbody("using m_b1: SB; using m_c1: SC"?errid(2023)),
+		?abody("using m_b: SB; using m_d: SD") + ?bbody("using m_c: SC") + ?cbody("using m_d2: SD") + ?dbody("m_n:s16"?errid(2023)),
+		?abody("using m_d: SD") + ?bbody("using m_c: SC; using m_a: SC") + ?cbody("using m_d2: SD") + ?dbody("m_n:s16"?errid(2023)),
 	}
 
 // Unicode

@@ -498,11 +498,13 @@ struct STypeInfoArray : public STypeInfo	// tag = tinary
 					,m_pTinstructImplicit(nullptr)
 					,m_c(0)
 					,m_aryk(ARYK_Fixed)
+					,m_pStnodBakedDim(nullptr)
 					{ ; }
 
 	STypeInfo *			m_pTin;
 	STypeInfoStruct *	m_pTinstructImplicit;
 	s64					m_c;
+	CSTNode *			m_pStnodBakedDim; // workaround for arrays with unspecialized baked constant
 	ARYK				m_aryk;
 };
 

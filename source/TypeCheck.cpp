@@ -2618,6 +2618,7 @@ bool FIsGenericType(STypeInfo * pTin)
     case TINK_Enum:
     case TINK_Any:
     case TINK_Void:
+	case TINK_Type:
     	return false;
     case TINK_Pointer: 		return FIsGenericType(((STypeInfoPointer *)pTin)->m_pTinPointedTo);
     case TINK_Array:	 	return FIsGenericType(((STypeInfoArray *)pTin)->m_pTin);
@@ -3206,12 +3207,33 @@ QUALK QualkFromRword(RWORD rword)
 	}
 }
 
-bool FIsCompileTimeConstant(STypeInfo * pTin)
+// Are we a baked constant? and if so what type?
+TINK TinkBakedConstantType(CSTNode * pStnod)
+{
+	SSymbol * pSym = pStnod->PSym();
+	if (!pSym || !EWC_FVERIFY(pSym->m_pStnodDefinition, "no definition?"))
+		return TINK_Nil;
+
+	auto pStnodDef = pSym->m_pStnodDefinition;
+	if (pStnodDef->m_park == PARK_Decl)
+	{
+		auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDef->m_pStmap);
+		if (pStdecl->m_fIsBakedConstant)
+			return pStnod->m_pTin->m_tink;
+	}
+
+	return TINK_Nil;
+}
+
+bool FIsCompileTimeConstant(CSTNode * pStnod)
 {
 	// This just checks for a literal now, but will need something more elaborate once
 	//  compile time code execution comes online.
 
-	if (pTin && pTin->m_tink == TINK_Literal)
+	if (TinkBakedConstantType(pStnod) != TINK_Nil)
+		return true;
+
+	if (pStnod->m_pTin && pStnod->m_pTin->m_tink == TINK_Literal)
 		return true;
 
 	return false;
@@ -3466,7 +3488,7 @@ inline bool FUnpackArgumentList(
 					auto pStdeclInit = PStmapRtiCast<CSTDecl *>(pStnodInit->m_pStmap);
 					EWC_ASSERT(pStdeclInit && pStdeclInit->m_fIsBakedConstant, "unexpected 'decl' arg");
 				}
-				else if (!FIsCompileTimeConstant(pStnodInit->m_pTin))
+				else if (!FIsCompileTimeConstant(pStnodInit))
 				{
 					if (errep == ERREP_ReportErrors)
 					{
@@ -3676,10 +3698,8 @@ STypeInfo * PTinSubstituteGenerics(
 					STypeStructMember * pTypemembUnsub = &pTinstructUnsub->m_aryTypemembField[iTypememb];
 					pTinstruct->m_aryTypemembField.Append(*pTypemembUnsub);
 
-					if (!EWC_FVERIFY(pTypemembUnsub->m_pTin, "struct member type has not been determined"))
-						continue;
 					STypeStructMember * pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
-					pTypememb->m_pTin = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTypemembUnsub->m_pTin, pGenmap, errep);
+					EWC_ASSERT(pTypememb->m_pTin == nullptr,"expected unsubstituted types to be null");
 				}
 
 		    	return pTinstruct;
@@ -3690,6 +3710,23 @@ STypeInfo * PTinSubstituteGenerics(
 
 		    	auto pTinaryNew = PTinaryCopy(pSymtab, pTinaryUnsub);
 		    	pTinaryNew->m_pTin = PTinSubstituteGenerics(pTcwork, pSymtab, pLexloc, pTinaryUnsub->m_pTin, pGenmap, errep);
+
+				if (pTinaryUnsub->m_pStnodBakedDim)
+				{
+					auto pSymDim = pTinaryUnsub->m_pStnodBakedDim->PSym();
+					if (pSymDim)
+					{
+						SAnchor * pAnc = pGenmap->m_mpStrAnc.Lookup(pSymDim->m_strName);
+						if (pAnc && pAnc->m_genk == GENK_Value)
+						{
+							auto pStvalDim = pAnc->m_pStnodBaked->m_pStval;
+							if (pStvalDim)
+							{
+								pTinaryNew->m_c = NUnsignedLiteralCast(pTcwork, pAnc->m_pStnodBaked, pStvalDim);
+							}
+						}
+					}
+				}
 
 		    	return pTinaryNew;
 		    }
@@ -4014,7 +4051,8 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 		}
 	}
 
-	if (!EWC_FVERIFY(pStstructSrc && pStstructSrc->m_iStnodDeclList >= 0, "bad pStnodGeneric"))
+	// BB - maybe error here instead of asserting
+	if (!EWC_FVERIFY(pStstructSrc && pStstructSrc->m_iStnodDeclList >= 0, "empty structure definition"))
 		return nullptr;	
 
 	auto pStnodDeclSrc = pStnodGeneric->PStnodChild(pStstructSrc->m_iStnodDeclList);
@@ -4517,33 +4555,45 @@ STypeInfo * PTinFromTypeSpecification(
 					{
 						CSTNode * pStnodDim = pStnod->PStnodChild(0);
 						CSTValue * pStvalDim = nullptr;
-						if (!FIsCompileTimeConstant(pStnodDim->m_pTin))
+
+						s64 cTinary = 0;
+						if (!FIsCompileTimeConstant(pStnodDim))
 						{
 							EmitError(pTcwork, pStnod, "Only static sized arrays are currently supported");
 							*pFIsValidTypeSpec = false;
 						}
 						else
 						{
-							STypeInfo * pTinCount = pTinse->m_pSymtab->PTinBuiltin(CSymbolTable::s_strInt);
-							STypeInfo * pTinPromoted = PTinPromoteUntypedTightest(pTcwork, pTinse->m_pSymtab, pStnodDim, pTinCount);
-							pTinPromoted = PTinAfterRValueAssignment(pTcwork, &pStnodDim->m_lexloc, pTinPromoted, pTinse->m_pSymtab, pTinCount);
-
-							if (!FCanImplicitCast(pTinPromoted, pTinCount))
+							if (TinkBakedConstantType(pStnodDim) == TINK_Integer)
 							{
-								EmitError(pTcwork, pStnod, "static integer array size expected");
-								*pFIsValidTypeSpec = false;
+								pTinary->m_pStnodBakedDim = pStnodDim;
 							}
 							else
 							{
-								FinalizeLiteralType(pTcwork, pTinse->m_pSymtab, pTinCount, pStnodDim);
-								pStvalDim = pStnodDim->m_pStval;
+								SSymbol * pSymDim = pStnodDim->PSym();
+								STypeInfo * pTinCount = pTinse->m_pSymtab->PTinBuiltin(CSymbolTable::s_strInt);
+								STypeInfo * pTinPromoted = PTinPromoteUntypedTightest(pTcwork, pTinse->m_pSymtab, pStnodDim, pTinCount);
+								pTinPromoted = PTinAfterRValueAssignment(pTcwork, &pStnodDim->m_lexloc, pTinPromoted, pTinse->m_pSymtab, pTinCount);
+
+								if (!FCanImplicitCast(pTinPromoted, pTinCount))
+								{
+									EmitError(pTcwork, pStnod, "static integer array size expected");
+									*pFIsValidTypeSpec = false;
+								}
+								else
+								{
+									FinalizeLiteralType(pTcwork, pTinse->m_pSymtab, pTinCount, pStnodDim);
+									pStvalDim = pStnodDim->m_pStval;
+								}
+
+								if (pStvalDim)
+								{
+									cTinary = NUnsignedLiteralCast(pTcwork, pStnod, pStvalDim);
+								}
 							}
 						}
 
-						if (!pStvalDim)
-							return nullptr;
-
-						pTinary->m_c = NUnsignedLiteralCast(pTcwork, pStnod, pStvalDim);
+						pTinary->m_c = cTinary;
 						pTinary->m_aryk = ARYK_Fixed;
 					}
 					else
@@ -5182,7 +5232,7 @@ void FindGenericAnchorNames(
 						}
 					}
 				} break;
-			default: EWC_ASSERT(false, "Unexpected parse node PARK_%s", PChzFromPark(pStnodCur->m_park));
+			default: EWC_ASSERT(false, "Unexpected parse node PARK_%s in FindGenericAnchorName()", PChzFromPark(pStnodCur->m_park));
 				break;
 			}
 		}
@@ -5553,6 +5603,11 @@ PROCMATCH ProcmatchCheckArguments(
 	if (pTinproc->FHasGenericArgs())
 	{
 		// given known generic type anchors and unsubstituted types, generate instantiated types
+		if (errep == ERREP_ReportErrors)
+		{
+			PrintGenmap(pTcwork->m_pErrman->m_pWork, &genmap);
+		}
+
 		int cMtin = (int)aryMtin.C();
 		for (int iMtin = 0; iMtin < cMtin; ++iMtin)
 		{
@@ -8372,6 +8427,14 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						}
 						else
 						{
+							STypeInfo * pTinTypeDebug = PTinFromTypeSpecification(
+													pTcwork,
+													pSymtab,
+													pStnodType,
+													pTcsentTop->m_grfsymlook,
+													&pSymType,
+													&fIsValidTypeSpec);
+
 							return TcretWaitForTypeSymbol(pTcwork, pTcfram, pSymType, pStnodType);
 						}
 					}
@@ -8553,7 +8616,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						if (pStnod->m_pTin == nullptr)
 						{
 							const char * pCozIdent = (pStnodIdent) ? StrFromIdentifier(pStnodIdent).PCoz() : "declaration";
-							EmitError(pTcwork, pStnod, "Unable to calculate type for %s", pCozIdent);
+							EmitError(pTcwork, pStnod, "Unable to calculate type for $%s", pCozIdent);
 							return TCRET_StoppingError;
 						}
 

@@ -3084,6 +3084,30 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 					{
 						ParseError(pParctx, pLex, "Structure definition has parameter list, but no parameters.");
 					}
+					else if (EWC_FVERIFY(pStnodParams->m_park == PARK_ParameterList, "expected parameter list"))
+					{
+						for (int ipStnodParam = 0; ipStnodParam < pStnodParams->CStnodChild(); ++ipStnodParam)
+						{
+							auto pStnodParam = pStnodParams->PStnodChild(ipStnodParam);
+							switch (pStnodParam->m_park)
+							{
+							case PARK_Decl:
+								{
+									auto pStdecl = PStmapDerivedCast<CSTDecl*>(pStnodParam->m_pStmap);
+									auto strIdent = StrFromIdentifier(pStnodParam->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
+									if (!pStdecl->m_fIsBakedConstant && pStdecl->m_iStnodIdentifier >= 0)
+									{
+										ParseError(pParctx, &pStnodParam->m_lexloc, ERRID_NonBakedStructParameter,
+											"Structure argument '%s' is neither be baked value or unnamed type argument", 
+											strIdent.PCoz());
+									}
+								} break;
+							default: 
+								ParseError(pParctx, pLex, "unexpected generic struct parameter kind (%s)", PChzFromPark(pStnodParam->m_park));
+							}
+						}
+
+					}
 				}
 
 				FExpect(pParctx, pLex, TOK('{'));
@@ -3104,6 +3128,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				if (pStnodDeclList)
 				{
 					pStstruct->m_iStnodDeclList = pStnodStruct->IAppendChild(pStnodDeclList);
+				}
+				else
+				{
+					ParseError(pParctx, pLex, ERRID_EmptyStruct, "structure '%s' has no members - zero byte structures are not allowed", strIdent.PCoz());
 				}
 
 				// type info struct
@@ -3181,7 +3209,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 						auto pStdeclChild = PStmapDerivedCast<CSTDecl *>(pStnodChild->m_pStmap);
 						auto pStnodMemberIdent = pStnodChild->PStnodChildSafe(pStdeclChild->m_iStnodIdentifier);
 						pTypememb->m_strName = StrFromIdentifier(pStnodMemberIdent);
-						pTypememb->m_pTin = pStnodChild->m_pTin;
 					}
 				}
 

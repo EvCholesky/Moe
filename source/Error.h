@@ -38,6 +38,8 @@ enum ERRID
 	ERRID_ExpectedEndOfLine			= 1013,
 	ERRID_UnexpectedToken			= 1014,
 	ERRID_TypeSpecParseFail			= 1015,
+	ERRID_NonBakedStructParameter   = 1016,
+	ERRID_EmptyStruct				= 1017,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,

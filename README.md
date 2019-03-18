@@ -1,6 +1,6 @@
 # Moe
 
-Moe is a custom procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is still a work in progress - new users are welcome, but it might be a bumpy ride still. 
+Moe is a custom procedural programming language with static type checking. It is intended to be used for high performance game code. It does not support garbage collection or exceptions. This language and compiler is still a work in progress - new users are welcome, but it might still be a bumpy ride. 
 
 It's current feature set is roughly comprable to C: enumerations, structures, pointers, procedures, conditions and loops are all there, but there are a few changes to make it nicer to use:
   - top level symbol lookup is order independent.
@@ -9,7 +9,7 @@ It's current feature set is roughly comprable to C: enumerations, structures, po
   - instances are initialized unless explicitly marked as uninitialized.
   - break and continue support breaking to a labeled outer loop.
   - run time type reflection
-  - generics procedures and structures
+  - generic procedures and structures
 
 There are a few upcoming features that are C lacks:
   - optional array bounds checking
