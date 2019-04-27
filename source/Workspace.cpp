@@ -121,40 +121,66 @@ void PrintGenericInstantiateContext(SErrorManager * pErrman)
 	}
 }
 
-void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap)
+void PrintGenmapAnchors(EWC::SStringBuffer * pStrbuf, SGenericMap * pGenmap)
 {
-	const char * pCozName = "unknown";
-	if (pGenmap->m_pSymDefinition)
-	{
-		pCozName = pGenmap->m_pSymDefinition->m_strName.PCoz();
-	}
-	printf("%s( ", pCozName);	
-
-	EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
-
+	const char * pChzSeparate = "(";
 	CString * pStrAnchor;
 	SAnchor * pAnc;
+	EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
 	while ((pAnc = iter.Next(&pStrAnchor)))
 	{
-		if (pAnc->FIsNull())
-			continue;
 
-		CString strName("");
-		CString strType;
-		if (pAnc->m_pTin)
+		pAnc->AssertIsValid();
+		CString strAnc;
+		switch (pAnc->m_genk)
 		{
-			strType = StrFromTypeInfo(pAnc->m_pTin);
-		}
-		else 
-		{
-			EWC_ASSERT(pAnc->m_pStnodBaked, "no bake value for '%s'", pStrAnchor->PCoz());
-			strName = StrFromSTNode(pAnc->m_pStnodBaked);
-			strType = StrFromTypeInfo(pAnc->m_pStnodBaked->m_pTin);
+		case GENK_Type:
+			strAnc = StrFromTypeInfo(pAnc->m_pTin);
+			FormatCoz(pStrbuf, "%s$%s %s", pChzSeparate, pStrAnchor->PCoz(), strAnc.PCoz());
+			break;
+		case GENK_Value:
+			{
+				auto pStnodValue = pAnc->m_pStnodBaked;
+				if (pStnodValue && pStnodValue->m_park == PARK_Decl)
+				{
+					CString strIdent;
+					auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodValue->m_pStmap);
+					const char * pChzGeneric = "";
+					if (pStdecl && pStdecl->m_iStnodIdentifier >= 0)
+					{
+						strIdent = StrFromIdentifier(pStnodValue->PStnodChild(pStdecl->m_iStnodIdentifier));
+						pChzGeneric = (pStdecl->m_fIsBakedConstant) ? "$" : "";
+					}
+					FormatCoz(pStrbuf, "%s$%s decl(%s%s)", pChzSeparate, pStrAnchor->PCoz(), pChzGeneric, strIdent.PCoz());
+				}
+				else
+				{
+					strAnc = StrFromSTNode(pStnodValue);
+					FormatCoz(pStrbuf, "%s$%s %s", pChzSeparate, pStrAnchor->PCoz(), strAnc.PCoz());
+				}
+			} break;
+		default:
+			EWC_ASSERT(false, "unhandled GENK");
 		}
 
-		printf("`$%s %s :%s, ", pStrAnchor->PCoz(), strName.PCoz(), strType.PCoz());
+		pChzSeparate = ", ";
 	}
-	printf(")\n");
+	AppendCoz(pStrbuf, ")");
+}
+
+void PrintGenmapNoLocation(SGenericMap * pGenmap, const char * pChzLineEnd)
+{
+	char aCh[1024];
+	EWC::SStringBuffer strbuf(aCh, EWC_DIM(aCh));
+	PrintGenmapAnchors(&strbuf, pGenmap);
+
+	printf("%s%s%s", pGenmap->m_strName.PCoz(), aCh, pChzLineEnd);
+}
+
+void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap)
+{
+	const char * pChzLineEnd = (pGenmap->m_aryLexlocSrc.C() == 1) ? "" : "\n";
+	PrintGenmapNoLocation(pGenmap, pChzLineEnd); 
 
 	s32 iLine;
 	s32 iCol;
@@ -162,7 +188,7 @@ void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap)
 	{
 		CalculateLinePosition(pWork, pLexloc, &iLine, &iCol);
 
-		printf("\n  at %s(%d, %d)\n", pLexloc->m_strFilename.PCoz(), iLine, iCol);
+		printf("    at %s(%d, %d)\n", pLexloc->m_strFilename.PCoz(), iLine, iCol);
 	}
 }
 
@@ -369,6 +395,7 @@ CWorkspace::CWorkspace(CAlloc * pAlloc, SErrorManager * pErrman)
 ,m_blistEntry(pAlloc, EWC::BK_Workspace)
 ,m_arypEntryChecked(pAlloc, EWC::BK_Workspace) 
 ,m_arypValManaged(pAlloc, EWC::BK_WorkspaceVal, 0)
+,m_arypGenmapManaged(pAlloc, EWC::BK_Workspace, 0)
 ,m_arypFile(pAlloc, EWC::BK_WorkspaceFile, 200)
 ,m_pChzObjectFilename(nullptr)
 ,m_pSymtab(nullptr)
@@ -530,6 +557,7 @@ void BeginWorkspace(CWorkspace * pWork)
 	pWork->m_blistEntry.Clear();
 
 	EWC_ASSERT(pWork->m_arypValManaged.C() == 0, "Unexpected managed values in workspace");
+	EWC_ASSERT(pWork->m_arypGenmapManaged.C() == 0, "Unexpected generic maps in workspace");
 
 	pWork->m_arypFile.Clear();
 	for (int filek = CWorkspace::FILEK_Min; filek < CWorkspace::FILEK_Max; ++filek)
@@ -624,6 +652,13 @@ void EndWorkspace(CWorkspace * pWork)
 	}
 
 	pWork->m_arypValManaged.Clear();
+
+	for (auto ppGenmap = pWork->m_arypGenmapManaged.A(); ppGenmap != pWork->m_arypGenmapManaged.PMac(); ++ppGenmap)
+	{
+		(*ppGenmap)->Cleanup(pWork->m_pAlloc);
+		pWork->m_pAlloc->EWC_DELETE(*ppGenmap);
+	}
+	pWork->m_arypGenmapManaged.Clear();
 
 	pWork->m_blistEntry.Clear();
 	pWork->m_arypEntryChecked.Clear();

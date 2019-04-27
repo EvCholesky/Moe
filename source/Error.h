@@ -96,3 +96,9 @@ enum ERRID
 	ERRID_Min = 0,
 	ERRID_Nil = -1
 };
+
+enum ERREP // ERror REPorting
+{
+	ERREP_HideErrors,
+	ERREP_ReportErrors,	
+};

@@ -235,6 +235,9 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
     <ClCompile Include="source\Util.cpp" />
     <ClCompile Include="source\Workspace.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="source\Generics.inl" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

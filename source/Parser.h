@@ -153,11 +153,12 @@ enum PARK : s16 // PARse Kind
 	PARK_StructDefinition,
 	PARK_EnumConstant,
 	PARK_VariadicArg,
-	PARK_CompoundLiteral,	// array/struct literal
+	PARK_CompoundLiteral,		// array/struct literal
 	PARK_ArgumentLabel,
 	PARK_GenericDecl,
 	PARK_GenericStructSpec,		// 
 	PARK_TypeArgument,			// raw type, specified to a generic instantiation SFoo(:int)
+	PARK_BakedValue,
 	
 	EWC_MAX_MIN_NIL(PARK)
 };
@@ -165,6 +166,7 @@ enum PARK : s16 // PARse Kind
 const char * PChzFromPark(PARK park);
 const char * PChzFromLitk(LITK litk);
 EWC::CString StrFromIdentifier(CSTNode * pStnod);
+EWC::CString StrIdentifierFromDecl(CSTNode * pStnodDecl);
 EWC::CString StrFromTypeInfo(STypeInfo * pTin);
 EWC::CString StrFromSTNode(CSTNode * pTin);
 
@@ -438,11 +440,13 @@ public:
 					:SSyntaxTreeMap(s_stmapk)
 					,m_iStnodIdentifier(-1)
 					,m_iStnodParameterList(-1)
+					,m_iStnodBakedParameterList(-1)
 					,m_iStnodDeclList(-1)
 						{ ; }
 
 	int				m_iStnodIdentifier;
 	int				m_iStnodParameterList;
+	int				m_iStnodBakedParameterList;
 	int				m_iStnodDeclList;
 };
 
@@ -663,102 +667,6 @@ enum FSHADOW
 };
 
 
-enum GENK	// GENeric Kind
-{
-	GENK_Value,			// baked value (think integer array size)	($C: int)
-	GENK_Type,			// generic type								(t: $T)
-	EWC_MAX_MIN_NIL(GENK)
-};
-
-struct SAnchor		// tag anc
-{
-					SAnchor()
-					:m_pStnodBaked(nullptr)
-					,m_pTin(nullptr)
-					,m_genk(GENK_Nil)
-						{ ; }
-
-					SAnchor(CSTNode * pStnod)
-					:m_pStnodBaked(pStnod)
-					,m_pTin(nullptr)
-					,m_genk(GENK_Value)
-						{ ; }
-
-					SAnchor(STypeInfo * pTin)
-					:m_pStnodBaked(nullptr)
-					,m_pTin(pTin)
-					,m_genk(GENK_Type)
-						{ ; }
-
-
-	bool			FIsNull() const
-						{ return m_pStnodBaked == nullptr && m_pTin == nullptr; }
-	void			AssertIsValid() const
-						{
-							switch (m_genk)
-							{
-							case GENK_Nil:		EWC_ASSERT(FIsNull(), "should be null"); break;
-							case GENK_Value:	EWC_ASSERT(m_pTin == nullptr, "unexpected type anchor"); break;
-							case GENK_Type:		EWC_ASSERT(m_pStnodBaked == nullptr, "unexpected baked value"); break;
-							}
-						}
-
-
-	CSTNode *		m_pStnodBaked;
-	STypeInfo *		m_pTin;
-	GENK			m_genk;
-};
-
-struct SGenericMap // tag = genmap
-{
-							SGenericMap(EWC::CAlloc * pAlloc, SSymbol * pSymDefinition)
-							:m_pSymDefinition(pSymDefinition)	
-							,m_mpStrAnc(pAlloc, EWC::BK_TypeCheckGenerics)
-							,m_aryPStnodManaged(pAlloc, EWC::BK_TypeCheckGenerics)
-							,m_aryLexlocSrc(pAlloc, EWC::BK_TypeCheckGenerics)
-								{ ; }
-
-							~SGenericMap()
-								{
-									EWC_ASSERT(m_aryPStnodManaged.C() == 0, "Generic map stnod list was not cleaned up");
-								}
-
-							void Cleanup(EWC::CAlloc * pAlloc)
-							{
-								auto ppStnodPMac = m_aryPStnodManaged.PMac();
-								for (auto ppStnod = m_aryPStnodManaged.A(); ppStnod != ppStnodPMac; ++ppStnod)
-								{
-									pAlloc->EWC_DELETE(*ppStnod);
-								}
-								m_aryPStnodManaged.Clear();
-							}
-
-	void 					Swap(SGenericMap * pGenmapOther)
-								{ 
-									auto pSymDefinitionTemp = m_pSymDefinition;
-									m_pSymDefinition = pGenmapOther->m_pSymDefinition;
-									pGenmapOther->m_pSymDefinition = pSymDefinitionTemp;
-
-									m_mpStrAnc.Swap(&pGenmapOther->m_mpStrAnc);
-									m_aryPStnodManaged.Swap(&pGenmapOther->m_aryPStnodManaged);
-									m_aryLexlocSrc.Swap(&pGenmapOther->m_aryLexlocSrc);
-								}
-
-	bool					FIsEmpty() const
-								{
-									return m_mpStrAnc.FIsEmpty();
-								}
-
-
-	SSymbol *							m_pSymDefinition; 
-	EWC::CHash<EWC::CString, SAnchor>	m_mpStrAnc;				// map from a string name to the anchor value or type mapped to it
-	EWC::CDynAry<CSTNode *>				m_aryPStnodManaged;		// stnodes for baked constants
-	EWC::CDynAry<SLexerLocation>		m_aryLexlocSrc;			// lexer location where this was instantiated
-
-};
-
-void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap);
-
 
 
 class CUniqueTypeRegistry // tag untyper
@@ -795,6 +703,7 @@ protected:
 							,m_hashHvPTinBuiltIn(pAlloc, EWC::BK_Symbol)
 							,m_hashHvPTinfwd(pAlloc, EWC::BK_Symbol)
 							,m_arypTinManaged(pAlloc, EWC::BK_Symbol)
+							,m_arypGenmapManaged(pAlloc, EWC::BK_Symbol)
 							,m_arypSymGenerics(pAlloc, EWC::BK_Symbol)	
 							,m_aryUsing(pAlloc, EWC::BK_Symbol)
 							,m_arypSymtabUsedBy(pAlloc, EWC::BK_Symbol)
@@ -933,6 +842,7 @@ public:
 	EWC::CHash<HV, STypeInfoForwardDecl *>
 									m_hashHvPTinfwd;		// all pending forward declarations
 	EWC::CDynAry<STypeInfo *>		m_arypTinManaged;		// all type info structs that need to be deleted.
+	EWC::CDynAry<SGenericMap *>		m_arypGenmapManaged;	// generic mappings used by instantiated generic structs
 	EWC::CDynAry<SSymbol *>			m_arypSymGenerics;		// symbol copies for generics, not mapped to an identifier
 	EWC::CDynAry<SUsing>			m_aryUsing;				// symbol tables with members pushed into this table's scope
 	EWC::CDynAry<CSymbolTable *>	m_arypSymtabUsedBy;		// symbol tables that refer to this one via a using statement
@@ -959,6 +869,7 @@ public:
 						:m_pAlloc(pAlloc)
 						,m_pWork(pWork)
 						,m_pSymtab(nullptr)
+						,m_pSymtabGeneric(nullptr)
 						,m_pStnodScope(nullptr)
 						,m_grfsymlook(FSYMLOOK_Default)
 							{ ; }
@@ -966,7 +877,9 @@ public:
 	EWC::CAlloc * 		m_pAlloc;
 	CWorkspace *		m_pWork;
 	CSymbolTable *		m_pSymtab;
-	CSTNode *			m_pStnodScope;	// current containg scope
+	CSymbolTable *		m_pSymtabGeneric;	// symbol table for child generic types/values
+											// ie. 'TakeFoo proc (foo : SFoo($T))' needs to add symbol 'D' to the symtable for TakeFoo
+	CSTNode *			m_pStnodScope;		// current containg scope
 	GRFSYMLOOK			m_grfsymlook;
 };
 
@@ -1002,5 +915,6 @@ enum IVALK // Instance VALue Kind
 };
 
 
-
 IVALK IvalkCompute(CSTNode * pStnod);
+
+#include "Generics.inl"

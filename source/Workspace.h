@@ -299,6 +299,7 @@ public:
 	BlockListEntry 						m_blistEntry;
 	EWC::CDynAry<SWorkspaceEntry *> 	m_arypEntryChecked;		// order in which entry points were successfully type checked
 	EWC::CDynAry<CIRValue *>			m_arypValManaged;
+	EWC::CDynAry<SGenericMap *>			m_arypGenmapManaged;	// generic maps to be deleted
 
 	typedef EWC::CHash<HV, int> HashHvIPFile;
 	EWC::CHash<HV, int> *			m_mpFilekPHashHvIPFile[FILEK_Max];

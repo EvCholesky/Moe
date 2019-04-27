@@ -703,14 +703,15 @@ public:
 #ifdef EWC_USE_SYS_HEAP
 								free(pV);
 #else
-								size_t cB = stbm_get_allocation_size(pV);
-								stbm_free(nullptr, m_pStbheap, pV);
 
+								size_t cB = stbm_get_allocation_size(pV);
 #ifdef EWC_TRACK_ALLOCATION
 								HV * pHv = (HV *)pV;
 								if (m_pAltrac)
 									TrackFree(cB, pHv);
 #endif
+								stbm_free(nullptr, m_pStbheap, pV);
+
 
 								m_cBFree += cB;
 #endif

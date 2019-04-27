@@ -53,6 +53,7 @@
 
 class CIRGlobal;
 class CSTNode;
+struct SGenericMap;
 
 // opaque CodeGen types and values used for both LLVM IR and bytecode
 typedef void * CodeGenValueRef;		// tag = cgval
@@ -95,9 +96,10 @@ const char * PChzFromTink(TINK tink);
 enum FTIN
 {
 	FTIN_IsUnique	= 0x1,
+	FTIN_IsCanon	= 0x2,			// canonical type is unique, derived from the generic root type and is only parameterized by canonical types
 
 	FTIN_None		= 0x0,
-	FTIN_All		= 0x1
+	FTIN_All		= 0x3
 };
 
 EWC_DEFINE_GRF(GRFTIN, FTIN, u8);
@@ -402,9 +404,9 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 										STypeInfoStruct(const EWC::CString & strName, SCOPID scopid)
 										:STypeInfo(strName, scopid, s_tink)
 										,m_pStnodStruct(nullptr)
-										,m_pTinstructGeneric(nullptr)
+										,m_pGenmap(nullptr)
+										,m_pTinstructInstFrom(nullptr)
 										,m_aryTypemembField()
-										,m_arypTinParam()
 										,m_pTinprocInit(nullptr)
 										,m_grftingen(FTINGEN_None)
 										,m_cB(-1)
@@ -414,13 +416,16 @@ struct STypeInfoStruct : public STypeInfo	// tag = tinstruct
 	bool								FHasGenericParams() const
 											{ return m_grftingen.FIsAnySet(FTINGEN_HasGenericArgs); }
 
+	STypeInfoStruct *					PTinstructInstFrom()
+											{ return m_pTinstructInstFrom; }
+
 	CSTNode *							m_pStnodStruct;			// node that defined this struct (or struct instantiation)
-	STypeInfoStruct *					m_pTinstructGeneric;	// generic base that this struct was instantated from
-																// BB - maybe this should be an insreq?
+
+	SGenericMap *						m_pGenmap;				// generic mapping this was instantiated with	
+	STypeInfoStruct *					m_pTinstructInstFrom;	// generic base that this struct was instantiated from
+																//   null if not generic or root generic definition
+
 	EWC::CAllocAry<STypeStructMember>	m_aryTypemembField;
-	EWC::CAllocAry<STypeInfo *>			m_arypTinParam;			// type of structure arguments, may not be generic if partially instantiated
-																// NOT the number of named anchors
-																//   ie. CTest struct ( :CPair( :$A, :$B)) has one argument, but two anchors
 	STypeInfoProcedure *				m_pTinprocInit;			// procedure used when cginitk == CGINITK_InitializerProc
 
 	GRFTINGEN							m_grftingen;

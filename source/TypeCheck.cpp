@@ -24,16 +24,11 @@
 
 using namespace EWC;
 
+#define TYPECHECK_PARTIAL_GENERIC_STRUCTS 1 
 enum TCCTX // tag = Type Check Context
 {
 	TCCTX_Normal,
 	TCCTX_TypeSpecification, // type checking is inside type spec, walking the tree to do literal op evaluation
-};
-
-enum ERREP // ERror REPorting
-{
-	ERREP_HideErrors,
-	ERREP_ReportErrors,	
 };
 
 struct STypeCheckStackEntry // tag = tcsent
@@ -65,19 +60,6 @@ struct SUnknownType // tag = untype
 
 #define VALIDATE_NAME_MANGLING 1
 
-struct SInstantiateRequest // tag = insreq
-{
-								SInstantiateRequest()
-								:m_pStnodGeneric(nullptr)
-								,m_pSym(nullptr)
-								,m_pGenmap(nullptr)
-									{ ; }
-
-	CSTNode * 					m_pStnodGeneric;
-	SSymbol *					m_pSym;				// instantiated type, tin proc with resolved argument types
-	SGenericMap * 				m_pGenmap;
-};
-
 struct STypeCheckWorkspace // tag = tcwork
 {
 					STypeCheckWorkspace(CAlloc * pAlloc, SErrorManager * pErrman, BlockListEntry * pblistEntry)
@@ -89,19 +71,12 @@ struct STypeCheckWorkspace // tag = tcwork
 					,m_hashPSymUntype(pAlloc, EWC::BK_TypeCheck)
 					,m_arypTcframPending(pAlloc, EWC::BK_TypeCheck, pblistEntry->C())
 					,m_arypTcframWaiting(pAlloc, EWC::BK_TypeCheck, pblistEntry->C())
-					,m_aryInsreq(pAlloc, EWC::BK_TypeCheck)
-					,m_arypGenmapManaged(pAlloc, EWC::BK_TypeCheck)
+					,m_genreg(pAlloc)
 						{ ; }
 
 					~STypeCheckWorkspace()
-						{
-							for (auto ppGenmap = m_arypGenmapManaged.A(); ppGenmap != m_arypGenmapManaged.PMac(); ++ppGenmap)
-							{
-								(*ppGenmap)->Cleanup(m_pAlloc);
-								m_pAlloc->EWC_DELETE(*ppGenmap);
-							}
-							m_arypGenmapManaged.Clear();
-						}
+						{ ; }
+
 	CAlloc *								m_pAlloc;
 	SErrorManager *							m_pErrman;
 	CNameMangler							m_mang;
@@ -112,9 +87,7 @@ struct STypeCheckWorkspace // tag = tcwork
 	CDynAry<STypeCheckFrame *>				m_arypTcframPending;	// frames ready to be run again (may stop 
 																	//  during check, not guaranteed to have all types)
 	CDynAry<STypeCheckFrame *>				m_arypTcframWaiting;	// frames waiting for one specific symbol
-
-	CDynAry<SInstantiateRequest>			m_aryInsreq;			// generics that need to be instantiated -> typechecked
-	CDynAry<SGenericMap *>					m_arypGenmapManaged;	// generic maps to be deleted
+	CGenericRegistry						m_genreg;				// registry of instantiated generic types
 };
 
 enum PROCMATCH
@@ -238,34 +211,7 @@ STypeInfo * PTinPromoteUntypedTightest(
 	STypeInfo * pTinDst,
 	ERREP errep = ERREP_ReportErrors);
 
-void RemapGenericStnodCopy(
-	STypeCheckWorkspace * pTcwork,
-	CSTNode * pStnodGen,
-	CSTNode * pStnodNew,
-	SGenericMap * pGenmap,
-	EWC::CHash<SSymbol *, SSymbol *> * pmpPSymGenericPSymRemapped,
-	EWC::CHash<SSymbol *, CSTNode *> * pmpPSymSrcPStnodConstant,
-	EWC::CHash<CSTNode *, CSTNode *> * pmpPStnodGenPStnodNew,
-	CSymbolTable * pSymtabSrc,
-	CSymbolTable * pSymtabNew);
 
-SInstantiateRequest * PInsreqLookup(
-	STypeCheckWorkspace * pTcwork,
-	CSTNode * pStnodDefinition,
-	SGenericMap * pGenmap,
-	SLexerLocation * pLexloc);
-
-void FindGenericAnchorNames(
-	STypeCheckWorkspace * pTcwork,
-	CSTNode * pStnodParamDecl,
-	CHash<CString, SAnchor> * pmpStrAnc);
-
-ERRID ErridComputeDefinedGenerics(
-	STypeCheckWorkspace * pTcwork,
-	ERREP errep,
-	STypeInfo * pTinRef,
-	CSTNode * pStnodDef,
-	SGenericMap * pGenmap);
 
 void PrintTypeStack(STypeCheckWorkspace * pTcwork, STypeCheckFrame * pTcfram)
 {
@@ -487,6 +433,22 @@ static inline bool FMatchString(const char * pCozRef, const char ** ppCoz)
 	return true;
 }
 
+
+STypeInfoArray * PTinaryCopyWithNewElementType(CSymbolTable * pSymtab, STypeInfoArray * pTinarySrc, STypeInfo * pTinNew)
+{
+	auto pTinaryNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
+	*pTinaryNew = *pTinarySrc;
+
+	pTinarySrc->m_pTin = pTinNew;
+	pSymtab->AddManagedTin(pTinaryNew);
+
+	// cleanup fields set when made unique
+	pTinaryNew->m_grftin.Clear(FTIN_IsUnique);
+	pTinaryNew->m_strDesc = CString();
+
+	return pTinaryNew;
+}
+
 STypeInfoArray * PTinaryCopy(CSymbolTable * pSymtab, STypeInfoArray * pTinarySrc)
 {
 	auto pTinaryNew = EWC_NEW(pSymtab->m_pAlloc, STypeInfoArray) STypeInfoArray();
@@ -592,8 +554,7 @@ STypeInfo * PTinQualifyAfterAssignment(STypeInfo * pTin, CSymbolTable * pSymtab,
 				if (FTypesAreSame(pTinElement, pTinary->m_pTin))
 					return pTinary;
 
-				pTinary = PTinaryCopy(pSymtab, pTinary);
-				pTinary->m_pTin = pTinElement;
+				pTinary = PTinaryCopyWithNewElementType(pSymtab, pTinary, pTinElement);
 				return pTinary;
 			}
 
@@ -723,9 +684,6 @@ STypeInfoStruct * PTinstructAlloc(
 											EWC_ALIGN_OF(STypeStructMember));
 	pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cField);
 
-	auto aTinParam = (STypeInfo**)PVAlign(&aTypememb[cField], EWC_ALIGN_OF(STypeInfo *));
-	pTinstruct->m_arypTinParam.SetArray(aTinParam, 0, cGenericParam);
-	pTinstruct->m_arypTinParam.AppendFill(cGenericParam, nullptr);
 	return pTinstruct;
 }
 
@@ -2561,6 +2519,9 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 			auto pTinstructLhs = (STypeInfoStruct *)pTinLhs;
 			auto pTinstructRhs = (STypeInfoStruct *)pTinRhs;
 
+			EWC_ASSERT(pTinstructLhs->m_pStnodStruct && pTinstructRhs->m_pStnodStruct,
+				"struct AST should be instantiated before checking FTypesAreSame()");
+
 			return pTinstructLhs->m_pStnodStruct == pTinstructRhs->m_pStnodStruct;
 		}
 	case TINK_Enum:
@@ -3239,7 +3200,6 @@ bool FIsCompileTimeConstant(CSTNode * pStnod)
 	return false;
 }
 
-
 STypeInfo * PTinFromTypeArgument(CSTNode * pStnod)
 {
 	if (!EWC_FVERIFY(pStnod->m_park == PARK_TypeArgument, "expected type argument"))
@@ -3253,10 +3213,17 @@ STypeInfo * PTinFromTypeArgument(CSTNode * pStnod)
 	return nullptr;
 }
 
-void MapGenericValue(const CString & strName, CHash<CString, SAnchor> * pmpStrAnc, CSTNode * pStnodBaked)
+SGenericMap * PGenmapNew(STypeCheckWorkspace * pTcwork, const char * pChzPrefix, STypeInfo * pTinOwner)
+{
+	auto pGenmap = EWC_NEW(pTcwork->m_pAlloc, SGenericMap) SGenericMap(pTcwork->m_pAlloc, pChzPrefix, pTinOwner);
+	pTcwork->m_pErrman->m_pWork->m_arypGenmapManaged.Append(pGenmap);
+	return pGenmap;
+}
+
+SAnchor * SGenericMap::PAncMapValue(const CString & strName, CSTNode * pStnodBaked)
 {
 	SAnchor * pAnc = nullptr;
-	if (pmpStrAnc->FinsEnsureKey(strName, &pAnc) == FINS_AlreadyExisted)
+	if (m_mpStrAnc.FinsEnsureKey(strName, &pAnc) == FINS_AlreadyExisted)
 	{
 		EWC_ASSERT(pAnc->m_genk == GENK_Value, "expeccted value");
 		EWC_ASSERT(pAnc->m_pStnodBaked == nullptr || pAnc->m_pStnodBaked == pStnodBaked, "anchored value mismatch");
@@ -3264,12 +3231,22 @@ void MapGenericValue(const CString & strName, CHash<CString, SAnchor> * pmpStrAn
 
 	pAnc->m_genk = GENK_Value;
 	pAnc->m_pStnodBaked = pStnodBaked;
+
+	if (pStnodBaked)
+	{
+		auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodBaked->m_pStmap);
+		if (pStdecl && pStdecl->m_fIsBakedConstant)
+		{
+			++m_cPartialValue;
+		}
+	}
+	return pAnc;
 }
 
-void MapGenericType(const CString & strName, CHash<CString, SAnchor> * pmpStrAnc, STypeInfo * pTin)
+SAnchor * SGenericMap::PAncMapType(const CString & strName, STypeInfo * pTin)
 {
 	SAnchor * pAnc = nullptr;
-	if (pmpStrAnc->FinsEnsureKey(strName, &pAnc) == FINS_AlreadyExisted)
+	if (m_mpStrAnc.FinsEnsureKey(strName, &pAnc) == FINS_AlreadyExisted)
 	{
 		EWC_ASSERT(pAnc->m_genk == GENK_Type, "expeccted type");
 		EWC_ASSERT(pAnc->m_pTin == nullptr || pAnc->m_pTin == pTin, "anchored value mismatch");
@@ -3277,6 +3254,12 @@ void MapGenericType(const CString & strName, CHash<CString, SAnchor> * pmpStrAnc
 
 	pAnc->m_genk = GENK_Type;
 	pAnc->m_pTin = pTin;
+
+	if (pTin && FIsGenericType(pTin))
+	{
+		++m_cPartialType;
+	}
+	return pAnc;
 }
 
 //After FUnpackArgumentList
@@ -3334,7 +3317,7 @@ inline bool FUnpackArgumentList(
 				(*pmpIArgArgunp)[iArg].m_grfarg.AddFlags(FARG_TypeArgument);
 			}
 			
-			FindGenericAnchorNames(pTcwork, pStnodParamDecl, &pGenmap->m_mpStrAnc);
+			FindGenericAnchorNames(pTcwork->m_pAlloc, pStnodParamDecl, pGenmap);
 		}
 	}
 
@@ -3372,7 +3355,7 @@ inline bool FUnpackArgumentList(
 
 			if (iArgNamed < 0)
 			{
-				SAnchor * pAnc = pGenmap->m_mpStrAnc.Lookup(strIdentifier);
+				SAnchor * pAnc = pGenmap->PAncLookup(strIdentifier);
 				if (!pAnc)
 				{
 					if (errep == ERREP_ReportErrors)
@@ -3386,20 +3369,27 @@ inline bool FUnpackArgumentList(
 					return false;
 				}
 
-				if (!pStnodLabelVal->m_pTin || pStnodLabelVal->m_pTin->m_tink != TINK_Type)
+				if (pAnc->m_genk == GENK_Value)
 				{
-					if (errep == ERREP_ReportErrors)
-					{
-						EmitError(pTcwork->m_pErrman, pLexloc, ERRID_NamedArgumentNotFound,
-							"expected type value for named argument '%s' in generic %s %s",
-							strIdentifier.PCoz(),
-							pChzStructOrProc,
-							pChzOwner);
-					}
-					return false;
+					pAnc->m_pStnodBaked = pStnodLabelVal;
 				}
+				else
+				{
+					if (!pStnodLabelVal->m_pTin || pStnodLabelVal->m_pTin->m_tink != TINK_Type)
+					{
+						if (errep == ERREP_ReportErrors)
+						{
+							EmitError(pTcwork->m_pErrman, pLexloc, ERRID_NamedArgumentNotFound,
+								"expected type value for named argument '%s' in generic %s %s",
+								strIdentifier.PCoz(),
+								pChzStructOrProc,
+								pChzOwner);
+						}
+						return false;
+					}
 
-				pAnc->m_pTin = PTinFromTypeArgument(pStnodLabelVal);
+					pAnc->m_pTin = PTinFromTypeArgument(pStnodLabelVal);
+				}
 				continue;
 			}
 			else
@@ -3510,7 +3500,7 @@ inline bool FUnpackArgumentList(
 				}
 
 				pArgunp->m_grfarg.AddFlags(FARG_BakedValue);
-				MapGenericValue(mpIArgStrName[iArg], &pGenmap->m_mpStrAnc, pStnodBaked);
+				pGenmap->PAncMapValue(mpIArgStrName[iArg], pStnodBaked);
 			}
 
 			if (pStdecl->m_iStnodIdentifier < 0)
@@ -3581,7 +3571,7 @@ inline bool FUnpackArgumentList(
 			if (pStdecl->m_iStnodType >= 0)
 			{
 				auto pStnodType = pStnodParamDef->PStnodChildSafe(pStdecl->m_iStnodType);
-				auto pTinParam = pStnodType->m_pTin; //pTinproc->m_arypTinParams[iStnodArg];
+				auto pTinParam = pStnodType->m_pTin;
 
 				if (pArgunp->m_grfarg.FIsSet(FARG_NamedLabelChild))
 				{
@@ -3591,7 +3581,8 @@ inline bool FUnpackArgumentList(
 
 				STypeInfo * pTinInitDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodInit, pTinParam, errep);
 				pTinInitDefault = PTinAfterRValueAssignment(pTcwork, &pStnodInit->m_lexloc, pTinInitDefault, pSymtab, pTinParam);
-				ErridComputeDefinedGenerics(pTcwork, errep, pTinInitDefault, pStnodType, pGenmap);
+				ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, pTinInitDefault, pStnodType, pGenmap);
+				pGenmap->m_aryLexlocSrc.Append(pStnodType->m_lexloc);
 			}
 		}
 	}
@@ -3615,7 +3606,7 @@ STypeInfo * PTinSubstituteGenerics(
 		case TINK_Generic:
 			{
 				auto pTingen = (STypeInfoGeneric *)pTinUnsub;
-				SAnchor * pAnc = pGenmap->m_mpStrAnc.Lookup(pTingen->m_pStnodDefinition->PSym()->m_strName);
+				SAnchor * pAnc = pGenmap->PAncLookup(pTingen->m_pStnodDefinition->PSym()->m_strName);
 				if (!pAnc || pAnc->FIsNull())
 				{
 					if (errep == ERREP_ReportErrors)
@@ -3654,6 +3645,7 @@ STypeInfo * PTinSubstituteGenerics(
 				int ipTinDst = 0;
 				for (int ipTinSrc = 0; ipTinSrc < cpTinParams; ++ipTinSrc)
 				{
+					// BB - is this conditional backwards????
 					if (pTinprocUnsub->m_mpIptinGrfparmq[ipTinSrc].FIsAnySet(FPARMQ_BakedValue | FPARMQ_TypeArgument))
 						continue;
 
@@ -3678,31 +3670,40 @@ STypeInfo * PTinSubstituteGenerics(
 	    case TINK_Struct:
 		    {
 				auto pTinstructUnsub = (STypeInfoStruct *)pTinUnsub;
+				if (!pTinstructUnsub->m_grftingen.FIsAnySet(FTINGEN_HasGenericArgs))
+				{
+					return pTinstructUnsub;
+				}
+
+				auto pGenmapTrim = PGenmapTrimUnusedAnchors(pTcwork, pTinstructUnsub->m_pStnodStruct, pGenmap, pLexloc);
+				auto pGenmapPartial = pTinstructUnsub->m_pGenmap;
+
+				auto pInsreq = PInsreqLookup(pTcwork, pTinstructUnsub->m_pStnodStruct, pGenmapTrim, pLexloc);
+				if (pInsreq)
+				{
+					if (EWC_FVERIFY(pInsreq->m_pSym && pInsreq->m_pSym->m_pTin, "expected symbol with type"))
+					{
+						return pInsreq->m_pSym->m_pTin;
+					}
+				}
 
 				auto cTypememb = pTinstructUnsub->m_aryTypemembField.C();
-				size_t cBAlloc = CBAlign(sizeof(STypeInfoStruct), EWC_ALIGN_OF(STypeStructMember)) + 
-								cTypememb * sizeof(STypeStructMember);
-				u8 * pB = (u8 *)pTcwork->m_pAlloc->EWC_ALLOC(cBAlloc, 8);
-
-				STypeInfoStruct * pTinstruct = new(pB) STypeInfoStruct(pTinUnsub->m_strName, pTinstructUnsub->m_scopid);
-				pSymtab->AddManagedTin(pTinstruct);
-
-				pTinstruct->m_pStnodStruct = pTinstructUnsub->m_pStnodStruct;
-				auto aTypememb = (STypeStructMember*)PVAlign(
-														pB + sizeof(STypeInfoStruct), 
-														EWC_ALIGN_OF(STypeStructMember));
-				pTinstruct->m_aryTypemembField.SetArray(aTypememb, 0, cTypememb);
+				auto pTinstructNew = PTinstructAlloc(pSymtab, pTinUnsub->m_strName, cTypememb, 0);
+				
+				pTinstructNew->m_pGenmap = pGenmapTrim;
+				pTinstructNew->m_pTinstructInstFrom = pTinstructUnsub;
 
 				for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 				{
 					STypeStructMember * pTypemembUnsub = &pTinstructUnsub->m_aryTypemembField[iTypememb];
-					pTinstruct->m_aryTypemembField.Append(*pTypemembUnsub);
-
-					STypeStructMember * pTypememb = &pTinstruct->m_aryTypemembField[iTypememb];
-					EWC_ASSERT(pTypememb->m_pTin == nullptr,"expected unsubstituted types to be null");
+					pTinstructNew->m_aryTypemembField.Append(*pTypemembUnsub);
 				}
 
-		    	return pTinstruct;
+				auto pTinCanon = PTinFindCanon(pTcwork, pTinstructNew, pSymtab, errep);
+				pTinstructNew = PTinDerivedCast<STypeInfoStruct *>(pTinCanon);
+				pTinstructNew =  PTinstructEnsureUniqueInstance(pTcwork, pLexloc, pTinstructNew);
+
+		    	return pTinstructNew;
 		    }
 	    case TINK_Array:
 		    {
@@ -3716,7 +3717,7 @@ STypeInfo * PTinSubstituteGenerics(
 					auto pSymDim = pTinaryUnsub->m_pStnodBakedDim->PSym();
 					if (pSymDim)
 					{
-						SAnchor * pAnc = pGenmap->m_mpStrAnc.Lookup(pSymDim->m_strName);
+						SAnchor * pAnc = pGenmap->PAncLookup(pSymDim->m_strName);
 						if (pAnc && pAnc->m_genk == GENK_Value)
 						{
 							auto pStvalDim = pAnc->m_pStnodBaked->m_pStval;
@@ -3742,13 +3743,6 @@ STypeInfo * PTinSubstituteGenerics(
 	}
 
 	return nullptr;
-}
-
-SGenericMap * PGenmapNew(STypeCheckWorkspace * pTcwork)
-{
-	auto pGenmap = EWC_NEW(pTcwork->m_pAlloc, SGenericMap) SGenericMap(pTcwork->m_pAlloc, nullptr);
-	pTcwork->m_arypGenmapManaged.Append(pGenmap);
-	return pGenmap;
 }
 
 SInstantiateRequest * PInsreqInstantiateGenericStruct(
@@ -3788,11 +3782,7 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 	EWC_ASSERT(pStnodGeneric->m_strees = STREES_TypeChecked, "generic struct definition should be type checked prior to instantiation");
 	pStnodStructCopy->m_strees = STREES_Parsed;
 
-	auto pInsreq = pTcwork->m_aryInsreq.AppendNew();
-	pInsreq->m_pGenmap = pGenmap;
-	pInsreq->m_pStnodGeneric = pStnodGeneric;
 
-	SGenericMapScope genscope(pTcwork->m_pErrman, pGenmap);
 
 	// copy the symbol table, but replace generic types from the map
 
@@ -3804,25 +3794,31 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 	CSymbolTable * pSymtabNew = PSymtabNew(pTcwork->m_pAlloc, pSymtabSrc, pSymtabSrc->m_strNamespace);	
 	pSymtabNew->m_pSymtabParent = pSymtabSrc->m_pSymtabParent;
 
+	SGenericMapScope genscope(pTcwork->m_pErrman, pGenmap);
+
+	auto pInsreq = pTcwork->m_genreg.PInsreqNew(pStnodGeneric, pGenmap);
+	pInsreq->m_pGenmap = pGenmap;
+	pInsreq->m_pStnodGeneric = pStnodGeneric;
+
 	// Figure out the generic args that will remain after this instantiation
 	//   may not be fewer generic args ie. instantiating 'SPair(:$A, :$B)' to 'SPair( :CAry(:$U), :$V)'
+
 	int cGenericValue = 0;
 	int cGenericType = 0;
 
 	CSTNode * pStnodNewParams = nullptr;
 	int ipStnodFullyInstantated = -1;
-	CLexerLookup lexlook(pTcwork->m_pErrman->m_pWork, pStnodInstantiation);
 	{
-		CHash<CString, SAnchor> mpStrAnc(pTcwork->m_pAlloc, BK_TypeCheckGenerics, 32);
+		SGenericMap genmapNames(pTcwork->m_pAlloc, "findnames", nullptr);
 
 		int ipStnodMin = 1; // instantiation children are (name, arg0, arg1, arg2, ...)
 		for (int ipStnodArg = ipStnodMin; ipStnodArg < pStnodInstantiation->CStnodChild(); ++ipStnodArg)
 		{
 			auto pStnodInstArg = pStnodInstantiation->PStnodChild(ipStnodArg);
-			size_t cAncPrev = mpStrAnc.C();
-			FindGenericAnchorNames(pTcwork, pStnodInstArg, &mpStrAnc);
+			size_t cAncPrev = genmapNames.m_mpStrAnc.C();
+			FindGenericAnchorNames(pTcwork->m_pAlloc, pStnodInstArg, &genmapNames);
 
-			if (mpStrAnc.C() <= cAncPrev)
+			if (genmapNames.m_mpStrAnc.C() <= cAncPrev)
 			{
 				if (ipStnodFullyInstantated < 0)
 				{
@@ -3887,7 +3883,7 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 			}
 		}
 
-		CHash<CString, SAnchor>::CIterator iter(&mpStrAnc);
+		CHash<CString, SAnchor>::CIterator iter(&genmapNames.m_mpStrAnc);
 		SAnchor * pAnc;
 		while ((pAnc = iter.Next()))
 		{
@@ -3905,6 +3901,7 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 	EWC::CHash<SSymbol *, SSymbol *> mpPSymGenericPSymRemapped(pTcwork->m_pAlloc, BK_TypeCheckGenerics);
 	EWC::CHash<HV, SSymbol *>::CIterator iterSrc(&pSymtabSrc->m_hashHvPSym);
 	SSymbol ** ppSymSrc;
+
 	while ((ppSymSrc = iterSrc.Next()))
 	{
 		SSymbol * pSymSrc = *ppSymSrc;
@@ -3915,23 +3912,13 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 
 		if (EWC_FVERIFY(pSymSrc->m_pStnodDefinition, "symbol without defining syntax tree node"))
 		{
-			auto pStnodDefinition = pSymSrc->m_pStnodDefinition;
-			auto pStdecl = PStmapRtiCast<CSTDecl *>(pSymSrc->m_pStnodDefinition->m_pStmap);
-			if (pStdecl && pStdecl->m_fIsBakedConstant)
+			auto pAnc = pGenmap->PAncLookup(pSymSrc->m_strName);
+			if (pAnc && pAnc->m_genk == GENK_Value)
 			{
-				auto pAnc = pGenmap->m_mpStrAnc.Lookup(pSymSrc->m_strName);
-				if (!pAnc)
-				{
-					EmitError(pTcwork, pStnodGeneric, 
-						"Couldn't find baked value for compile time constant '%s'", 
-						pSymSrc->m_strName.PCoz());
-				}
-				else
-				{
-					EWC_ASSERT(pAnc->m_pStnodBaked, "expected baked value (not type)");
-					mpPSymSrcPStnodValue.Insert(pSymSrc, pAnc->m_pStnodBaked);
-						continue;
-				}
+				EWC_ASSERT(pAnc->m_pStnodBaked, "expected baked value (not type)");
+				mpPSymSrcPStnodValue.Insert(pSymSrc, pAnc->m_pStnodBaked);
+					continue;
+
 			}
 		}
 
@@ -3966,26 +3953,19 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 		mpPSymGenericPSymRemapped.Insert(pSymSrc, pSymNew);
 	}
 
-	// add symbols for baked values that are not fully instantiated 
-	// BB - what about generic params further down in a declaration?
-	EWC::CHash<SSymbol *, CSTNode *>::CIterator iterBakedval(&mpPSymSrcPStnodValue);
-	CSTNode ** ppStnodBaked;
-	while ((ppStnodBaked = iterBakedval.Next()))
+	// need to walk the generic map and make sure we have symbols for all the constants defined by anchors
+	CHash<CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
+	CString * pStrAnc;
+	SAnchor * pAnc;
+	while ((pAnc = iter.Next(&pStrAnc)))
 	{
-		auto pStnodBaked = *ppStnodBaked;
-		if (pStnodBaked->m_park != PARK_Decl)
-			continue;
-		
-		auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodBaked->m_pStmap);
-
-		if (!pStdecl || pStdecl->m_fIsBakedConstant == false)
+		auto pStnodBaked = pAnc->m_pStnodBaked;
+		if (pAnc->m_genk != GENK_Value || !EWC_FVERIFY(pStnodBaked, "missing baked value"))
 			continue;
 
-		// allocate new symbol
-		auto pStnodIdent = pStnodBaked->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
 		auto pSymNew = pSymtabNew->PSymEnsure(
 									pTcwork->m_pErrman,
-									StrFromIdentifier(pStnodIdent),
+									*pStrAnc,
 									pStnodBaked,
 									FSYM_None);
 
@@ -3999,9 +3979,6 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 
 	auto cTypememb = pTinstructSrc->m_aryTypemembField.C();
 	auto pTinstructNew = PTinstructAlloc(pSymtabNew, pTinstructSrc->m_strName, cTypememb, cGenericValue + cGenericType);
-
-	pTinstructNew->m_grftingen.AssignFlags(FTINGEN_HasBakedValueArgs, cGenericValue > 0);
-	pTinstructNew->m_grftingen.AssignFlags(FTINGEN_HasBakedTypeArgs, cGenericType > 0);
 
 	for (int iTypememb = 0; iTypememb < cTypememb; ++iTypememb)
 	{
@@ -4035,9 +4012,17 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 	pStnodStructCopy->m_pSymbase = pInsreq->m_pSym;
 	pInsreq->m_pSym->m_pStnodDefinition = pStnodStructCopy;
 	pTinstructNew->m_pStnodStruct = pStnodStructCopy;
-	pTinstructNew->m_pTinstructGeneric = pTinstructSrc;
+
+	EWC_ASSERT(pTinstructSrc->m_grftingen.FIsAnySet(FTINGEN_HasGenericArgs), "instantiating non-generic struct");
+	pTinstructNew->m_pTinstructInstFrom = pTinstructSrc;
+	pTinstructNew->m_pGenmap = pGenmap;
+
+	pTinstructNew = PTinstructEnsureUniqueInstance(pTcwork, &pStnodStructCopy->m_lexloc, pTinstructNew);
+	pTinstructNew->m_grftingen.AssignFlags(FTINGEN_HasBakedValueArgs, cGenericValue > 0);
+	pTinstructNew->m_grftingen.AssignFlags(FTINGEN_HasBakedTypeArgs, cGenericType > 0);
 
 	auto pStstructCopy = PStmapRtiCast<CSTStruct *>(pStnodStructCopy->m_pStmap);
+	pStstructCopy->m_iStnodBakedParameterList = pStstructCopy->m_iStnodParameterList;
 	pStstructCopy->m_iStnodParameterList = -1;
 
 	// if we still have parameters we need to set them up here.
@@ -4072,7 +4057,6 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 	//  This needs to happen after the remap so it doesn't confuse the remapper
 	if (pStnodNewParams != nullptr)
 	{
-		EWC_ASSERT(pStnodNewParams->CStnodChild() == pTinstructNew->m_arypTinParam.CMax(), "array size mismatch");
 		pStstructCopy->m_iStnodParameterList = pStnodStructCopy->IAppendChild(pStnodNewParams);
 	}
 
@@ -4085,7 +4069,8 @@ SInstantiateRequest * PInsreqInstantiateGenericStruct(
 	pEntry->m_pSymtab = pSymtabNew;
 	pTcfram->m_pEntry = pEntry;
 
-	if (!pTinstructNew->FHasGenericParams())
+
+	if (!pTinstructNew->FHasGenericParams() || TYPECHECK_PARTIAL_GENERIC_STRUCTS)
 	{
 		pTcfram->m_aryTcsent.SetAlloc(pTcwork->m_pAlloc, EWC::BK_TypeCheckStack);
 		STypeCheckStackEntry * pTcsent = pTcfram->m_aryTcsent.AppendNew();
@@ -4207,7 +4192,7 @@ PROCMATCH ProcmatchCheckStructArguments(
 	CDynAry<SArgUnpack> mpIArgArgunp(pTcwork->m_pAlloc, BK_TypeCheckGenerics, cParam);
 	mpIArgArgunp.AppendNew(cParam);
 
-	SGenericMap genmap(pTcwork->m_pAlloc, pStnodStruct->PSym());
+	SGenericMap genmap(pTcwork->m_pAlloc, "CheckStructArg", pTinstruct);
 
 	if (!FUnpackArgumentList(
 		pTcwork,
@@ -4231,12 +4216,15 @@ PROCMATCH ProcmatchCheckStructArguments(
 		
 	CDynAry<SMatchTypeInfo> aryMtin(pTcwork->m_pAlloc, BK_TypeCheckProcmatch, pPmparam->m_cpStnodCall);
 
+
 	for (int iArg = 0; iArg < cParam; ++iArg)
 	{
 		CSTNode * pStnodArg = mpIArgArgunp[iArg].m_pStnodInit;
 		auto pMtin = aryMtin.AppendNew();
 
-		STypeInfo * pTinParam = pTinstruct->m_arypTinParam[iArg];
+		auto pStnodDefParam = pStnodDefParamList->PStnodChild(iArg);
+		STypeInfo * pTinParam = pStnodDefParam->m_pTin;
+
 		if (!EWC_FVERIFY(pTinParam, "unknown parameter type"))
 			return PROCMATCH_None;
 
@@ -4322,7 +4310,7 @@ PROCMATCH ProcmatchCheckStructArguments(
 	if (genmap.FIsEmpty())
 		return PROCMATCH_None;
 
-	auto pGenmap = PGenmapNew(pTcwork);
+	auto pGenmap = PGenmapNew(pTcwork, "CheckStructArgs", pTinstruct);
 	pGenmap->m_aryLexlocSrc.Append(*pPmparam->m_pLexloc);
 	pGenmap->Swap(&genmap);
 
@@ -4339,6 +4327,9 @@ SSymbol * PSymInstantiateGenericStruct(
 	CSTNode * pStnodStructInst,
 	GRFSYMLOOK grfsymlook)
 {
+	EWC_ASSERT(pStnodStructInst->m_park == PARK_GenericStructSpec, "epxected generic struct spec");
+	// children are (identifier, structArg0, structArg1, ...)
+
 	CSTNode * pStnodIdent = pStnodStructInst->PStnodChildSafe(0);
 	SSymbol * pSymGen = nullptr;
 	if (EWC_FVERIFY(pStnodIdent, "bad generic struct instantiation"))
@@ -4399,7 +4390,6 @@ SSymbol * PSymInstantiateGenericStruct(
 
 	if (!pInsreq)
 		return nullptr;
-
 	return pInsreq->m_pSym;
 }
 
@@ -4499,7 +4489,7 @@ STypeInfo * PTinFromTypeSpecification(
 			} break;
 		case PARK_GenericStructSpec:
 			{
-				EWC_ASSERT(pStnod->m_strees == STREES_TypeChecked, "generic inst needs to by type checked first");
+				EWC_ASSERT(pStnod->m_strees == STREES_TypeChecked, "generic inst needs to be type checked first");
 
 				auto pSym = pStnod->PSym();
 				if (pSym && pSym->m_pTin)
@@ -5114,13 +5104,51 @@ void PrintMem(void * pV, size_t cB)
 	}
 }
 
+// find the subset of a generic map used by a given generic definition
+SGenericMap * PGenmapTrimUnusedAnchors(
+	STypeCheckWorkspace * pTcwork,
+	CSTNode * pStnodInstFrom,
+	SGenericMap * pGenmapSuperset, 
+	SLexerLocation * pLexloc)
+{
+	SGenericMap genmapTrim(pTcwork->m_pAlloc, "trim", nullptr);
+	FindGenericAnchorNames(pTcwork->m_pAlloc, pStnodInstFrom, &genmapTrim);
+
+	CHash<CString, SAnchor>::CIterator iterTrim(&genmapTrim.m_mpStrAnc);
+	CString * pStrTrim;
+	SAnchor * pAncTrim;
+	while ((pAncTrim = iterTrim.Next(&pStrTrim)))
+	{
+		auto pAncSuperset = pGenmapSuperset->PAncLookup(*pStrTrim);
+		if (!pAncSuperset)
+		{
+			EWC_ASSERT(false, "all generic anchors should be shadowed");
+		}
+		else
+		{
+			EWC_ASSERT(pAncTrim->m_genk == pAncSuperset->m_genk, "anchor type mismatch");
+			pAncTrim->m_pStnodBaked = pAncTrim->m_pStnodBaked;
+			pAncTrim->m_pTin = pAncTrim->m_pTin;
+		}
+	}
+
+	if (pGenmapSuperset->m_mpStrAnc.C() == genmapTrim.m_mpStrAnc.C())
+		return pGenmapSuperset;
+
+	auto pGenmapNew = PGenmapNew(pTcwork, "", nullptr);
+	pGenmapNew->Swap(&genmapTrim);
+
+	pGenmapNew->m_aryLexlocSrc.Append(*pLexloc);
+	return pGenmapNew;
+}
+
 // walk a proc|struct AST and find the names of all of the generic anchors
 void FindGenericAnchorNames(
-	STypeCheckWorkspace * pTcwork,
+	EWC::CAlloc * pAlloc,
 	CSTNode * pStnodDef,
-	CHash<CString, SAnchor> * pmpStrAnc)
+	SGenericMap * pGenmap)
 {
-	CDynAry<CSTNode *> arypStnod(pTcwork->m_pAlloc, BK_TypeCheckGenerics, 16);
+	CDynAry<CSTNode *> arypStnod(pAlloc, BK_TypeCheckGenerics, 16);
 	arypStnod.Append(pStnodDef);
 
 	// walk through 
@@ -5128,7 +5156,9 @@ void FindGenericAnchorNames(
 	{
 		auto pStnodIt = arypStnod.TPopLast();
 
-		EWC_ASSERT(pStnodIt->m_strees == STREES_TypeChecked, "Type specification should be type checked first, (for literal op eval)");
+		bool fIsStructHeader = pStnodIt->m_park == PARK_StructDefinition || pStnodIt->m_park == PARK_ParameterList;
+		EWC_ASSERT(fIsStructHeader || pStnodIt->m_strees == STREES_TypeChecked, "Type specification should be type checked first, (for literal op eval)");
+
 		while (pStnodIt)
 		{
 			CSTNode * pStnodCur = pStnodIt;
@@ -5144,11 +5174,12 @@ void FindGenericAnchorNames(
 					if (!EWC_FVERIFY(pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Generic, "expected generic type"))
 						break;
 
-					MapGenericType(pSym->m_strName, pmpStrAnc, nullptr);
+					pGenmap->PAncMapType(pSym->m_strName, nullptr);
 				} break;
 			case PARK_MemberLookup:
 			case PARK_Identifier:
 			case PARK_Literal:
+			case PARK_BakedValue:
 				break;
 				
 			case PARK_Decl:
@@ -5160,7 +5191,7 @@ void FindGenericAnchorNames(
 					if (pStdecl->m_fIsBakedConstant && pStdecl->m_iStnodIdentifier >= 0)
 					{
 						auto pStnodIdent = pStnodCur->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
-						MapGenericValue(StrFromIdentifier(pStnodIdent), pmpStrAnc, nullptr);
+						pGenmap->PAncMapValue(StrFromIdentifier(pStnodIdent), nullptr);
 					}
 
 					pStnodIt = pStnodCur->PStnodChildSafe(pStdecl->m_iStnodType);
@@ -5178,7 +5209,14 @@ void FindGenericAnchorNames(
 				} break;
 			case PARK_ArrayDecl:
 				{
-					// array decl's children are [type] or [m_c, type]
+					// array decl's children are [type] or [dim, type]
+
+					if (pStnodCur->CStnodChild() > 1)
+					{
+						// dim may be generic baked value
+						auto pStnodDim = pStnodCur->PStnodChild(0);
+						arypStnod.Append(pStnodDim);
+					}
 					pStnodIt = pStnodCur->PStnodChildSafe(pStnodCur->CStnodChild()-1);
 					EWC_ASSERT(pStnodIt, "bad array declaration");
 				} break;
@@ -5201,7 +5239,6 @@ void FindGenericAnchorNames(
 					auto pTinstructGen = PTinRtiCast<STypeInfoStruct *>(pStnodCur->m_pTin);
 					auto pStstruct = PStmapRtiCast<CSTStruct *>(pStnodDef->m_pStmap);
 					if (EWC_FVERIFY(pStstruct && pTinstructGen, "bad PARK_GenericStructInst") &&
-						pTinstructGen->m_arypTinParam.C() &&
   						pStstruct->m_iStnodParameterList >= 0)
 					{
 						CSTNode * pStnodParameterList = pStnodDef->PStnodChild(pStstruct->m_iStnodParameterList);
@@ -5232,6 +5269,23 @@ void FindGenericAnchorNames(
 						}
 					}
 				} break;
+			case PARK_StructDefinition:
+				{
+					auto pStstruct = PStmapRtiCast<CSTStruct *>(pStnodCur->m_pStmap);
+					if (EWC_FVERIFY(pStstruct, "bad struct node") && pStstruct->m_iStnodParameterList >= 0)
+					{
+						arypStnod.Append(pStnodCur->PStnodChild(pStstruct->m_iStnodParameterList));
+					}
+
+				} break;
+			case PARK_ParameterList:
+				{
+					auto ppStnodMac = pStnodCur->m_arypStnodChild.PMac();
+					for (auto ppStnodIt = pStnodCur->m_arypStnodChild.A(); ppStnodIt != ppStnodMac; ++ppStnodIt)
+					{
+						arypStnod.Append(*ppStnodIt);
+					}
+				} break;
 			default: EWC_ASSERT(false, "Unexpected parse node PARK_%s in FindGenericAnchorName()", PChzFromPark(pStnodCur->m_park));
 				break;
 			}
@@ -5239,19 +5293,312 @@ void FindGenericAnchorNames(
 	}
 }
 
+#if USE_FLATTEN_GENMAP
+ERRID ErridFlattenGenmap(
+	STypeCheckWorkspace * pTcwork,
+	ERREP errep,
+	CSymbolTable * pSymtab,
+	SGenericMap * pGenmapPartial,
+	SGenericMap * pGenmapCanon,
+	SGenericMap * pGenmapFlat)
+{
+	// given some struct SFoo($C) 
+	//   pGenmapPartial:	SFoo($C=$Dim) and
+	//	 pGenmapCanon:		SFoo($C=2)
+	// comppute pGenmape 
+	//   pGenmapFlat:		SFoo($Dim=2)
+	// NOTE: pGenmap flat is not canonical, it's basically the opposite, find values/types for the most 
+	//  deeply instantiated branch, which can be made canonical
+
+	EWC_ASSERT(pGenmapPartial != pGenmapCanon, "whaaaa?");
+	printf("pGenmapPartial(0x%p): ", pGenmapPartial);
+	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapPartial);
+	printf("pGenmapLeaf(0x%p): ", pGenmapCanon);
+	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapCanon);
+	printf("pGenmapFlat-in(0x%p): ", pGenmapFlat);
+	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapFlat);
+
+	//auto pGenmapFlat = PGenmapNew(pTcwork);
+	//ERREP errep = ERREP_ReportErrors;
+
+	// loop over the anchors in pGenmapPartial and copy concrete anchors and flatten partially instantiated anchors
+
+	CString * pStrAnchorPartial;
+	SAnchor * pAncPartial;
+	EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmapPartial->m_mpStrAnc);
+	while ((pAncPartial = iter.Next(&pStrAnchorPartial)))
+	{
+		switch (pAncPartial->m_genk)
+		{
+		case GENK_Type:
+			{
+				STypeInfo * pTinPartial = pAncPartial->m_pTin;
+				if (FIsGenericType(pTinPartial))
+				{
+					//auto pStnodPartialDef = PStnodGenericDefinition(pTinPartial);
+					auto pAncCanon = pGenmapCanon->PAncLookup(*pStrAnchorPartial);
+					if (EWC_FVERIFY(pAncCanon && pAncCanon->m_pTin, "expected concrete type"))
+					{
+						// pAncLeaf finds what canon has concretely mapped $T to. Partial has $T mapped to some type $TYPE
+						// ie. given $T=SPair(:int, :s8) and $T=SPair(:int, %TYPE) find that $TYPE=:s8
+
+						ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, pAncCanon->m_pTin, pAncPartial->m_pStnodDefinition, pGenmapFlat);
+						if (errid != ERRID_Nil)
+							return errid;
+					}
+				}
+				else
+				{
+					STypeInfo * pTinFlat = pTinPartial;
+					pGenmapFlat->PAncMapType(*pStrAnchorPartial, pTinFlat);
+				}
+				
+
+			} break;
+		case GENK_Value:
+			{
+				auto pStnodValue = pAncPartial->m_pStnodBaked;
+				switch (pStnodValue->m_park)
+				{
+				case PARK_Decl:
+					// we've mapped one baked value to another map($T=$X)
+					{
+						auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodValue->m_pStmap);
+						if (EWC_FVERIFY(pStdecl->m_fIsBakedConstant && pStdecl->m_iStnodIdentifier >= 0))
+						{
+							auto strLeaf = StrFromIdentifier(pStnodValue->PStnodChild(pStdecl->m_iStnodIdentifier));
+							auto pAncLeaf = pGenmapCanon->PAncLookup(*pStrAnchorPartial);
+							if (EWC_FVERIFY(pAncLeaf, "expected leaf definition for '$%s'", strLeaf.PCoz()))
+							{
+								pGenmapFlat->PAncMapValue(strLeaf, pAncLeaf->m_pStnodBaked);
+							}
+						}
+					} break;
+				case PARK_Literal:
+					pGenmapFlat->PAncMapValue(*pStrAnchorPartial, pAncPartial->m_pStnodBaked);
+					break;
+				default:
+					EWC_ASSERT(false, "unhandled baked value");
+				}
+			} break;
+		default:
+			EWC_ASSERT(false, "unhandled GENK");
+		}
+
+	}
+	printf("pGenmapFlat-out(0x%p): ", pGenmapFlat);
+	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapFlat);
+	return ERRID_Nil;
+}
+#endif
+
+STypeInfo * PTinFindCanon(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, CSymbolTable * pSymtab, ERREP errep)
+{
+	switch (pTin->m_tink)
+	{
+	case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+
+			auto pTinstructFrom = pTinstruct->PTinstructInstFrom();
+			if (pTinstructFrom == nullptr)
+			{
+				// we're not instantiated, just make sure the flag is set and return
+				pTin->m_grftin.AddFlags(FTIN_IsCanon);
+				return pTin;
+			}
+
+			// iterate up the m_pTinstructInstantiatedFrom chain remapping anchors at each step until we have a canonical
+			//   instantiation of this struct (no partial instantiations in the chain and any anchored type in our genmap is 
+			//   also canonical
+
+			// TODO:
+			// [ ] cleanup the wasted interstitial genmaps that aren't used
+
+			CString * pStrAnchorFrom;
+			SAnchor * pAncFrom;
+			auto pTinstructIt = pTinstruct;
+			auto pGenmapIt = pTinstructIt->m_pGenmap;
+			while (pTinstructFrom && pTinstructFrom->m_pGenmap)
+			{
+				auto pGenmapFrom = pTinstructFrom->m_pGenmap;
+				auto pGenmapNew = PGenmapNew(pTcwork, "Canon", pTinstructFrom);
+
+				EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmapFrom->m_mpStrAnc);
+				while ((pAncFrom = iter.Next(&pStrAnchorFrom)))
+				{
+					pAncFrom->AssertIsValid();
+					switch (pAncFrom->m_genk)
+					{
+					case GENK_Type:
+						{
+							STypeInfo * pTinNew = pAncFrom->m_pTin;
+							if (FIsGenericType(pAncFrom->m_pTin))
+							{
+								SLexerLocation lexlocIt(pGenmapIt->LexlocReporting());
+								pTinNew = PTinSubstituteGenerics(pTcwork, pSymtab, &lexlocIt, pAncFrom->m_pTin, pGenmapIt, errep);
+							}
+							pGenmapNew->PAncMapType(*pStrAnchorFrom, pTinNew);
+						} break;
+					case GENK_Value:
+						{
+							CSTNode * pStnodValue = pAncFrom->m_pStnodBaked;
+							if (pStnodValue->m_park == PARK_Decl)
+							{
+								auto strAnchorIt = StrIdentifierFromDecl(pAncFrom->m_pStnodBaked);
+								auto pAncIt = pGenmapIt->PAncLookup(strAnchorIt);
+								EWC_ASSERT(pAncIt, "failed to lookup '$%s' while cannonicalizing generics", strAnchorIt.PCoz());
+								EWC_ASSERT(pAncIt->m_genk == GENK_Value, "expected value");
+
+								pStnodValue = pAncIt->m_pStnodBaked;
+							}
+
+							pGenmapNew->PAncMapValue(*pStrAnchorFrom, pStnodValue);
+						} break;
+					default:
+						EWC_ASSERT(false, "unexpected generic kind");
+					}
+				}
+				
+				pGenmapIt = pGenmapNew;
+				pTinstructIt = pTinstructFrom;
+				pTinstructFrom = pTinstructIt->PTinstructInstFrom();
+			}
+
+			pGenmapIt->m_aryLexlocSrc.Append(pTinstruct->m_pGenmap->m_aryLexlocSrc.A(), pTinstruct->m_pGenmap->m_aryLexlocSrc.C());
+
+			SLexerLocation lexlocIt(pGenmapIt->LexlocReporting());
+			auto pTinNew = PTinSubstituteGenerics(pTcwork, pSymtab, &lexlocIt, pTinstructFrom, pGenmapIt, errep);
+			auto pTinstructNew = PTinDerivedCast<STypeInfoStruct *>(pTinNew);
+
+			pTinstructNew = PTinstructEnsureUniqueInstance(pTcwork, &lexlocIt, pTinstructNew);
+			pTinstructNew->m_grftin.AddFlags(FTIN_IsCanon);
+
+			return pTinstructNew;
+		} break;
+	case TINK_Procedure:
+		{
+			EWC_ASSERT(false, "TBD - write PTinFindCanon for generic procs");
+		} break;
+	case TINK_Generic:
+		EWC_ASSERT(false, "Generic type is not canon... not sure what we should do here");
+		break;
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			auto pTinCanon = PTinFindCanon(pTcwork, pTinqual->m_pTin, pSymtab, errep);
+			if (pTinqual->m_pTin != pTinCanon)
+			{
+				pTinqual = pSymtab->PTinqualEnsure(pTinCanon, pTinqual->m_grfqualk);
+			}
+			return pTinqual;
+		} break;
+	case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTin;
+			auto pTinCanon = PTinFindCanon(pTcwork, pTinary->m_pTin, pSymtab, errep);
+			if (pTinary->m_pTin != pTinCanon)
+			{
+				pTinary = PTinaryCopyWithNewElementType(pSymtab, pTinary, pTinCanon);
+			}
+			return pTinary;
+		} break;
+	case TINK_Pointer:
+		{
+			auto pTinptr = (STypeInfoPointer *)pTin;
+			auto pTinCanon = PTinFindCanon(pTcwork, pTinptr->m_pTinPointedTo, pSymtab, errep);
+			if (pTinptr->m_pTinPointedTo != pTinCanon)
+			{
+				pTinptr = pSymtab->PTinptrAllocate(pTinCanon);
+			}
+			return pTinptr;
+		} break;
+	default:
+		return pTin;
+	}
+	return pTin;
+}
+
+void AssertIsCanon(STypeInfo * pTin)
+{
+	switch (pTin->m_tink)
+	{
+	case TINK_Struct:
+		{
+			auto pTinstruct = (STypeInfoStruct *)pTin;
+			auto pTinstructFrom = pTinstruct->PTinstructInstFrom();
+			if (pTinstructFrom)
+			{
+				EWC_ASSERT(pTinstructFrom->PTinstructInstFrom() == nullptr, "must instantiate from generic root");
+				
+				CString * pStrAnchor;
+				SAnchor * pAnc;
+				auto pGenmap = pTinstruct->m_pGenmap;
+				EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
+				while ((pAnc = iter.Next(&pStrAnchor)))
+				{
+					pAnc->AssertIsValid();
+					switch (pAnc->m_genk)
+					{
+					case GENK_Type:
+						EWC_ASSERT(FIsGenericType(pAnc->m_pTin) == false, "anchor type '$%s' is not fully instantiated ", pStrAnchor->PCoz());
+						break;
+					case GENK_Value:
+						{
+							auto pStnodValue = pAnc->m_pStnodBaked;
+							EWC_ASSERT(pStnodValue->m_park != PARK_Decl, "anchor $%s is not fully instantiated", pStrAnchor->PCoz());
+						} break;
+					default:
+						EWC_ASSERT(false, "unexpected generic kind");
+					}
+				}
+			}
+			EWC_ASSERT(pTin->m_grftin.FIsSet(FTIN_IsCanon), "missing canonical type flag");
+		} break;
+	case TINK_Procedure:
+		{
+			EWC_ASSERT(false, "TBD - write AssertIsCanon check for generic procs");
+			EWC_ASSERT(pTin->m_grftin.FIsSet(FTIN_IsCanon), "missing canonical type flag");
+		} break;
+	case TINK_Generic:
+		EWC_ASSERT(false, "Generic type is not canon");
+		break;
+	case TINK_Qualifier:
+		{
+			auto pTinqual = (STypeInfoQualifier *)pTin;
+			AssertIsCanon(pTinqual->m_pTin);
+		} break;
+	case TINK_Array:
+		{
+			auto pTinary = (STypeInfoArray *)pTin;
+			AssertIsCanon(pTinary->m_pTin);
+		} break;
+	case TINK_Pointer:
+		{
+			auto pTinptr = (STypeInfoPointer *)pTin;
+			AssertIsCanon(pTinptr->m_pTinPointedTo);
+		} break;
+	default:
+		break;
+	}
+
+	// make sure we set the flag
+}
+
 ERRID ErridComputeDefinedGenerics(
 	STypeCheckWorkspace * pTcwork,
 	ERREP errep,
+	CSymbolTable * pSymtab,
 	STypeInfo * pTinRefEntry,
-	CSTNode * pStnodDefEntry, // pStnod of the parameter's type
-	SGenericMap * pGenmap)
+	CSTNode * pStnodDockEntry, // pStnod of the parameter's type
+	SGenericMap * pGenmapOut)
 {
-	// given a reference type and a generic type specification compute the anchored generic types
+	// given a reference type and a generic type specification compute the anchored types/values
 	//   ie. given a decl: '[2] $T' and a call arg: '[2] &int' compute that $T == &int
 
 	struct SGenericFrame // tag = genfram
 	{
-		CSTNode * 		m_pStnod;
+		CSTNode * 		m_pStnodDock;
 		STypeInfo *		m_pTinRef;
 	};
 
@@ -5259,7 +5606,7 @@ ERRID ErridComputeDefinedGenerics(
 
 	{
 		auto pGenfram = aryGenfram.AppendNew();
-		pGenfram->m_pStnod = pStnodDefEntry;
+		pGenfram->m_pStnodDock = pStnodDockEntry;
 		pGenfram->m_pTinRef = pTinRefEntry;
 	}
 
@@ -5267,48 +5614,32 @@ ERRID ErridComputeDefinedGenerics(
 	while (aryGenfram.C())
 	{
 		auto genfram = aryGenfram.TPopLast();
-		auto pStnodIt = genfram.m_pStnod;
+		auto pStnodDockIt = genfram.m_pStnodDock;
 
-		EWC_ASSERT(pStnodIt->m_strees == STREES_TypeChecked, "Type specification should be type checked first, (for literal op eval)");
-		while (pStnodIt)
+		EWC_ASSERT(pStnodDockIt->m_strees == STREES_TypeChecked, "Type specification should be type checked first, (for literal op eval)");
+		while (pStnodDockIt)
 		{
 
-			CSTNode * pStnodCur = pStnodIt;
-			pStnodIt = nullptr;	
+			CSTNode * pStnodDockCur = pStnodDockIt;
+			pStnodDockIt = nullptr;	
 
-			switch(pStnodCur->m_park)
+			switch(pStnodDockCur->m_park)
 			{
 			case PARK_GenericDecl:
 				{ 
-					auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodCur->m_pTin);
+					auto pTingen = PTinDerivedCast<STypeInfoGeneric *>(pStnodDockCur->m_pTin);
 
-					auto pSym = pStnodCur->PSym();
+					auto pSym = pStnodDockCur->PSym();
 					if (!EWC_FVERIFY(pSym->m_pTin && pSym->m_pTin->m_tink == TINK_Generic, "expected generic type"))
 						break;
 
-					STypeInfo * pTinAnchor = genfram.m_pTinRef;
-					SAnchor * pAnc;
-					FINS fins = pGenmap->m_mpStrAnc.FinsEnsureKey(pSym->m_strName, &pAnc);
-					if (fins == FINS_AlreadyExisted && !pAnc->FIsNull())
+					auto pAnc = pGenmapOut->PAncMapType(pSym->m_strName, genfram.m_pTinRef);
+					if (!pAnc->m_pTin && errep == ERREP_ReportErrors)
 					{
-						EWC_ASSERT(pAnc->m_pTin, "expected type");
-						pTinAnchor = pAnc->m_pTin;
+						EmitError(pTcwork, pStnodDockCur, ERRID_CannotInferGeneric,
+							"cannot infer type for generic argument '%s'",
+							pSym->m_strName.PCoz());
 					}
-					else
-					{
-						if (!pTinAnchor)
-						{
-							if (errep == ERREP_ReportErrors)
-							{
-								EmitError(pTcwork, pStnodCur, ERRID_CannotInferGeneric,
-									"cannot infer type for generic argument '%s'",
-									pSym->m_strName.PCoz());
-							}
-							erridReturn = ERRID_CannotInferGeneric;
-						}
-						*pAnc = SAnchor(pTinAnchor);
-					}
-
 				} break;
 			case PARK_MemberLookup:
 				{
@@ -5334,11 +5665,13 @@ ERRID ErridComputeDefinedGenerics(
 				} break;
 			case PARK_Decl:
 				{ 
-					auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodCur->m_pStmap);
-					if (!EWC_FVERIFY(pStdecl, "expected declaration"))
+					auto pStdeclDock = PStmapRtiCast<CSTDecl *>(pStnodDockCur->m_pStmap);
+					if (!EWC_FVERIFY(pStdeclDock, "expected declaration"))
 						break;
 
-					pStnodIt = pStnodCur->PStnodChildSafe(pStdecl->m_iStnodType);
+					// baked constants should already be baked in the struct decl, so we know about the parent baked genmap
+
+					pStnodDockIt = pStnodDockCur->PStnodChildSafe(pStdeclDock->m_iStnodType);
 				} break;
 			case PARK_ArrayDecl:
 				{
@@ -5350,9 +5683,39 @@ ERRID ErridComputeDefinedGenerics(
 
 					if (pTinaryRef)
 					{
+						if (pStnodDockCur->CStnodChild() == 2)
+						{
+							auto pStnodDim = pStnodDockCur->PStnodChild(0);
+							auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnodDim->m_pStmap);
+
+							if (pStdecl && pStdecl->m_fIsBakedConstant)
+							{
+								auto strIdent = StrFromIdentifier(pStnodDim->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
+
+								//#error - this maps the generic node, needs to map to a (new?) stnod with pTinaryRef->m_c
+								pGenmapOut->PAncMapValue(strIdent, pStnodDim);
+#if 0
+								SAnchor * pAnc;
+								FINS fins = pGenmapOut->m_mpStrAnc.FinsEnsureKey(strIdent, &pAnc);
+
+								if (pAnc && EWC_FVERIFY(pAnc->m_genk == GENK_Value,"expected value"))
+								{
+									if (pAnc->m_pStnodBaked)
+									{
+										EWC_ASSERT(pAnc->m_pStnodBaked == pStnodDim, "generic count anchor mismatch");
+									}
+									else
+									{
+//#error - this maps the generic node, needs to map to stnod with pTinaryRef->m_c
+			//							pAnc->m_pStnodBaked = pStnodDim;
+									}
+								}
+#endif
+							}
+						}
 						// array decl's children are [type] or [m_c, type]
-						pStnodIt = pStnodCur->PStnodChildSafe(pStnodCur->CStnodChild()-1);
-						EWC_ASSERT(pStnodIt, "bad array declaration");
+						pStnodDockIt = pStnodDockCur->PStnodChildSafe(pStnodDockCur->CStnodChild()-1);
+						EWC_ASSERT(pStnodDockIt, "bad array declaration");
 					}
 				} break;
 			case PARK_QualifierDecl:
@@ -5365,8 +5728,8 @@ ERRID ErridComputeDefinedGenerics(
 
 					if (pTinqualRef)
 					{
-						EWC_ASSERT(pStnodCur->CStnodChild() == 1, "expected one child");
-						pStnodIt = pStnodCur->PStnodChildSafe(0);
+						EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
+						pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
 					}
 				} break;
 			case PARK_ReferenceDecl:
@@ -5379,51 +5742,77 @@ ERRID ErridComputeDefinedGenerics(
 
 					if (pTinptrRef)
 					{
-						EWC_ASSERT(pStnodCur->CStnodChild() == 1, "expected one child");
-						pStnodIt = pStnodCur->PStnodChildSafe(0);
+						EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
+						pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
 					}
 				} break;
 			case PARK_GenericStructSpec:
 				{
-					auto pTinstructRef = PTinRtiCast<STypeInfoStruct *>(genfram.m_pTinRef);
+					auto pTinstructBaked = PTinRtiCast<STypeInfoStruct *>(genfram.m_pTinRef);
 
-					auto pSymInst = pStnodCur->PSym();
-					EWC_ASSERT(pSymInst && pStnodCur->m_strees >= STREES_TypeChecked, "expected to be type checked");
-
-					auto pStnodDef = pSymInst->m_pStnodDefinition;
-					if (!EWC_FVERIFY(pStnodDef, "expected definition"))
+					auto pSymDock = pStnodDockCur->PSym();
+					EWC_ASSERT(pSymDock && pStnodDockCur->m_strees >= STREES_TypeChecked, "expected to be type checked");
+					auto pStnodDock = pSymDock->m_pStnodDefinition;
+					if (!EWC_FVERIFY(pStnodDock, "expected definition"))
 						break;
 
-					auto pStstruct = PStmapRtiCast<CSTStruct *>(pStnodDef->m_pStmap);
-					auto pTinstructDef = PTinRtiCast<STypeInfoStruct *>(pStnodDef->m_pTin);
-					if (EWC_FVERIFY(pTinstructDef, "expected struct") && 
-						pTinstructDef->m_arypTinParam.C() == pTinstructRef->m_arypTinParam.C() &&
-						EWC_FVERIFY(pStstruct && pStstruct->m_iStnodParameterList >= 0, "expected struct definition"))
-					{
-						CSTNode * pStnodParameterList = pStnodDef->PStnodChild(pStstruct->m_iStnodParameterList);
-						for (int ipStnod = 0; ipStnod < pStnodParameterList->CStnodChild(); ++ipStnod)
-						{
-							CSTNode * pStnodParam = pStnodParameterList->PStnodChild(ipStnod);
-							if (ipStnod >= pTinstructRef->m_arypTinParam.C())
-								break;
+					CLexerLookup lexlookDoc(pTcwork->m_pErrman->m_pWork, pStnodDock);
+					auto pStstructDock = PStmapRtiCast<CSTStruct *>(pStnodDock->m_pStmap);
+					auto pTinstructDock = PTinRtiCast<STypeInfoStruct *>(pStnodDock->m_pTin);
 
-							auto pGenfram = aryGenfram.AppendNew();
-							pGenfram->m_pStnod = pStnodParam;
-							pGenfram->m_pTinRef = pTinstructRef->m_arypTinParam[ipStnod]; 
+					auto pStnodRefDef = pTinstructBaked->m_pStnodStruct;
+					auto pStstructRefDef = PStmapDerivedCast<CSTStruct *>(pStnodRefDef->m_pStmap);
+
+					auto pStnodListDock = pStnodDock->PStnodChildSafe(pStstructDock->m_iStnodParameterList);
+					auto pStnodListBakedRef = pStnodRefDef->PStnodChildSafe(pStstructRefDef->m_iStnodBakedParameterList);
+					if (pTinstructDock->m_pGenmap->FIsPartiallyInstantiated() && pStnodListDock && pStnodListBakedRef)
+					{
+						EWC_ASSERT(pStnodListDock->CStnodChild() == pStnodListBakedRef->CStnodChild(), "child count mismatch");
+
+						for (int ipStnodParam = 0; ipStnodParam < pStnodListDock->CStnodChild(); ++ipStnodParam)
+						{
+							auto pStnodParamDock = pStnodListDock->PStnodChild(ipStnodParam);
+							auto pStnodParamRef = pStnodListBakedRef->PStnodChild(ipStnodParam);
+
+							auto pStdeclDock = PStmapRtiCast<CSTDecl *>(pStnodParamDock->m_pStmap);
+							if (!EWC_FVERIFY(pStdeclDock, "expected decl"))
+								continue;
+
+							if (pStdeclDock->m_fIsBakedConstant)
+							{
+								auto pSymRef = pStnodParamRef->PSym();
+								if (EWC_FVERIFY(pSymRef && pSymRef->m_pStnodDefinition, "expected baked symbol"))
+								{
+									auto pStnodIdentifier = pStnodParamDock->PStnodChildSafe(pStdeclDock->m_iStnodIdentifier);
+									pGenmapOut->PAncMapValue(StrFromIdentifier(pStnodIdentifier), pStnodParamRef);
+								}
+							}
+
+							if (pStdeclDock->m_iStnodType >= 0)
+							{
+								auto pStnodDockType = pStnodParamDock->PStnodChild(pStdeclDock->m_iStnodType);
+								auto pTinDock = pStnodDockType->m_pTin;
+								if (pTinDock && FIsGenericType(pTinDock))
+								{
+									ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, 
+										pStnodParamRef->m_pTin,
+										pStnodDockType,
+										pGenmapOut);
+								}
+							}
 						}
 					}
-
 				} break;
 			case PARK_ProcedureReferenceDecl:
 				{
 					auto pTinprocRef = PTinRtiCast<STypeInfoProcedure *>(genfram.m_pTinRef);
-					auto pTinprocGen = PTinRtiCast<STypeInfoProcedure *>(pStnodCur->m_pTin);
+					auto pTinprocGen = PTinRtiCast<STypeInfoProcedure *>(pStnodDockCur->m_pTin);
 
 					if (pTinprocRef && pTinprocRef->FHasGenericArgs())
 					{
 						if (errep == ERREP_ReportErrors)
 						{
-							EmitError(pTcwork, pStnodCur, ERRID_NoGenericRValue,
+							EmitError(pTcwork, pStnodDockCur, ERRID_NoGenericRValue,
 								"cannot make a reference to a generic procedure definition '%s'",
 								pTinprocRef->m_strName.PCoz());
 						}
@@ -5431,7 +5820,7 @@ ERRID ErridComputeDefinedGenerics(
 						return ERRID_NoGenericRValue;
 					}
 
-					auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnodCur->m_pStmap);
+					auto pStproc = PStmapRtiCast<CSTProcedure *>(pStnodDockCur->m_pStmap);
 					if (EWC_FVERIFY(pStproc && pTinprocGen, "bad PARK_ProcedureReferenceDecl") &&
 						pTinprocGen->FHasGenericArgs() &&
   						pStproc->m_iStnodParameterList >= 0)
@@ -5447,7 +5836,7 @@ ERRID ErridComputeDefinedGenerics(
 
 						if (fReferenceProcMatches)
 						{
-							CSTNode * pStnodParameterList = pStnodCur->PStnodChild(pStproc->m_iStnodParameterList);
+							CSTNode * pStnodParameterList = pStnodDockCur->PStnodChild(pStproc->m_iStnodParameterList);
 							for (int ipStnod = 0; ipStnod < pStnodParameterList->CStnodChild(); ++ipStnod)
 							{
 								CSTNode * pStnodParam = pStnodParameterList->PStnodChild(ipStnod);
@@ -5455,14 +5844,14 @@ ERRID ErridComputeDefinedGenerics(
 									continue;
 
 								auto pGenfram = aryGenfram.AppendNew();
-								pGenfram->m_pStnod = pStnodParam;
+								pGenfram->m_pStnodDock = pStnodParam;
 								pGenfram->m_pTinRef = (pTinprocRef) ? pTinprocRef->m_arypTinParams[ipStnod] : nullptr; 
 							}
 						}
 							
 					}
 				} break;
-			default: EWC_ASSERT(false, "Unexpected parse node PARK_%s in FComputeDefinedGenerics", PChzFromPark(pStnodCur->m_park));
+			default: EWC_ASSERT(false, "Unexpected parse node PARK_%s in FComputeDefinedGenerics", PChzFromPark(pStnodDockCur->m_park));
 				break;
 			}
 		}
@@ -5471,7 +5860,7 @@ ERRID ErridComputeDefinedGenerics(
 	return erridReturn;
 }
 
-PROCMATCH ProcmatchCheckArguments(
+PROCMATCH ProcmatchCheckProcArguments(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,
 	STypeInfoProcedure * pTinproc,
@@ -5483,7 +5872,7 @@ PROCMATCH ProcmatchCheckArguments(
 	size_t cArgCall = pPmparam->m_cpStnodCall;
 
 	auto pStnodDefinition = pTinproc->m_pStnodDefinition;
-	SGenericMap genmap(pTcwork->m_pAlloc, pStnodDefinition->PSym());
+	SGenericMap genmap(pTcwork->m_pAlloc, "CheckProcArgs", pTinproc);
 
 	CSTNode * pStnodDefParamList = nullptr;
 	CSTProcedure * pStproc = nullptr;
@@ -5603,10 +5992,6 @@ PROCMATCH ProcmatchCheckArguments(
 	if (pTinproc->FHasGenericArgs())
 	{
 		// given known generic type anchors and unsubstituted types, generate instantiated types
-		if (errep == ERREP_ReportErrors)
-		{
-			PrintGenmap(pTcwork->m_pErrman->m_pWork, &genmap);
-		}
 
 		int cMtin = (int)aryMtin.C();
 		for (int iMtin = 0; iMtin < cMtin; ++iMtin)
@@ -5650,7 +6035,7 @@ PROCMATCH ProcmatchCheckArguments(
 		{
 			if (errep == ERREP_ReportErrors)
 			{
-				SGenericMapScope gensope(pTcwork->m_pErrman, (genmap.FIsEmpty()) ? nullptr : &genmap);
+				SGenericMapScope genscope(pTcwork->m_pErrman, (genmap.FIsEmpty()) ? nullptr : &genmap);
 
 				CString strTinCall = StrFromTypeInfo(pMtin->m_pTinCall);
 				CString strTinParam = StrFromTypeInfo(pMtin->m_pTinParam);
@@ -5676,7 +6061,7 @@ PROCMATCH ProcmatchCheckArguments(
 
 		if (!genmap.FIsEmpty())
 		{
-			auto pGenmap = PGenmapNew(pTcwork);
+			auto pGenmap = PGenmapNew(pTcwork, "", nullptr);
 			pGenmap->m_aryLexlocSrc.Append(*pPmparam->m_pLexloc);
 			pGenmap->Swap(&genmap);
 			pPmfit->m_pGenmap = pGenmap;
@@ -5883,24 +6268,73 @@ bool FAnchorsAreSame(SAnchor * pAncA, SAnchor * pAncB)
 	return true;
 }
 
+STypeInfoStruct * PTinstructEnsureUniqueInstance(
+	STypeCheckWorkspace * pTcwork,
+	SLexerLocation * pLexloc,
+	STypeInfoStruct * pTinstruct)
+{
+	CSTNode * pStnodInstFrom = nullptr;
+	if (pTinstruct->m_pTinstructInstFrom)
+	{
+		pStnodInstFrom = pTinstruct->m_pTinstructInstFrom->m_pStnodStruct;
+	}
+	EWC_ASSERT(pStnodInstFrom && pTinstruct->m_pGenmap, "expected generic structure with instanced AST");
+	auto pEntry = pTcwork->m_genreg.PEntryEnsure(pStnodInstFrom, pTinstruct->m_pGenmap);
+	if (pEntry->m_pTin == nullptr)
+	{
+		pEntry->m_pTin = pTinstruct;
+		return pTinstruct;
+	}
+
+	return PTinDerivedCast<STypeInfoStruct *>(pEntry->m_pTin);
+}
+
 SInstantiateRequest * PInsreqLookup(
 	STypeCheckWorkspace * pTcwork,
 	CSTNode * pStnodDefinition,
 	SGenericMap * pGenmap,
 	SLexerLocation * pLexloc)
 {
-	auto pmpStrAncRemapped = &pGenmap->m_mpStrAnc;
-	for (SInstantiateRequest * pInsreq = pTcwork->m_aryInsreq.A(); pInsreq != pTcwork->m_aryInsreq.PMac(); ++pInsreq)
+	auto pEntry = pTcwork->m_genreg.PEntryLookup(pStnodDefinition, pGenmap);
+	if (pEntry)
 	{
-		if (pInsreq->m_pStnodGeneric != pStnodDefinition)
+		return pEntry->m_pInsreq;
+	}
+	return nullptr;
+}
+
+void CGenericRegistry::Cleanup()
+{
+	EWC::CHash<CSTNode *, SEntryBlock *>::CIterator iter(&m_mpStnodInstFromBlock);
+
+	SEntryBlock ** ppBlock;
+	while (ppBlock = iter.Next())
+	{
+		m_pAlloc->EWC_DELETE(*ppBlock);
+	}
+
+	m_aryInsreq.Clear();
+}
+
+CGenericRegistry::SEntry * CGenericRegistry::PEntryLookup(CSTNode * pStnodInstFrom, SGenericMap * pGenmap)
+{
+	SEntryBlock ** ppBlock = m_mpStnodInstFromBlock.Lookup(pStnodInstFrom);
+	if (ppBlock == nullptr)
+		return nullptr;
+
+	SEntryBlock * pBlock = *ppBlock;
+	auto pEntryMac = pBlock->m_aryEntry.PMac();
+	for (auto pEntryIt = pBlock->m_aryEntry.A(); pEntryIt != pEntryMac; ++pEntryIt)
+	{
+		auto pGenmapKey = pEntryIt->m_pGenmapKey;
+		if (pGenmapKey == pGenmap)
+			return pEntryIt;
+
+		if (pGenmap->m_mpStrAnc.C() != pGenmapKey->m_mpStrAnc.C())
 			continue;
 
-		auto pmpStrAncRemappedIt = &pInsreq->m_pGenmap->m_mpStrAnc;
-		if (pmpStrAncRemappedIt->C() != pmpStrAncRemapped->C())
-			continue;
-
-		EWC::CHash<CString, SAnchor>::CIterator iterIt(pmpStrAncRemappedIt);
-		EWC::CHash<CString, SAnchor>::CIterator iterArg(pmpStrAncRemapped);
+		EWC::CHash<CString, SAnchor>::CIterator iterIt(&pGenmapKey->m_mpStrAnc);
+		EWC::CHash<CString, SAnchor>::CIterator iterArg(&pGenmap->m_mpStrAnc);
 
 		bool fAreTheSame = true;
 		CString * pStrIt;
@@ -5920,15 +6354,41 @@ SInstantiateRequest * PInsreqLookup(
 
 		if (fAreTheSame)
 		{
-			if (EWC_FVERIFY(pInsreq->m_pGenmap, "expected genmap"))
-			{
-				pInsreq->m_pGenmap->m_aryLexlocSrc.Append(*pLexloc);
-			}
-			return pInsreq;
+			return pEntryIt;
 		}
 	}
 
 	return nullptr;
+}
+
+CGenericRegistry::SEntry * CGenericRegistry::PEntryEnsure(CSTNode * pStnodInstFrom, SGenericMap * pGenmap)
+{
+	// if this double lookup is a perf problem we could inline the lookup here, and just duplicate a bunch of code
+	auto pEntry = PEntryLookup(pStnodInstFrom, pGenmap);
+	if (pEntry)
+		return pEntry;
+
+	SEntryBlock ** ppBlock;
+	FINS fins = m_mpStnodInstFromBlock.FinsEnsureKey(pStnodInstFrom, &ppBlock);
+	if (fins == FINS_Inserted)
+	{
+		*ppBlock = EWC_NEW(m_pAlloc, SEntryBlock) SEntryBlock(m_pAlloc);
+	}
+
+	// we don't need to search for a matching entry, it would have been found by pEntryLookup
+	auto pEntryNew = (*ppBlock)->m_aryEntry.AppendNew();
+	pEntryNew->m_pGenmapKey = pGenmap;
+	return pEntryNew;
+}
+
+SInstantiateRequest * CGenericRegistry::PInsreqNew(CSTNode * pStnodInstFrom, SGenericMap * pGenmap)
+{
+	auto pEntry = PEntryEnsure(pStnodInstFrom, pGenmap);
+	EWC_ASSERT(pEntry->m_pInsreq == nullptr, "insreq was already registered");
+
+	auto pInsreqNew = m_aryInsreq.AppendNew();
+	pEntry->m_pInsreq = pInsreqNew;
+	return pInsreqNew;
 }
 
 static inline SSymbol * PSymRemapGeneric(
@@ -5948,7 +6408,7 @@ static inline SSymbol * PSymRemapGeneric(
 	return pSymSrc;
 }
 
-void InstantiateSymbolsFromTable(
+void CopySymbolsForGenericInstantiation(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtabSrc, 
 	CSymbolTable * pSymtabNew, 
@@ -5970,23 +6430,13 @@ void InstantiateSymbolsFromTable(
 
 		if (EWC_FVERIFY(pSymSrc->m_pStnodDefinition, "symbol without defining syntax tree node"))
 		{
-			auto pStnodDefinition = pSymSrc->m_pStnodDefinition;
-			auto pStdecl = PStmapRtiCast<CSTDecl *>(pSymSrc->m_pStnodDefinition->m_pStmap);
-			if (pStdecl && pStdecl->m_fIsBakedConstant)
+			auto pAnc = pGenmap->PAncLookup(pSymSrc->m_strName);
+			if (pAnc && pAnc->m_genk == GENK_Value)
 			{
-				auto pAnc = pGenmap->m_mpStrAnc.Lookup(pSymSrc->m_strName);
-				if (!pAnc)
-				{
-					EmitError(pTcwork, pStnodDefinition, 
-						"Couldn't find baked value for compile time constant '%s'", 
-						pSymSrc->m_strName.PCoz());
-				}
-				else
-				{
-					EWC_ASSERT(pAnc->m_pStnodBaked, "expected baked value (not type)");
-					pmpPSymSrcPStnodValue->Insert(pSymSrc, pAnc->m_pStnodBaked);
-						continue;
-				}
+				EWC_ASSERT(pAnc->m_pStnodBaked, "expected baked value (not type)");
+				pmpPSymSrcPStnodValue->Insert(pSymSrc, pAnc->m_pStnodBaked);
+					continue;
+
 			}
 		}
 
@@ -6136,7 +6586,7 @@ void RemapGenericStnodCopy(
 					*ppSymtabNew = pSymtabNew;
 					ppSymtabNew = &pSymtabNew->m_pSymtabParent;
 
-					InstantiateSymbolsFromTable(
+					CopySymbolsForGenericInstantiation(
 						pTcwork,
 						pSymtabCopySrc,
 						pSymtabNew,
@@ -6184,7 +6634,13 @@ CString StrComputeMangled(STypeCheckWorkspace * pTcwork, CSTNode * pStnod, CSymb
 			char aChAfter[1024];
 			EWC::SStringBuffer strbufAfter(aChAfter, EWC_DIM(aChAfter));
 			PrintTypeInfo(&strbufAfter, pTinprocDemangled, PARK_Nil, FDBGSTR_UseSizedNumerics);
-			EWC_ASSERT(FAreCozEqual(aCh, aChAfter), "Unmangled type info doesn't match initial info");
+			//EWC_ASSERT(FAreCozEqual(aCh, aChAfter), "Unmangled type info doesn't match initial info\n '%s' != '%s'",
+			//	aCh, aChAfter);
+			if (FAreCozEqual(aCh, aChAfter) == false)
+			{
+				// BB - right now generic types do not mangle/demangle properly
+				printf("Unmangled type info doesn't match initial info\n %s != %s\n", aCh, aChAfter);
+			}
 		}
 #endif
 		return strMangled;
@@ -6220,7 +6676,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 	auto pStnodProcCopy = PStnodCopy(pTcwork->m_pAlloc, pStnodGeneric, &mpPStnodGenPStnodCopy);
 	pStnodProcCopy->m_grfstnod.Clear(FSTNOD_NoCodeGeneration);
 
-	auto pInsreq = pTcwork->m_aryInsreq.AppendNew();
+	auto pInsreq = pTcwork->m_genreg.PInsreqNew(pStnodGeneric, pGenmap);
 	pInsreq->m_pGenmap = pGenmap;
 	pInsreq->m_pStnodGeneric = pStnodGeneric;
 
@@ -6257,7 +6713,7 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 			auto pStdecl = PStmapRtiCast<CSTDecl *>(pSymSrc->m_pStnodDefinition->m_pStmap);
 			if (pStdecl && pStdecl->m_fIsBakedConstant)
 			{
-				auto pAnc = pGenmap->m_mpStrAnc.Lookup(pSymSrc->m_strName);
+				auto pAnc = pGenmap->PAncLookup(pSymSrc->m_strName);
 				if (!pAnc)
 				{
 					EmitError(pTcwork, pStnodGeneric, 
@@ -6303,6 +6759,27 @@ SInstantiateRequest * PInsreqInstantiateGenericProcedure(
 								ERREP_ReportErrors);
 		}
 		mpPSymGenericPSymRemapped.Insert(pSymSrc, pSymNew);
+	}
+
+	// need to walk the generic map and make sure we have symbols for all the constants defined by anchors
+	CHash<CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
+	CString * pStrAnc;
+	SAnchor * pAnc;
+	while ((pAnc = iter.Next(&pStrAnc)))
+	{
+		auto pStnodBaked = pAnc->m_pStnodBaked;
+		if (pAnc->m_genk != GENK_Value || !EWC_FVERIFY(pStnodBaked, "missing baked value"))
+			continue;
+
+		auto pSymNew = pSymtabNew->PSymEnsure(
+									pTcwork->m_pErrman,
+									*pStrAnc,
+									pStnodBaked,
+									FSYM_None);
+
+		// add pSymGeneric pSym remapped entry for $CPrev to $CNew
+		pStnodBaked->m_pSymbase = pSymNew;
+
 	}
 
 	// build pTinproc for the instantiated procedure
@@ -6542,7 +7019,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 			for (int argord = ARGORD_Min; argord < argordMax; ++argord)
 			{
 				SProcMatchParam pmparamTry(*pPmparam);
-				auto procmatch = ProcmatchCheckArguments(pTcwork, pSymtab, pTinprocSym, &pmparamTry, ERREP_HideErrors, (ARGORD)argord, pSymIt);
+				auto procmatch = ProcmatchCheckProcArguments(pTcwork, pSymtab, pTinprocSym, &pmparamTry, ERREP_HideErrors, (ARGORD)argord, pSymIt);
 				if (procmatch != PROCMATCH_None)
 				{
 					++mpProcmatchCSymmatch[procmatch];
@@ -6600,7 +7077,7 @@ TCRET TcretTryFindMatchingProcedureCall(
 					case TINK_Procedure:
 						{
 							auto pTinproc = (STypeInfoProcedure *)pSymProc->m_pTin;
-							(void)ProcmatchCheckArguments(pTcwork, pSymtab, pTinproc, pPmparam, ERREP_ReportErrors, ARGORD_Normal, pSymProc);
+							(void)ProcmatchCheckProcArguments(pTcwork, pSymtab, pTinproc, pPmparam, ERREP_ReportErrors, ARGORD_Normal, pSymProc);
 						}break;
 					case TINK_Struct:
 						{
@@ -7168,7 +7645,8 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					TCRET tcret = TcretTryFindMatchingProcedureCall(
 									pTcwork, pTcfram, strProcName, pSymtab, &pmparam, &pSymProc, &argord, pTcsentTop->m_grfsymlook);
 
-					// procCall is actually a generic struct instantiation
+					// We could be talking about a generic struct if we encountered a struct with parameters inside of 
+					//   an expression rather than an expression (which would be a PARK_GenericStructSpec)
 					if (tcret == TCRET_Complete && pSymProc->m_pTin->m_tink == TINK_Struct)
 					{
 						pStnod->m_park = PARK_SpecializedStruct;
@@ -7285,7 +7763,7 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						pmparam.m_cpStnodCall = pStnod->m_arypStnodChild.C() - 1;
 						pmparam.m_fMustFindMatch = true;
 
-						auto procmatch = ProcmatchCheckArguments(pTcwork, pSymtab, pTinprocSym, &pmparam, ERREP_ReportErrors, ARGORD_Normal, nullptr);
+						auto procmatch = ProcmatchCheckProcArguments(pTcwork, pSymtab, pTinprocSym, &pmparam, ERREP_ReportErrors, ARGORD_Normal, nullptr);
 						if (procmatch == PROCMATCH_None)
 							return TCRET_StoppingError;
 					}
@@ -7781,13 +8259,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				{
 					pStnod->m_grfstnod.AddFlags(FSTNOD_NoCodeGeneration);
 					auto pStnodParamList = pStnod->PStnodChild(pStstruct->m_iStnodParameterList);
-
-					EWC_ASSERT(pTinstruct->m_arypTinParam.CMax() == pStnodParamList->CStnodChild(), "missized array");
-					for (int ipStnodChild = 0; ipStnodChild < pStnodParamList->CStnodChild(); ++ ipStnodChild)
-					{
-						auto pStnodChild = pStnodParamList->PStnodChild(ipStnodChild);
-						pTinstruct->m_arypTinParam[ipStnodChild] = pStnodChild->m_pTin;
-					}
 				}
 
 				auto pTypemembMax = pTinstruct->m_aryTypemembField.PMac();
@@ -7887,7 +8358,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 						}
 						else
 						{
-							EWC_ASSERT(false, "unexpected identifier in type check");
+							CLexerLookup lexlook(pTcwork->m_pErrman->m_pWork, &pStnodDefinition->m_lexloc);
+							EWC_ASSERT(false, "unexpected identifier source for '%s' in type check. %s %d:%d", 
+								strIdent.PCoz(),
+								lexlook.m_strFilename.PCoz(), lexlook.m_iLine, lexlook.m_iCodepoint);
 						}
 					}
 				}
@@ -7907,9 +8381,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 				}
 				else if (pTcsentTop->m_nState == pStnod->CStnodChild())
 				{
-					++pTcsentTop->m_nState;
-					CLexerLookup lexlook(pTcwork->m_pErrman->m_pWork, pStnod);
-
 					auto pSymInst = pStnod->PSym();
 					if (!pSymInst)
 					{
@@ -7925,56 +8396,24 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					pStnod->m_pSymbase = pSymInst;
 					pStnod->m_pTin = pSymInst->m_pTin;
 
-					auto pTinstructNew = PTinRtiCast<STypeInfoStruct *>(pSymInst->m_pTin);
-					if (pTinstructNew && pTinstructNew->FHasGenericParams() == false)
-					{
-						if (pSymInst->m_pStnodDefinition->m_strees < STREES_TypeChecked)
-						{
-							SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymInst);
-							pUntype->m_arypTcframDependent.Append(pTcfram);
-							return TCRET_WaitingForSymbolDefinition;
-						}
-					}
-
-					// now we need to type check the generic parameter arguments we just instantiated
-
-					// is the struct itself marked as typechecked here?
-					if (pSymInst && pSymInst->m_pStnodDefinition)
-					{
-						EWC_ASSERT(pSymInst->m_pStnodDefinition == pTinstructNew->m_pStnodStruct, "definition mismatch");
-						auto pStnodStructInst = pSymInst->m_pStnodDefinition;
-						auto pStstructSrc = PStmapRtiCast<CSTStruct *>(pStnodStructInst->m_pStmap);
-						if (pStstructSrc && pStstructSrc->m_iStnodParameterList)
-						{
-							auto pTcsentPushed = PTcsentPush(pTcfram, &pTcsentTop, pStnodStructInst->PStnodChild(pStstructSrc->m_iStnodParameterList));
-							pTcsentPushed->m_tcctx = TCCTX_TypeSpecification;
-						}
-					}
-					break;
+					++pTcsentTop->m_nState;
 				}
-				else
+
+#if TYPECHECK_PARTIAL_GENERIC_STRUCTS == 0
+				if (pTinstructNew && pTinstructNew->FHasGenericParams() == false)
+#endif
 				{
-					auto pTinstruct = PTinRtiCast<STypeInfoStruct *>(pStnod->m_pTin);
-					if (pTinstruct && pTinstruct->m_pStnodStruct)
+					auto pSymInst = pStnod->PSym();
+					if (pSymInst->m_pStnodDefinition->m_strees < STREES_TypeChecked)
 					{
-						auto pStnodStruct = pTinstruct->m_pStnodStruct;
-						auto pStstruct = PStmapRtiCast<CSTStruct *>(pStnodStruct->m_pStmap);
-						if (pStstruct && pStstruct->m_iStnodParameterList >= 0)
-						{
-							auto pStnodParamList = pStnodStruct->PStnodChild(pStstruct->m_iStnodParameterList);
-
-							EWC_ASSERT(pTinstruct->m_arypTinParam.CMax() == pStnodParamList->CStnodChild(), "missized array");
-							for (int ipStnodChild = 0; ipStnodChild < pStnodParamList->CStnodChild(); ++ ipStnodChild)
-							{
-								auto pStnodChild = pStnodParamList->PStnodChild(ipStnodChild);
-								pTinstruct->m_arypTinParam[ipStnodChild] = pStnodChild->m_pTin;
-							}
-						}
+						SUnknownType * pUntype = PUntypeEnsure(pTcwork, pSymInst);
+						pUntype->m_arypTcframDependent.Append(pTcfram);
+						return TCRET_WaitingForSymbolDefinition;
 					}
-					
-					pStnod->m_strees = STREES_TypeChecked;
-					PopTcsent(pTcfram, &pTcsentTop, pStnod);
 				}
+
+				pStnod->m_strees = STREES_TypeChecked;
+				PopTcsent(pTcfram, &pTcsentTop, pStnod);
 			} break;
 
 			case PARK_GenericDecl:
@@ -8365,6 +8804,10 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 					++pTcsentTop->m_nState;
 					break;
 				}
+
+			} break;
+			case PARK_BakedValue:
+			{
 
 			} break;
 			case PARK_Decl:
