@@ -3245,20 +3245,23 @@ SAnchor * SGenericMap::PAncMapValue(const CString & strName, CSTNode * pStnodBak
 
 SAnchor * SGenericMap::PAncMapType(const CString & strName, STypeInfo * pTin)
 {
+	// set a new type if one is not already mapped 
+
 	SAnchor * pAnc = nullptr;
 	if (m_mpStrAnc.FinsEnsureKey(strName, &pAnc) == FINS_AlreadyExisted)
 	{
 		EWC_ASSERT(pAnc->m_genk == GENK_Type, "expeccted type");
-		EWC_ASSERT(pAnc->m_pTin == nullptr || pAnc->m_pTin == pTin, "anchored value mismatch");
+		if (pAnc->m_pTin != nullptr)
+			return pAnc;
 	}
 
-	pAnc->m_genk = GENK_Type;
-	pAnc->m_pTin = pTin;
-
-	if (pTin && FIsGenericType(pTin))
+	if (pAnc->m_pTin == nullptr && pTin && FIsGenericType(pTin))
 	{
 		++m_cPartialType;
 	}
+	pAnc->m_genk = GENK_Type;
+	pAnc->m_pTin = pTin;
+
 	return pAnc;
 }
 
@@ -5293,105 +5296,6 @@ void FindGenericAnchorNames(
 	}
 }
 
-#if USE_FLATTEN_GENMAP
-ERRID ErridFlattenGenmap(
-	STypeCheckWorkspace * pTcwork,
-	ERREP errep,
-	CSymbolTable * pSymtab,
-	SGenericMap * pGenmapPartial,
-	SGenericMap * pGenmapCanon,
-	SGenericMap * pGenmapFlat)
-{
-	// given some struct SFoo($C) 
-	//   pGenmapPartial:	SFoo($C=$Dim) and
-	//	 pGenmapCanon:		SFoo($C=2)
-	// comppute pGenmape 
-	//   pGenmapFlat:		SFoo($Dim=2)
-	// NOTE: pGenmap flat is not canonical, it's basically the opposite, find values/types for the most 
-	//  deeply instantiated branch, which can be made canonical
-
-	EWC_ASSERT(pGenmapPartial != pGenmapCanon, "whaaaa?");
-	printf("pGenmapPartial(0x%p): ", pGenmapPartial);
-	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapPartial);
-	printf("pGenmapLeaf(0x%p): ", pGenmapCanon);
-	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapCanon);
-	printf("pGenmapFlat-in(0x%p): ", pGenmapFlat);
-	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapFlat);
-
-	//auto pGenmapFlat = PGenmapNew(pTcwork);
-	//ERREP errep = ERREP_ReportErrors;
-
-	// loop over the anchors in pGenmapPartial and copy concrete anchors and flatten partially instantiated anchors
-
-	CString * pStrAnchorPartial;
-	SAnchor * pAncPartial;
-	EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmapPartial->m_mpStrAnc);
-	while ((pAncPartial = iter.Next(&pStrAnchorPartial)))
-	{
-		switch (pAncPartial->m_genk)
-		{
-		case GENK_Type:
-			{
-				STypeInfo * pTinPartial = pAncPartial->m_pTin;
-				if (FIsGenericType(pTinPartial))
-				{
-					//auto pStnodPartialDef = PStnodGenericDefinition(pTinPartial);
-					auto pAncCanon = pGenmapCanon->PAncLookup(*pStrAnchorPartial);
-					if (EWC_FVERIFY(pAncCanon && pAncCanon->m_pTin, "expected concrete type"))
-					{
-						// pAncLeaf finds what canon has concretely mapped $T to. Partial has $T mapped to some type $TYPE
-						// ie. given $T=SPair(:int, :s8) and $T=SPair(:int, %TYPE) find that $TYPE=:s8
-
-						ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, pAncCanon->m_pTin, pAncPartial->m_pStnodDefinition, pGenmapFlat);
-						if (errid != ERRID_Nil)
-							return errid;
-					}
-				}
-				else
-				{
-					STypeInfo * pTinFlat = pTinPartial;
-					pGenmapFlat->PAncMapType(*pStrAnchorPartial, pTinFlat);
-				}
-				
-
-			} break;
-		case GENK_Value:
-			{
-				auto pStnodValue = pAncPartial->m_pStnodBaked;
-				switch (pStnodValue->m_park)
-				{
-				case PARK_Decl:
-					// we've mapped one baked value to another map($T=$X)
-					{
-						auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodValue->m_pStmap);
-						if (EWC_FVERIFY(pStdecl->m_fIsBakedConstant && pStdecl->m_iStnodIdentifier >= 0))
-						{
-							auto strLeaf = StrFromIdentifier(pStnodValue->PStnodChild(pStdecl->m_iStnodIdentifier));
-							auto pAncLeaf = pGenmapCanon->PAncLookup(*pStrAnchorPartial);
-							if (EWC_FVERIFY(pAncLeaf, "expected leaf definition for '$%s'", strLeaf.PCoz()))
-							{
-								pGenmapFlat->PAncMapValue(strLeaf, pAncLeaf->m_pStnodBaked);
-							}
-						}
-					} break;
-				case PARK_Literal:
-					pGenmapFlat->PAncMapValue(*pStrAnchorPartial, pAncPartial->m_pStnodBaked);
-					break;
-				default:
-					EWC_ASSERT(false, "unhandled baked value");
-				}
-			} break;
-		default:
-			EWC_ASSERT(false, "unhandled GENK");
-		}
-
-	}
-	printf("pGenmapFlat-out(0x%p): ", pGenmapFlat);
-	PrintGenmap(pTcwork->m_pErrman->m_pWork, pGenmapFlat);
-	return ERRID_Nil;
-}
-#endif
-
 STypeInfo * PTinFindCanon(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, CSymbolTable * pSymtab, ERREP errep)
 {
 	switch (pTin->m_tink)
@@ -5686,31 +5590,13 @@ ERRID ErridComputeDefinedGenerics(
 						if (pStnodDockCur->CStnodChild() == 2)
 						{
 							auto pStnodDim = pStnodDockCur->PStnodChild(0);
-							auto pStdecl = PStmapDerivedCast<CSTDecl *>(pStnodDim->m_pStmap);
+							auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDim->m_pStmap);
 
 							if (pStdecl && pStdecl->m_fIsBakedConstant)
 							{
 								auto strIdent = StrFromIdentifier(pStnodDim->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
 
-								//#error - this maps the generic node, needs to map to a (new?) stnod with pTinaryRef->m_c
 								pGenmapOut->PAncMapValue(strIdent, pStnodDim);
-#if 0
-								SAnchor * pAnc;
-								FINS fins = pGenmapOut->m_mpStrAnc.FinsEnsureKey(strIdent, &pAnc);
-
-								if (pAnc && EWC_FVERIFY(pAnc->m_genk == GENK_Value,"expected value"))
-								{
-									if (pAnc->m_pStnodBaked)
-									{
-										EWC_ASSERT(pAnc->m_pStnodBaked == pStnodDim, "generic count anchor mismatch");
-									}
-									else
-									{
-//#error - this maps the generic node, needs to map to stnod with pTinaryRef->m_c
-			//							pAnc->m_pStnodBaked = pStnodDim;
-									}
-								}
-#endif
 							}
 						}
 						// array decl's children are [type] or [m_c, type]

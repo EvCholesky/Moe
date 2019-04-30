@@ -235,28 +235,8 @@ ERRID ErridComputeDefinedGenerics(
 	CSTNode * pStnodDef,
 	SGenericMap * pGenmap);
 
-// Flatten
-//   given SFoo($C) and partial where SFoo($C=$Dim) and passed canon where SFoo($C=2) compute SFoo($DIM=2)
-
 // FindCanon
 //   given SFoo($DIM=2) instantiated from SFoo($C=$DIM) compute SFoo($C=2)
-
-#define CANONIZE_ON_SUBSTITUTE 1
-// PTinSubstituteGenerics should always return a canonical type with a trimmed generic map
-//  ie. the struct or proc derived from is the base type, not an instantiated partial type.
-
-
-// given generic maps: partial($T=%X) and leaf($X=:s16) return flat($T=:s16)
-#define USE_FLATTEN_GENMAP 0
-#if USE_FLATTEN_GENMAP
-ERRID ErridFlattenGenmap(
-	STypeCheckWorkspace * pTcwork,
-	ERREP errep,
-	CSymbolTable * pSymtab,
-	SGenericMap * pGenmapPartial,
-	SGenericMap * pGenmapLeaf,
-	SGenericMap  *pGenmapFlat);
-#endif
 
 STypeInfo * PTinFindCanon(STypeCheckWorkspace * pTcwork, STypeInfo * pTin, CSymbolTable * pSymtab, ERREP errep);
 void AssertIsCanon(STypeInfo * pTin);
@@ -264,6 +244,7 @@ void AssertIsCanon(STypeInfo * pTin);
 // Create a type by replacing the supplied type anchors, 
 //  Note: resulting type can still contain generic anchors if not fully instantiated, or generic types are substituted.
 //  Note: doesn't instantiate AST for generic type
+//  NOTE: this should always return a canonical type with a trimmed generic map
 STypeInfo * PTinSubstituteGenerics(
 	STypeCheckWorkspace * pTcwork,
 	CSymbolTable * pSymtab,

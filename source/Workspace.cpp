@@ -124,12 +124,12 @@ void PrintGenericInstantiateContext(SErrorManager * pErrman)
 void PrintGenmapAnchors(EWC::SStringBuffer * pStrbuf, SGenericMap * pGenmap)
 {
 	const char * pChzSeparate = "(";
+	const char * pChzClose = "";
 	CString * pStrAnchor;
 	SAnchor * pAnc;
 	EWC::CHash<EWC::CString, SAnchor>::CIterator iter(&pGenmap->m_mpStrAnc);
 	while ((pAnc = iter.Next(&pStrAnchor)))
 	{
-
 		pAnc->AssertIsValid();
 		CString strAnc;
 		switch (pAnc->m_genk)
@@ -164,8 +164,9 @@ void PrintGenmapAnchors(EWC::SStringBuffer * pStrbuf, SGenericMap * pGenmap)
 		}
 
 		pChzSeparate = ", ";
+		pChzClose = ")";
 	}
-	AppendCoz(pStrbuf, ")");
+	AppendCoz(pStrbuf, pChzClose);
 }
 
 void PrintGenmapNoLocation(SGenericMap * pGenmap, const char * pChzLineEnd)

@@ -56,10 +56,41 @@ CSTNode * PStnodParseExpression(CParseContext * pParctx, SLexer * pLex, GRFEXP g
 CSTNode * PStnodParseLogicalOrExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseMultiplicativeExpression(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload);
-CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex);
+CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc);
 CSTNode * PStnodParseStatement(CParseContext * pParctx, SLexer * pLex);
 CSTNode * PStnodParseTypeSpecifier(CParseContext * pParctx, SLexer * pLex, const char * pCozErrorContext, GRFPDECL grfpdecl);
 CSTNode * PStnodParseGenericTypeDecl(CParseContext * pParctx, SLexer * pLex, GRFPDECL grfpdecl);
+
+struct ProcSymtabStack // tag = procss
+{
+						ProcSymtabStack(CParseContext * pParctx)
+						:m_pParctx(pParctx)
+						,m_pSymtabPrev(nullptr)
+							{ ; }
+
+						~ProcSymtabStack()
+						{
+							if (m_pSymtabPrev)
+								PSymtabPop();
+						}
+
+	void				Push(CSymbolTable * pSymtab, const SLexerLocation & lexloc)
+							{
+								m_pSymtabPrev = m_pParctx->m_pSymtabGeneric;
+								m_pParctx->m_pSymtabGeneric = pSymtab;
+
+								::PushSymbolTable(m_pParctx, pSymtab, lexloc);
+							}
+
+	CSymbolTable * 		PSymtabPop()
+							{
+								m_pParctx->m_pSymtabGeneric = m_pSymtabPrev;
+								return ::PSymtabPop(m_pParctx);
+							}
+
+	CParseContext *		m_pParctx; 
+	CSymbolTable *		m_pSymtabPrev;
+};
 
 static int g_nSymtabVisitId = 1; // visit index used by symbol table collision walks
 
@@ -1690,7 +1721,7 @@ CSTNode * PStnodParseProcedureReferenceDecl(CParseContext * pParctx, SLexer * pL
 		pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 		FExpect(pParctx, pLex, TOK(')'));
 
-		auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex);
+		auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex, pSymtabProc);
 		pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 
 		int cStnodReturns = (pStnodReturns == nullptr) ? 0 : 1;
@@ -2342,13 +2373,27 @@ CSTNode * PStnodParseMemberDeclList(CParseContext * pParctx, SLexer * pLex)
 	return pStnodList;
 }
 
-CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex)
+CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc)
 {
+
 	if (FConsumeToken(pLex, TOK_Arrow))
 	{
 		// TODO : handle multiple return types
+		ProcSymtabStack procss(pParctx);
+		if (pSymtabProc)
+		{
+			SLexerLocation lexloc(pLex);
+			pSymtabProc->m_iNestingDepth = pParctx->m_pSymtab->m_iNestingDepth + 1;
+			procss.Push(pSymtabProc, lexloc);
+			pParctx->m_pSymtabGeneric = pSymtabProc;
+		}
 
 		auto pStnodRet = PStnodParseTypeSpecifier(pParctx, pLex, "return value", FPDECL_AllowBakedTypes);
+		if (pSymtabProc)
+		{
+			CSymbolTable * pSymtabPop = procss.PSymtabPop();
+			EWC_ASSERT(pSymtabProc == pSymtabPop, "CSymbol table push/pop mismatch (list)");
+		}
 
 		if (pStnodRet)
 		{
@@ -2374,12 +2419,11 @@ CSTNode * PStnodParseReturnArrow(CParseContext * pParctx, SLexer * pLex)
 CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, CSymbolTable * pSymtabProc, bool fIsOpOverload)
 {
 	SLexerLocation lexloc(pLex);
-	CSymbolTable * pSymtabGenericPrev = nullptr;
+	ProcSymtabStack procss(pParctx);
 	if (pSymtabProc)
 	{
 		pSymtabProc->m_iNestingDepth = pParctx->m_pSymtab->m_iNestingDepth + 1;
-		PushSymbolTable(pParctx, pSymtabProc, lexloc);
-		pSymtabGenericPrev = pParctx->m_pSymtabGeneric;
+		procss.Push(pSymtabProc, lexloc);
 		pParctx->m_pSymtabGeneric = pSymtabProc;
 	}
 
@@ -2444,9 +2488,8 @@ CSTNode * PStnodParseProcParameterList(CParseContext * pParctx, SLexer * pLex, C
 
 	if (pSymtabProc)
 	{
-		CSymbolTable * pSymtabPop = PSymtabPop(pParctx);
+		CSymbolTable * pSymtabPop = procss.PSymtabPop();
 		EWC_ASSERT(pSymtabProc == pSymtabPop, "CSymbol table push/pop mismatch (list)");
-		pParctx->m_pSymtabGeneric = pSymtabGenericPrev;
 	}
 
 	return pStnodList;
@@ -2844,7 +2887,7 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				pStproc->m_iStnodParameterList = pStnodProc->IAppendChild(pStnodParams);
 				FExpect(pParctx, pLex, TOK(')'));
 
-				auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex);
+				auto pStnodReturns = PStnodParseReturnArrow(pParctx, pLex, pSymtabProc);
 				pStproc->m_iStnodReturnType = pStnodProc->IAppendChild(pStnodReturns);
 
 				INLINEK inlinek = INLINEK_Nil;
@@ -5503,7 +5546,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 			{
 				PrintGenmapAnchors(pStrbuf, pTinstruct->m_pGenmap);
 			}
-			else if (pTinstruct->FHasGenericParams())
+			else if (pTinstruct->FHasGenericParams() && grfdbgstr.FIsSet(FDBGSTR_ShowStructArgs))
 			{
 				auto pStnodStruct = pTinstruct->m_pStnodStruct;
 				CSTStruct * pStstruct = nullptr;
@@ -5512,11 +5555,13 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 				{
 					pStstruct = PStmapRtiCast<CSTStruct *>(pStnodStruct->m_pStmap);
 				}
+
 				if (EWC_FVERIFY(pStstruct && pStstruct->m_iStnodParameterList >= 0, "expected parameter list"))
 				{
 					auto pStnodParameterList = pStnodStruct->PStnodChild(pStstruct->m_iStnodParameterList);
 					int cpStnodParam = pStnodParameterList->CStnodChild();
 					const char * pChzSeparate = "(";
+					const char * pChzClose = ")";
 					for (int ipStnodParam = 0; ipStnodParam < cpStnodParam; ++ipStnodParam)
 					{
 						auto pStnodParam = pStnodParameterList->PStnodChild(ipStnodParam);
@@ -5524,6 +5569,9 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 						if (!pStdecl)
 							continue;
 	
+						FormatCoz(pStrbuf, "%s", pChzSeparate);
+						pChzSeparate = ", ";
+						pChzClose = ")";
 						if (pStdecl->m_iStnodIdentifier >= 0)
 						{
 							auto strIdent = StrFromIdentifier(pStnodParam->PStnodChild(pStdecl->m_iStnodIdentifier));
@@ -5536,7 +5584,7 @@ void PrintTypeInfo(EWC::SStringBuffer * pStrbuf, STypeInfo * pTin, PARK park, GR
 							FormatCoz(pStrbuf, ":%s", strType.PCoz());
 						}
 					}
-					AppendCoz(pStrbuf, ")");
+					AppendCoz(pStrbuf, pChzClose);
 				}
 			}
 

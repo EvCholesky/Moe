@@ -531,6 +531,7 @@ enum FDBGSTR // DeBuG STRing Flags
 	FDBGSTR_UseSizedNumerics	= 0x8, // resolve type aliasing for simple integers - should this be all type aliasing?
 	FDBGSTR_NoWhitespace		= 0x10,
 	FDBGSTR_Values				= 0x20,
+	FDBGSTR_ShowStructArgs		= 0x40,
 
 	FDBGSTR_None				= 0x0,
 	FDBGSTR_All					= 0x3F,
