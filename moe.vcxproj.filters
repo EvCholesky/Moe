@@ -104,4 +104,7 @@
       <Filter>Header Files</Filter>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="moeCompiler.natvis" />
+  </ItemGroup>
 </Project>

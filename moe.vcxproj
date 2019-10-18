@@ -238,6 +238,9 @@ copy /Y $(TargetDir)$(ProjectName).exe $(SolutionDir)bin\$(ProjectName)Release64
   <ItemGroup>
     <None Include="source\Generics.inl" />
   </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="moeCompiler.natvis" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
