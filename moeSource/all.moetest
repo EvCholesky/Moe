@@ -1021,6 +1021,19 @@ test GenericArgs
 		?val(123) + ?dtype(int) + ?args("n: $T = ?val") + ?pdecl("(decl n (gendecl T) ?val)") + ?tcdecl("($T n ($T T) Literal:Int)") + ?tcargs("$T"),
 	}
 
+test GenericMissingArgs
+	prereq "SFoo ?type (?argdef) { n: int}"
+	input "?usage"
+	{
+		?type(struct) + ?argdef(":$T") + ?usage("foo: SFoo()"?errid(2016)),
+		?type(struct) + ?argdef(":$T, :$U") + ?usage("foo: SFoo(:int)"?errid(2016)),
+		?type(struct) + ?argdef(":$T, :$U") + ?usage("foo: SFoo(`U :int)"?errid(2016)),
+
+		?type(proc) + ?argdef(":$T") + ?usage("SFoo()"?errid(2016)),
+		?type(proc) + ?argdef(":$T, :$U") + ?usage("SFoo(:int)"?errid(2016)),
+		?type(proc) + ?argdef(":$T, :$U") + ?usage("SFoo(`U :int)"?errid(2016))
+	}
+
 test GenericReturn
 	input "SomeProc proc (?args)->?ret { return n }"
 	parse "(func SomeProc (params ?pdecl) ?ret ({} (return n)))"
@@ -1179,6 +1192,22 @@ test MultipleBakeConstantInstance
 		?argA(22) + ?argB(22) + ?secondInst(""),
 		?argA(22) + ?argB(33) + ?secondInst(" (SomeProc()->int SomeProc (Params) int ({} (int Literal:Int64)))"),
 	}
+	
+test ProcWithGenericStructArgValue
+	prereq "SFoo struct ( $C: ?baketype) { m_c := C }  TakeFoo proc (pFoo : & SFoo($D: ?baketype)) {}"
+	input "foo: SFoo(?count); TakeFoo(&foo)"
+	{
+		?count(2|456) + ?baketype(s16|int),
+		?count(false|true) + ?baketype(bool),
+	}
+
+test ProcWithGenericStructArgType
+	prereq "SFoo struct ( : $T) { m_c : T}  TakeFoo proc (pFoo : & SFoo(: $TYPE)) {}"
+	input "foo: SFoo(:?typeinst); TakeFoo(&foo)"
+	{
+		?typeinst(s16|int|float|"& int"),
+	}
+
 
 test GenericTypeArgument 
 	prereq "SomeProc proc ( :$T ?argdef) -> T { x :T; return x } nVal: int"
@@ -1223,6 +1252,13 @@ test NonGenericStructArg
 		?type("&int"?errid(1016)),
 	}
 
+test GenericArraySize
+	prereq "SFoo ?keyword ( : & [$C] int ) { m_aN :[C] int }"
+	input "foo : SFoo(:&[?count]int)"
+	{
+		?count(2|10|1000) + ?keyword(struct)
+	}
+
 test EmptyStruct
 	input "SEmpty struct { ?members }"
 	{
@@ -1264,7 +1300,7 @@ test StructTypeArgInstance
 	prereq "SFoo struct ( :$T) { m_n :T } num: s32"
 	input "foo :SFoo(?decltype)"
 	parse "(decl foo (genstruct SFoo ?ptype))"
-	typecheck "(SFoo($T ?type) foo (SFoo($T ?type) SFoo (type ?tctype))) (SFoo($T ?type) SFoo (Params (?type (?type T))) ({} (?type m_n ?type)))"
+	typecheck "(SFoo($T :?type) foo (SFoo($T :?type) SFoo (type ?tctype))) (SFoo($T :?type) SFoo (Params (?type (?type T))) ({} (?type m_n ?type)))"
 	{
 		?type(int) + ?decltype("num") + ?ptype("num") + ?tctype("?type"?errid(2018)),
 		?type(s8|int|float) + ?decltype(":?type") + ?ptype("(typearg ?type)") + ?tctype("?type"),

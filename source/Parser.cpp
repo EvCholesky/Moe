@@ -226,24 +226,24 @@ const char * PChzFromTink(TINK tink)
 {
 	static const char * s_mpTinkPChz[] =
 	{
-		"integer",
-		"float",
-		"bool",
-		"pointer",
-		"procedure",
-		"void",
-		"struct",
-		"array",
-		"null",
-		"any",
-		"enum",
-		"qualifier",
-		"interface",
-		"type",
-		"forwardDecl",
-		"literal",
-		"generic",
-		"flag"
+		"Integer",
+		"Float",
+		"Bool",
+		"Pointer",
+		"Procedure",
+		"Void",
+		"Struct",
+		"Array",
+		"Null",
+		"Any",
+		"Enum",
+		"Qualifier",
+		"Interface",
+		"Type",
+		"ForwardDecl",
+		"Literal",
+		"Generic",
+		"Flag"
 	};
 	EWC_CASSERT(EWC_DIM(s_mpTinkPChz) == TINK_Max, "missing TINK string");
 	if (tink == TINK_Nil)
@@ -1518,13 +1518,6 @@ CSTNode * PStnodParseArrayDecl(CParseContext * pParctx, SLexer * pLex, GRFPDECL 
 			if (pStnodDim)
 			{
 				auto pSymtab = pParctx->m_pSymtab;
-				if (pSymtab)
-				{
-					CSTDecl * pStdecl = PStmapDerivedCast<CSTDecl *>(pStnodDim->m_pStmap);
-
-					auto pStnodIdent = pStnodDim->PStnodChildSafe(pStdecl->m_iStnodIdentifier);
-					pStnodDim->m_pSymbase = pSymtab->PSymEnsure(pParctx->m_pWork->m_pErrman, StrFromIdentifier(pStnodIdent), pStnodDim, FSYM_None, FSHADOW_NoShadowing);
-				}
 
 				// BB - do we need to spoof a pStnodType here?
 				pStnodDim->m_pTin = pSymtab->PTinBuiltin(CSymbolTable::s_strInt);
@@ -1677,6 +1670,10 @@ void CheckTinstructGenerics(CParseContext * pParctx, CSTNode * pStnodStruct, STy
 	auto pStstruct = PStmapDerivedCast<CSTStruct *>(pStnodStruct->m_pStmap);
 	if (!pStstruct)
 		return;
+
+#if KEEP_TYPEINFO_DEBUG_STRING
+	pTinstruct->m_strDebug = StrFromTypeInfo(pTinstruct);
+#endif
 
 	auto pStnodParameterList = pStnodStruct->PStnodChildSafe(pStstruct->m_iStnodParameterList);
 	if (pStnodParameterList)
@@ -4627,6 +4624,15 @@ SSymbol * CSymbolTable::PSymEnsure(
 	return pSym;
 }
 
+bool FAddSymbolInUsing(SSymbol * pSym)
+{
+	// don't add the symbol for generics as they will already be added to the chlld namespace and cause a collision
+
+	if (pSym->m_pStnodDefinition && pSym->m_pStnodDefinition->m_park == PARK_GenericDecl)
+		return false;
+	return true;
+}
+
 void FlattenUsingTree(CSymbolTable * pSymtab, CDynAry<HV> * paryHv, u64 nVisitId)
 {
 	if (pSymtab->m_nVisitId == nVisitId)
@@ -4638,6 +4644,9 @@ void FlattenUsingTree(CSymbolTable * pSymtab, CDynAry<HV> * paryHv, u64 nVisitId
 	HV * pHv;
 	while (SSymbol ** ppSym = iter.Next(&pHv))
 	{
+		if (!FAddSymbolInUsing(*ppSym))
+			continue;
+
 		paryHv->Append(*pHv);
 	}
 
@@ -4651,6 +4660,7 @@ void FlattenUsingTree(CSymbolTable * pSymtab, CDynAry<HV> * paryHv, u64 nVisitId
 void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtabNew, CSTNode * pStnodUsingDecl)
 {
 	CDynAry<HV> aryHvFlat(m_pAlloc, BK_Symbol);
+	CDynAry<SSymbol *> aryPSymFlat(m_pAlloc, BK_Symbol);
 	FlattenUsingTree(pSymtabNew, &aryHvFlat, ++g_nSymtabVisitId);
 
 	pSymtabNew->m_nVisitId = g_nSymtabVisitId;
@@ -4664,9 +4674,7 @@ void CSymbolTable::AddUsingScope(SErrorManager * pErrman, CSymbolTable * pSymtab
 					FSHADOW_NoShadowing,
 					g_nSymtabVisitId);
 	if (errid != ERRID_Nil)
-	{
 		return;
-	}
 
 	auto pUsingNew = m_aryUsing.AppendNew();
 	pUsingNew->m_pSymtab = pSymtabNew;
@@ -5352,6 +5360,9 @@ CSTNode::CSTNode(CAlloc * pAlloc, const SLexerLocation & lexLoc)
 ,m_pSymtab(nullptr)
 ,m_pSymbase(nullptr)
 ,m_arypStnodChild(pAlloc, EWC::BK_SyntaxTree)
+#if TRACK_IINSREQ
+,m_iInsreq(-1)
+#endif
 {
 }
 

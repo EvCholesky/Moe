@@ -14,6 +14,7 @@
 | OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
 
 #pragma once
+#define TRACK_IINSREQ 1
 
 #include "Error.h"
 #include "EwcArray.h"
@@ -182,7 +183,6 @@ enum FSYM		// SYMbol flags
 									//   access variable from parent procedure.
 	FSYM_InternalUseOnly	= 0x8,	// type should not be available for user code declarations, just internal compiler use (ie _flag)
 
-
 	FSYM_All				= 0xF,
 };
 EWC_DEFINE_GRF(GRFSYM, FSYM, u32);
@@ -301,7 +301,6 @@ public:
 					,m_iStnodInit(-1)
 					,m_iStnodChildMin(-1)
 					,m_iStnodChildMax(-1)
-					,m_pTin(nullptr)
 						{ ; }
 
 	bool			m_fIsBakedConstant;
@@ -311,7 +310,6 @@ public:
 	int				m_iStnodInit;
 	int				m_iStnodChildMin;
 	int				m_iStnodChildMax;
-	STypeInfo * 	m_pTin;
 };
 
 bool FIsTrimmedGenericParameter(CSTDecl * pStdecl);
@@ -413,7 +411,6 @@ public:
 					,m_iStnodIdentifier(-1)
 					,m_iStnodType(-1)
 					,m_iStnodConstantList(-1)
-					,m_pTinenum(nullptr)
 						{ 
 							for (int enumimp = 0; enumimp < EWC_DIM(m_mpEnumimpIstnod); ++enumimp)
 							{
@@ -428,7 +425,6 @@ public:
 	int				m_iStnodType;
 	int				m_iStnodConstantList;
 	int				m_mpEnumimpIstnod[ENUMIMP_Max];
-	STypeInfoEnum * m_pTinenum;
 };
 
 class CSTStruct : public SSyntaxTreeMap // tag = ststruct
@@ -625,6 +621,9 @@ public:
 	CSymbolTable *			m_pSymtab;
 	SSymbolBase *			m_pSymbase;
 
+#if TRACK_IINSREQ
+	int						m_iInsreq;
+#endif
 	EWC::CDynAry<CSTNode *>	m_arypStnodChild;
 };
 

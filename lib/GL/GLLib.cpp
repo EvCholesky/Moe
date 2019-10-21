@@ -400,7 +400,7 @@ struct SJoystick // tag = Joy
 	const float *	m_aGAxis;		// allocated by GLFL, scope valid until controller disconnect
 	const u8 *		m_aBButton;		// allocated by GLFL, scope valid until controller disconnect
 
-	float *			m_aGAxisPrev;	// allocted locally, delete upon controller disconnect
+	f32 *			m_aGAxisPrev;	// allocted locally, delete upon controller disconnect
 	u8 *			m_aBButtonPrev;	// allocted locally, delete upon controller disconnect
 };
 

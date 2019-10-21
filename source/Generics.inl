@@ -74,8 +74,7 @@ struct SGenericMap // tag = genmap
 							,m_mpStrAnc(pAlloc, EWC::BK_TypeCheckGenerics)
 							,m_aryPStnodManaged(pAlloc, EWC::BK_TypeCheckGenerics)
 							,m_aryLexlocSrc(pAlloc, EWC::BK_TypeCheckGenerics)
-							,m_cPartialType(0)
-							,m_cPartialValue(0)
+							,m_grftingenResult()
 								{
 #define BUILD_GENMAP_NAMES 1
 #if BUILD_GENMAP_NAMES
@@ -109,8 +108,7 @@ struct SGenericMap // tag = genmap
 	void 					Swap(SGenericMap * pGenmapOther)
 								{ 
 									EWC::ewcSwap(m_strName, pGenmapOther->m_strName);
-									EWC::ewcSwap(m_cPartialType, pGenmapOther->m_cPartialType);
-									EWC::ewcSwap(m_cPartialValue, pGenmapOther->m_cPartialValue);
+									EWC::ewcSwap(m_grftingenResult, pGenmapOther->m_grftingenResult);
 
 									m_mpStrAnc.Swap(&pGenmapOther->m_mpStrAnc);
 									m_aryPStnodManaged.Swap(&pGenmapOther->m_aryPStnodManaged);
@@ -135,17 +133,13 @@ struct SGenericMap // tag = genmap
 								{
 									return m_mpStrAnc.FIsEmpty();
 								}
-	bool					FIsPartiallyInstantiated() const
-								{
-									return m_cPartialType > 0 || m_cPartialValue > 0;
-								}
+
 
 	EWC::CString						m_strName;
 	EWC::CHash<EWC::CString, SAnchor>	m_mpStrAnc;				// map from a string name to the anchor value or type mapped to it
 	EWC::CDynAry<CSTNode *>				m_aryPStnodManaged;		// stnodes for baked constants
 	EWC::CDynAry<SLexerLocation>		m_aryLexlocSrc;			// lexer location where this was instantiated
-	int									m_cPartialType;			// how many of the types mapped to will still be generic
-	int									m_cPartialValue;		// how many mapped values are still generic
+	GRFTINGEN							m_grftingenResult;		// will the resultant type be generic?
 };
 
 void PrintGenmap(CWorkspace * pWork, SGenericMap * pGenmap);
@@ -158,11 +152,13 @@ struct SInstantiateRequest // tag = insreq
 								:m_pStnodGeneric(nullptr)
 								,m_pSym(nullptr)
 								,m_pGenmap(nullptr)
+								,m_iInsreq(-1)
 									{ ; }
 
 	CSTNode * 					m_pStnodGeneric;	// AST for unsubstituted generic 
 	SSymbol *					m_pSym;				// instantiated type, tin proc with resolved argument types
 	SGenericMap * 				m_pGenmap;
+	int							m_iInsreq;
 };
 
 class CGenericRegistry // tag = genreg
@@ -283,6 +279,7 @@ void RemapGenericStnodCopy(
 	STypeCheckWorkspace * pTcwork,
 	CSTNode * pStnodGen,
 	CSTNode * pStnodNew,
+	int iInsreq,
 	SGenericMap * pGenmap,
 	EWC::CHash<SSymbol *, SSymbol *> * pmpPSymGenericPSymRemapped,
 	EWC::CHash<SSymbol *, CSTNode *> * pmpPSymSrcPStnodConstant,

@@ -302,13 +302,13 @@ struct SConstructSelector
 {
 	static void Construct(T * p)
 	{
-		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to construct missaligned object" );
+		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to construct misaligned object" );
 		new (p) T;
 	}
 
 	static void ConstructN(T * p, size_t c)
 	{
-		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to construct missaligned object" );
+		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to construct misaligned object" );
 		for (size_t i = 0; i < c; ++i)
 			new (p + i) T;
 	}
@@ -326,20 +326,20 @@ struct SCopySelector
 {
 	static void CopyConstruct(T * p, const T & orig)
 	{
-		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct missaligned object" );
+		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct misaligned object" );
 		new (p) T(orig);
 	}
 
 	static void CopyConstructN(T * p, size_t c, const T & orig)
 	{
-		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct missaligned object" );
+		EWC_ASSERT( ((uintptr_t)p & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct misaligned object" );
 		for (size_t i = 0; i < c; ++i)
 			new (p + i) T(orig);
 	}
 
 	static void CopyConstructArray(T * pTDst, size_t cT, const T * pTSrc)
 	{
-		EWC_ASSERT( ((uintptr_t)pTDst & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct missaligned object" );
+		EWC_ASSERT( ((uintptr_t)pTDst & (EWC_ALIGN_OF(T)-1)) == 0, "trying to copy construct misaligned object" );
 		auto pTDstMax = pTDst + cT;
 		for (auto pTDstIt = pTDst; pTDstIt != pTDstMax; ++pTDstIt, ++pTSrc)
 			new (pTDstIt) T(*pTSrc);

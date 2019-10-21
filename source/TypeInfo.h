@@ -42,7 +42,7 @@
 // - unfinalized literals
 
 
-
+#define KEEP_TYPEINFO_DEBUG_STRING		1
 
 #pragma once
 
@@ -120,6 +120,7 @@ struct STypeInfo	// tag = tin
 						,m_grftin(FTIN_None)
 						,m_scopid(scopid)
 						,m_strName(strName)
+						,m_strDebug()
 						,m_strDesc()
 						,m_pCgvalDIType(nullptr)
 						,m_pCgvalReflectGlobal(nullptr)
@@ -132,6 +133,10 @@ struct STypeInfo	// tag = tin
 
 	EWC::CString		m_strName;				// user facing name 
 	EWC::CString		m_strDesc;				// unique descriptor used to unique this type 
+
+#if KEEP_TYPEINFO_DEBUG_STRING
+	EWC::CString		m_strDebug;				// 
+#endif
 
 
 	// BB - This shouldn't be embedded in the typeinfo - it won't work for multiple codegen passes
@@ -277,6 +282,8 @@ enum FTINGEN // flags for generic procedures and structures
 
 	FTINGEN_HasBakedTypeArgs		= 0x1,
 	FTINGEN_HasBakedValueArgs		= 0x2,
+	FTINGEN_HasUnsubArgs			= 0x4,	// some generic arguments have not been supplied 
+											// (is NOT the same as saying the resultant type has generics!) 
 
 	FTINGEN_None					= 0x0,
 	FTINGEN_All						= 0x3,
@@ -305,7 +312,6 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 						:STypeInfo(strName, scopid, s_tink)
 						,m_strMangled()
 						,m_pStnodDefinition(nullptr)
-						,m_pTinprocGenericBase(nullptr)
 						,m_arypTinParams()
 						,m_arypTinReturns()
 						,m_mpIptinGrfparmq()
@@ -324,7 +330,6 @@ struct STypeInfoProcedure : public STypeInfo	// tag = 	tinproc
 
 	EWC::CString				m_strMangled;
 	CSTNode *					m_pStnodDefinition;
-	STypeInfoProcedure *		m_pTinprocGenericBase;
 	EWC::CAllocAry<STypeInfo *>	m_arypTinParams;
 	EWC::CAllocAry<STypeInfo *>	m_arypTinReturns;
 	EWC::CAllocAry<GRFPARMQ>	m_mpIptinGrfparmq;

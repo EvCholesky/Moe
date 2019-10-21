@@ -136,7 +136,7 @@ void PrintGenmapAnchors(EWC::SStringBuffer * pStrbuf, SGenericMap * pGenmap)
 		{
 		case GENK_Type:
 			strAnc = StrFromTypeInfo(pAnc->m_pTin);
-			FormatCoz(pStrbuf, "%s$%s %s", pChzSeparate, pStrAnchor->PCoz(), strAnc.PCoz());
+			FormatCoz(pStrbuf, "%s$%s :%s", pChzSeparate, pStrAnchor->PCoz(), strAnc.PCoz());
 			break;
 		case GENK_Value:
 			{

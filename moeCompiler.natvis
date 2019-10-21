@@ -8,7 +8,8 @@
       </Expand>
   </Type>
   <Type Name="STypeInfoInteger">
-      <DisplayString>{{ {(m_fIsSigned)?'s':'u'}{m_cBit} }}</DisplayString>
+      <DisplayString Condition="m_fIsSigned == true">{{ s{m_cBit} }}</DisplayString>
+      <DisplayString Condition="m_fIsSigned == false">{{ u{m_cBit} }}</DisplayString>
   </Type>
   <Type Name="STypeInfoFloat">
       <DisplayString>{{ f{m_cBit} }}</DisplayString>
@@ -17,10 +18,12 @@
       <DisplayString>{{ pTinPointedTo={m_pTinPointedTo} }}</DisplayString>
   </Type>
   <Type Name="STypeInfoProcedure">
-      <DisplayString>{{ proc={m_strName.m_pCoz,s} }}</DisplayString>
+      <DisplayString Condition="m_strDebug.m_pCoz==nullptr||m_strDebug.m_pCoz[0]==0">{{ proc={m_strName.m_pCoz,s} }}</DisplayString>
+      <DisplayString Condition="m_strDebug.m_pCoz!=nullptr&amp;&amp;m_strDebug.m_pCoz[0]!=0">{{ proc={m_strDebug.m_pCoz,s} }}</DisplayString>
   </Type>
   <Type Name="STypeInfoStruct">
-      <DisplayString>{{ {m_strName.m_pCoz,s} cField={m_aryTypemembField.m_c} }}</DisplayString>
+      <DisplayString Condition="m_strDebug.m_pCoz==nullptr||m_strDebug.m_pCoz[0]==0">{{ proc={m_strName.m_pCoz,s} cField={m_aryTypemembField.m_c} }}</DisplayString>
+      <DisplayString Condition="m_strDebug.m_pCoz!=nullptr&amp;&amp;m_strDebug.m_pCoz[0]!=0">{{ proc={m_strDebug.m_pCoz,s} cField={m_aryTypemembField.m_c} }}</DisplayString>
   </Type>
   <Type Name="STypeInfoArray">
       <DisplayString>{{ m_aryk={m_aryk} m_pTin={m_pTin} }}</DisplayString>
@@ -31,8 +34,10 @@
   <Type Name="STypeInfoGeneric">
       <DisplayString>{{ name={m_strName.m_pCoz,s} }}</DisplayString>
   </Type>
+  <Type Name="STypeInfoLiteral">
+  </Type>
   <Type Name="STypeInfo">
-     <DisplayString>{{ tink={m_tink} name={m_strName} }}</DisplayString>
+     <DisplayString>{{ {m_strName.m_pCoz,s} tink={m_tink} }}</DisplayString>
      <Expand>
        <Item Name="pTinint" Condition="m_tink == 0">(STypeInfoInteger*)this</Item>
        <Item Name="pTinfloat" Condition="m_tink == 1">(STypeInfoFloat*)this</Item>
@@ -41,6 +46,7 @@
        <Item Name="pTinstruct" Condition="m_tink == 6">(STypeInfoStruct*)this</Item>
        <Item Name="pTinary" Condition="m_tink == 7">(STypeInfoArray*)this</Item>
        <Item Name="pTinqual" Condition="m_tink == 11">(STypeInfoQualifier*)this</Item>
+       <Item Name="pTingen" Condition="m_tink == 15">(STypeInfoLiteral*)this</Item>
        <Item Name="pTingen" Condition="m_tink == 16">(STypeInfoGeneric*)this</Item>
        <Item Name="m_tink">m_tink</Item>
        <Item Name="m_strName">m_strName</Item>
@@ -49,7 +55,7 @@
       </Expand>
   </Type>
   <Type Name="SSymbol">
-      <DisplayString>{{ name={m_strName} m_grfsym={m_grfsym}}}</DisplayString>
+      <DisplayString>{{ name={m_strName.m_pCoz,s} m_grfsym={m_grfsym}}}</DisplayString>
   </Type>
   <Type Name="SSymbolPath">
       <DisplayString>{{ pSymTail={m_arypSym.m_a[m_arypSym.m_c]->m_strName} }}</DisplayString>
@@ -60,6 +66,21 @@
        <Item Name="pSym" Condition="m_symk == 0">(SSymbol*)this</Item>
        <Item Name="pSympath" Condition="m_symk == 1">(SSymbolPath*)this</Item>
       </Expand>
+  </Type>
+  <Type Name="CSTNode">
+      <DisplayString Condition="m_pSymbase!=nullptr&amp;&amp;m_pSymbase->m_symk==SYMK_Symbol">{{ sym={((SSymbol*)m_pSymbase)->m_strName.m_pCoz,s} park={m_park} }}</DisplayString>
+  </Type>
+  <Type Name="CSTProcedure">
+      <DisplayString>{{ pTinproc={m_pTinproc} }}</DisplayString>
+  </Type>
+  <Type Name="CSTFor">
+  </Type>
+  <Type Name="CSTDecl">
+  </Type>
+  <Type Name="CSTEnum">
+      <DisplayString>{{ cConstant={m_cConstantExplicit} }}</DisplayString>
+  </Type>
+  <Type Name="CSTStruct">
   </Type>
   <Type Name="SSyntaxTreeMap">
      <DisplayString>{{ m_stmapk={m_stmapk} }}</DisplayString>
@@ -72,8 +93,26 @@
       </Expand>
   </Type>
 
+<Type Name="CSTValue">
+  <DisplayString Condition="m_stvalk==0">{{ m_g={m_g} }}</DisplayString>
+  <DisplayString Condition="m_stvalk==1">{{ m_nSigned={m_nSigned} }}</DisplayString>
+  <DisplayString Condition="m_stvalk==2">{{ m_nUnsigned={m_nUnsigned} }}</DisplayString>
+  <DisplayString Condition="m_stvalk==3">{{ m_str={m_str.m_pCoz,s} }}</DisplayString>
+  <DisplayString Condition="m_stvalk==4">{{ m_rword={m_rword} }}</DisplayString>
+</Type>
+
+<Type Name="SAnchor">
+  <DisplayString Condition="m_pStnodBaked!=nullptr">{{ m_pStnodBaked={m_pStnodBaked} }}</DisplayString>
+  <DisplayString Condition="m_pTin!=nullptr">{{ m_pTin={m_pTin} }}</DisplayString>
+  <DisplayString Condition="m_pTin==nullptr &amp;&amp; m_pStnodBaked==nullptr">{{ null anchor {m_genk}}}</DisplayString>
+</Type>
+
+<Type Name="SGenericMap">
+  <DisplayString>{{ {m_strName.m_pCoz,s} count={m_mpStrAnc.m_cUsed} }}</DisplayString>
+</Type>
+
 <Type Name="EWC::CAry&lt;*&gt;">
-  <DisplayString>{{size = {m_c}}}</DisplayString>
+  <DisplayString>{{m_c = {m_c}}}</DisplayString>
   <Expand>
     <Item Name="[size]">m_c</Item>
     <Item Name="[capacity]">m_cMax</Item>
@@ -84,14 +123,13 @@
   </Expand>
 </Type>
 
-<Type Name="SAnchor">
-  <DisplayString Condition="m_pStnodBaked!=nullptr">{{ m_pStnodBaked={m_pStnodBaked} }}</DisplayString>
-  <DisplayString Condition="m_pTin!=nullptr">{{ m_pStnodBaked={m_pStnodBaked} }}</DisplayString>
-  <DisplayString Condition="m_pTin==nullptr &amp;&amp; m_pStnodBaked==nullptr">{{ null anchor {m_genk}}}</DisplayString>
+<Type Name="EWC::CHash&lt;*,*,*&gt;::SEntry">
+    <DisplayString>{{m_key={m_key} m_value={m_value}}}</DisplayString>
 </Type>
 
+
 <Type Name="EWC::CHash&lt;*,*,*&gt;">
-    <DisplayString>{{Count = {m_cUsed}}}</DisplayString>
+    <DisplayString>{{m_cUsed = {m_cUsed}}}</DisplayString>
     <Expand>
       <CustomListItems MaxItemsPerView="5000" ExcludeView="Test">
         <Variable Name="pEntry" InitialValue="m_aEntry" />
