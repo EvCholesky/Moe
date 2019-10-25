@@ -40,6 +40,7 @@ enum ERRID
 	ERRID_TypeSpecParseFail			= 1015,
 	ERRID_NonBakedStructParameter   = 1016,
 	ERRID_EmptyStruct				= 1017,
+	ERRID_GenericDeclNotAllowed		= 1018,
 	ERRID_ParserMax					= 2000,
 
 	ERRID_TypeCheckMin				= ERRID_ParserMax,

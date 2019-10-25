@@ -1034,6 +1034,26 @@ test GenericMissingArgs
 		?type(proc) + ?argdef(":$T, :$U") + ?usage("SFoo(`U :int)"?errid(2016))
 	}
 
+test GenericProcInferFail
+	prereq "GenProc proc(?param) {} SFoo struct (:$T) {m_t: T}"
+	input "?call"
+	{
+		?param("t :[] $T") + ?call("aN: [3] int; GenProc(aN)"), 			// expected array
+		?param("t :[] $T") + ?call("n: int; GenProc(n)"?errid(2031)), 			// expected array
+		//?param("t :[$C] int") + ?call("aN: [3] int; GenProc(aN)"), 			// expected array
+		//?param("t :[$C] int") + ?call("aNRev: [] int; GenProc(aNRef)"?errid(2031)), 			// expected array
+		?param("t :& const $T") + ?call("n: & int; GenProc(n)"?errid(2031)), 	// expected qualifier
+		?param("t :& const $T") + ?call("n: & const int; GenProc(n)"), 			// expected qualifier
+		?param("t :& $T") + ?call("n: int; GenProc(n)"?errid(2031)), 			// expected pointer
+		?param("t :& $T") + ?call("n: & int; GenProc(n)"), 						// expected pointer
+		?param("t :SFoo (:$X)") + ?call("foo: SFoo(:int); GenProc(foo)"), 	// expected struct
+		?param("t :SFoo (:$X)") + ?call("n: int; GenProc(int)"?errid(2031)), 	// expected struct
+		?param("t :SFoo (:float)") + ?call("foo: SFoo(:int); GenProc(foo)"?errid(2006)), 	// expected struct
+		?param("t :SFoo (:& $X)") + ?call("foo: SFoo(:&int); GenProc(foo)"), 	// expected struct
+		?param("t :SFoo (:& $X)") + ?call("foo: SFoo(:int); GenProc(foo)"?errid(2031)), 	// expected struct
+		// expecting proc
+	}
+
 test GenericReturn
 	input "SomeProc proc (?args)->?ret { return n }"
 	parse "(func SomeProc (params ?pdecl) ?ret ({} (return n)))"
@@ -1104,9 +1124,9 @@ test GenericPatternMatch
 	input "SomeProc(?arg)"
 	{
 		?var("n: int") + ?pat("& $T") + ?arg(&n),
-		?var("n: int") + ?pat("& $T"?errid(2006)) + ?arg("n"?errid(2016)),
-		?var("n: int") + ?pat("& $T"?errid(2006)) + ?arg("2"?errid(2016)),
-		?var("n: int") + ?pat("&& $T"?errid(2006)) + ?arg("n"?errid(2016)),
+		?var("n: int") + ?pat("& $T"?errid(2031)) + ?arg("n"),
+		?var("n: int") + ?pat("& $T"?errid(2031)) + ?arg("2"),
+		?var("n: int") + ?pat("&& $T"?errid(2031)) + ?arg("n"),
 		?var("twoInts proc (a: int, b: int) {}") + ?pat("(x: $T,y: T)->void") + ?arg("twoInts"),
 		?var("twoInts proc (a: int, b: int) {}") + ?pat("(x: $T,y: T)->void"?errid(2006)) + ?arg("2"?errid(2016)),
 	}

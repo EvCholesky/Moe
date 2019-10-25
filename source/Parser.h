@@ -814,7 +814,7 @@ public:
 
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk);
 	STypeInfoLiteral *		PTinlitFromLitk(LITK litk, int cBit, bool fIsSigned);
-	STypeInfoPointer *		PTinptrAllocate(STypeInfo * pTinPointedTo);
+	STypeInfoPointer *		PTinptrAllocate(STypeInfo * pTinPointedTo, bool fIsImplicitRef = false);
 	STypeInfoQualifier *	PTinqualEnsure(STypeInfo * pTinTarget, GRFQUALK grfqualk);
 	STypeInfoQualifier *	PTinqualWrap(STypeInfo * pTinTarget, GRFQUALK grfqualk);
 

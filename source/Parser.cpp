@@ -812,7 +812,7 @@ CSTNode * PStnodParsePrimaryExpression(CParseContext * pParctx, SLexer * pLex)
 					// parse type specifier
 					TokNext(pLex); // consume ':'
 					
-					pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "compound literal", FPDECL_None);
+					pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "compound literal", FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues);
 
 					if (!pStnodType)
 					{
@@ -1793,6 +1793,19 @@ CSTNode * PStnodParseGenericTypeDecl(CParseContext * pParctx, SLexer * pLex, GRF
 		if (!pStnodIdent)
 		{
 			ParseError(pParctx, &lexloc, ERRID_MissingName, "Generic type is missing it's name");
+			pParctx->m_pAlloc->EWC_DELETE(pStnod);
+			return nullptr;
+		}	
+
+		(void) pStnod->IAppendChild(pStnodIdent);
+		if (!grfpdecl.FIsAnySet(FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues))
+		{
+			ParseError(
+				pParctx, &lexloc, 
+				ERRID_GenericDeclNotAllowed, "Generic decl ($%s) not allowed type in this scope, do you need to omit the '$'?", 
+				StrFromIdentifier(pStnodIdent).PCoz());
+
+			pParctx->m_pAlloc->EWC_DELETE(pStnod);
 			return nullptr;
 		}
 
@@ -1812,7 +1825,6 @@ CSTNode * PStnodParseGenericTypeDecl(CParseContext * pParctx, SLexer * pLex, GRF
 			pSym->m_pTin = pTingen;
 		}
 
-		(void) pStnod->IAppendChild(pStnodIdent);
 		return pStnod;
 	}
 
@@ -2080,7 +2092,7 @@ CSTNode * PStnodParseUsingStatement(
 	auto pStdecl = pStnodDecl->PStmapEnsure<CSTDecl>(pParctx->m_pAlloc);
 	pStdecl->m_fHasUsingPrefix = true;
 
-	GRFPDECL grfpdecl = FPDECL_AllowBakedTypes | FPDECL_AllowBakedValues;
+	GRFPDECL grfpdecl = FPDECL_None;
 	auto pStnodType = PStnodParseTypeSpecifier(pParctx, pLex, "declaration", grfpdecl);
 
 	if (!pStnodIdent)	
@@ -2985,7 +2997,6 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 				{
 					pTinproc->m_mpIptinGrfparmq[0].AddFlags(FPARMQ_ImplicitRef);
 				}
-
 
 				if (grftinproc.FIsSet(FTINPROC_IsCommutative))
 				{
@@ -4931,12 +4942,13 @@ STypeInfoQualifier * CSymbolTable::PTinqualWrap(STypeInfo * pTinTarget, GRFQUALK
 	return PTinqualEnsure(pTinTarget, grfqualk);
 }
 
-STypeInfoPointer * CSymbolTable::PTinptrAllocate(STypeInfo * pTinPointedTo)
+STypeInfoPointer * CSymbolTable::PTinptrAllocate(STypeInfo * pTinPointedTo, bool fIsImplicitRef)
 {
 	// Note: I should unique'ify these
 
 	STypeInfoPointer * pTinptr = EWC_NEW(m_pAlloc, STypeInfoPointer) STypeInfoPointer();
 	pTinptr->m_pTinPointedTo = pTinPointedTo;
+	pTinptr->m_fIsImplicitRef = fIsImplicitRef;
 
 	AddManagedTin(pTinptr);
 	return pTinptr;

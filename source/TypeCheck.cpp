@@ -322,6 +322,8 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
 			AppendCoz(&m_strbuf, "P");
+			if (pTinptr->m_fIsImplicitRef)
+				AppendCoz(&m_strbuf, "i");
 			AppendType(pTinptr->m_pTinPointedTo);
 		} break;
     case TINK_Struct:
@@ -791,10 +793,17 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 	else if (chFirst == 'P') // Pointer
 	{
 		++(*ppCoz);
+		bool fIsImplicitRef = false;
+		if (**ppCoz == 'i')
+		{
+			fIsImplicitRef = true;
+			++(*ppCoz);
+		}
+
 		auto pTinPointedTo = PTinReadType(ppCoz, pSymtab);
 		if (!pTinPointedTo)
 			return nullptr;
-		return pSymtab->PTinptrAllocate(pTinPointedTo);
+		return pSymtab->PTinptrAllocate(pTinPointedTo, fIsImplicitRef);
 	}
 	else if (chFirst == 'A') // Array
 	{
@@ -2504,14 +2513,20 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 			return pTinqualLhs->m_grfqualk == pTinqualRhs->m_grfqualk &&
 				FTypesAreSame(pTinqualLhs->m_pTin, pTinqualRhs->m_pTin);
 		}
-	case TINK_Pointer:	return FTypesAreSame(
-								((STypeInfoPointer *)pTinLhs)->m_pTinPointedTo, 
-								((STypeInfoPointer *)pTinRhs)->m_pTinPointedTo);
+	case TINK_Pointer:	
+		{
+			STypeInfoPointer * pTinptrLhs = (STypeInfoPointer *)pTinLhs;
+			STypeInfoPointer * pTinptrRhs = (STypeInfoPointer *)pTinRhs;
+			if (pTinptrLhs->m_fIsImplicitRef != pTinptrRhs->m_fIsImplicitRef)
+				return false;
+
+			return FTypesAreSame(pTinptrLhs->m_pTinPointedTo, pTinptrRhs->m_pTinPointedTo);
+		}
 	case TINK_Array:	
 		{
 			auto pTinaryLhs = (STypeInfoArray *)pTinLhs;
 			auto pTinaryRhs = (STypeInfoArray *)pTinRhs;
-			EWC_ASSERT(pTinaryLhs->m_pStnodBakedDim == nullptr && pTinaryRhs->m_pStnodBakedDim, 
+			EWC_ASSERT(pTinaryLhs->m_pStnodBakedDim == nullptr && pTinaryRhs->m_pStnodBakedDim == nullptr, 
 				"generic array should be instantiated before calling FTypesAreSame()");
 
 			return (pTinaryLhs->m_aryk == pTinaryRhs->m_aryk) & (pTinaryLhs->m_c == pTinaryRhs->m_c) &&
@@ -3598,7 +3613,10 @@ inline bool FUnpackArgumentList(
 
 				STypeInfo * pTinInitDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodInit, pTinParam, errep);
 				pTinInitDefault = PTinAfterRValueAssignment(pTcwork, &pStnodInit->m_lexloc, pTinInitDefault, pSymtab, pTinParam);
-				ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, pTinInitDefault, pStnodType, pGenmap);
+				ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, pTinInitDefault, pStnodType, pGenmap);
+				if (errid != ERRID_Nil)
+					return false;
+
 				pGenmap->m_aryLexlocSrc.Append(pStnodType->m_lexloc);
 			}
 		}
@@ -3742,6 +3760,7 @@ STypeInfo * PTinSubstituteGenerics(
 							if (pStvalDim)
 							{
 								pTinaryNew->m_c = NUnsignedLiteralCast(pTcwork, pAnc->m_pStnodBaked, pStvalDim);
+								pTinaryNew->m_pStnodBakedDim = nullptr;
 							}
 						}
 					}
@@ -5614,71 +5633,135 @@ ERRID ErridComputeDefinedGenerics(
 			case PARK_ArrayDecl:
 				{
 					auto pTinaryRef = PTinRtiCast<STypeInfoArray *>(genfram.m_pTinRef);
-					if (pTinaryRef)
+					bool fArykMatches = false;
+					auto pTinaryDock = PTinRtiCast<STypeInfoArray *>(pStnodDockCur->m_pTin);
+					if (pTinaryRef && EWC_FVERIFY(pTinaryDock, "expected array dock type"))
 					{
-						genfram.m_pTinRef = pTinaryRef->m_pTin;
+						fArykMatches |= pTinaryDock->m_aryk == pTinaryRef->m_aryk;
+						fArykMatches |= pTinaryDock->m_aryk == ARYK_Reference;	// other aryk types can implicit convert to a reference
 					}
 
-					if (pTinaryRef)
+					if (!pTinaryRef || !fArykMatches)
 					{
-						if (pStnodDockCur->CStnodChild() == 2)
+						if (errep == ERREP_ReportErrors)
 						{
-							auto pStnodDim = pStnodDockCur->PStnodChild(0);
-							auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDim->m_pStmap);
-
-							if (pStdecl && pStdecl->m_fIsBakedConstant)
-							{
-								auto strIdent = StrFromIdentifier(pStnodDim->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
-
-								CSTNode * pStnodLiteral = EWC_NEW(pTcwork->m_pAlloc, CSTNode) CSTNode(pTcwork->m_pAlloc, pStnodDim->m_lexloc);
-								pStnodLiteral->m_park = PARK_Literal;
-
-								CSTValue * pStval = EWC_NEW(pTcwork->m_pAlloc, CSTValue) CSTValue();
-								pStval->m_litkLex = LITK_Integer;
-								SetUnsignedIntValue(pStval, pTinaryRef->m_c);
-								pStnodLiteral->m_pStval = pStval;
-
-								pGenmapOut->m_aryPStnodManaged.Append(pStnodLiteral);
-								
-								pGenmapOut->PAncMapValue(strIdent, pStnodLiteral);
-							}
+							const char * pChzTink = (genfram.m_pTinRef) ? PChzFromTink(genfram.m_pTinRef->m_tink) : "null"; 
+							auto strTinRef = StrFromTypeInfo(genfram.m_pTinRef);
+							auto strTinDock = StrFromTypeInfo(pTinaryDock);
+							EmitError(pTcwork, pStnodDockCur, ERRID_CannotInferGeneric,
+								"Failed matching generic array : matching %s, encountered %s type '%s'",
+								strTinDock.PCoz(),
+								pChzTink,
+								strTinRef.PCoz());
 						}
-						// array decl's children are [type] or [m_c, type]
-						pStnodDockIt = pStnodDockCur->PStnodChildSafe(pStnodDockCur->CStnodChild()-1);
-						EWC_ASSERT(pStnodDockIt, "bad array declaration");
+
+						return ERRID_CannotInferGeneric;
 					}
+
+					genfram.m_pTinRef = pTinaryRef->m_pTin;
+
+					if (pStnodDockCur->CStnodChild() == 2)
+					{
+						auto pStnodDim = pStnodDockCur->PStnodChild(0);
+						auto pStdecl = PStmapRtiCast<CSTDecl *>(pStnodDim->m_pStmap);
+
+						if (pStdecl && pStdecl->m_fIsBakedConstant)
+						{
+							auto strIdent = StrFromIdentifier(pStnodDim->PStnodChildSafe(pStdecl->m_iStnodIdentifier));
+
+							CSTNode * pStnodLiteral = EWC_NEW(pTcwork->m_pAlloc, CSTNode) CSTNode(pTcwork->m_pAlloc, pStnodDim->m_lexloc);
+							pStnodLiteral->m_park = PARK_Literal;
+
+							CSTValue * pStval = EWC_NEW(pTcwork->m_pAlloc, CSTValue) CSTValue();
+							pStval->m_litkLex = LITK_Integer;
+							SetUnsignedIntValue(pStval, pTinaryRef->m_c);
+							pStnodLiteral->m_pStval = pStval;
+
+							pGenmapOut->m_aryPStnodManaged.Append(pStnodLiteral);
+							
+							pGenmapOut->PAncMapValue(strIdent, pStnodLiteral);
+						}
+					}
+					// array decl's children are [type] or [m_c, type]
+					pStnodDockIt = pStnodDockCur->PStnodChildSafe(pStnodDockCur->CStnodChild()-1);
+					EWC_ASSERT(pStnodDockIt, "bad array declaration");
 				} break;
 			case PARK_QualifierDecl:
 				{
 					auto pTinqualRef = PTinRtiCast<STypeInfoQualifier *>(genfram.m_pTinRef);
-					if (pTinqualRef)
+
+					bool fGrfqualkMatches = false;
+					auto pTinqualDock = PTinRtiCast<STypeInfoQualifier *>(pStnodDockCur->m_pTin);
+					if (pTinqualRef && EWC_FVERIFY(pTinqualDock, "expected qualifier type"))
 					{
-						genfram.m_pTinRef = pTinqualRef->m_pTin;
+						fGrfqualkMatches |= pTinqualDock->m_grfqualk == pTinqualRef->m_grfqualk;
 					}
 
-					if (pTinqualRef)
+					if (!pTinqualRef || !fGrfqualkMatches)
 					{
-						EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
-						pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
+						if (errep == ERREP_ReportErrors)
+						{
+							const char * pChzTink = (genfram.m_pTinRef) ? PChzFromTink(genfram.m_pTinRef->m_tink) : "null"; 
+							auto strTinRef = StrFromTypeInfo(genfram.m_pTinRef);
+							auto strTinDock = StrFromTypeInfo(pTinqualDock);
+							EmitError(pTcwork, pStnodDockCur, ERRID_CannotInferGeneric,
+								"generic match missing qualifier : matching %s, encountered %s type '%s'",
+								strTinDock.PCoz(),
+								pChzTink,
+								strTinRef.PCoz());
+						}
+
+						return ERRID_CannotInferGeneric;
 					}
+
+					genfram.m_pTinRef = pTinqualRef->m_pTin;
+					EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
+					pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
 				} break;
 			case PARK_ReferenceDecl:
 				{
-					auto pTinptrRef = PTinRtiCast<STypeInfoPointer *>(genfram.m_pTinRef);
-					if (pTinptrRef)
+					auto pTinptrDock = PTinRtiCast<STypeInfoPointer *>(pStnodDockCur->m_pTin);
+					if (pTinptrDock && !pTinptrDock->m_fIsImplicitRef)
 					{
+						auto pTinptrRef = PTinRtiCast<STypeInfoPointer *>(genfram.m_pTinRef);
+						if (!pTinptrRef)
+						{
+							if (errep == ERREP_ReportErrors)
+							{
+								const char * pChzTink = (genfram.m_pTinRef) ? PChzFromTink(genfram.m_pTinRef->m_tink) : "null"; 
+								auto strTinRef = StrFromTypeInfo(genfram.m_pTinRef);
+								auto strTinDock = StrFromTypeInfo(pStnodDockCur->m_pTin);
+								EmitError(pTcwork, pStnodDockCur, ERRID_CannotInferGeneric,
+									"generic matching failed, matching %s, encountered %s type '%s'",
+									strTinDock.PCoz(),
+									pChzTink,
+									strTinRef.PCoz());
+							}
+							return ERRID_CannotInferGeneric;
+						}
+
 						genfram.m_pTinRef = pTinptrRef->m_pTinPointedTo;
 					}
-
-					if (pTinptrRef)
-					{
-						EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
-						pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
-					}
+					EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
+					pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
 				} break;
 			case PARK_GenericStructSpec:
 				{
 					auto pTinstructBaked = PTinRtiCast<STypeInfoStruct *>(genfram.m_pTinRef);
+
+					if (!pTinstructBaked)
+					{
+						if (errep == ERREP_ReportErrors)
+						{
+							const char * pChzTink = (genfram.m_pTinRef) ? PChzFromTink(genfram.m_pTinRef->m_tink) : "null"; 
+							auto strTin = StrFromTypeInfo(genfram.m_pTinRef);
+							EmitError(pTcwork, pStnodDockCur, ERRID_CannotInferGeneric,
+								"matching expected generic struct, encountered %s type '%s'",
+								pChzTink,
+								strTin.PCoz());
+						}
+						return ERRID_CannotInferGeneric;
+					}
 
 					auto pSymDock = pStnodDockCur->PSym();
 					EWC_ASSERT(pSymDock && pStnodDockCur->m_strees >= STREES_TypeChecked, "expected to be type checked");
@@ -5729,6 +5812,8 @@ ERRID ErridComputeDefinedGenerics(
 										pStnodParamRef->m_pTin,
 										pStnodDockType,
 										pGenmapOut);
+									if (errid != ERRID_Nil)
+										return errid;
 								}
 							}
 						}
@@ -7476,6 +7561,15 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								auto pStnodParam = pStnodParams->PStnodChild(iStnod);
 								if (pStnodParam->m_park == PARK_VariadicArg)
 									continue;
+
+								if (pTinproc->m_mpIptinGrfparmq[iStnod].FIsSet(FPARMQ_ImplicitRef))
+								{
+									auto pTinptr = PTinRtiCast<STypeInfoPointer*>(pStnodParam->m_pTin);
+									if (pTinptr)
+									{
+										pTinptr->m_fIsImplicitRef = true;
+									}
+								}
 
 								if (!FIsValidLhs(pStnodParam))
 								{

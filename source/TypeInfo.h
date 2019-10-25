@@ -197,9 +197,11 @@ struct STypeInfoPointer : public STypeInfo	// tag = tinptr
 						STypeInfoPointer()
 						:STypeInfo("", SCOPID_Nil, s_tink)
 						,m_pTinPointedTo(nullptr)
+						,m_fIsImplicitRef(false)
 							{ ; }
 
 	STypeInfo *			m_pTinPointedTo;
+	bool				m_fIsImplicitRef;
 };
 
 enum QUALK : s8
