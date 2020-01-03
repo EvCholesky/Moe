@@ -222,10 +222,23 @@ SGenericMap * PGenmapTrimUnusedAnchors(
 	SGenericMap * pGenmapSuperset,
 	SLexerLocation * pLexloc);
 
+enum FGENCOMP
+{
+	FGENCOMP_None			= 0x0,
+	FGENCOMP_ImplicitRef	= 0x1,
+
+	FGENCOMP_All			= 0x1,
+};
+
+EWC_DEFINE_GRF(GRFGENCOMP, FGENCOMP, u32);
+
+
 // Compute a generic map (values/types for all anchors)
 ERRID ErridComputeDefinedGenerics( 
 	STypeCheckWorkspace * pTcwork,
 	ERREP errep,
+	SLexerLocation * pLexloc,
+	GRFGENCOMP grfgencomp, 
 	CSymbolTable * pSymtab,
 	STypeInfo * pTinRef,
 	CSTNode * pStnodDef,

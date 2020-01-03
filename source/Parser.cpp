@@ -2995,6 +2995,10 @@ CSTNode * PStnodParseDefinition(CParseContext * pParctx, SLexer * pLex)
 
 				if (rword == RWORD_Operator && FOperatorOverloadMustTakeReference(pStnodIdent->m_tok))
 				{
+					// NOTE: We handle implicit references as a flag on the calling site, not an attribute of the pointer type.
+					//  Supporting a reference type would require it being present when the type is first generated and care to
+					//  not mess up the unique-ing.
+
 					pTinproc->m_mpIptinGrfparmq[0].AddFlags(FPARMQ_ImplicitRef);
 				}
 
@@ -4942,13 +4946,12 @@ STypeInfoQualifier * CSymbolTable::PTinqualWrap(STypeInfo * pTinTarget, GRFQUALK
 	return PTinqualEnsure(pTinTarget, grfqualk);
 }
 
-STypeInfoPointer * CSymbolTable::PTinptrAllocate(STypeInfo * pTinPointedTo, bool fIsImplicitRef)
+STypeInfoPointer * CSymbolTable::PTinptrAllocate(STypeInfo * pTinPointedTo)
 {
 	// Note: I should unique'ify these
 
 	STypeInfoPointer * pTinptr = EWC_NEW(m_pAlloc, STypeInfoPointer) STypeInfoPointer();
 	pTinptr->m_pTinPointedTo = pTinPointedTo;
-	pTinptr->m_fIsImplicitRef = fIsImplicitRef;
 
 	AddManagedTin(pTinptr);
 	return pTinptr;

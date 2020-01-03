@@ -105,9 +105,10 @@ enum FARG
 	FARG_NamedLabelChild	= 0x2,	// argument was specified with a label - pStnod points at label parent
 	FARG_BakedValue			= 0x4,	// this stnod will be removed from the argument list (but not deleted until end of typecheck) 
 	FARG_TypeArgument		= 0x8,  // this stnod will be removed from the argument list (but not deleted until end of typecheck) 
+	FARG_ImplicitRef		= 0x10,	// this arg corresponds to an implicit reference
 
 	GRFARG_Caller = FARG_DefaultArg | FARG_NamedLabelChild,			// flags related to how this proc was called
-	GRFARG_DefinitionFlags = FARG_BakedValue | FARG_TypeArgument,	// flags pulled from the definition of this argument
+	GRFARG_DefinitionFlags = FARG_BakedValue | FARG_TypeArgument | FARG_ImplicitRef,	// flags pulled from the definition of this argument
 	FARG_None = 0x0,
 	FARG_All  = 0xF,
 };
@@ -322,8 +323,6 @@ void CNameMangler::AppendType(STypeInfo * pTin)
 		{
 			auto pTinptr = (STypeInfoPointer *)pTin;
 			AppendCoz(&m_strbuf, "P");
-			if (pTinptr->m_fIsImplicitRef)
-				AppendCoz(&m_strbuf, "i");
 			AppendType(pTinptr->m_pTinPointedTo);
 		} break;
     case TINK_Struct:
@@ -793,17 +792,11 @@ STypeInfo * PTinReadType(const char ** ppCoz, CSymbolTable * pSymtab)
 	else if (chFirst == 'P') // Pointer
 	{
 		++(*ppCoz);
-		bool fIsImplicitRef = false;
-		if (**ppCoz == 'i')
-		{
-			fIsImplicitRef = true;
-			++(*ppCoz);
-		}
 
 		auto pTinPointedTo = PTinReadType(ppCoz, pSymtab);
 		if (!pTinPointedTo)
 			return nullptr;
-		return pSymtab->PTinptrAllocate(pTinPointedTo, fIsImplicitRef);
+		return pSymtab->PTinptrAllocate(pTinPointedTo);
 	}
 	else if (chFirst == 'A') // Array
 	{
@@ -2517,8 +2510,6 @@ bool FTypesAreSame(STypeInfo * pTinLhs, STypeInfo * pTinRhs)
 		{
 			STypeInfoPointer * pTinptrLhs = (STypeInfoPointer *)pTinLhs;
 			STypeInfoPointer * pTinptrRhs = (STypeInfoPointer *)pTinRhs;
-			if (pTinptrLhs->m_fIsImplicitRef != pTinptrRhs->m_fIsImplicitRef)
-				return false;
 
 			return FTypesAreSame(pTinptrLhs->m_pTinPointedTo, pTinptrRhs->m_pTinPointedTo);
 		}
@@ -3613,7 +3604,9 @@ inline bool FUnpackArgumentList(
 
 				STypeInfo * pTinInitDefault = PTinPromoteUntypedArgument(pTcwork, pSymtab, pStnodInit, pTinParam, errep);
 				pTinInitDefault = PTinAfterRValueAssignment(pTcwork, &pStnodInit->m_lexloc, pTinInitDefault, pSymtab, pTinParam);
-				ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, pTinInitDefault, pStnodType, pGenmap);
+
+				GRFGENCOMP grfgencomp = pArgunp->m_grfarg.FIsSet(FARG_ImplicitRef) ? FGENCOMP_ImplicitRef : FGENCOMP_None;
+				ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pLexloc, grfgencomp, pSymtab, pTinInitDefault, pStnodType, pGenmap);
 				if (errid != ERRID_Nil)
 					return false;
 
@@ -5545,6 +5538,8 @@ void AssertIsCanon(STypeInfo * pTin)
 ERRID ErridComputeDefinedGenerics(
 	STypeCheckWorkspace * pTcwork,
 	ERREP errep,
+	SLexerLocation * pLexlocRef,
+	GRFGENCOMP grfgencomp, 
 	CSymbolTable * pSymtab,
 	STypeInfo * pTinRefEntry,
 	CSTNode * pStnodDockEntry, // pStnod of the parameter's type
@@ -5699,32 +5694,55 @@ ERRID ErridComputeDefinedGenerics(
 
 					if (!pTinqualRef || !fGrfqualkMatches)
 					{
+						// I think this is fine because we'd be adding const to an argument, do we actually need to calculate
+						// const after assignment?
+
+#if 0
 						if (errep == ERREP_ReportErrors)
 						{
 							const char * pChzTink = (genfram.m_pTinRef) ? PChzFromTink(genfram.m_pTinRef->m_tink) : "null"; 
-							auto strTinRef = StrFromTypeInfo(genfram.m_pTinRef);
-							auto strTinDock = StrFromTypeInfo(pTinqualDock);
+							//auto strTinRef = StrFromTypeInfo(genfram.m_pTinRef);
+							auto strTinRef = StrFromTypeInfo(pTinRefEntry);
+							auto strTinDock = StrFromTypeInfo(pStnodDockEntry->m_pTin);
+
+							CLexerLookup lexlook(pTcwork->m_pErrman->m_pWork, pLexlocRef);
+
 							EmitError(pTcwork, pStnodDockCur, ERRID_CannotInferGeneric,
-								"generic match missing qualifier : matching %s, encountered %s type '%s'",
+								"generic match missing qualifier : matching %s, encountered %s type '%s', matching %s (%d, %d)",
 								strTinDock.PCoz(),
 								pChzTink,
-								strTinRef.PCoz());
+								strTinRef.PCoz(),
+								lexlook.m_strFilename.PCoz(),
+								lexlook.m_iLine,
+								lexlook.m_iCodepoint);
 						}
 
 						return ERRID_CannotInferGeneric;
+#endif
+						
+					}
+					else
+					{
+						genfram.m_pTinRef = pTinqualRef->m_pTin;
 					}
 
-					genfram.m_pTinRef = pTinqualRef->m_pTin;
 					EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
 					pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
+
 				} break;
 			case PARK_ReferenceDecl:
 				{
-					auto pTinptrDock = PTinRtiCast<STypeInfoPointer *>(pStnodDockCur->m_pTin);
-					if (pTinptrDock && !pTinptrDock->m_fIsImplicitRef)
+					if (!grfgencomp.FIsSet(FGENCOMP_ImplicitRef))
 					{
-						auto pTinptrRef = PTinRtiCast<STypeInfoPointer *>(genfram.m_pTinRef);
-						if (!pTinptrRef)
+						if (auto pTinptrRef = PTinRtiCast<STypeInfoPointer *>(genfram.m_pTinRef))
+						{
+							genfram.m_pTinRef = pTinptrRef->m_pTinPointedTo;
+						}
+						else if (auto pTinaryRef = PTinRtiCast<STypeInfoArray *>(genfram.m_pTinRef))
+						{
+							genfram.m_pTinRef = pTinaryRef->m_pTin;
+						}
+						else
 						{
 							if (errep == ERREP_ReportErrors)
 							{
@@ -5739,8 +5757,6 @@ ERRID ErridComputeDefinedGenerics(
 							}
 							return ERRID_CannotInferGeneric;
 						}
-
-						genfram.m_pTinRef = pTinptrRef->m_pTinPointedTo;
 					}
 					EWC_ASSERT(pStnodDockCur->CStnodChild() == 1, "expected one child");
 					pStnodDockIt = pStnodDockCur->PStnodChildSafe(0);
@@ -5808,7 +5824,8 @@ ERRID ErridComputeDefinedGenerics(
 								auto pTinDock = pStnodDockType->m_pTin;
 								if (pTinDock && FIsGenericType(pTinDock))
 								{
-									ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pSymtab, 
+									ERRID errid = ErridComputeDefinedGenerics(pTcwork, errep, pLexlocRef, FGENCOMP_None,
+										pSymtab, 
 										pStnodParamRef->m_pTin,
 										pStnodDockType,
 										pGenmapOut);
@@ -5907,6 +5924,11 @@ PROCMATCH ProcmatchCheckProcArguments(
 	size_t cArgMax = ewcMax(cArgCall, cArgTinproc); 
 	CDynAry<SArgUnpack> mpIArgArgunp(pTcwork->m_pAlloc, BK_TypeCheckGenerics, cArgMax);
 	mpIArgArgunp.AppendNew(cArgMax);
+
+	if (!pTinproc->m_mpIptinGrfparmq.FIsEmpty() && pTinproc->m_mpIptinGrfparmq[0].FIsSet(FPARMQ_ImplicitRef)) 
+	{
+		mpIArgArgunp[0].m_grfarg.AddFlags(FARG_ImplicitRef);
+	}
 
 	if (!FUnpackArgumentList(
 		pTcwork,
@@ -7561,15 +7583,6 @@ TcretDebug TcretTypeCheckSubtree(STypeCheckWorkspace * pTcwork, STypeCheckFrame 
 								auto pStnodParam = pStnodParams->PStnodChild(iStnod);
 								if (pStnodParam->m_park == PARK_VariadicArg)
 									continue;
-
-								if (pTinproc->m_mpIptinGrfparmq[iStnod].FIsSet(FPARMQ_ImplicitRef))
-								{
-									auto pTinptr = PTinRtiCast<STypeInfoPointer*>(pStnodParam->m_pTin);
-									if (pTinptr)
-									{
-										pTinptr->m_fIsImplicitRef = true;
-									}
-								}
 
 								if (!FIsValidLhs(pStnodParam))
 								{

@@ -1042,7 +1042,7 @@ test GenericProcInferFail
 		?param("t :[] $T") + ?call("n: int; GenProc(n)"?errid(2031)), 			// expected array
 		//?param("t :[$C] int") + ?call("aN: [3] int; GenProc(aN)"), 			// expected array
 		//?param("t :[$C] int") + ?call("aNRev: [] int; GenProc(aNRef)"?errid(2031)), 			// expected array
-		?param("t :& const $T") + ?call("n: & int; GenProc(n)"?errid(2031)), 	// expected qualifier
+		?param("t :& const $T") + ?call("n: & int; GenProc(n)"), 	// expected qualifier
 		?param("t :& const $T") + ?call("n: & const int; GenProc(n)"), 			// expected qualifier
 		?param("t :& $T") + ?call("n: int; GenProc(n)"?errid(2031)), 			// expected pointer
 		?param("t :& $T") + ?call("n: & int; GenProc(n)"), 						// expected pointer
