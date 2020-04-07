@@ -1,0 +1,9 @@
+# Editor config to control github formatting http://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+[*.{cpp,h,inl}]
+indent_size = 4
+trim_trailing_whitespace = true
+insert_final_newline = true
